@@ -50,6 +50,9 @@ export function UserMenu({
   const initial = label.trim().charAt(0).toUpperCase() || "?";
   const organizationsQuery = useQuery(organizationsQueryOptions);
   const orgs = organizationsQuery.data ?? [];
+  const activeOrg = user.organizationId ? orgs.find((org) => org.id === user.organizationId) : undefined;
+  const workspaceLabel =
+    activeOrg?.name ?? (user.organizationId && organizationsQuery.isPending ? "Loading workspace..." : undefined);
 
   const handleSwitch = async (organizationId: string) => {
     if (organizationId === user.organizationId) return;
@@ -70,9 +73,18 @@ export function UserMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         {variant === "row" ? (
-          <Button variant="ghost" className="h-auto w-full justify-start gap-2 px-2 py-1.5" aria-label="Account">
+          <Button
+            variant="ghost"
+            className="h-auto w-full justify-start gap-2 px-2 py-1.5 text-left"
+            aria-label="Account"
+          >
             {avatar}
-            <span className="truncate text-sm font-medium">{label}</span>
+            <span className="flex min-w-0 flex-col items-start leading-tight">
+              <span className="max-w-full truncate text-sm font-medium">{label}</span>
+              {workspaceLabel ? (
+                <span className="max-w-full truncate text-xs font-normal text-muted-foreground">{workspaceLabel}</span>
+              ) : null}
+            </span>
           </Button>
         ) : (
           <Button variant="ghost" size="icon" className="rounded-full" aria-label="Account">
@@ -84,6 +96,9 @@ export function UserMenu({
         <DropdownMenuLabel className="flex flex-col gap-0.5">
           {user.name ? <span className="truncate font-medium">{user.name}</span> : null}
           <span className="truncate text-xs font-normal text-muted-foreground">{user.email}</span>
+          {workspaceLabel ? (
+            <span className="truncate text-xs font-normal text-muted-foreground">{workspaceLabel}</span>
+          ) : null}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         {organizationsQuery.isPending ? (

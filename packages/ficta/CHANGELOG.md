@@ -4,11 +4,14 @@
 
 ### Changed
 
+- Route Ficta Gateway dev startup through the same Doppler-aware env wrapper as the root dev command, falling back to local `.env` files when the Doppler CLI is unavailable.
 - Documented how to repair agent shims when the installed `ficta` CLI path moves, including published package reinstalls, durable local source-checkout installs, stale generated launcher guidance, and local installs whose global `ficta` wrapper is already broken.
 
 ### Fixed
 
-- Moved Ficta Gateway's TanStack Query setup into the router-level SSR integration and surfaced workspace-switcher load failures with an in-menu retry action.
+- Moved Ficta Gateway's TanStack Query setup into the router-level SSR integration and added an in-menu retry action for workspace-switcher load failures.
+- Show the active WorkOS workspace name in the Ficta Gateway account menu and surface workspace-load failures instead of silently hiding the switcher.
+- Prewarm Ficta Gateway TanStack Start server functions in dev so cold server-function requests no longer fail with `Invalid server function ID`.
 
 ## 0.1.0 - 2026-07-04
 

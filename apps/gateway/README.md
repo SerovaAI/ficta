@@ -80,7 +80,7 @@ pnpm dev
 
 Open http://localhost:4747.
 
-`pnpm dev` auto-runs through Doppler when this repo has Doppler metadata; otherwise it loads local
+`pnpm dev` auto-runs through Doppler when the Doppler CLI is installed; otherwise it loads local
 `.env` files and starts the proxy plus the web app. When the effective env selects
 `FICTA_PII_BACKEND=presidio`, the dev wrapper can start or reuse a local Docker
 `presidio-analyzer` sidecar and mount

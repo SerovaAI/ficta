@@ -5,6 +5,7 @@
   // Turbo 2.x defaults to strict mode, which prunes undeclared vars. Loose vars aren't part of the
   // cache hash — safe here since our keys are read at runtime, never baked into build outputs.
   "envMode": "loose",
+  "globalPassThroughEnv": ["FICTA_DEV_ENV_READY"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
