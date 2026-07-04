@@ -1,0 +1,206 @@
+# Ficta Gateway
+
+Ficta Gateway is the self-hosted internal chat UI for sensitive-data-aware model access. It is a
+[TanStack Start](https://tanstack.com/start) app using TanStack AI for bring-your-own-key OpenAI and
+Anthropic chat, with every model call routed through the local ficta proxy.
+
+This README is the Gateway setup guide. The coding-agent and local proxy path is the `ficta` CLI; its
+shim setup lives in [`../../packages/ficta/README.md`](../../packages/ficta/README.md) and
+[`../../packages/ficta/docs/install.md`](../../packages/ficta/docs/install.md).
+
+## What It Does
+
+The browser talks to the gateway server, not directly to the model provider:
+
+```txt
+browser (useChat)
+  -> /api/chat        server route (src/routes/api/chat.ts)
+  -> ficta proxy      redact -> forward -> restore   (FICTA_PROXY_URL)
+  -> OpenAI / Anthropic
+```
+
+Provider API keys stay server-side. The proxy passes required auth headers through to the provider,
+but tokenizes protected values in the model payload before the provider hop and restores them locally
+in the streamed response.
+
+The two protection layers have different strengths:
+
+- **Registered values:** exact-match values loaded by the proxy, such as known secrets, client names,
+  matter IDs, patient IDs, or other firm-specific identifiers. These get the strongest promise:
+  tokenize on egress and block if a registered value survives redaction in a covered surface.
+- **Detected values:** best-effort secret-shape and PII detection. This reduces exposure, but it is
+  not complete. Undetected PII still goes to the model provider.
+
+Current app capabilities:
+
+- server-side BYO OpenAI/Anthropic keys;
+- chat history and settings backed by embedded PGlite by default, or Postgres via `DATABASE_URL`;
+- model allow-list, default model, and instance-name settings;
+- protection badge/banner polling the proxy's safe `/__ficta/status` endpoint;
+- text-file attachments inlined into chat requests so ficta can redact them;
+- PDF/DOCX conversion through a document-converter sidecar before inlining/redaction;
+- optional WorkOS AuthKit organizations/workspaces (`AUTH_PROVIDER=workos`);
+- open local self-hosting mode (`AUTH_PROVIDER=none`) for development and isolated POCs.
+
+## Local POC Setup
+
+This path is for local evaluation, UI development, and fake-data demos. It is **not production as-is**:
+by default it uses open local auth, local `.env` files, embedded PGlite, and source-checkout sidecar
+management.
+
+```sh
+pnpm install
+cp apps/gateway/.env.example apps/gateway/.env
+```
+
+Edit `apps/gateway/.env` and set at least one model provider key:
+
+```sh
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
+```
+
+For a realistic sensitive-data demo, enable the proxy-side detectors too:
+
+```sh
+FICTA_SECRET_SHAPES_ENABLED=1
+FICTA_PII_ENABLED=1
+FICTA_PII_BACKEND=presidio
+FICTA_PII_FAIL_CLOSED=1
+FICTA_PII_PRESIDIO_URL=http://127.0.0.1:5002
+```
+
+Then start the source-checkout dev stack:
+
+```sh
+pnpm dev
+```
+
+Open http://localhost:4747.
+
+`pnpm dev` auto-runs through Doppler when this repo has Doppler metadata; otherwise it loads local
+`.env` files and starts the proxy plus the web app. When the effective env selects
+`FICTA_PII_BACKEND=presidio`, the dev wrapper can start or reuse a local Docker
+`presidio-analyzer` sidecar and mount
+`../../packages/ficta/presidio/default_recognizers.za.yaml`.
+
+## Production-Like Gateway Setup
+
+For a law-firm, medical, finance, or other regulated-team POC using real sensitive data, treat this
+as an operator-owned internal system, not a hosted SaaS default.
+
+Minimum production-like posture:
+
+- Run the gateway and ficta proxy inside the firm's network boundary.
+- Use `AUTH_PROVIDER=workos` or put the app behind an equivalent enterprise auth boundary. Do not
+  expose `AUTH_PROVIDER=none` beyond a local or isolated demo network.
+- Use `DATABASE_URL` with managed Postgres. Embedded PGlite is for local/single-process use; chat
+  history stores the restored user-visible transcript and must be treated as sensitive data.
+- Define retention, deletion, backup, and access-review policy for chat history.
+- Run Presidio as an explicit sidecar under your process/container supervisor. Do not rely on
+  source-checkout managed sidecar behavior in production.
+- Set `FICTA_PII_FAIL_CLOSED=1` so a detector outage blocks requests instead of silently forwarding
+  unscreened text.
+- Load a firm-specific exact-match registry for client/matter rosters, patient IDs, matter IDs, or
+  other high-value identifiers. Lead demos with this strong layer, not only best-effort NER.
+- Keep `FICTA_LOG_LEVEL` below `trace`; trace writes raw request/response bodies to disk.
+- Decide which provider/deployment is approved for the data class. For medical workflows, redaction
+  does not remove the need for the right HIPAA/BAA posture if ePHI can reach a vendor.
+- Consider egress allow-listing so the gateway host can reach only the approved model provider,
+  Presidio sidecar, document-converter sidecar, database, and auth provider.
+
+Example production-like env shape:
+
+```sh
+AUTH_PROVIDER=workos
+WORKOS_CLIENT_ID=...
+WORKOS_API_KEY=...
+WORKOS_REDIRECT_URI=https://gateway.example.com/api/auth/callback
+WORKOS_COOKIE_PASSWORD=...
+
+DATABASE_URL=postgres://...
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
+
+FICTA_PROXY_URL=http://127.0.0.1:8787
+FICTA_SECRET_SHAPES_ENABLED=1
+FICTA_PII_ENABLED=1
+FICTA_PII_BACKEND=presidio
+FICTA_PII_FAIL_CLOSED=1
+FICTA_PII_PRESIDIO_URL=http://127.0.0.1:5002
+FICTA_LOG_LEVEL=info
+```
+
+Run the Presidio sidecar explicitly, for example:
+
+```sh
+docker run --rm -p 5002:3000 \
+  -v "$PWD/packages/ficta/presidio/default_recognizers.za.yaml:/app/ficta-presidio-recognizers.yaml:ro" \
+  -e RECOGNIZER_REGISTRY_CONF_FILE=/app/ficta-presidio-recognizers.yaml \
+  ghcr.io/data-privacy-stack/presidio-analyzer:latest
+```
+
+The shipped recognizer registry keeps Presidio's defaults, enables South African ID numbers, and adds
+a South African company registration number recognizer.
+
+## Document Conversion
+
+Plain text attachments are read in the browser and inlined into the chat request. PDF/DOCX uploads go
+through the document-converter sidecar (`FICTA_DOC_CONVERTER_URL`) via `POST /api/extract`, then the
+extracted Markdown is inlined and redacted through the same path.
+
+Extraction fidelity matters. If the converter drops scanned text, OCR, or table structure, the PII
+detector may never see the value. For real document workflows, run the converter inside the same
+network boundary and validate it on representative documents before using real sensitive files.
+
+## Environment Reference
+
+Web app env:
+
+| Env var | Purpose | Default |
+| --- | --- | --- |
+| `FICTA_PROXY_URL` | ficta proxy base URL the model adapters point at | `http://127.0.0.1:8787` |
+| `OPENAI_API_KEY` | OpenAI-compatible model key; passed through ficta as an auth header | - |
+| `ANTHROPIC_API_KEY` | Anthropic model key; passed through ficta as an auth header | - |
+| `AUTH_PROVIDER` | `none` for open local/self-hosted mode, or `workos` for AuthKit | `none` |
+| `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_REDIRECT_URI`, `WORKOS_COOKIE_PASSWORD` | WorkOS AuthKit + organization/workspace support | - |
+| `DATABASE_URL` | Postgres connection for shared/multi-process deployments | embedded PGlite when unset |
+| `FICTA_GATEWAY_DATA_DIR` | PGlite data directory when `DATABASE_URL` is unset | `.data/pglite` |
+| `FICTA_DOC_CONVERTER_URL` | Document-converter sidecar URL for PDF/DOCX extraction | `http://127.0.0.1:5003` |
+
+Proxy-side env commonly used with the gateway:
+
+| Env var | Purpose | Default |
+| --- | --- | --- |
+| `FICTA_SECRET_SHAPES_ENABLED` | Enable best-effort detection of pasted API keys, JWTs, private keys, credential URLs, and secret-ish assignments | unconfigured proxy: `0`; `ficta setup`: prompted/default yes |
+| `FICTA_PII_ENABLED` | Enable best-effort PII detection for gateway traffic | unconfigured proxy: `0`; `ficta setup`: prompted/default yes |
+| `FICTA_PII_BACKEND` | Select `regex` or `presidio` PII backend | `regex` |
+| `FICTA_PII_FAIL_CLOSED` | PII detector outage policy: block instead of skip detection | `0` |
+| `FICTA_PII_PRESIDIO_URL` | Presidio analyzer URL when using the `presidio` backend | local sidecar URL |
+| `FICTA_LOG_LEVEL` | Runtime logging level; `trace` writes raw bodies | `info` standalone |
+
+## Verification
+
+Before any sensitive workflow:
+
+1. Run local checks with fake values only.
+2. Confirm the protection badge shows the proxy connected, registered values loaded, and PII detection
+   in the intended fail-open/fail-closed posture.
+3. Send fake registered identifiers and fake PII through a live provider key and verify the model does
+   not receive the registered literals.
+4. Stop the Presidio sidecar and confirm `FICTA_PII_FAIL_CLOSED=1` blocks sends rather than forwarding.
+
+Useful commands:
+
+```sh
+pnpm gateway:typecheck
+pnpm gateway:build
+```
+
+Live vendor checks are manual by design because they send test content to a real provider. Use fake
+PII and fake secret-shaped values.
+
+## Implementation Seam
+
+`src/lib/model-adapter.ts` is the single place provider/model/key/base-URL are wired. Swapping
+providers or pointing at a different gateway is a change there, not throughout the UI.

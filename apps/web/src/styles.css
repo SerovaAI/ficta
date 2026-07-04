@@ -1,0 +1,163 @@
+@import "tailwindcss";
+
+/* Dark-committed marketing surface: near-black "ink" with a single vermilion redaction-stamp signal
+ * and a sparing mint "restored" accent. The site is dark-only by design — no light theme. */
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.625rem;
+
+  --background: oklch(0.165 0.006 264);
+  --foreground: oklch(0.96 0.004 90);
+
+  --card: oklch(0.205 0.007 264);
+  --card-foreground: oklch(0.96 0.004 90);
+  --popover: oklch(0.205 0.007 264);
+  --popover-foreground: oklch(0.96 0.004 90);
+
+  /* Vermilion — the redaction stamp. Carries CTAs and emphasis. */
+  --primary: oklch(0.67 0.2 33);
+  --primary-foreground: oklch(0.16 0.02 40);
+
+  --secondary: oklch(0.245 0.008 264);
+  --secondary-foreground: oklch(0.96 0.004 90);
+  --muted: oklch(0.245 0.008 264);
+  --muted-foreground: oklch(0.73 0.006 264);
+  --accent: oklch(0.245 0.008 264);
+  --accent-foreground: oklch(0.96 0.004 90);
+  --destructive: oklch(0.63 0.21 27);
+  --destructive-foreground: oklch(0.96 0.004 90);
+
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.67 0.2 33);
+
+  /* Redaction-bar fill (a step above the ink) and the mint restored-value signal. */
+  --redaction: oklch(0.29 0.006 264);
+  --restored: oklch(0.86 0.15 165);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-redaction: var(--redaction);
+  --color-restored: var(--restored);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: "Hanken Grotesk Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Fragment Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv01";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+    letter-spacing: -0.02em;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  ::selection {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+}
+
+/* Hero entrance — gated on no-preference so reduced-motion (and no-JS) visitors get the content
+ * fully visible by default; the animation only enhances an already-rendered page. */
+@media (prefers-reduced-motion: no-preference) {
+  .animate-rise {
+    animation: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* The wire round-trip: in the WireCard's reply pane, the surrogate token briefly reappears and
+   * restores to the real (mint) value on a slow loop. The static default is the restored value;
+   * the loop only replays the swap. Opacity-only, bounded to one inline span. */
+  .wire-restore-token {
+    animation: wire-token 7s cubic-bezier(0.22, 1, 0.36, 1) 1.5s infinite;
+  }
+  .wire-restore-value {
+    animation: wire-value 7s cubic-bezier(0.22, 1, 0.36, 1) 1.5s infinite;
+  }
+  @keyframes wire-token {
+    0%,
+    4% {
+      opacity: 0;
+    }
+    12%,
+    38% {
+      opacity: 1;
+    }
+    50%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes wire-value {
+    0%,
+    4% {
+      opacity: 1;
+    }
+    12%,
+    38% {
+      opacity: 0;
+    }
+    50%,
+    100% {
+      opacity: 1;
+    }
+  }
+}

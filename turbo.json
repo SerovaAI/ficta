@@ -1,0 +1,29 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  // Loose mode forwards the ENTIRE environment to every task, so all `doppler run` secrets
+  // (OPENAI_API_KEY, ANTHROPIC_API_KEY, any FICTA_*) reach apps/gateway's /api/chat handler and the proxy.
+  // Turbo 2.x defaults to strict mode, which prunes undeclared vars. Loose vars aren't part of the
+  // cache hash — safe here since our keys are read at runtime, never baked into build outputs.
+  "envMode": "loose",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".output/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "check": {
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

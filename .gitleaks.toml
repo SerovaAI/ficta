@@ -1,0 +1,21 @@
+# gitleaks config for ficta.
+#
+# ficta is a secret-redaction tool, so its own test suite legitimately contains secret-SHAPED
+# fixtures (JWTs, private keys, API-key-looking strings). These are synthetic by design.
+# Allowlisting these paths keeps CI meaningful — a real secret
+# committed anywhere OUTSIDE these paths still fails the scan.
+#
+# Trade-off, stated plainly: this suppresses detection inside test/, so a real secret accidentally
+# pasted into a test fixture would not be caught. Given the tests are inherently secret-shaped, that
+# is an accepted, scoped exception — not a blanket disable.
+
+title = "ficta gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic, secret-shaped fixtures in tests."
+paths = [
+  '''(^|.*/)test/.*''',                 # all test dirs (root test/ pre-migration, packages/ficta/test/ after)
+]

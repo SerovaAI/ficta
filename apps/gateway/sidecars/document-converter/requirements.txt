@@ -1,0 +1,8 @@
+# Base service + the default (markitdown) backend.
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+markitdown[all]>=0.0.1a3
+
+# docling backend (heavy: pulls in torch + models). Uncomment and set CONVERTER_BACKEND=docling to use it.
+# docling>=2.0

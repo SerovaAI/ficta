@@ -1,0 +1,40 @@
+{
+  "name": "ficta-monorepo",
+  "private": true,
+  "type": "module",
+  "description": "Workspace root for ficta (packages/ficta) and its chat UI (apps/gateway). Not published.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "//turbo": "Turbo-managed: cached, parallel across all packages. See turbo.json",
+    "build": "turbo run build",
+    "check": "turbo run check",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "verify": "turbo run check typecheck test",
+    "//pnpm": "pnpm-orchestrated: interactive / write / dev servers, not cached",
+    "check:fix": "pnpm -r check:fix",
+    "dev": "node scripts/dev.mjs",
+    "dev:proxy": "pnpm --filter @steflsd/ficta dev",
+    "gateway:dev": "pnpm --filter @steflsd/ficta-gateway dev",
+    "gateway:build": "pnpm --filter @steflsd/ficta-gateway build",
+    "gateway:typecheck": "pnpm --filter @steflsd/ficta-gateway typecheck",
+    "web:dev": "pnpm --filter @steflsd/ficta-web dev",
+    "web:build": "pnpm --filter @steflsd/ficta-web build",
+    "web:typecheck": "pnpm --filter @steflsd/ficta-web typecheck",
+    "dev:all": "turbo run dev",
+    "update": "pnpm -r update -i -L",
+    "//release": "Local release prep for @steflsd/ficta (bump + changelog + tag). Pushing the tag triggers CI to publish; run npm publish from packages/ficta only as a manual escape hatch.",
+    "release:check": "pnpm --filter @steflsd/ficta release:check",
+    "release:beta": "pnpm --filter @steflsd/ficta release:beta",
+    "release:stable": "pnpm --filter @steflsd/ficta release:stable",
+    "release:patch": "pnpm --filter @steflsd/ficta release:patch",
+    "release:minor": "pnpm --filter @steflsd/ficta release:minor",
+    "release:major": "pnpm --filter @steflsd/ficta release:major"
+  },
+  "devDependencies": {
+    "turbo": "^2.10.2"
+  },
+  "packageManager": "pnpm@11.9.0+sha512.bd682d5d03fe525ef7c9fd6780c6884d1e756ac4c9c9fe00c538782824310dcf90e3ddc4f53835f06dfaebd5085e41855e0bcbb3b60de2ac5bbab89e5036f03b"
+}

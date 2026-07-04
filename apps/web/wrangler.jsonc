@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ficta-web",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Virtual server entry provided by TanStack Start; the @cloudflare/vite-plugin build wires the
+  // Worker + static assets around it.
+  "main": "@tanstack/react-start/server-entry",
+  // Also reachable at ficta-web.<your-subdomain>.workers.dev (fallback / preview). Flip to false to
+  // serve only the custom domain once ficta.sh is confirmed live.
+  "workers_dev": true,
+  // Apex custom domain. Requires the ficta.sh Cloudflare zone to be on THIS account; wrangler then
+  // attaches it and provisions the DNS record + TLS cert automatically. (www → apex: a redirect rule.)
+  "routes": [{ "pattern": "ficta.sh", "custom_domain": true }]
+}

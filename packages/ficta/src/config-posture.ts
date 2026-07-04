@@ -1,0 +1,124 @@
+import type { Config } from "./config.js";
+import { detectorFailClosed } from "./engine/detection-policy.js";
+import { envFlag } from "./engine/env-flags.js";
+import { surrogateStyle } from "./engine/surrogate.js";
+import { isGloballyDisabled } from "./global-disable.js";
+import type { LogLevel } from "./log-level.js";
+import {
+  piiEnabled,
+  piiFailClosed,
+  resolveAgentPiiEnabled,
+  resolveAgentSecretShapesEnabled,
+  secretShapesEnabled,
+  selectedBackendName,
+} from "./plugins/index.js";
+
+/**
+ * The effective, values-free configuration posture: booleans, enums, counts, and URLs only — never
+ * registered secret values, surrogate keys, or detected PII. This is the single typed contract for
+ * "what is ficta configured to do": `ficta doctor` renders it and `GET /__ficta/config` serializes
+ * it, so the two views cannot drift.
+ */
+export interface ConfigPosture {
+  protection: {
+    failClosed: boolean;
+    requireRegistry: boolean;
+    globallyDisabled: boolean;
+    redactPaths: boolean;
+    restoreIntoTools: boolean;
+    surrogateStyle: "opaque" | "typed";
+  };
+  detection: {
+    pii: {
+      /** PII detection for the web/standalone proxy (governed by `[pii] enabled`). */
+      standalone: boolean;
+      /** PII detection for launched coding agents (needs `[pii] enabled` AND `[pii] agents`). */
+      agents: boolean;
+      configuredBackend: string;
+      failureMode: "fail-open" | "fail-closed";
+    };
+    secretShapes: {
+      standalone: boolean;
+      agents: boolean;
+    };
+  };
+  transport: {
+    host: string;
+    port: number;
+    upstreams: { anthropic: string; openai: string; chatgpt: string };
+    forcedUpstream?: string;
+    allowCustomUpstream: boolean;
+    logLevel: LogLevel;
+    logBodies: boolean;
+    logDir: string;
+  };
+}
+
+/**
+ * Build the posture from the transport `Config` plus the engine-side env flags. The engine has no
+ * typed config object — plugins read `process.env` at request time — so the env dependency is an
+ * explicit parameter here rather than a hidden ambient read; tests pass a plain object.
+ * `globallyDisabled` is a filesystem check (~/.ficta/disabled), injectable for the same reason.
+ * `host`/`port` are the configured bind values; a port-0 bind can differ from the actual port.
+ */
+export function configPosture(
+  cfg: Config,
+  env: NodeJS.ProcessEnv = process.env,
+  opts: { globallyDisabled?: boolean } = {},
+): ConfigPosture {
+  return {
+    protection: {
+      failClosed: cfg.failClosed,
+      requireRegistry: env.FICTA_REQUIRE_REGISTRY === "1",
+      globallyDisabled: opts.globallyDisabled ?? isGloballyDisabled(),
+      redactPaths: envFlag(env.FICTA_REDACT_PATHS),
+      restoreIntoTools: envFlag(env.FICTA_RESTORE_INTO_TOOLS),
+      surrogateStyle: surrogateStyle(env),
+    },
+    detection: {
+      pii: {
+        standalone: piiEnabled(env),
+        // Posture, not a per-run override, so the agent gate is evaluated with no shell value.
+        agents: resolveAgentPiiEnabled({ enabled: env.FICTA_PII_ENABLED, agents: env.FICTA_PII_AGENTS }),
+        configuredBackend: selectedBackendName(env),
+        failureMode: detectorFailClosed(piiFailClosed(env), env) ? "fail-closed" : "fail-open",
+      },
+      secretShapes: {
+        standalone: secretShapesEnabled(env),
+        agents: resolveAgentSecretShapesEnabled({
+          enabled: env.FICTA_SECRET_SHAPES_ENABLED,
+          agents: env.FICTA_SECRET_SHAPES_AGENTS,
+        }),
+      },
+    },
+    transport: {
+      host: cfg.host,
+      port: cfg.port,
+      upstreams: {
+        anthropic: stripUserinfo(cfg.upstreams.anthropic),
+        openai: stripUserinfo(cfg.upstreams.openai),
+        chatgpt: stripUserinfo(cfg.upstreams.chatgpt),
+      },
+      forcedUpstream: cfg.forcedUpstream === undefined ? undefined : stripUserinfo(cfg.forcedUpstream),
+      allowCustomUpstream: cfg.allowCustomUpstream,
+      logLevel: cfg.logLevel,
+      logBodies: cfg.logBodies,
+      logDir: cfg.logDir,
+    },
+  };
+}
+
+// Upstream URLs are operator-supplied and may carry basic-auth userinfo; the posture is values-free,
+// so credentials never leave in it. Only rewrite when userinfo is present — URL.toString() would
+// otherwise normalize innocent values (e.g. add a trailing slash).
+function stripUserinfo(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (!parsed.username && !parsed.password) return url;
+    parsed.username = "";
+    parsed.password = "";
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}

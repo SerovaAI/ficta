@@ -1,0 +1,101 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (e.g. v0.1.0-beta.1)"
+        required: true
+        type: string
+      source_ref:
+        description: "Source ref to publish (defaults to tag; use only for release recovery)"
+        required: false
+        type: string
+
+permissions: {}
+
+jobs:
+  publish-npm:
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      SOURCE_REF: ${{ github.event.inputs.source_ref || github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SOURCE_REF }}
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify
+        run: pnpm --filter @steflsd/ficta verify
+
+      - name: Build
+        run: pnpm --filter @steflsd/ficta build
+
+      - name: Check release metadata
+        working-directory: packages/ficta
+        run: pnpm release:check
+
+      - name: Verify release artifacts are committed
+        run: git diff --exit-code
+
+      - name: Upgrade npm for trusted publishing
+        run: |
+          npm install -g npm@11.16.0 --ignore-scripts
+          npm --version
+
+      - name: Publish npm package
+        working-directory: packages/ficta
+        run: node scripts/publish.mjs --skip-advance-latest
+
+      # `npm publish` above authenticates via trusted publishing (OIDC), which does not authorize a
+      # follow-up `npm dist-tag add`. During the pre-1.0 beta phase we also point `latest` at the
+      # newest prerelease; that write needs a 2FA-exempt automation token. Kept as its own step so
+      # the OIDC publish never depends on the token, and non-blocking so a missing/invalid token
+      # can't fail an already-successful publish (latest can be advanced manually instead).
+      - name: Advance latest dist-tag (beta phase)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        working-directory: packages/ficta
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: node scripts/publish.mjs --advance-latest-only
+
+      - name: Extract release notes
+        working-directory: packages/ficta
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          node scripts/release-notes.mjs extract --version "$VERSION" --tag "$RELEASE_TAG" --out /tmp/release-notes.md
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file /tmp/release-notes.md
+          else
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file /tmp/release-notes.md
+          fi

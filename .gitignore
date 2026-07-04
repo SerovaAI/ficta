@@ -1,0 +1,30 @@
+node_modules/
+dist/
+logs/
+*.log
+.DS_Store
+
+# local/private config
+.env
+.env.*
+!.env.example
+.ficta/
+.claude/
+.agents/
+.codex/
+.impeccable/config.local.json
+.impeccable/hook.cache.json
+.impeccable/hook.pending.json
+
+# package/build artifacts
+*.tgz
+coverage/
+.turbo/
+.output/
+.nitro/
+.pi-subagents
+apps/gateway/.impeccable
+
+# private strategy / GTM notes (not for the public repo)
+notes/
+.impeccable

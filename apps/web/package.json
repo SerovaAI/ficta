@@ -1,0 +1,42 @@
+{
+  "name": "@steflsd/ficta-web",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "wrangler dev",
+    "deploy": "vite build && doppler run -- wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "check": "biome check .",
+    "check:fix": "biome check --write ."
+  },
+  "dependencies": {
+    "@fontsource-variable/hanken-grotesk": "^5.2.5",
+    "@fontsource/fragment-mono": "^5.2.5",
+    "@tailwindcss/vite": "4.3.2",
+    "@tanstack/react-router": "latest",
+    "@tanstack/react-start": "latest",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "lucide-react": "1.23.0",
+    "radix-ui": "^1.6.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tailwind-merge": "3.6.0",
+    "tailwindcss": "4.3.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.2",
+    "@cloudflare/vite-plugin": "latest",
+    "@types/node": "^26.1.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "latest",
+    "nitro": "latest",
+    "typescript": "^6.0.3",
+    "vite": "latest",
+    "wrangler": "^4.107.0"
+  }
+}

@@ -1,0 +1,13 @@
+packages:
+  - packages/*
+  - apps/*
+
+allowBuilds:
+  esbuild: true
+  # Cloudflare deploy for apps/web: workerd is the Workers runtime (dev + build); sharp is a
+  # transitive image dep. Both ship native binaries via postinstall.
+  sharp: true
+  workerd: true
+
+minimumReleaseAgeExclude:
+  - lucide-react@1.23.0

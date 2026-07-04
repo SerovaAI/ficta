@@ -1,0 +1,53 @@
+# document-converter sidecar
+
+Turns uploaded PDF/DOCX into Markdown so the web UI can attach documents. The extracted Markdown is
+inlined into the chat message and redacted by the ficta proxy on the way to the model — exactly like a
+pasted text file. ficta does not manage this process; you run it and point the app at it, the same way
+you run the Presidio analyzer.
+
+## Contract
+
+```
+POST /convert   multipart/form-data, field `file`   ->   200 {"markdown": "..."}
+GET  /health                                         ->   200 {"status": "ok", "backend": "..."}
+```
+
+## Backends
+
+| `CONVERTER_BACKEND` | Engine     | When                                                                   |
+| ------------------- | ---------- | ---------------------------------------------------------------------- |
+| `markitdown` (def.) | markitdown | Light/fast. Good on text-based PDFs/DOCX.                              |
+| `docling`           | docling    | Heavy (layout + tables + OCR). Better on scanned/table-heavy PDFs — and better PII recall, since format-anchored entities (SSNs, cards) survive extraction more reliably. Uncomment `docling` in `requirements.txt`. |
+
+## Run
+
+Docker (default markitdown backend):
+
+```sh
+docker build -t ficta-doc-converter apps/gateway/sidecars/document-converter
+docker run --rm -p 5003:5003 ficta-doc-converter
+```
+
+Local:
+
+```sh
+pip install -r requirements.txt
+CONVERTER_BACKEND=markitdown uvicorn app:app --host 0.0.0.0 --port 5003
+```
+
+Then point the web app at it (default is already this URL):
+
+```sh
+export FICTA_DOC_CONVERTER_URL=http://127.0.0.1:5003
+export FICTA_DOC_CONVERTER_BACKEND=markitdown   # informational on the Node side
+```
+
+## Env (web app side)
+
+- `FICTA_DOC_CONVERTER_URL` — sidecar base URL (default `http://127.0.0.1:5003`).
+- `FICTA_DOC_CONVERTER_BACKEND` — `markitdown` (default) | `docling`. Informational label; both speak the
+  same `/convert` contract.
+- `FICTA_DOC_CONVERTER_TIMEOUT_MS` — per-conversion budget (default `30000`).
+
+If the sidecar is down or unset, document uploads fail closed: the file is not attached and the composer
+tells the user to paste the text instead.
