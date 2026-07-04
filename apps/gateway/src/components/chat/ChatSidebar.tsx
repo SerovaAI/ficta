@@ -127,11 +127,7 @@ export function ChatSidebar({
             <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
               <div className="flex min-w-0 items-center gap-2">
                 <BrandMark />
-                {instanceName ? (
-                  <span className="truncate text-base font-semibold tracking-tight">{instanceName}</span>
-                ) : (
-                  <span className="text-base font-semibold lowercase tracking-tight">ficta</span>
-                )}
+                <TextWordmark value={instanceName ?? "ficta"} />
               </div>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -275,6 +271,26 @@ export function ChatSidebar({
 /** Keep the delete toast readable — a long thread title shouldn't blow out the toast width. */
 function truncateTitle(title: string): string {
   return title.length > 40 ? `${title.slice(0, 39).trimEnd()}…` : title;
+}
+
+/** Product wordmark for the sidebar title. Brackets carry the fixed brand color; the value text follows
+ * the current foreground so it stays legible in both themes. */
+function TextWordmark({ value }: { value: string }) {
+  return (
+    <span
+      role="img"
+      aria-label={value}
+      className="inline-flex min-w-0 max-w-full items-baseline font-mono text-base font-normal leading-none tracking-tight"
+    >
+      <span aria-hidden="true" className="shrink-0 text-[#F1552F]">
+        [
+      </span>
+      <span className="truncate">{value}</span>
+      <span aria-hidden="true" className="shrink-0 text-[#F1552F]">
+        ]
+      </span>
+    </span>
+  );
 }
 
 /** The ficta mark (assets/brand, "Token Wrapper"): vermilion brackets wrapping a chalk value block.

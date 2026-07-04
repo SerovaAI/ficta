@@ -231,7 +231,7 @@ The composer is the signature task surface. It is a rounded, bordered Panel with
 
 ### Brand Mark
 
-The ficta identity (assets/brand, "Token Wrapper"): vermilion brackets wrapping a chalk value block, rendered as inline SVG on its ink app-icon tile (`28px`, `rounded-lg`, hairline border) in the sidebar header and collapsed rail, and as the favicon. The brand hexes are fixed — the mark never re-tints with the theme — and this tile is the only place vermilion appears in the product.
+The ficta identity (assets/brand, "Token Wrapper"): vermilion brackets wrapping a chalk value block, rendered as inline SVG on its ink app-icon tile (`28px`, `rounded-lg`, hairline border) in the sidebar header and collapsed rail, and as the favicon. The expanded sidebar title renders as a text wordmark: `[ficta]` when unnamed, or `[Instance Name]` when a custom instance name is set, with vermilion brackets and foreground value text in Fragment Mono. The brand hexes are fixed — the mark never re-tints with the theme — and vermilion appears only inside brand brackets, never as a product accent.
 
 ### Status Notices
 
