@@ -24,8 +24,14 @@ ficta setup   # configure ~/.ficta/config.toml and optionally install shims
 ficta install
 ```
 
-From a source checkout, use `pnpm ficta setup` / `pnpm ficta install` instead. If you want the bare
-`ficta` command to point at your checkout while developing, run `pnpm add -g "$(pwd)"` from the repo;
+From a source checkout, use `pnpm --filter @serovaai/ficta ficta setup` /
+`pnpm --filter @serovaai/ficta ficta install` instead. If you want the bare `ficta` command to point
+at your checkout while developing, install the package directory, not the workspace root:
+
+```sh
+pnpm add -g /path/to/ficta/packages/ficta
+```
+
 `ficta --version` will show a `+dev` suffix when running from source.
 
 Before launching an agent, sanity-check registry loading and routing:
@@ -56,9 +62,55 @@ global package-manager CLI. Upgrading is just rerunning your global install comm
 `npm install -g @serovaai/ficta`, `pnpm add -g @serovaai/ficta`, or
 `bun install --global @serovaai/ficta`.
 
-Only the hidden launcher contains the installed CLI path. For source-checkout installs, if that
-checkout moves, the launcher first tries to recover from a moved checkout in the current repository
-tree. When it finds one, it launches through that path and prints the repair command:
+Only the hidden launcher contains the installed CLI path. If the global package manager moves the
+published CLI, or if a local source checkout moves, rerun the install command for that install type
+and then refresh the launcher with `ficta install --force`.
+
+## Repair moved install paths
+
+### Published package installs
+
+After upgrading or reinstalling the published package, refresh the generated launcher and shims:
+
+```sh
+# npm
+npm install -g @serovaai/ficta
+ficta install --force
+
+# pnpm
+pnpm add -g @serovaai/ficta
+ficta install --force
+
+# bun
+bun install --global @serovaai/ficta
+ficta install --force
+```
+
+### Local source-checkout installs
+
+For local development, point the global `ficta` command at a durable checkout's package directory:
+
+```sh
+pnpm add -g /path/to/ficta/packages/ficta
+ficta install --force
+```
+
+Do not point a global install at a disposable worktree, temporary clone, or archived Conductor
+workspace. Those installs are symlinks back to the source directory; when that directory is removed,
+the global `ficta` command and the agent shim launcher will break. Use a normal local checkout you
+intend to keep, then rerun the two commands above whenever that checkout path changes.
+
+If the old local checkout was already removed, the bare `ficta` command may fail before it can repair
+the shims. Re-add the durable package path first, then run the CLI from pnpm's global bin directory:
+
+```sh
+pnpm add -g /path/to/ficta/packages/ficta
+$(pnpm bin -g)/ficta install --force
+```
+
+For source-checkout installs, if the checkout moves, the launcher first tries to recover from a moved
+checkout in the current repository tree. When it finds one, it launches through that path and prints
+the repair command:
 
 ```sh
 pnpm --filter @serovaai/ficta ficta install --force
@@ -72,6 +124,34 @@ FICTA_CLI_PATH=/path/to/packages/ficta/bin/ficta.mjs claude
 ```
 
 Then rerun the repair command from the moved checkout to refresh the generated launcher.
+
+### Troubleshooting
+
+Check which ficta CLI the agent shims will launch:
+
+```sh
+sed -n '1,8p' ~/.ficta/bin/.ficta-launcher
+```
+
+If launcher output or repair guidance still mentions an old package scope or an old checkout path,
+the generated launcher itself is stale. For a published install, rerun the npm/pnpm/bun global
+install and then `ficta install --force`. For a local source install, re-add the durable package path
+and run `$(pnpm bin -g)/ficta install --force`, or run
+`pnpm --filter @serovaai/ficta ficta install --force` from the source checkout.
+
+For source-checkout installs, confirm the CLI reports a dev build:
+
+```sh
+ficta --version
+```
+
+If `ficta` is not on your shell `PATH` after a pnpm global install, locate the pnpm global bin
+directory and run the wrapper from there:
+
+```sh
+pnpm bin -g
+$(pnpm bin -g)/ficta install --force
+```
 
 `ficta install` also adds `~/.ficta/bin` to your shell startup file (`~/.zshrc`, `~/.bashrc`, or
 `~/.profile`) using a managed block.
@@ -174,7 +254,7 @@ ficta uninstall
 From a source checkout:
 
 ```sh
-pnpm ficta uninstall
+pnpm --filter @serovaai/ficta ficta uninstall
 ```
 
 This removes ficta-owned shims and the managed PATH block. It will not delete/overwrite non-ficta
@@ -188,4 +268,5 @@ ficta install --force      # overwrite existing files in ~/.ficta/bin
 ficta uninstall --no-shell # remove shims but leave shell rc unchanged
 ```
 
-From a source checkout, prefix these with `pnpm` as `pnpm ficta ...`.
+From a source checkout, run these through the package script, for example
+`pnpm --filter @serovaai/ficta ficta install --force`.

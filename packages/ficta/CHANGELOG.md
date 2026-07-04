@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Documented how to repair agent shims when the installed `ficta` CLI path moves, including published package reinstalls, durable local source-checkout installs, stale generated launcher guidance, and local installs whose global `ficta` wrapper is already broken.
+
 ## 0.1.0 - 2026-07-04
 
 ### Added
