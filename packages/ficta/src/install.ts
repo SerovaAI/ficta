@@ -244,7 +244,7 @@ valid_ficta_cli() {
   [ -f "$candidate" ] || return 1
   package_json=$(CDPATH= cd "$(dirname "$candidate")/.." 2>/dev/null && pwd)/package.json || return 1
   [ -f "$package_json" ] || return 1
-  grep -Eq '"name"[[:space:]]*:[[:space:]]*"@steflsd/ficta"' "$package_json" 2>/dev/null
+  grep -Eq '"name"[[:space:]]*:[[:space:]]*"@serovaai/ficta"' "$package_json" 2>/dev/null
 }
 
 exec_ficta() {
@@ -258,7 +258,7 @@ warn_stale_launcher() {
   {
     echo "ficta: installed launcher points at a stale CLI path: $embedded_ficta"
     echo "ficta: using moved source checkout: $cli"
-    echo "ficta: repair launcher with: pnpm --filter @steflsd/ficta ficta install --force"
+    echo "ficta: repair launcher with: pnpm --filter @serovaai/ficta ficta install --force"
   } >&2
 }
 
@@ -278,7 +278,7 @@ if [ -n "$FICTA_CLI_PATH" ]; then
   if valid_ficta_cli "$FICTA_CLI_PATH"; then
     exec_ficta "$FICTA_CLI_PATH" "$@"
   fi
-  echo "ficta: FICTA_CLI_PATH is set but is not a valid @steflsd/ficta CLI: $FICTA_CLI_PATH" >&2
+  echo "ficta: FICTA_CLI_PATH is set but is not a valid @serovaai/ficta CLI: $FICTA_CLI_PATH" >&2
   exit 127
 fi
 
@@ -301,7 +301,7 @@ agent=\${1:-claude}
   echo "ficta: installed launcher could not find the ficta CLI:"
   echo "  $embedded_ficta"
   echo "ficta: repair from the moved checkout:"
-  echo "  cd /path/to/ficta && pnpm --filter @steflsd/ficta ficta install --force"
+  echo "  cd /path/to/ficta && pnpm --filter @serovaai/ficta ficta install --force"
   echo "ficta: or launch once with:"
   echo "  FICTA_CLI_PATH=/path/to/packages/ficta/bin/ficta.mjs $agent"
 } >&2

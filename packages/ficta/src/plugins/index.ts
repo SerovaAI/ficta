@@ -28,7 +28,7 @@ import { knownEnvPlugin, resetKnownEnvPluginCacheForTests } from "./known-env.js
 //
 // This module is the one place allowed to bridge the engine's generic plugin machinery (registry.ts,
 // the detectors, policy, types) with the product-side plugins (Doppler/known-env registry sources and
-// the agent integrations). It also preserves the `@steflsd/ficta/plugins` public API — every symbol
+// the agent integrations). It also preserves the `@serovaai/ficta/plugins` public API — every symbol
 // external plugin authors import stays resolvable here regardless of where files moved internally.
 
 export {

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changed
+
+- Documented how to repair agent shims when the installed `ficta` CLI path moves, including published package reinstalls and durable local source-checkout installs.
+
+## 0.1.0 - 2026-07-04
+
 ### Added
 
 - Added opt-in **typed surrogates**. `FICTA_SURROGATE_STYLE=typed` mints `FICTA_<TYPE>_<hex>` (e.g. `FICTA_PERSON_…`, `FICTA_SSN_…`) instead of the opaque `FICTA_<hex>`, preserving the model's grammatical/semantic cue for a redacted span while keeping the same keyed-HMAC tail (determinism and reversibility unchanged). The `<TYPE>` is drawn from a fixed category taxonomy (adapted from Presidio's anonymizer entity mapping) with a coarse `SECRET`/`PII` fallback, so an arbitrary label such as a registered secret's env-var name never leaks into the token. The active style is configurable via `[surrogate] style` ↔ `FICTA_SURROGATE_STYLE` (persisted to `~/.ficta/config.toml`), shown on the startup banner and in `ficta doctor`, and documented in `config.toml.example`. Default remains opaque (`FICTA_<hex>`).
@@ -18,8 +24,9 @@
 - Highlighted the sensitive-data gateway's South African Presidio recognizer support on ficta.sh, including ZA ID and company registration numbers.
 - Renamed the self-hosted web product to Ficta Gateway, split setup docs into `ficta` CLI/proxy and Ficta Gateway paths, added gateway deployment cautions for non-production defaults, and fixed the gateway `.env.example` WorkOS redirect placeholder.
 - Repositioned the public README docs so Ficta leads as the open-source engine/CLI/local redaction proxy, while Ficta Gateway is documented as the self-hosted private chat gateway and operator path.
-- Renamed the public website workspace to `apps/web` / `@steflsd/ficta-web`, including root scripts and deployment metadata.
-- Documented how to repair agent shims when the installed `ficta` CLI path moves, including published package reinstalls and durable local source-checkout installs.
+- Moved the published npm package and private workspace package names to the `@serovaai` scope, updated GitHub/npm release plumbing, and removed the legacy prerelease channel from package metadata, install commands, and support/status wording.
+- Renamed the public website workspace to `apps/web` / `@serovaai/ficta-web`, including root scripts and deployment metadata.
+- Rendered the Ficta Gateway sidebar title as a bracketed text wordmark, using `[ficta]` when unnamed and `[Instance Name]` when a custom instance name is set.
 
 ### Fixed
 

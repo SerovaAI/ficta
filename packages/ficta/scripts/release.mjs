@@ -3,7 +3,7 @@
  * Prepare a ficta release locally.
  *
  * Usage:
- *   node scripts/release.mjs beta [preid]
+ *   node scripts/release.mjs prerelease [preid]
  *   node scripts/release.mjs stable
  *   node scripts/release.mjs patch|minor|major
  *   node scripts/release.mjs x.y.z[-pre.n]
@@ -24,12 +24,12 @@ import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
 const RELEASE_TARGET = process.argv[2];
-const PREID = process.argv[3] ?? "beta";
-const BUMP_TYPES = new Set(["beta", "prerelease", "stable", "release", "patch", "minor", "major"]);
+const PREID = process.argv[3] ?? "next";
+const BUMP_TYPES = new Set(["prerelease", "stable", "release", "patch", "minor", "major"]);
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 if (!RELEASE_TARGET || (!BUMP_TYPES.has(RELEASE_TARGET) && !SEMVER_RE.test(RELEASE_TARGET))) {
-  console.error("Usage: node scripts/release.mjs <beta|prerelease|stable|patch|minor|major|x.y.z[-pre.n]> [preid]");
+  console.error("Usage: node scripts/release.mjs <prerelease|stable|patch|minor|major|x.y.z[-pre.n]> [preid]");
   process.exit(1);
 }
 
@@ -77,7 +77,6 @@ function nextSemver(version, target, preid) {
   const prerelease = match[4];
 
   switch (target) {
-    case "beta":
     case "prerelease": {
       if (prerelease) {
         const parts = prerelease.split(".");

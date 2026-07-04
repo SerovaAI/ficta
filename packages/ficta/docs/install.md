@@ -7,13 +7,13 @@ Install ficta globally with your package manager:
 
 ```sh
 # npm
-npm install -g @steflsd/ficta@beta
+npm install -g @serovaai/ficta
 
 # pnpm (run `pnpm setup` first if pnpm global bins are not configured)
-pnpm add -g @steflsd/ficta@beta
+pnpm add -g @serovaai/ficta
 
 # bun
-bun install --global @steflsd/ficta@beta
+bun install --global @serovaai/ficta
 ```
 
 Then, to avoid relying on muscle memory (`ficta claude` every time), install shell shims once:
@@ -24,8 +24,8 @@ ficta setup   # configure ~/.ficta/config.toml and optionally install shims
 ficta install
 ```
 
-From a source checkout, use `pnpm --filter @steflsd/ficta ficta setup` /
-`pnpm --filter @steflsd/ficta ficta install` instead. If you want the bare `ficta` command to point
+From a source checkout, use `pnpm --filter @serovaai/ficta ficta setup` /
+`pnpm --filter @serovaai/ficta ficta install` instead. If you want the bare `ficta` command to point
 at your checkout while developing, install the package directory, not the workspace root:
 
 ```sh
@@ -58,7 +58,9 @@ The installed files are generated from agent-integration plugins:
 ```
 
 ficta intentionally does **not** install `~/.ficta/bin/ficta`, so the `ficta` command remains the
-global package-manager CLI.
+global package-manager CLI. Upgrading is just rerunning your global install command, for example
+`npm install -g @serovaai/ficta`, `pnpm add -g @serovaai/ficta`, or
+`bun install --global @serovaai/ficta`.
 
 Only the hidden launcher contains the installed CLI path. If the global package manager moves the
 published CLI, or if a local source checkout moves, rerun the install command for that install type
@@ -72,15 +74,15 @@ After upgrading or reinstalling the published package, refresh the generated lau
 
 ```sh
 # npm
-npm install -g @steflsd/ficta@beta
+npm install -g @serovaai/ficta
 ficta install --force
 
 # pnpm
-pnpm add -g @steflsd/ficta@beta
+pnpm add -g @serovaai/ficta
 ficta install --force
 
 # bun
-bun install --global @steflsd/ficta@beta
+bun install --global @serovaai/ficta
 ficta install --force
 ```
 
@@ -103,7 +105,7 @@ checkout in the current repository tree. When it finds one, it launches through 
 the repair command:
 
 ```sh
-pnpm --filter @steflsd/ficta ficta install --force
+pnpm --filter @serovaai/ficta ficta install --force
 ```
 
 If the launcher cannot discover the moved checkout, point at it for one run without using a global
@@ -238,7 +240,7 @@ ficta uninstall
 From a source checkout:
 
 ```sh
-pnpm --filter @steflsd/ficta ficta uninstall
+pnpm --filter @serovaai/ficta ficta uninstall
 ```
 
 This removes ficta-owned shims and the managed PATH block. It will not delete/overwrite non-ficta
@@ -253,4 +255,4 @@ ficta uninstall --no-shell # remove shims but leave shell rc unchanged
 ```
 
 From a source checkout, run these through the package script, for example
-`pnpm --filter @steflsd/ficta ficta install --force`.
+`pnpm --filter @serovaai/ficta ficta install --force`.
