@@ -23,6 +23,7 @@
 ### Fixed
 
 - Made source-checkout agent shims recover from a moved local ficta checkout by honoring `FICTA_CLI_PATH`, conservatively discovering a valid moved checkout from the current repository tree, and printing non-global repair guidance when recovery is not possible.
+- Committed the TanStack Start generated route tree for ficta.sh so clean CI checkouts can typecheck the web app.
 - Suppressed default startup diagnostics and shutdown stats for machine-readable wrapped-agent commands such as `claude -p --output-format json` and `codex exec --json`, keeping automation stderr clean unless `--ficta-verbose` or `FICTA_LOG_LEVEL=debug` is explicitly set.
 
 ## 0.1.0-beta.8 - 2026-07-03
