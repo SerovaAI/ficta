@@ -56,8 +56,22 @@ global package-manager CLI. Upgrading is just rerunning your global install comm
 `npm install -g @steflsd/ficta@beta`, `pnpm add -g @steflsd/ficta@beta`, or
 `bun install --global @steflsd/ficta@beta`.
 
-Only the hidden launcher contains the installed CLI path, so moving a development checkout only
-requires rerunning `pnpm ficta install --force` to refresh one generated file.
+Only the hidden launcher contains the installed CLI path. For source-checkout installs, if that
+checkout moves, the launcher first tries to recover from a moved checkout in the current repository
+tree. When it finds one, it launches through that path and prints the repair command:
+
+```sh
+pnpm --filter @steflsd/ficta ficta install --force
+```
+
+If the launcher cannot discover the moved checkout, point at it for one run without using a global
+install:
+
+```sh
+FICTA_CLI_PATH=/path/to/packages/ficta/bin/ficta.mjs claude
+```
+
+Then rerun the repair command from the moved checkout to refresh the generated launcher.
 
 `ficta install` also adds `~/.ficta/bin` to your shell startup file (`~/.zshrc`, `~/.bashrc`, or
 `~/.profile`) using a managed block.
