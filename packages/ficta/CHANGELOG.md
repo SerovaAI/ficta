@@ -21,6 +21,7 @@
 
 ### Fixed
 
+- Warmed the Ficta Gateway workspace switcher before the account menu opens, avoiding the delayed first render of workspace options.
 - Suppressed default startup diagnostics and shutdown stats for machine-readable wrapped-agent commands such as `claude -p --output-format json` and `codex exec --json`, keeping automation stderr clean unless `--ficta-verbose` or `FICTA_LOG_LEVEL=debug` is explicitly set.
 
 ## 0.1.0-beta.8 - 2026-07-03

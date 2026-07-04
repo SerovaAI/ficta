@@ -1,5 +1,5 @@
+import { useQuery } from "@tanstack/react-query";
 import { LogOut, Plus, Settings } from "lucide-react";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -11,8 +11,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { fetchOrganizations, switchOrganization } from "@/lib/auth/auth";
-import type { AuthUser, OrgSummary } from "@/lib/auth/types";
+import { switchOrganization } from "@/lib/auth/auth";
+import { organizationsQueryOptions } from "@/lib/auth/organizationQueries";
+import type { AuthUser } from "@/lib/auth/types";
 
 type MenuSide = React.ComponentProps<typeof DropdownMenuContent>["side"];
 type MenuAlign = React.ComponentProps<typeof DropdownMenuContent>["align"];
@@ -23,8 +24,8 @@ type MenuAlign = React.ComponentProps<typeof DropdownMenuContent>["align"];
  * route.
  *
  * When the user belongs to WorkOS organizations, a "Workspace" radio group lets them switch the active
- * one and create more. The list is lazy-loaded the first time the menu opens (one server call, then
- * cached), so it costs nothing on every navigation.
+ * one and create more. The list is warmed as soon as the account control mounts, so opening the menu
+ * usually reads from cache instead of waiting on the first WorkOS membership round trip.
  *
  * `variant` picks the trigger: `row` is the full-width label used in the expanded sidebar footer; `icon`
  * is the avatar-only button used in the collapsed rail. `side`/`align` position the menu relative to the
@@ -47,15 +48,8 @@ export function UserMenu({
 }) {
   const label = user.name ?? user.email;
   const initial = label.trim().charAt(0).toUpperCase() || "?";
-  const [orgs, setOrgs] = useState<OrgSummary[] | null>(null);
-
-  // Load memberships once, on first open. Failures collapse to "no switcher" rather than blocking the menu.
-  const onOpenChange = (open: boolean) => {
-    if (open && orgs === null)
-      fetchOrganizations()
-        .then(setOrgs)
-        .catch(() => setOrgs([]));
-  };
+  const organizationsQuery = useQuery(organizationsQueryOptions);
+  const orgs = organizationsQuery.data ?? [];
 
   const handleSwitch = async (organizationId: string) => {
     if (organizationId === user.organizationId) return;
@@ -73,7 +67,7 @@ export function UserMenu({
   );
 
   return (
-    <DropdownMenu onOpenChange={onOpenChange}>
+    <DropdownMenu>
       <DropdownMenuTrigger asChild>
         {variant === "row" ? (
           <Button variant="ghost" className="h-auto w-full justify-start gap-2 px-2 py-1.5" aria-label="Account">
@@ -92,7 +86,12 @@ export function UserMenu({
           <span className="truncate text-xs font-normal text-muted-foreground">{user.email}</span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {orgs && orgs.length > 0 ? (
+        {organizationsQuery.isPending ? (
+          <>
+            <DropdownMenuItem disabled>Loading workspaces…</DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        ) : orgs.length > 0 ? (
           <>
             <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Workspace</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={user.organizationId} onValueChange={handleSwitch}>
