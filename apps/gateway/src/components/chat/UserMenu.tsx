@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { LogOut, Plus, Settings } from "lucide-react";
+import { LogOut, Plus, RefreshCw, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -89,6 +89,20 @@ export function UserMenu({
         {organizationsQuery.isPending ? (
           <>
             <DropdownMenuItem disabled>Loading workspaces…</DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        ) : organizationsQuery.isError ? (
+          <>
+            <DropdownMenuItem disabled>Could not load workspaces</DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={(event) => {
+                event.preventDefault();
+                void organizationsQuery.refetch();
+              }}
+            >
+              <RefreshCw className="size-4" aria-hidden />
+              Retry
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
           </>
         ) : orgs.length > 0 ? (

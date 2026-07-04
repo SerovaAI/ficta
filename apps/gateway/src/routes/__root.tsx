@@ -1,20 +1,24 @@
-import { QueryClientProvider } from "@tanstack/react-query";
-import { createRootRoute, HeadContent, Link, Outlet, redirect, Scripts } from "@tanstack/react-router";
+import type { QueryClient } from "@tanstack/react-query";
+import { createRootRouteWithContext, HeadContent, Link, Outlet, redirect, Scripts } from "@tanstack/react-router";
 import "@fontsource-variable/hanken-grotesk";
 import "@fontsource/fragment-mono";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { fetchAuthState } from "@/lib/auth/auth";
-import { getQueryClient } from "@/lib/query-client";
+import { organizationsQueryOptions } from "@/lib/auth/organizationQueries";
 import { fetchInstanceSettings } from "@/lib/storage/settings";
 import styles from "@/styles.css?url";
 
-export const Route = createRootRoute({
+export interface RouterContext {
+  queryClient: QueryClient;
+}
+
+export const Route = createRootRouteWithContext<RouterContext>()({
   // Resolve auth once at the top of the tree: gate the whole app when the provider requires it, and
   // seed router context so any component can read the current user (see useAuthState). In `none` mode
   // this returns an open state and never redirects. `/api/auth/*` are server routes and don't run this,
   // so the redirect target can't loop.
-  beforeLoad: async ({ location }) => {
+  beforeLoad: async ({ context, location }) => {
     // Resolve auth first and gate before doing anything else — an unauthenticated user shouldn't trigger
     // instance-settings work. Both land in router context so components read them without refetching.
     const auth = await fetchAuthState();
@@ -27,6 +31,9 @@ export const Route = createRootRoute({
     }
     if (auth.user?.organizationId && location.pathname === "/onboarding") {
       throw redirect({ to: "/" });
+    }
+    if (auth.user?.organizationId) {
+      void context.queryClient.prefetchQuery(organizationsQueryOptions);
     }
     const instance = await fetchInstanceSettings();
     return { auth, instance };
@@ -59,10 +66,8 @@ function RootDocument() {
         <HeadContent />
       </head>
       <body>
-        <QueryClientProvider client={getQueryClient()}>
-          <Outlet />
-          <Toaster />
-        </QueryClientProvider>
+        <Outlet />
+        <Toaster />
         <Scripts />
       </body>
     </html>
