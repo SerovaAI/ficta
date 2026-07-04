@@ -17,11 +17,14 @@
 - Tightened the gateway threat-model and ficta.sh copy so self-hosted data-minimization claims apply to registered values and detected spans, not to the full prompt.
 - Highlighted the sensitive-data gateway's South African Presidio recognizer support on ficta.sh, including ZA ID and company registration numbers.
 - Renamed the self-hosted web product to Ficta Gateway, split setup docs into `ficta` CLI/proxy and Ficta Gateway paths, added gateway deployment cautions for non-production defaults, and fixed the gateway `.env.example` WorkOS redirect placeholder.
+- Repositioned the public README docs so Ficta leads as the open-source engine/CLI/local redaction proxy, while Ficta Gateway is documented as the self-hosted private chat gateway and operator path.
 - Renamed the public website workspace to `apps/web` / `@steflsd/ficta-web`, including root scripts and deployment metadata.
 
 ### Fixed
 
 - Warmed the Ficta Gateway workspace switcher before the account menu opens, avoiding the delayed first render of workspace options.
+- Made source-checkout agent shims recover from a moved local ficta checkout by honoring `FICTA_CLI_PATH`, conservatively discovering a valid moved checkout from the current repository tree, and printing non-global repair guidance when recovery is not possible.
+- Committed the TanStack Start generated route tree for ficta.sh so clean CI checkouts can typecheck the web app.
 - Suppressed default startup diagnostics and shutdown stats for machine-readable wrapped-agent commands such as `claude -p --output-format json` and `codex exec --json`, keeping automation stderr clean unless `--ficta-verbose` or `FICTA_LOG_LEVEL=debug` is explicitly set.
 
 ## 0.1.0-beta.8 - 2026-07-03
