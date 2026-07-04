@@ -125,6 +125,10 @@ Check which ficta CLI the agent shims will launch:
 sed -n '1,8p' ~/.ficta/bin/.ficta-launcher
 ```
 
+If launcher output or repair guidance still mentions an old package scope or an old checkout path,
+the generated launcher itself is stale. Rerun the install command for your current package install,
+then refresh the launcher with `ficta install --force`.
+
 For source-checkout installs, confirm the CLI reports a dev build:
 
 ```sh
