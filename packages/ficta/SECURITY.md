@@ -7,7 +7,7 @@ claim.
 
 ## Supported versions
 
-This project is pre-1.0. Until a stable release exists, only the current main branch / latest published package, if any, should be considered supported.
+Only the current main branch and latest published package should be considered supported.
 
 ## Independent review
 

@@ -229,7 +229,7 @@ The hero demo and the brand argument in one component: a Panel card (Artifact Li
 
 ### InstallLine
 
-A mono one-liner in a hairline-bordered, `10px`-radius, Panel-60% bar: muted `$` prompt, `npm i -g @steflsd/ficta` in Chalk-90, and a ghost copy button whose success state is a Restored Mint check for 1.6s.
+A mono one-liner in a hairline-bordered, `10px`-radius, Panel-60% bar: muted `$` prompt, `npm i -g @serovaai/ficta` in Chalk-90, and a ghost copy button whose success state is a Restored Mint check for 1.6s.
 
 ## 6. Do's and Don'ts
 
