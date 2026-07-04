@@ -21,8 +21,8 @@ compliance product, or a sandbox.
 ## Quick Start
 
 ```sh
-npm install -g @steflsd/ficta@beta
-# or: pnpm add -g @steflsd/ficta@beta  /  bun install --global @steflsd/ficta@beta
+npm install -g @serovaai/ficta
+# or: pnpm add -g @serovaai/ficta  /  bun install --global @serovaai/ficta
 ```
 
 ```sh
@@ -106,7 +106,7 @@ auth/storage guidance, sidecar notes, and production-like deployment cautions li
 This is a monorepo. The published package is the Ficta CLI/proxy; Gateway is the self-hosted private
 chat surface built on the same redaction engine.
 
-- **[`packages/ficta`](packages/ficta)** - [`@steflsd/ficta`](https://www.npmjs.com/package/@steflsd/ficta),
+- **[`packages/ficta`](packages/ficta)** - [`@serovaai/ficta`](https://www.npmjs.com/package/@serovaai/ficta),
   the MIT-licensed CLI, redaction proxy, registry sources, agent integrations, detector backends, and
   plugin seams. This is the package published to npm.
 - **[`apps/gateway`](apps/gateway)** - Ficta Gateway, a self-hosted TanStack Start chat UI with
@@ -130,10 +130,10 @@ chat surface built on the same redaction engine.
 
 ## Status
 
-Ficta is pre-1.0 beta software. Core exact-match redaction, restore, and fail-closed behavior is
-covered by tests and local agent runs, but early CLI users should run `ficta doctor <agent>` before
-relying on it. Treat detector layers as best effort, and verify any Gateway deployment with fake PII
-and fake secret-shaped tokens before sensitive workflows.
+Ficta uses normal semver releases. Core exact-match redaction, restore, and fail-closed behavior is
+covered by tests and local agent runs, but CLI users should run `ficta doctor <agent>` before relying
+on a setup. Treat detector layers as best effort, and verify any Gateway deployment with fake PII and
+fake secret-shaped tokens before sensitive workflows.
 
 ## Development
 
@@ -156,5 +156,5 @@ pnpm build
 
 This monorepo is dual-licensed by product - see [`LICENSING.md`](LICENSING.md) for the map:
 
-- **`packages/ficta`** (the published `@steflsd/ficta` engine + CLI) - **MIT**, see [`packages/ficta/LICENSE`](packages/ficta/LICENSE).
+- **`packages/ficta`** (the published `@serovaai/ficta` engine + CLI) - **MIT**, see [`packages/ficta/LICENSE`](packages/ficta/LICENSE).
 - **`apps/gateway`** (Ficta Gateway) - **AGPL-3.0-only**, with a commercial license available; see [`apps/gateway/LICENSING.md`](apps/gateway/LICENSING.md).

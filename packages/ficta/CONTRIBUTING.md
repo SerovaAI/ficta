@@ -2,7 +2,7 @@
 
 Thanks for wanting to improve ficta.
 
-ficta is pre-1.0 beta software with a deliberately narrow privacy boundary: exact registered values
+ficta has a deliberately narrow privacy boundary: exact registered values
 in covered model-request surfaces. Please read [`README.md`](./README.md),
 [`docs/threat-model.md`](./docs/threat-model.md), and [`SECURITY.md`](./SECURITY.md) before changing
 product claims or security-sensitive behavior.

@@ -7,13 +7,13 @@ Install ficta globally with your package manager:
 
 ```sh
 # npm
-npm install -g @steflsd/ficta@beta
+npm install -g @serovaai/ficta
 
 # pnpm (run `pnpm setup` first if pnpm global bins are not configured)
-pnpm add -g @steflsd/ficta@beta
+pnpm add -g @serovaai/ficta
 
 # bun
-bun install --global @steflsd/ficta@beta
+bun install --global @serovaai/ficta
 ```
 
 Then, to avoid relying on muscle memory (`ficta claude` every time), install shell shims once:
@@ -53,15 +53,15 @@ The installed files are generated from agent-integration plugins:
 
 ficta intentionally does **not** install `~/.ficta/bin/ficta`, so the `ficta` command remains the
 global package-manager CLI. Upgrading is just rerunning your global install command, for example
-`npm install -g @steflsd/ficta@beta`, `pnpm add -g @steflsd/ficta@beta`, or
-`bun install --global @steflsd/ficta@beta`.
+`npm install -g @serovaai/ficta`, `pnpm add -g @serovaai/ficta`, or
+`bun install --global @serovaai/ficta`.
 
 Only the hidden launcher contains the installed CLI path. For source-checkout installs, if that
 checkout moves, the launcher first tries to recover from a moved checkout in the current repository
 tree. When it finds one, it launches through that path and prints the repair command:
 
 ```sh
-pnpm --filter @steflsd/ficta ficta install --force
+pnpm --filter @serovaai/ficta ficta install --force
 ```
 
 If the launcher cannot discover the moved checkout, point at it for one run without using a global

@@ -1,6 +1,6 @@
-![ficta — a local secret airlock for coding agents](https://raw.githubusercontent.com/steflsd/ficta/main/assets/ficta-overview.png)
+![ficta — a local secret airlock for coding agents](https://raw.githubusercontent.com/SerovaAI/ficta/main/assets/ficta-overview.png)
 
-# @steflsd/ficta
+# @serovaai/ficta
 
 [Website](https://ficta.sh)
 
@@ -16,13 +16,13 @@ For the full pitch, threat model, and what's in/out of scope, see the
 [`docs/threat-model.md`](./docs/threat-model.md). This page is the practical install-and-configure
 reference. Ficta Gateway, the self-hosted internal chat UI, uses the same proxy but has a separate
 operator guide in the repository's
-[`apps/gateway/README.md`](https://github.com/steflsd/ficta/tree/main/apps/gateway#readme).
+[`apps/gateway/README.md`](https://github.com/SerovaAI/ficta/tree/main/apps/gateway#readme).
 
 ## Install
 
 ```sh
-npm install -g @steflsd/ficta@beta
-# or: pnpm add -g @steflsd/ficta@beta  /  bun install --global @steflsd/ficta@beta
+npm install -g @serovaai/ficta
+# or: pnpm add -g @serovaai/ficta  /  bun install --global @serovaai/ficta
 ```
 
 ## Setup
@@ -163,9 +163,9 @@ Cursor are not — their agentic features bypass a custom base URL. See the
 
 ## Status
 
-Pre-1.0 beta. Core exact-match redaction, restore, and fail-closed behavior is covered by tests and
-local agent runs, but run `ficta doctor <agent>` before relying on a CLI setup. Treat PII detection as
-best-effort and verify web-chat deployments with fake PII before sensitive use.
+Ficta uses normal semver releases. Core exact-match redaction, restore, and fail-closed behavior is
+covered by tests and local agent runs, but run `ficta doctor <agent>` before relying on a CLI setup.
+Treat PII detection as best-effort and verify web-chat deployments with fake PII before sensitive use.
 
 ## License
 

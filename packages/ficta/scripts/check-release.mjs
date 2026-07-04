@@ -9,7 +9,7 @@ const heading = new RegExp(`^##\\s+${escapeRegExp(version)}(?:\\s+-\\s+\\d{4}-\\
 
 if (!heading.test(changelog)) {
   console.error(`release check failed: CHANGELOG.md has no section for package version ${version}`);
-  console.error("run `pnpm release:beta` or add the matching changelog heading before publishing");
+  console.error("run the release prep script or add the matching changelog heading before publishing");
   process.exit(1);
 }
 

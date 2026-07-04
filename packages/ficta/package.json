@@ -1,17 +1,17 @@
 {
-  "name": "@steflsd/ficta",
-  "version": "0.1.0-beta.8",
+  "name": "@serovaai/ficta",
+  "version": "0.1.0",
   "private": false,
   "type": "module",
   "description": "Keep your registered secrets out of the LLM — local redaction proxy for coding agents",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/steflsd/ficta.git",
+    "url": "git+https://github.com/SerovaAI/ficta.git",
     "directory": "packages/ficta"
   },
   "bugs": {
-    "url": "https://github.com/steflsd/ficta/issues"
+    "url": "https://github.com/SerovaAI/ficta/issues"
   },
   "homepage": "https://ficta.sh",
   "keywords": [
@@ -56,7 +56,6 @@
     "build": "tsc",
     "verify": "pnpm check && pnpm typecheck && pnpm test",
     "release:check": "node scripts/check-release.mjs",
-    "release:beta": "node scripts/release.mjs beta",
     "release:stable": "node scripts/release.mjs stable",
     "release:patch": "node scripts/release.mjs patch",
     "release:minor": "node scripts/release.mjs minor",

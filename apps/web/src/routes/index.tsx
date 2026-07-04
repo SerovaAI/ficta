@@ -7,10 +7,10 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 
-const GITHUB = "https://github.com/steflsd/ficta";
-const NPM = "https://www.npmjs.com/package/@steflsd/ficta";
-const DOCS = "https://github.com/steflsd/ficta/tree/main/packages/ficta#readme";
-const THREAT_MODEL = "https://github.com/steflsd/ficta/blob/main/packages/ficta/docs/threat-model.md";
+const GITHUB = "https://github.com/SerovaAI/ficta";
+const NPM = "https://www.npmjs.com/package/@serovaai/ficta";
+const DOCS = "https://github.com/SerovaAI/ficta/tree/main/packages/ficta#readme";
+const THREAT_MODEL = "https://github.com/SerovaAI/ficta/blob/main/packages/ficta/docs/threat-model.md";
 const CONTACT_EMAIL = "hello@ficta.sh";
 const CONTACT = `mailto:${CONTACT_EMAIL}?subject=ficta%20Gateway`;
 
@@ -135,7 +135,7 @@ function ContactEmail() {
 
 function InstallLine() {
   const codeRef = React.useRef<HTMLElement>(null);
-  const cmd = "npm i -g @steflsd/ficta";
+  const cmd = "npm i -g @serovaai/ficta";
   const { copied, copy } = useCopy(cmd);
   return (
     <div className="flex items-center gap-2 rounded-lg border border-border bg-card/60 py-2 pr-2 pl-3.5 font-mono text-sm">
@@ -618,7 +618,7 @@ function ScopeNote() {
             </a>{" "}
             — built and run by{" "}
             <a
-              href="https://github.com/steflsd"
+              href="https://github.com/SerovaAI"
               target="_blank"
               rel="noreferrer"
               className="text-foreground underline decoration-primary/50 underline-offset-4 transition-colors hover:decoration-primary"

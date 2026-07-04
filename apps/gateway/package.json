@@ -1,5 +1,5 @@
 {
-  "name": "@steflsd/ficta-gateway",
+  "name": "@serovaai/ficta-gateway",
   "private": true,
   "license": "AGPL-3.0-only",
   "type": "module",

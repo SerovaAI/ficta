@@ -494,12 +494,12 @@ exit 64
 
 describe("user exclusion list", () => {
   it("parses, dedupes, and sorts valid env names into a trusted rule", () => {
-    const { rule, invalidNames } = parseUserExclusionRule(" BETA , ALPHA ,ALPHA, ");
+    const { rule, invalidNames } = parseUserExclusionRule(" GAMMA , ALPHA ,ALPHA, ");
     expect(invalidNames).toEqual([]);
     expect(rule?.id).toBe(USER_EXCLUSION_RULE_ID);
     expect(rule?.plugin).toBe(USER_EXCLUSION_PLUGIN);
     expect(rule?.trusted).toBe(true);
-    expect(rule?.names).toEqual(["ALPHA", "BETA"]);
+    expect(rule?.names).toEqual(["ALPHA", "GAMMA"]);
   });
 
   it("separates invalid entries and yields no rule when none are valid", () => {
