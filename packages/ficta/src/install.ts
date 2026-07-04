@@ -237,7 +237,75 @@ function launcherScript(args: { nodePath?: string; fictaBin: string }): string {
   return `#!/bin/sh
 # ${SHIM_MARKER}. Do not edit.
 # ${LAUNCHER_MARKER}
-exec ${nodeCommand} ${shellQuote(args.fictaBin)} "$@"
+embedded_ficta=${shellQuote(args.fictaBin)}
+
+valid_ficta_cli() {
+  candidate=$1
+  [ -f "$candidate" ] || return 1
+  package_json=$(CDPATH= cd "$(dirname "$candidate")/.." 2>/dev/null && pwd)/package.json || return 1
+  [ -f "$package_json" ] || return 1
+  grep -Eq '"name"[[:space:]]*:[[:space:]]*"@steflsd/ficta"' "$package_json" 2>/dev/null
+}
+
+exec_ficta() {
+  cli=$1
+  shift
+  exec ${nodeCommand} "$cli" "$@"
+}
+
+warn_stale_launcher() {
+  cli=$1
+  {
+    echo "ficta: installed launcher points at a stale CLI path: $embedded_ficta"
+    echo "ficta: using moved source checkout: $cli"
+    echo "ficta: repair launcher with: pnpm --filter @steflsd/ficta ficta install --force"
+  } >&2
+}
+
+try_moved_checkout() {
+  root=$1
+  shift
+  [ -n "$root" ] || return 1
+  candidate="$root/packages/ficta/bin/ficta.mjs"
+  if valid_ficta_cli "$candidate"; then
+    warn_stale_launcher "$candidate"
+    exec_ficta "$candidate" "$@"
+  fi
+  return 1
+}
+
+if [ -n "$FICTA_CLI_PATH" ]; then
+  if valid_ficta_cli "$FICTA_CLI_PATH"; then
+    exec_ficta "$FICTA_CLI_PATH" "$@"
+  fi
+  echo "ficta: FICTA_CLI_PATH is set but is not a valid @steflsd/ficta CLI: $FICTA_CLI_PATH" >&2
+  exit 127
+fi
+
+if valid_ficta_cli "$embedded_ficta"; then
+  exec_ficta "$embedded_ficta" "$@"
+fi
+
+cwd=$(pwd 2>/dev/null || printf .)
+git_root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)
+try_moved_checkout "$git_root" "$@"
+
+search_dir=$cwd
+while [ -n "$search_dir" ] && [ "$search_dir" != "/" ]; do
+  try_moved_checkout "$search_dir" "$@"
+  search_dir=$(dirname "$search_dir")
+done
+
+agent=\${1:-claude}
+{
+  echo "ficta: installed launcher could not find the ficta CLI:"
+  echo "  $embedded_ficta"
+  echo "ficta: repair from the moved checkout:"
+  echo "  cd /path/to/ficta && pnpm --filter @steflsd/ficta ficta install --force"
+  echo "ficta: or launch once with:"
+  echo "  FICTA_CLI_PATH=/path/to/packages/ficta/bin/ficta.mjs $agent"
+} >&2
+exit 127
 `;
 }
 
