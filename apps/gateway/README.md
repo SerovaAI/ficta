@@ -1,12 +1,14 @@
 # Ficta Gateway
 
-Ficta Gateway is the self-hosted internal chat UI for sensitive-data-aware model access. It is a
+Ficta Gateway is the self-hosted private chat gateway for sensitive-data-aware model access. It is a
 [TanStack Start](https://tanstack.com/start) app using TanStack AI for bring-your-own-key OpenAI and
-Anthropic chat, with every model call routed through the local ficta proxy.
+Anthropic chat, with every model call routed through the local Ficta proxy before it reaches the
+provider.
 
-This README is the Gateway setup guide. The coding-agent and local proxy path is the `ficta` CLI; its
-shim setup lives in [`../../packages/ficta/README.md`](../../packages/ficta/README.md) and
-[`../../packages/ficta/docs/install.md`](../../packages/ficta/docs/install.md).
+This README is the Gateway operator guide: local POC setup, auth and storage posture, sidecars,
+verification, and production-like deployment cautions. The coding-agent and local proxy path is the
+`ficta` CLI; its shim setup lives in [`../../packages/ficta/README.md`](../../packages/ficta/README.md)
+and [`../../packages/ficta/docs/install.md`](../../packages/ficta/docs/install.md).
 
 ## What It Does
 
@@ -19,7 +21,7 @@ browser (useChat)
   -> OpenAI / Anthropic
 ```
 
-Provider API keys stay server-side. The proxy passes required auth headers through to the provider,
+Provider API keys stay server-side. The Ficta proxy passes required auth headers through to the provider,
 but tokenizes protected values in the model payload before the provider hop and restores them locally
 in the streamed response.
 
