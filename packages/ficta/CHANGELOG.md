@@ -6,6 +6,10 @@
 
 - Documented how to repair agent shims when the installed `ficta` CLI path moves, including published package reinstalls, durable local source-checkout installs, stale generated launcher guidance, and local installs whose global `ficta` wrapper is already broken.
 
+### Fixed
+
+- Moved Ficta Gateway's TanStack Query setup into the router-level SSR integration and surfaced workspace-switcher load failures with an in-menu retry action.
+
 ## 0.1.0 - 2026-07-04
 
 ### Added
