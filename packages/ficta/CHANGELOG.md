@@ -18,6 +18,7 @@
 - Highlighted the sensitive-data gateway's South African Presidio recognizer support on ficta.sh, including ZA ID and company registration numbers.
 - Renamed the self-hosted web product to Ficta Gateway, split setup docs into `ficta` CLI/proxy and Ficta Gateway paths, added gateway deployment cautions for non-production defaults, and fixed the gateway `.env.example` WorkOS redirect placeholder.
 - Renamed the public website workspace to `apps/web` / `@steflsd/ficta-web`, including root scripts and deployment metadata.
+- Rendered the Ficta Gateway sidebar title as a bracketed text wordmark, using `[ficta]` when unnamed and `[Instance Name]` when a custom instance name is set.
 
 ### Fixed
 
