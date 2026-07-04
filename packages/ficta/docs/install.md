@@ -100,6 +100,14 @@ workspace. Those installs are symlinks back to the source directory; when that d
 the global `ficta` command and the agent shim launcher will break. Use a normal local checkout you
 intend to keep, then rerun the two commands above whenever that checkout path changes.
 
+If the old local checkout was already removed, the bare `ficta` command may fail before it can repair
+the shims. Re-add the durable package path first, then run the CLI from pnpm's global bin directory:
+
+```sh
+pnpm add -g /path/to/ficta/packages/ficta
+$(pnpm bin -g)/ficta install --force
+```
+
 For source-checkout installs, if the checkout moves, the launcher first tries to recover from a moved
 checkout in the current repository tree. When it finds one, it launches through that path and prints
 the repair command:
@@ -126,8 +134,10 @@ sed -n '1,8p' ~/.ficta/bin/.ficta-launcher
 ```
 
 If launcher output or repair guidance still mentions an old package scope or an old checkout path,
-the generated launcher itself is stale. Rerun the install command for your current package install,
-then refresh the launcher with `ficta install --force`.
+the generated launcher itself is stale. For a published install, rerun the npm/pnpm/bun global
+install and then `ficta install --force`. For a local source install, re-add the durable package path
+and run `$(pnpm bin -g)/ficta install --force`, or run
+`pnpm --filter @serovaai/ficta ficta install --force` from the source checkout.
 
 For source-checkout installs, confirm the CLI reports a dev build:
 
