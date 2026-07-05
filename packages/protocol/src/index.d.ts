@@ -1,6 +1,7 @@
 export declare const FICTA_HEALTH_PATH = "/__ficta/health";
 export declare const FICTA_STATUS_PATH = "/__ficta/status";
 export declare const FICTA_CONFIG_PATH = "/__ficta/config";
+export declare const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
 
 export type DetectorFailureMode = "fail-open" | "fail-closed";
 export type PiiStatusState = "off" | "ok" | "degraded" | "blocking";

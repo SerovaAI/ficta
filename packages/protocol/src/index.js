@@ -1,6 +1,7 @@
 export const FICTA_HEALTH_PATH = "/__ficta/health";
 export const FICTA_STATUS_PATH = "/__ficta/status";
 export const FICTA_CONFIG_PATH = "/__ficta/config";
+export const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
 
 export const EDITABLE_PROXY_CONFIG_KEYS = [
   "failClosed",

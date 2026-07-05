@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- Added native multi-backend PII detection and a Dockerized medical analyzer service for medical
+  workflows. Ficta can now run `presidio` and `medical` backends together via `FICTA_PII_BACKENDS`
+  / `[pii] backends`, keeping Microsoft Presidio and `OpenMed/privacy-filter-nemotron-v2` in
+  separate containers while Ficta coordinates failures and merges detected values.
+
 ### Changed
 
 - Added an admin-only Ficta Gateway editor for proxy safety settings. Gateway now reads editable proxy metadata, writes a narrow loopback-only `PATCH /__ficta/config` to persist changes into `config.toml`, leaves explicit `FICTA_*` environment overrides locked, and warns that saved settings require a proxy restart before they affect the running posture. The proxy/Gateway control-plane wire contracts now live in the new dependency-free `@serovaai/ficta-protocol` package.

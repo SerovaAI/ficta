@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { RegistrySourcePlugin } from "../src/plugins/index.js";
 
 const AWS = "AKIAIOSFODNN7EXAMPLE";
+const PROOF_SECRET = "proof-secret-value-12345";
 
 function listen(server: ReturnType<typeof createServer>): Promise<number> {
   return new Promise((resolve) => {
@@ -122,6 +123,145 @@ describe("proxy hardening", () => {
       );
       expect(proxy.protectionStats().totals.keptOutOfModelValues).toBe(2);
       expect(proxy.statsSummary()).toContain("stats.json");
+    } finally {
+      proxy?.close();
+      await close(upstream);
+      for (const [k, v] of Object.entries(originalEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
+  it("serves empty values-free redaction proof for a fresh proxy run", async () => {
+    const originalEnv = {
+      FICTA_LOG_LEVEL: process.env.FICTA_LOG_LEVEL,
+      FICTA_LOG_DIR: process.env.FICTA_LOG_DIR,
+    };
+
+    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    try {
+      process.env.FICTA_LOG_LEVEL = "silent";
+      process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-proof-empty-"));
+
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0, plugins: [] });
+
+      const res = await fetch(`http://127.0.0.1:${proxy.port}/__ficta/protection-stats`);
+      const payload = (await res.json()) as {
+        ok: boolean;
+        service: string;
+        stats: { totals: { events: number; affectedRequests: number }; events: unknown[] };
+      };
+
+      expect(res.status).toBe(200);
+      expect(payload.ok).toBe(true);
+      expect(payload.service).toBe("ficta");
+      expect(payload.stats.totals.events).toBe(0);
+      expect(payload.stats.totals.affectedRequests).toBe(0);
+      expect(payload.stats.events).toEqual([]);
+    } finally {
+      proxy?.close();
+      for (const [k, v] of Object.entries(originalEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
+  it("serves recent redaction proof without protected literals", async () => {
+    const originalEnv = {
+      FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,
+      FICTA_LOG_LEVEL: process.env.FICTA_LOG_LEVEL,
+      FICTA_LOG_DIR: process.env.FICTA_LOG_DIR,
+    };
+
+    let received = "";
+    const upstream = createServer((req, res) => {
+      let body = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        received = `${req.url}\n${req.headers["x-proof"] ?? ""}\n${body}`;
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(body);
+      });
+    });
+
+    const fixturePlugin: RegistrySourcePlugin = {
+      kind: "registry-source",
+      name: "proof-fixture",
+      config: { bindings: [], sections: [], envDefaults: {} },
+      setup: { registrySources: () => [] },
+      discover: () => [],
+      loadValues: () => [
+        {
+          name: "PROOF_SECRET",
+          value: PROOF_SECRET,
+          source: "fixture",
+          kind: "secret",
+          confidence: "exact",
+        },
+      ],
+    };
+
+    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    try {
+      const upstreamPort = await listen(upstream);
+      process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
+      process.env.FICTA_LOG_LEVEL = "silent";
+      process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-proof-"));
+
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0, plugins: [fixturePlugin] });
+
+      const chat = await fetch(`http://127.0.0.1:${proxy.port}/v1/messages?proof=${encodeURIComponent(PROOF_SECRET)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-proof": PROOF_SECRET },
+        body: JSON.stringify({ model: "claude-test", messages: [{ role: "user", content: PROOF_SECRET }] }),
+      });
+      expect(chat.status).toBe(200);
+      await chat.text();
+      expect(received).not.toContain(PROOF_SECRET);
+
+      const res = await fetch(`http://127.0.0.1:${proxy.port}/__ficta/protection-stats?limit=2`);
+      const text = await res.text();
+      const payload = JSON.parse(text) as {
+        ok: boolean;
+        stats: {
+          totals: { events: number; affectedRequests: number; keptOutOfModelValues: number };
+          bySurface: Array<{ name: string; redactedValues: number }>;
+          byLabel: Array<{ name: string; source: string; redactedValues: number }>;
+          events: Array<{ index: number; surface: string; redactedHits: Array<{ name: string; source: string }> }>;
+        };
+      };
+
+      expect(text).not.toContain(PROOF_SECRET);
+      expect(payload.ok).toBe(true);
+      expect(payload.stats.totals.events).toBe(3);
+      expect(payload.stats.totals.affectedRequests).toBe(1);
+      expect(payload.stats.totals.keptOutOfModelValues).toBe(3);
+      expect(payload.stats.bySurface).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "query string", redactedValues: 1 }),
+          expect.objectContaining({ name: "body", redactedValues: 1 }),
+          expect.objectContaining({ name: "non-auth headers", redactedValues: 1 }),
+        ]),
+      );
+      expect(payload.stats.byLabel).toContainEqual(
+        expect.objectContaining({ name: "PROOF_SECRET", source: "fixture", redactedValues: 3 }),
+      );
+      expect(payload.stats.events).toHaveLength(2);
+      expect(payload.stats.events.map((event) => event.index)).toEqual([3, 2]);
+      expect(payload.stats.events[0]?.redactedHits).toContainEqual(
+        expect.objectContaining({ name: "PROOF_SECRET", source: "fixture" }),
+      );
+
+      const capped = await fetch(`http://127.0.0.1:${proxy.port}/__ficta/protection-stats?limit=999`);
+      const cappedPayload = (await capped.json()) as { stats: { events: unknown[] } };
+      expect(cappedPayload.stats.events).toHaveLength(3);
     } finally {
       proxy?.close();
       await close(upstream);

@@ -3,7 +3,12 @@ import { join } from "node:path";
 import { argv } from "node:process";
 import { fileURLToPath } from "node:url";
 import { type HttpBindings, serve } from "@hono/node-server";
-import { FICTA_CONFIG_PATH, FICTA_HEALTH_PATH, FICTA_STATUS_PATH } from "@serovaai/ficta-protocol";
+import {
+  FICTA_CONFIG_PATH,
+  FICTA_HEALTH_PATH,
+  FICTA_PROTECTION_STATS_PATH,
+  FICTA_STATUS_PATH,
+} from "@serovaai/ficta-protocol";
 import { type Context, Hono } from "hono";
 import { loadConfig, resolveTarget, upstreamPolicyIssue } from "./config.js";
 import { configPosture } from "./config-posture.js";
@@ -22,7 +27,8 @@ import { type Wire, wireOf } from "./engine/wire.js";
 import { logRequest, logResponse, runDir } from "./log.js";
 import { log } from "./logger.js";
 import {
-  activeBackend,
+  activeBackends,
+  checkMedicalHealth,
   checkPresidioHealth,
   defaultRedactionPlugins,
   type PluginDiscovery,
@@ -33,7 +39,7 @@ import {
   registryDiscoveryLines,
   registryPolicyLines,
   secretShapesEnabled,
-  selectedBackendName,
+  selectedBackendNames,
 } from "./plugins/index.js";
 import {
   applyProxyConfigPatch,
@@ -75,6 +81,7 @@ export async function startProxy(
     const method = c.req.method;
     if (url.pathname === FICTA_HEALTH_PATH) return c.json({ ok: true, service: "ficta" });
     if (url.pathname === FICTA_STATUS_PATH) return c.json(await protectionStatus(engine, stats));
+    if (url.pathname === FICTA_PROTECTION_STATS_PATH) return c.json(protectionStatsResponse(stats, url));
     // Values-free config posture (see ConfigPosture). Kept separate from FICTA_STATUS_PATH, which the
     // gateway's non-admin protection widget polls: transport config (upstreams, host/port, log dir)
     // is admin-facing, and the gateway gates its fetch server-side. The proxy itself stays
@@ -462,14 +469,15 @@ const MAX_SCOPE_KEY_LENGTH = 256;
 /** Safe runtime status for first-party UIs. Contains only counts/config/health metadata — never values. */
 async function protectionStatus(engine: RedactionEngine, stats: ProtectionStats) {
   const enabled = piiEnabled();
-  const configuredBackend = selectedBackendName();
-  const backend = activeBackend();
+  const configuredBackends = selectedBackendNames();
+  const backendSet = activeBackends();
   const failClosed = detectorFailClosed(piiFailClosed());
   const failureMode = failClosed ? "fail-closed" : "fail-open";
 
   let pii: {
     enabled: boolean;
     configuredBackend: string;
+    configuredBackends?: string[];
     backend: string;
     status: "off" | "ok" | "degraded" | "blocking";
     failureMode: "fail-open" | "fail-closed";
@@ -481,56 +489,60 @@ async function protectionStatus(engine: RedactionEngine, stats: ProtectionStats)
   if (!enabled) {
     pii = {
       enabled,
-      configuredBackend,
-      backend: backend.name,
+      configuredBackend: configuredBackends.join(","),
+      configuredBackends,
+      backend: backendSet.backends.map(({ name }) => name).join(","),
       status: "off",
       failureMode,
       message: "PII detection is off; only registered exact values are protected.",
     };
-  } else if (backend.unknown) {
+  } else if (backendSet.unknown.length > 0) {
     pii = {
       enabled,
-      configuredBackend,
-      backend: backend.name,
+      configuredBackend: configuredBackends.join(","),
+      configuredBackends,
+      backend: backendSet.backends.map(({ name }) => name).join(","),
       status: "degraded",
       failureMode,
-      message: `Unknown PII backend "${backend.unknown}" is configured; using the built-in regex backend instead.`,
+      message: `Unknown PII backend(s) "${backendSet.unknown.join(", ")}" configured; skipping them.`,
     };
-  } else if (backend.name === "presidio") {
-    const health = await checkPresidioHealth();
-    if (health.ok) {
+  } else {
+    const healthChecks = await Promise.all(
+      backendSet.backends
+        .filter(({ name }) => name === "presidio" || name === "medical")
+        .map(async ({ name }) => ({
+          name,
+          ...(name === "medical" ? await checkMedicalHealth() : await checkPresidioHealth()),
+        })),
+    );
+    const failed = healthChecks.filter((health) => !health.ok);
+    if (failed.length === 0) {
       pii = {
         enabled,
-        configuredBackend,
-        backend: backend.name,
+        configuredBackend: configuredBackends.join(","),
+        configuredBackends,
+        backend: backendSet.backends.map(({ name }) => name).join(","),
         status: "ok",
         failureMode,
-        url: health.url,
-        message: `Presidio is reachable at ${health.url}; PII detection is active.`,
+        ...(healthChecks.length === 1 ? { url: healthChecks[0]?.url } : {}),
+        message: `PII detection is active with backend(s): ${backendSet.backends.map(({ name }) => name).join(", ")}.`,
       };
     } else {
+      const first = failed[0];
       pii = {
         enabled,
-        configuredBackend,
-        backend: backend.name,
+        configuredBackend: configuredBackends.join(","),
+        configuredBackends,
+        backend: backendSet.backends.map(({ name }) => name).join(","),
         status: failClosed ? "blocking" : "degraded",
         failureMode,
-        url: health.url,
-        ...(health.detail ? { detail: health.detail } : {}),
+        url: first?.url,
+        ...(first?.detail ? { detail: first.detail } : {}),
         message: failClosed
-          ? `Presidio is unreachable at ${health.url}; fail-closed is active, so requests will be blocked before reaching the model.`
-          : `Presidio is unreachable at ${health.url}; fail-open is active, so requests are forwarded without Presidio PII screening.`,
+          ? `PII backend "${first?.name}" is unreachable at ${first?.url}; fail-closed is active, so requests will be blocked before reaching the model.`
+          : `PII backend "${first?.name}" is unreachable at ${first?.url}; fail-open is active, so that backend is skipped while reachable backends still run.`,
       };
     }
-  } else {
-    pii = {
-      enabled,
-      configuredBackend,
-      backend: backend.name,
-      status: "ok",
-      failureMode,
-      message: `PII detection is active with the ${backend.name} backend.`,
-    };
   }
 
   return {
@@ -560,6 +572,8 @@ async function protectionStatus(engine: RedactionEngine, stats: ProtectionStats)
   };
 }
 
+const DEFAULT_PROTECTION_STATS_LIMIT = 100;
+const MAX_PROTECTION_STATS_LIMIT = 500;
 const REQUIRED_AUTH_HEADER_NAMES = new Set(["authorization", "proxy-authorization", "x-api-key", "cookie"]);
 const SURROGATE_RE = /FICTA_[0-9a-f]{32}/;
 
@@ -572,6 +586,27 @@ interface SurfaceRedaction {
 
 interface QueryRedaction extends SurfaceRedaction {
   search: string;
+}
+
+/** Values-free redaction proof for first-party/admin UIs. */
+function protectionStatsResponse(stats: ProtectionStats, url: URL) {
+  const limit = protectionStatsLimit(url.searchParams.get("limit"));
+  const snapshot = stats.snapshot();
+  return {
+    ok: true,
+    service: "ficta",
+    stats: {
+      ...snapshot,
+      events: snapshot.events.slice(-limit).reverse(),
+    },
+  };
+}
+
+function protectionStatsLimit(raw: string | null): number {
+  if (raw === null || raw.trim() === "") return DEFAULT_PROTECTION_STATS_LIMIT;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1) return DEFAULT_PROTECTION_STATS_LIMIT;
+  return Math.min(MAX_PROTECTION_STATS_LIMIT, Math.floor(n));
 }
 
 function isRestorableContentType(contentType: string): boolean {

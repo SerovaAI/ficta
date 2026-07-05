@@ -182,9 +182,11 @@ Proxy-side env commonly used with the gateway:
 | --- | --- | --- |
 | `FICTA_SECRET_SHAPES_ENABLED` | Enable best-effort detection of pasted API keys, JWTs, private keys, credential URLs, and secret-ish assignments | unconfigured proxy: `0`; `ficta setup`: prompted/default yes |
 | `FICTA_PII_ENABLED` | Enable best-effort PII detection for gateway traffic | unconfigured proxy: `0`; `ficta setup`: prompted/default yes |
-| `FICTA_PII_BACKEND` | Select `regex` or `presidio` PII backend | `regex` |
+| `FICTA_PII_BACKEND` | Legacy single PII backend selector: `regex` or `presidio` | `regex` |
+| `FICTA_PII_BACKENDS` | Select one or more PII backends, e.g. `presidio,medical` | unset → `FICTA_PII_BACKEND` |
 | `FICTA_PII_FAIL_CLOSED` | PII detector outage policy: block instead of skip detection | `0` |
 | `FICTA_PII_PRESIDIO_URL` | Presidio analyzer URL when using the `presidio` backend | local sidecar URL |
+| `FICTA_PII_MEDICAL_URL` | Medical analyzer URL when using the `medical` backend | local service URL |
 | `FICTA_RESTORE_INTO_TOOLS` | Restore real values into model tool-call arguments instead of withholding them | `0` |
 | `FICTA_ALLOW_CUSTOM_UPSTREAM` | Permit forwarding provider auth headers to trusted non-default upstreams | `0` |
 | `FICTA_LOG_LEVEL` | Runtime logging level; `trace` writes raw bodies | `info` standalone |

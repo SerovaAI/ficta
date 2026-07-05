@@ -1,7 +1,23 @@
-import { AlertTriangle, ArrowUp, FileText, Loader2, Paperclip, Square, X } from "lucide-react";
+import { AlertTriangle, ArrowUp, Check, ChevronDown, FileText, Loader2, Paperclip, Square, X } from "lucide-react";
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ATTACHMENT_ACCEPT, formatBytes, type TextAttachment } from "@/lib/file-attachments";
+import { MODELS, type ModelChoice, REASONING_EFFORTS, type ReasoningEffort } from "@/lib/models";
+import { isModelAllowed, modelKey } from "@/lib/storage/types";
+import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
 
 export type ComposerHandle = {
   focus: () => void;
@@ -16,6 +32,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     isLoading,
     isExtracting,
     disabledReason,
+    model,
+    onModelChange,
+    reasoningEffort,
+    onReasoningEffortChange,
     attachments,
     uploadWarning,
     autoFocus,
@@ -147,6 +167,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             }}
             className="max-h-[200px] flex-1 resize-none bg-transparent px-1.5 py-1 text-[0.95rem] leading-6 outline-none placeholder:text-muted-foreground"
           />
+          <ComposerModelControl
+            model={model}
+            onModelChange={onModelChange}
+            reasoningEffort={reasoningEffort}
+            onReasoningEffortChange={onReasoningEffortChange}
+            disabled={isLoading || isExtracting}
+          />
           {isLoading ? (
             <Button
               type="button"
@@ -186,6 +213,10 @@ type ComposerProps = {
   isExtracting?: boolean;
   /** When set, sending is blocked (protection unavailable/paused) and this explains why. */
   disabledReason?: string;
+  model: ModelChoice;
+  onModelChange: (choice: ModelChoice) => void;
+  reasoningEffort: ReasoningEffort;
+  onReasoningEffortChange: (effort: ReasoningEffort) => void;
   attachments: TextAttachment[];
   uploadWarning?: string[];
   autoFocus?: boolean;
@@ -193,3 +224,86 @@ type ComposerProps = {
   onRemoveAttachment: (id: string) => void;
   onDismissUploadWarning: () => void;
 };
+
+function ComposerModelControl({
+  model,
+  onModelChange,
+  reasoningEffort,
+  onReasoningEffortChange,
+  disabled,
+}: {
+  model: ModelChoice;
+  onModelChange: (choice: ModelChoice) => void;
+  reasoningEffort: ReasoningEffort;
+  onReasoningEffortChange: (effort: ReasoningEffort) => void;
+  disabled?: boolean;
+}) {
+  const instance = useInstanceSettings();
+  const models = MODELS.filter((m) => isModelAllowed(instance, modelKey(m)));
+  const selectedReasoning = REASONING_EFFORTS.find((effort) => effort.value === reasoningEffort);
+  const reasoningDisabled = model.provider !== "openai";
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="h-8 shrink-0 gap-1.5 rounded-lg px-2.5"
+          disabled={disabled}
+          aria-label="Choose reasoning level and model"
+        >
+          <span className="font-medium">{selectedReasoning?.label ?? "Medium"}</span>
+          <ChevronDown className="size-3.5 opacity-60" aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={8} className="w-64">
+        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Reasoning</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={reasoningEffort}
+          onValueChange={(value) => {
+            if (isReasoningValue(value)) onReasoningEffortChange(value);
+          }}
+        >
+          {REASONING_EFFORTS.map((effort) => (
+            <DropdownMenuRadioItem key={effort.value} value={effort.value} disabled={reasoningDisabled}>
+              {effort.label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+        {reasoningDisabled ? (
+          <DropdownMenuItem disabled className="text-xs">
+            OpenAI models only
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuSeparator />
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <span className="min-w-0 flex-1 truncate">Model</span>
+            <span className="max-w-32 truncate text-muted-foreground">{model.sublabel}</span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-64">
+            {models.map((m) => (
+              <DropdownMenuItem
+                key={m.model}
+                onSelect={() => onModelChange(m)}
+                className="flex items-center justify-between gap-2"
+              >
+                <span className="flex min-w-0 flex-col">
+                  <span className="font-medium">{m.label}</span>
+                  <span className="truncate text-xs text-muted-foreground">{m.sublabel}</span>
+                </span>
+                {m.model === model.model ? <Check className="size-4" aria-hidden /> : null}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function isReasoningValue(value: string): value is ReasoningEffort {
+  return REASONING_EFFORTS.some((effort) => effort.value === value);
+}

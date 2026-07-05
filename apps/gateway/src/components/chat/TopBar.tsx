@@ -1,23 +1,15 @@
 import { Moon, PanelLeft, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { ModelChoice } from "@/lib/models";
 import type { ProtectionStatus } from "@/lib/protection-status";
 import { useTheme } from "@/lib/use-theme";
-import { ModelPicker } from "./ModelPicker";
 import { ProtectionBadge } from "./ProtectionBadge";
 
 export function TopBar({
-  model,
-  onModelChange,
-  busy,
   sidebarOpen,
   onToggleSidebar,
   protectionStatus,
 }: {
-  model: ModelChoice;
-  onModelChange: (choice: ModelChoice) => void;
-  busy?: boolean;
   /** Sidebar state + toggle. Optional so TopBar still renders without the history sidebar. */
   sidebarOpen?: boolean;
   onToggleSidebar?: () => void;
@@ -47,12 +39,10 @@ export function TopBar({
             </Tooltip>
           ) : null}
           {/* Brand now lives in the sidebar header; the top bar carries only the protection status. It
-              stays visible on every viewport — an always-on trust cue — collapsing to icon-only on phones
-              where the label would crowd the model picker. */}
+              stays visible on every viewport — an always-on trust cue — collapsing to icon-only on phones. */}
           <ProtectionBadge status={protectionStatus} labelClassName="hidden sm:inline" />
         </div>
         <div className="flex items-center gap-2">
-          <ModelPicker value={model} onChange={onModelChange} disabled={busy} />
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" onClick={toggle} aria-label="Toggle theme">

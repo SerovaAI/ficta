@@ -191,11 +191,11 @@ agent run, an explicit shell `FICTA_SECRET_SHAPES_ENABLED=1` or `0` wins over TO
 Unlike the registry sources below — which load *exact* secrets to protect — the PII plugin is a
 **detector**: it inspects request text at runtime and redacts PII before the model hop, restoring it
 in the response. Detection is a *concept* backed by a registry of pluggable **backends**, of which
-**exactly one runs at a time**: the in-process `regex` backend (emails, US SSNs, Luhn-validated
-cards) is the always-available default, and an out-of-process Microsoft Presidio sidecar
-(`presidio`) for names/addresses/orgs/phones plugs in behind the same `PiiRecognizer` interface. The
-backend is config-driven (see [Choosing a backend](#choosing-a-backend) below). Coverage is
-best-effort, not a guarantee; see [`threat-model.md`](./threat-model.md).
+one or more can run at a time: the in-process `regex` backend (emails, US SSNs, Luhn-validated
+cards) is the always-available default, an out-of-process Microsoft Presidio sidecar (`presidio`)
+covers general/rule-based PII, and an external OpenMed analyzer service (`medical`) covers learned
+medical/PHI-style spans. Backend selection is config-driven (see [Choosing backends](#choosing-backends)
+below). Coverage is best-effort, not a guarantee; see [`threat-model.md`](./threat-model.md).
 
 **Two surfaces, and their defaults differ on purpose.** PII posture is scoped to *where the request
 came from*, because tokenizing an email inside code you're editing is rarely what you want, while
@@ -230,30 +230,34 @@ before the proxy loads, so the engine, the startup banner's `pii:` line, and `fi
 one flag. The standalone proxy (`startProxy()` on `FICTA_PORT`, which the web UI calls) reads `[pii]
 enabled` directly and ignores `[pii] agents`.
 
-### Choosing a backend
+### Choosing backends
 
-PII detection runs a single backend, selected by name via `FICTA_PII_BACKEND` ↔ `[pii] backend`
-(default `regex`). Enabling PII never silently reaches for a sidecar — you opt into `presidio`
-explicitly:
+PII detection can run multiple backends, selected by name via `FICTA_PII_BACKENDS` ↔ `[pii] backends`.
+The older single-backend setting, `FICTA_PII_BACKEND` ↔ `[pii] backend`, still works when
+`backends` is unset. Enabling PII never silently reaches for a sidecar — you opt into networked
+backends explicitly:
 
 ```toml
 [pii]
 enabled = true
-backend = "presidio"   # or "regex"
+backends = ["presidio", "medical"] # or ["regex"], ["presidio"], etc.
 ```
 
-Equivalently `FICTA_PII_BACKEND=presidio`. `ficta setup` also prompts for the backend (and the
-Presidio URL) when you enable PII. An unknown name safely falls back to `regex` and is reported by
-`ficta doctor` and the startup banner. Because Presidio's analyzer already ships its own regex
-recognizers for structured PII (email/SSN/card/phone), the two backends are alternatives rather than
-a stack — selecting `presidio` supersedes the built-in regex. The selected backend is the **only**
-backend: there is no cross-backend fallback (see the failure policy below).
+Equivalently `FICTA_PII_BACKENDS=presidio,medical`. `ficta setup` prompts for the backend set and
+URLs for selected sidecars. Unknown names are skipped and reported by `ficta doctor` and the startup
+banner; if all configured names are unknown, Ficta falls back to `regex`.
+
+Ficta coordinates selected backends natively: it calls each selected recognizer, deduplicates exact
+matches, and resolves substring overlaps by confidence, medical specificity, then longer value. For
+medical workflows, prefer `["presidio", "medical"]`: Presidio remains stronger for deterministic and
+custom general PII, while OpenMed adds medical/PHI-style learned detection.
 
 ### The `presidio` backend
 
 ficta calls [`presidio-analyzer`](https://microsoft.github.io/presidio/) at the configured URL. In a
 source checkout, `pnpm dev` can manage a local Docker sidecar when the effective env selects
-`FICTA_PII_BACKEND=presidio`, mounting `packages/ficta/presidio/default_recognizers.za.yaml`. That
+`FICTA_PII_BACKEND=presidio` or `FICTA_PII_BACKENDS=presidio,...`, mounting
+`packages/ficta/presidio/default_recognizers.za.yaml`. That
 registry file keeps Presidio's default recognizers, enables South African ID numbers, and adds a
 South African company registration number pattern recognizer. Installed/runtime deployments should
 run the sidecar explicitly and point ficta at its URL. ficta calls `POST {url}/analyze` for each
@@ -286,11 +290,41 @@ allowlist tuned for coding-agent traffic rather than the full entity set — e.g
 `entities = ["PERSON", "PHONE_NUMBER", "LOCATION", "EMAIL_ADDRESS"]`. Values shorter than 4 chars are
 dropped regardless, to avoid shredding normal prose.
 
+### Medical analyzer backend
+
+For medical workspaces, run an OpenMed medical analyzer Docker service **alongside** Presidio. It
+must expose the same Presidio-compatible `/health` and `/analyze` API; Ficta calls it as the
+`medical` backend and coordinates it with the separate `presidio` backend.
+
+Build and run the CPU image:
+
+```sh
+docker build --target cpu -t ficta-medical-pii-analyzer:cpu services/medical-pii-analyzer
+docker run --rm -p 5003:3000 ficta-medical-pii-analyzer:cpu
+```
+
+Then point Ficta at it:
+
+```sh
+FICTA_PII_ENABLED=1 \
+FICTA_PII_BACKENDS=presidio,medical \
+FICTA_PII_PRESIDIO_URL=http://127.0.0.1:5002 \
+FICTA_PII_MEDICAL_URL=http://127.0.0.1:5003 \
+FICTA_PII_FAIL_CLOSED=1 \
+ficta claude
+```
+
+The medical service applies its own `score_threshold` and `entities` allowlist, and Ficta merges its
+detected values with Presidio's results. This is still best-effort PII/PHI reduction, not a HIPAA
+de-identification guarantee; validate it with representative clinical text before using it with
+regulated data. See
+the analyzer image/source documentation for GPU builds and service-specific configuration.
+
 ### Failure policy — core-enforced, global default + per-detector override
 
-When the selected backend cannot run — e.g. the Presidio sidecar is down or slow past `timeout_ms` —
-the detector only **signals** the outage; the **core** decides whether to block. There is no
-cross-backend fallback either way; the selected backend is the only backend.
+When a selected backend cannot run — e.g. a sidecar is down or slow past `timeout_ms` — the detector
+records the outage and applies the configured failure policy. In fail-open mode, the failed backend is
+skipped while reachable selected backends still run. In fail-closed mode, the request is blocked.
 
 The decision resolves **per-detector override, else global default**:
 
@@ -299,10 +333,11 @@ The decision resolves **per-detector override, else global default**:
 | `[detection] fail_closed` / `FICTA_FAIL_CLOSED_DETECTION` | all detectors | `false` | global default: fail-open (skip) unless a detector overrides |
 | `[pii] fail_closed` / `FICTA_PII_FAIL_CLOSED` | the `pii` detector | *(unset → defers to global)* | override: `true` blocks, `false` forces fail-open, unset defers |
 
-- **Fail-open** — skip detection for that request (one-time warning) and forward. Best-effort; PII may
-  reach the model unredacted while the backend is down.
+- **Fail-open** — skip the failed backend for that request (one-time warning) and forward with any
+  other reachable backend detections. Best-effort; PII covered only by the failed backend may reach
+  the model unredacted while it is down.
 - **Fail-closed** — block the request with a `503 ficta_blocked` response; nothing reaches the model
-  until the backend is reachable.
+  until every selected backend is reachable.
 
 Best-effort deployments keep the defaults; compliance deployments that must never send unscreened data
 set `[pii] fail_closed = true` (or the global `[detection] fail_closed = true`) and run the sidecar
