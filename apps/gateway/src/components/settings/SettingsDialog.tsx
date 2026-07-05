@@ -9,6 +9,7 @@ import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
 import { cn } from "@/lib/utils";
 import { AdminSettingsForm } from "./AdminSettingsForm";
 import { ProxyConfigSection } from "./ProxyConfigSection";
+import { RedactionProofSection } from "./RedactionProofSection";
 import { UserSettingsForm } from "./UserSettingsForm";
 
 type SettingsTab = "preferences" | "admin";
@@ -68,6 +69,7 @@ export function SettingsDialog({
               <>
                 <AdminSettingsForm settings={instanceSettings} />
                 <ProxyConfigSection />
+                <RedactionProofSection />
               </>
             ) : (
               <UserSettingsForm settings={userSettings ?? {}} />
