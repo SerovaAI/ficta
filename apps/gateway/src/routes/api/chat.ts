@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { scopeFromAuth } from "../../lib/auth/guards.server";
 import { getActiveProvider } from "../../lib/auth/provider.server";
 import { createModelAdapter, MissingKeyError, type Provider } from "../../lib/model-adapter";
+import { DEFAULT_REASONING_EFFORT, isReasoningEffort, type ReasoningEffort } from "../../lib/models";
 import { getStorage } from "../../lib/storage/storage.server";
 import { isModelAllowed } from "../../lib/storage/types";
 
@@ -31,12 +32,16 @@ export const Route = createFileRoute("/api/chat")({
 
         let provider: Provider;
         let model: string;
+        let reasoningEffort: ReasoningEffort;
         let messages: Parameters<typeof chat>[0]["messages"];
         let threadId: string | undefined;
         try {
           const body = await request.json();
           provider = body.forwardedProps?.provider ?? "openai";
           model = body.forwardedProps?.model ?? "gpt-5-mini";
+          reasoningEffort = isReasoningEffort(body.forwardedProps?.reasoningEffort)
+            ? body.forwardedProps.reasoningEffort
+            : DEFAULT_REASONING_EFFORT;
           messages = body.messages;
           threadId = typeof body.threadId === "string" ? body.threadId.slice(0, 128) : undefined;
           if (!PROVIDERS.includes(provider)) throw new Error(`unknown provider "${provider}"`);
@@ -60,7 +65,11 @@ export const Route = createFileRoute("/api/chat")({
           // never address another's vault; the client-chosen threadId only partitions within it.
           const fictaScope = threadId ? `${scope?.orgId ?? "local"}:${threadId}` : undefined;
           // Adapter creation reads the server-side API key and throws MissingKeyError if unset.
-          stream = chat({ adapter: createModelAdapter({ provider, model, fictaScope }), messages });
+          stream = chat({
+            adapter: createModelAdapter({ provider, model, fictaScope }),
+            messages,
+            modelOptions: provider === "openai" ? { reasoning: { effort: reasoningEffort } } : undefined,
+          });
         } catch (err) {
           if (err instanceof MissingKeyError) return errorResponse(503, err.message);
           return errorResponse(502, reason(err, "could not reach the model via ficta"));
