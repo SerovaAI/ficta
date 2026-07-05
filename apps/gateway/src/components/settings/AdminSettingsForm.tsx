@@ -29,6 +29,12 @@ function InlineStatus({ status, error }: { status: SaveStatus; error: string }) 
   );
 }
 
+function refreshRouteData(router: ReturnType<typeof useRouter>) {
+  void router.invalidate().catch((err) => {
+    console.warn("Saved admin settings, but route data could not refresh.", err);
+  });
+}
+
 /**
  * Instance-wide settings, editable by admins. Rows autosave like ChatGPT/Claude settings: text changes
  * debounce, checkbox changes save immediately, and there is no form-level Save button.
@@ -69,7 +75,7 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
       try {
         const updated = await updateInstanceSettings({ data: { instanceName: name } });
         savedName.current = updated.instanceName ?? "";
-        await router.invalidate();
+        refreshRouteData(router);
         if (nameSeq.current === seq) setNameStatus("idle");
       } catch {
         if (nameSeq.current === seq) setNameStatus("error");
@@ -87,7 +93,7 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
 
     try {
       await updateInstanceSettings({ data: { allowedModels: allowedModelsFromChecked(next) } });
-      await router.invalidate();
+      refreshRouteData(router);
       if (modelsSeq.current === seq) setModelsStatus("idle");
     } catch {
       if (modelsSeq.current === seq) {

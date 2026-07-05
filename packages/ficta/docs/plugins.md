@@ -240,29 +240,35 @@ backends explicitly:
 ```toml
 [pii]
 enabled = true
-backends = ["presidio", "medical"] # or ["regex"], ["presidio"], etc.
+backends = ["presidio", "openmed"] # or ["regex"], ["presidio"], etc.
 ```
 
-Equivalently `FICTA_PII_BACKENDS=presidio,medical`. `ficta setup` prompts for the backend set and
+Equivalently `FICTA_PII_BACKENDS=presidio,openmed`. `ficta setup` prompts for the backend set and
 URLs for selected sidecars. Unknown names are skipped and reported by `ficta doctor` and the startup
 banner; if all configured names are unknown, Ficta falls back to `regex`.
 
 Ficta coordinates selected backends natively: it calls each selected recognizer, deduplicates exact
 matches, and resolves substring overlaps by confidence, medical specificity, then longer value. For
-medical workflows, prefer `["presidio", "medical"]`: Presidio remains stronger for deterministic and
+medical workflows, prefer `["presidio", "openmed"]`: Presidio remains stronger for deterministic and
 custom general PII, while OpenMed adds medical/PHI-style learned detection.
 
 ### The `presidio` backend
 
-ficta calls [`presidio-analyzer`](https://microsoft.github.io/presidio/) at the configured URL. In a
-source checkout, `pnpm dev` can manage a local Docker sidecar when the effective env selects
-`FICTA_PII_BACKEND=presidio` or `FICTA_PII_BACKENDS=presidio,...`, mounting
-`packages/ficta/presidio/default_recognizers.za.yaml`. That
-registry file keeps Presidio's default recognizers, enables South African ID numbers, and adds a
-South African company registration number pattern recognizer. Installed/runtime deployments should
-run the sidecar explicitly and point ficta at its URL. ficta calls `POST {url}/analyze` for each
-request **body** (header/query surfaces stay regex-based, to avoid one request fanning out into many
-sidecar calls).
+ficta calls [`presidio-analyzer`](https://microsoft.github.io/presidio/) at the configured URL. Two
+managed ways to run it (both mount `packages/ficta/presidio/default_recognizers.za.yaml`, which
+keeps Presidio's default recognizers, enables South African ID numbers, and adds a South African
+company registration number pattern recognizer):
+
+- **`pnpm sidecars`** (repo root, ↔ `docker-compose.sidecars.yml`) starts both PII sidecars detached
+  with health-gated `--wait`; `pnpm sidecars:down` stops them. This is the way to run them outside
+  the dev wrapper — a server, a teammate's machine, a POC box.
+- **Root `pnpm dev`** auto-manages the sidecars for whichever backends `FICTA_PII_BACKENDS` /
+  `FICTA_PII_BACKEND` selects (force per-sidecar with `FICTA_PII_PRESIDIO_MANAGED` /
+  `FICTA_PII_OPENMED_MANAGED`). It reuses anything already healthy at the configured URL — including
+  compose-started containers — and tears down only what it started.
+
+ficta calls `POST {url}/analyze` for each request **body** (header/query surfaces stay regex-based,
+to avoid one request fanning out into many sidecar calls). To run the container by hand instead:
 
 ```sh
 docker run -d --name presidio-analyzer -p 5002:3000 \
@@ -290,35 +296,61 @@ allowlist tuned for coding-agent traffic rather than the full entity set — e.g
 `entities = ["PERSON", "PHONE_NUMBER", "LOCATION", "EMAIL_ADDRESS"]`. Values shorter than 4 chars are
 dropped regardless, to avoid shredding normal prose.
 
-### Medical analyzer backend
+### The `openmed` backend
 
-For medical workspaces, run an OpenMed medical analyzer Docker service **alongside** Presidio. It
-must expose the same Presidio-compatible `/health` and `/analyze` API; Ficta calls it as the
-`medical` backend and coordinates it with the separate `presidio` backend.
+For medical workspaces, run the upstream [OpenMed](https://github.com/maziyarpanahi/openmed) REST
+service **alongside** Presidio — unmodified, the same operational model as Presidio — and select it
+as the `openmed` backend. It speaks OpenMed's own strict API: Ficta calls `POST {url}/pii/extract` for each request **body**
+(header/query surfaces stay regex-based) and probes `GET /health`. Detection only — Ficta owns
+tokenize/restore; OpenMed's de-identification endpoints are not used.
 
-Build and run the CPU image:
+Upstream publishes a multi-arch service image at `ghcr.io/maziyarpanahi/openmed` (amd64 + arm64,
+cosign-signed), pulled automatically like the Presidio image — `pnpm sidecars` runs it (with
+Presidio) via `docker-compose.sidecars.yml`, and root `pnpm dev` auto-manages it when the backend
+set includes `openmed` (force with `FICTA_PII_OPENMED_MANAGED`; pin a tag or substitute a locally
+built patched image via `FICTA_PII_OPENMED_IMAGE`). The HuggingFace cache lives in the
+`openmed-hf-cache` Docker volume, so only the first start on a machine pulls the image and downloads
+the model (startup budget `FICTA_PII_OPENMED_STARTUP_TIMEOUT_MS`, default 300000).
+
+To run the container by hand instead (serves on 8080):
 
 ```sh
-docker build --target cpu -t ficta-medical-pii-analyzer:cpu services/medical-pii-analyzer
-docker run --rm -p 5003:3000 ficta-medical-pii-analyzer:cpu
+docker run --rm -p 5004:8080 \
+  -e OPENMED_SERVICE_PRELOAD_MODELS=OpenMed/OpenMed-PII-SuperClinical-Small-44M-v1 \
+  -e OPENMED_SERVICE_KEEP_ALIVE=10m \
+  -e OPENMED_TORCH_ATTENTION_BACKEND=eager \
+  -v openmed-hf-cache:/root/.cache/huggingface \
+  ghcr.io/maziyarpanahi/openmed:latest
+curl http://127.0.0.1:5004/health   # ok once ready
 ```
+
+(`OPENMED_TORCH_ATTENTION_BACKEND=eager` is required for the default DeBERTa-based PII models on the
+CPU image — its transformers/torch combination rejects the SDPA attention path for that architecture.)
 
 Then point Ficta at it:
 
 ```sh
 FICTA_PII_ENABLED=1 \
-FICTA_PII_BACKENDS=presidio,medical \
-FICTA_PII_PRESIDIO_URL=http://127.0.0.1:5002 \
-FICTA_PII_MEDICAL_URL=http://127.0.0.1:5003 \
-FICTA_PII_FAIL_CLOSED=1 \
+FICTA_PII_BACKENDS=presidio,openmed \
 ficta claude
 ```
 
-The medical service applies its own `score_threshold` and `entities` allowlist, and Ficta merges its
-detected values with Presidio's results. This is still best-effort PII/PHI reduction, not a HIPAA
-de-identification guarantee; validate it with representative clinical text before using it with
-regulated data. See
-the analyzer image/source documentation for GPU builds and service-specific configuration.
+Config (`[pii.openmed]` ↔ `FICTA_PII_OPENMED_*`):
+
+| TOML key | env | default | meaning |
+| --- | --- | --- | --- |
+| `url` | `FICTA_PII_OPENMED_URL` | `http://127.0.0.1:5004` | service base URL |
+| `model` | `FICTA_PII_OPENMED_MODEL` | *(server default)* | model repo id sent as `model_name` |
+| `lang` | `FICTA_PII_OPENMED_LANG` | `en` | PII language |
+| `score_threshold` | `FICTA_PII_OPENMED_SCORE_THRESHOLD` | `0.5` | drop entities below this confidence |
+| `entities` | `FICTA_PII_OPENMED_ENTITIES` | *(all)* | canonical-label allowlist, applied client-side |
+| `timeout_ms` | `FICTA_PII_OPENMED_TIMEOUT_MS` | `2500` | total detection budget per request |
+
+Transformer inference is slower than Presidio's rule engine — preload the model
+(`OPENMED_SERVICE_PRELOAD_MODELS`) so a cold start doesn't consume the request budget. OpenMed
+detections merge with the other backends' results and win overlap ties (medical specificity). The
+same caveat applies: best-effort PII/PHI reduction, not a HIPAA
+de-identification guarantee.
 
 ### Failure policy — core-enforced, global default + per-detector override
 

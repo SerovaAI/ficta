@@ -55,7 +55,7 @@ agents = false
 # One or more backends can run. `backend` is the legacy single-backend setting; `backends`
 # takes precedence when set.
 backend = "regex"
-# backends = ["presidio", "medical"]
+# backends = ["presidio", "openmed"]
 # PII-specific detector-outage policy; overrides [detection] fail_closed.
 fail_closed = false
 
@@ -70,15 +70,17 @@ entities = [] # empty = all entities returned by Presidio
 # Total detection budget per request.
 timeout_ms = 1500
 
-[pii.medical]
-# Used when [pii] backends includes "medical". Run an OpenMed medical analyzer Docker service
-# separately from Presidio and point Ficta at it.
-url = "http://127.0.0.1:5003"
-# Leave these unset/empty to inherit the Presidio defaults above.
-language = ""
+[pii.openmed]
+# Used when [pii] backends includes "openmed". Run the upstream OpenMed REST service (its own
+# Docker image, unmodified) separately from Presidio and point Ficta at it.
+url = "http://127.0.0.1:5004"
+# Model repo id sent as model_name; empty = the server's default PII model.
+model = ""
+lang = "en"
 score_threshold = 0.5
-entities = []
-timeout_ms = 1500
+entities = [] # empty = all labels; otherwise a canonical-label allowlist applied client-side
+# Total detection budget per request (transformer inference is slower than Presidio's rules).
+timeout_ms = 2500
 
 [logging]
 # Raw body logging is runtime-only (FICTA_LOG_LEVEL=trace); it is never persisted here.

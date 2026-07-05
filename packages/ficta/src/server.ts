@@ -28,8 +28,7 @@ import { logRequest, logResponse, runDir } from "./log.js";
 import { log } from "./logger.js";
 import {
   activeBackends,
-  checkMedicalHealth,
-  checkPresidioHealth,
+  backendHealthCheck,
   defaultRedactionPlugins,
   type PluginDiscovery,
   piiEnabled,
@@ -508,12 +507,10 @@ async function protectionStatus(engine: RedactionEngine, stats: ProtectionStats)
     };
   } else {
     const healthChecks = await Promise.all(
-      backendSet.backends
-        .filter(({ name }) => name === "presidio" || name === "medical")
-        .map(async ({ name }) => ({
-          name,
-          ...(name === "medical" ? await checkMedicalHealth() : await checkPresidioHealth()),
-        })),
+      backendSet.backends.flatMap(({ name }) => {
+        const probe = backendHealthCheck(name);
+        return probe ? [probe().then((health) => ({ name, ...health }))] : [];
+      }),
     );
     const failed = healthChecks.filter((health) => !health.ok);
     if (failed.length === 0) {

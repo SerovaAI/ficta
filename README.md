@@ -144,13 +144,17 @@ pnpm install
 pnpm dev             # proxy + Gateway; auto-uses Doppler when configured, otherwise local .env
 pnpm dev:proxy       # proxy only
 pnpm gateway:dev     # Gateway only
+pnpm sidecars        # PII sidecars (Presidio + OpenMed) via docker-compose.sidecars.yml
+pnpm sidecars:down
 pnpm check           # biome
 pnpm typecheck
 pnpm test
 pnpm build
 ```
 
-`pnpm dev` is for developing the proxy and Gateway together. The coding agents do not use it -
+`pnpm dev` is for developing the proxy and Gateway together. It also auto-manages the PII sidecars
+for whichever backends `FICTA_PII_BACKENDS` selects, reusing any already-running (e.g.
+compose-started) containers. The coding agents do not use it -
 `ficta claude|codex|pi` starts its own ephemeral proxy per launch (see
 [`docs/install.md`](packages/ficta/docs/install.md)).
 

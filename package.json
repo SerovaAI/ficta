@@ -17,6 +17,8 @@
     "check:fix": "pnpm -r check:fix",
     "dev": "node scripts/dev.mjs",
     "dev:proxy": "pnpm --filter @serovaai/ficta dev",
+    "sidecars": "docker compose -f docker-compose.sidecars.yml up -d --wait",
+    "sidecars:down": "docker compose -f docker-compose.sidecars.yml down",
     "gateway:dev": "pnpm --filter @serovaai/ficta-gateway dev",
     "gateway:build": "pnpm --filter @serovaai/ficta-gateway build",
     "gateway:typecheck": "pnpm --filter @serovaai/ficta-gateway typecheck",

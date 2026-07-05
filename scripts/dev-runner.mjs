@@ -17,6 +17,18 @@ const DEFAULT_PRESIDIO_IMAGE = "ghcr.io/data-privacy-stack/presidio-analyzer:lat
 const DEFAULT_PRESIDIO_CONFIG = resolve(rootDir, "packages/ficta/presidio/default_recognizers.za.yaml");
 const CONTAINER_CONFIG_PATH = "/app/ficta-presidio-recognizers.yaml";
 const DEFAULT_STARTUP_TIMEOUT_MS = 60_000;
+
+const DEFAULT_OPENMED_URL = "http://127.0.0.1:5004";
+// Upstream's published multi-arch service image; override FICTA_PII_OPENMED_IMAGE for a pinned tag
+// or a locally built (patched) image.
+const DEFAULT_OPENMED_IMAGE = "ghcr.io/maziyarpanahi/openmed:latest";
+// The OpenMed REST service's own default PII model — preloaded so a cold container is ready before
+// the first request instead of eating the recognizer's per-request budget.
+const DEFAULT_OPENMED_MODEL = "OpenMed/OpenMed-PII-SuperClinical-Small-44M-v1";
+const DEFAULT_OPENMED_HF_CACHE_VOLUME = "openmed-hf-cache";
+// First start on a machine pulls the image and downloads the model; a warm start is healthy in ~15s.
+const DEFAULT_OPENMED_STARTUP_TIMEOUT_MS = 300_000;
+
 const HEALTH_POLL_MS = 500;
 const STOP_TIMEOUT_MS = 5_000;
 
@@ -27,6 +39,8 @@ const sidecars = [];
 try {
   const presidio = await maybeStartPresidio(env);
   if (presidio) sidecars.push(presidio);
+  const openmed = await maybeStartOpenmed(env);
+  if (openmed) sidecars.push(openmed);
   run("pnpm", ["dev:all", ...forwardArgs], env, sidecars);
 } catch (err) {
   await stopSidecars(sidecars);
@@ -35,12 +49,12 @@ try {
 }
 
 async function maybeStartPresidio(env) {
-  if (!shouldManagePresidio(env)) return undefined;
+  if (!shouldManage(env, "presidio", env.FICTA_PII_PRESIDIO_MANAGED)) return undefined;
 
   const url = stripTrailingSlash(env.FICTA_PII_PRESIDIO_URL?.trim() || DEFAULT_PRESIDIO_URL);
   env.FICTA_PII_PRESIDIO_URL = url;
 
-  const parsed = parseManagedPresidioUrl(url);
+  const parsed = parseManagedSidecarUrl(url, "Presidio", "FICTA_PII_PRESIDIO_URL");
   if (!parsed.ok) {
     if (isExplicitlyEnabled(env.FICTA_PII_PRESIDIO_MANAGED)) {
       throw new Error(parsed.reason);
@@ -88,6 +102,118 @@ async function maybeStartPresidio(env) {
     },
   );
 
+  await waitForSidecarHealth(child, url, startupTimeoutMs, "Presidio analyzer");
+  console.log(`[dev] Presidio analyzer is healthy at ${url}`);
+  return { name: "presidio", child };
+}
+
+async function maybeStartOpenmed(env) {
+  if (!shouldManage(env, "openmed", env.FICTA_PII_OPENMED_MANAGED)) return undefined;
+
+  const url = stripTrailingSlash(env.FICTA_PII_OPENMED_URL?.trim() || DEFAULT_OPENMED_URL);
+  env.FICTA_PII_OPENMED_URL = url;
+
+  const parsed = parseManagedSidecarUrl(url, "OpenMed", "FICTA_PII_OPENMED_URL");
+  if (!parsed.ok) {
+    if (isExplicitlyEnabled(env.FICTA_PII_OPENMED_MANAGED)) {
+      throw new Error(parsed.reason);
+    }
+    console.log(`[dev] not managing OpenMed sidecar: ${parsed.reason}`);
+    return undefined;
+  }
+
+  if (await healthOk(url, 750)) {
+    console.log(`[dev] using existing OpenMed service at ${url}`);
+    return undefined;
+  }
+
+  const image = env.FICTA_PII_OPENMED_IMAGE?.trim() || DEFAULT_OPENMED_IMAGE;
+  const containerName = env.FICTA_PII_OPENMED_CONTAINER_NAME?.trim() || `ficta-openmed-${process.pid}`;
+  const model = env.FICTA_PII_OPENMED_MODEL?.trim() || DEFAULT_OPENMED_MODEL;
+  const cacheVolume = env.FICTA_PII_OPENMED_HF_CACHE_VOLUME?.trim() || DEFAULT_OPENMED_HF_CACHE_VOLUME;
+  const startupTimeoutMs = readPositiveInt(
+    env.FICTA_PII_OPENMED_STARTUP_TIMEOUT_MS,
+    DEFAULT_OPENMED_STARTUP_TIMEOUT_MS,
+  );
+
+  console.log(`[dev] starting OpenMed service sidecar at ${url} (first start pulls the image and model; be patient)`);
+
+  const child = spawn(
+    "docker",
+    [
+      "run",
+      "--rm",
+      "--name",
+      containerName,
+      "-p",
+      `127.0.0.1:${parsed.port}:8080`,
+      "-e",
+      `OPENMED_SERVICE_PRELOAD_MODELS=${model}`,
+      // The CPU image's torch/transformers combination rejects SDPA attention for the DeBERTa-based
+      // PII models; without eager the preload (and every lazy load) fails.
+      "-e",
+      "OPENMED_TORCH_ATTENTION_BACKEND=eager",
+      "-e",
+      "OPENMED_SERVICE_KEEP_ALIVE=10m",
+      "-v",
+      `${cacheVolume}:/root/.cache/huggingface`,
+      image,
+    ],
+    {
+      cwd: rootDir,
+      env,
+      stdio: "inherit",
+    },
+  );
+
+  await waitForSidecarHealth(child, url, startupTimeoutMs, "OpenMed service");
+  console.log(`[dev] OpenMed service is healthy at ${url}`);
+  return { name: "openmed", child };
+}
+
+/**
+ * Manage a sidecar when its FICTA_PII_<NAME>_MANAGED flag is explicitly set, else automatically
+ * when the backend is selected — via FICTA_PII_BACKENDS or the legacy single FICTA_PII_BACKEND.
+ */
+function shouldManage(env, backend, managedFlag) {
+  const explicit = parseBoolean(managedFlag);
+  if (explicit !== undefined) return explicit;
+  return selectedBackends(env).includes(backend);
+}
+
+/** Mirror of selectedBackendNames() in packages/ficta/src/engine/plugins/pii/registry.ts. */
+function selectedBackends(env) {
+  const raw = env.FICTA_PII_BACKENDS?.trim() || env.FICTA_PII_BACKEND?.trim() || "";
+  return raw
+    .split(",")
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function parseManagedSidecarUrl(url, label, envName) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { ok: false, reason: `invalid ${envName}: ${url}` };
+  }
+
+  if (parsed.protocol !== "http:") {
+    return { ok: false, reason: `managed ${label} sidecar requires an http:// loopback URL, got ${url}` };
+  }
+  if (!isLoopbackHost(parsed.hostname)) {
+    return { ok: false, reason: `managed ${label} sidecar only binds loopback URLs, got ${url}` };
+  }
+
+  const port = parsed.port ? Number(parsed.port) : 80;
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    return { ok: false, reason: `invalid ${label} sidecar port in ${url}` };
+  }
+  return { ok: true, port };
+}
+
+/** Race container health against docker spawn failure / early container exit. */
+async function waitForSidecarHealth(child, url, timeoutMs, label) {
   let exit;
   child.once("exit", (code, signal) => {
     exit = { code, signal };
@@ -97,54 +223,23 @@ async function maybeStartPresidio(env) {
     child.once("error", (error) => reject(new Error(`failed to start docker: ${error.message}`)));
   });
 
-  await Promise.race([waitForHealth(url, startupTimeoutMs, () => exit), errorPromise]);
-
-  console.log(`[dev] Presidio analyzer is healthy at ${url}`);
-  return { name: "presidio", child };
+  await Promise.race([waitForHealth(url, timeoutMs, () => exit, label), errorPromise]);
 }
 
-function shouldManagePresidio(env) {
-  const explicit = parseBoolean(env.FICTA_PII_PRESIDIO_MANAGED);
-  if (explicit !== undefined) return explicit;
-  return (env.FICTA_PII_BACKEND ?? "").trim().toLowerCase() === "presidio";
-}
-
-function parseManagedPresidioUrl(url) {
-  let parsed;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return { ok: false, reason: `invalid FICTA_PII_PRESIDIO_URL: ${url}` };
-  }
-
-  if (parsed.protocol !== "http:") {
-    return { ok: false, reason: `managed Presidio sidecar requires an http:// loopback URL, got ${url}` };
-  }
-  if (!isLoopbackHost(parsed.hostname)) {
-    return { ok: false, reason: `managed Presidio sidecar only binds loopback URLs, got ${url}` };
-  }
-
-  const port = parsed.port ? Number(parsed.port) : 80;
-  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-    return { ok: false, reason: `invalid Presidio sidecar port in ${url}` };
-  }
-  return { ok: true, port };
-}
-
-async function waitForHealth(url, timeoutMs, exited) {
+async function waitForHealth(url, timeoutMs, exited, label) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const exit = exited();
     if (exit) {
       const detail = exit.signal ? `signal ${exit.signal}` : `exit code ${exit.code ?? 0}`;
-      throw new Error(`Presidio sidecar stopped before becoming healthy (${detail})`);
+      throw new Error(`${label} sidecar stopped before becoming healthy (${detail})`);
     }
 
     if (await healthOk(url, Math.min(1_000, Math.max(250, deadline - Date.now())))) return;
     await sleep(HEALTH_POLL_MS);
   }
 
-  throw new Error(`timed out after ${timeoutMs}ms waiting for Presidio analyzer at ${url}/health`);
+  throw new Error(`timed out after ${timeoutMs}ms waiting for ${label} at ${url}/health`);
 }
 
 async function healthOk(url, timeoutMs) {

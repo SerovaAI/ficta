@@ -1,5 +1,5 @@
-import { medicalRecognizer } from "./medical-recognizer.js";
-import { presidioRecognizer } from "./presidio-recognizer.js";
+import { checkOpenmedHealth, openmedRecognizer } from "./openmed-recognizer.js";
+import { checkPresidioHealth, presidioRecognizer } from "./presidio-recognizer.js";
 import type { PiiRecognizer } from "./recognizer.js";
 import { regexRecognizer } from "./regex-recognizer.js";
 
@@ -19,8 +19,21 @@ export const DEFAULT_BACKEND = "regex";
 const BUILT_IN: Readonly<Record<string, PiiRecognizer>> = {
   regex: regexRecognizer,
   presidio: presidioRecognizer,
-  medical: medicalRecognizer,
+  openmed: openmedRecognizer,
 };
+
+/** Health probes for networked backends (`ficta doctor`, /status). In-process backends have none. */
+const HEALTH_CHECKS: Readonly<Record<string, () => Promise<{ ok: boolean; url: string; detail?: string }>>> = {
+  presidio: checkPresidioHealth,
+  openmed: checkOpenmedHealth,
+};
+
+/** The reachability probe for a networked backend, or undefined for in-process ones (regex). */
+export function backendHealthCheck(
+  name: string,
+): (() => Promise<{ ok: boolean; url: string; detail?: string }>) | undefined {
+  return HEALTH_CHECKS[name];
+}
 
 export interface BackendSelection {
   /** The effective backend name actually used (falls back to `regex` for an unknown config value). */

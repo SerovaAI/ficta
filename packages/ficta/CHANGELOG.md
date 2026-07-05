@@ -4,10 +4,14 @@
 
 ### Added
 
-- Added native multi-backend PII detection and a Dockerized medical analyzer service for medical
-  workflows. Ficta can now run `presidio` and `medical` backends together via `FICTA_PII_BACKENDS`
-  / `[pii] backends`, keeping Microsoft Presidio and `OpenMed/privacy-filter-nemotron-v2` in
-  separate containers while Ficta coordinates failures and merges detected values.
+- Added native multi-backend PII detection with an `openmed` backend for medical workflows. Ficta
+  can now run `presidio` and `openmed` backends together via `FICTA_PII_BACKENDS` / `[pii] backends`,
+  keeping Microsoft Presidio and the upstream OpenMed REST service (run unmodified, called via its
+  native `/pii/extract` API, configured under `[pii.openmed]`) in separate containers while Ficta
+  coordinates failures, probes `/health` in `ficta doctor` and the status endpoint, and merges
+  detected values with medical-specificity preference. In the source checkout, both sidecars can be
+  started via the repo-root `docker-compose.sidecars.yml` (`pnpm sidecars`), and root `pnpm dev`
+  auto-manages the sidecars for the backends selected via `FICTA_PII_BACKENDS`.
 
 ### Changed
 

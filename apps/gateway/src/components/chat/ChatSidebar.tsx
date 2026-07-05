@@ -156,7 +156,7 @@ export function ChatSidebar({
                 <Plus className="size-4" aria-hidden />
                 New chat
               </Button>
-              {showAdmin ? (
+              {showAdmin && !user ? (
                 <Button variant="ghost" className="w-full justify-start gap-2" onClick={openAdmin}>
                   <Shield className="size-4" aria-hidden />
                   Admin
@@ -207,6 +207,7 @@ export function ChatSidebar({
                   variant="row"
                   side="top"
                   align="start"
+                  onOpenAdmin={showAdmin ? openAdmin : undefined}
                   onOpenSettings={openSettings}
                   onCreateWorkspace={createWorkspace}
                 />
@@ -252,7 +253,7 @@ export function ChatSidebar({
                 </TooltipTrigger>
                 <TooltipContent side="right">New chat</TooltipContent>
               </Tooltip>
-              {showAdmin ? (
+              {showAdmin && !user ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button variant="ghost" size="icon" onClick={openAdmin} aria-label="Admin">
@@ -273,6 +274,7 @@ export function ChatSidebar({
                   variant="icon"
                   side="right"
                   align="end"
+                  onOpenAdmin={showAdmin ? openAdmin : undefined}
                   onOpenSettings={openSettings}
                   onCreateWorkspace={createWorkspace}
                 />

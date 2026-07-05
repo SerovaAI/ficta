@@ -20,15 +20,15 @@ const DEFAULT_LANGUAGE = "en";
 const DEFAULT_SCORE_THRESHOLD = 0.5;
 const DEFAULT_TIMEOUT_MS = 1500;
 
-/** Presidio may return low-quality short/generic spans (e.g. a 2-char token); a registered value
+/** Analyzers may return low-quality short/generic spans (e.g. a 2-char token); a registered value
  *  replaces EVERY occurrence body-wide, so anything shorter than this is dropped to protect prose. */
-const MIN_PII_VALUE_LENGTH = 4;
+export const MIN_PII_VALUE_LENGTH = 4;
 /** At/above this analyzer score a span is treated as high-confidence; below it, probabilistic. */
-const HIGH_CONFIDENCE_SCORE = 0.85;
+export const HIGH_CONFIDENCE_SCORE = 0.85;
 
 const MAX_CHUNK_CHARS = 20_000;
 const CHUNK_OVERLAP_CHARS = 128;
-const MAX_CONCURRENCY = 4;
+export const MAX_CONCURRENCY = 4;
 
 export interface PresidioConfig {
   url: string;
@@ -110,7 +110,7 @@ export async function checkPresidioHealth(
 }
 
 export async function checkPresidioCompatibleAnalyzerHealth(
-  config: PresidioConfig,
+  config: Pick<PresidioConfig, "url" | "timeoutMs">,
 ): Promise<{ ok: boolean; url: string; detail?: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -210,7 +210,7 @@ function spansToValues(
 }
 
 /** PERSON → "person", PHONE_NUMBER → "phone-number". A safe category label, never the value. */
-function categoryOf(entityType: string): string {
+export function categoryOf(entityType: string): string {
   return entityType.toLowerCase().replaceAll("_", "-");
 }
 
@@ -239,7 +239,7 @@ function makeCodepointIndexer(text: string): { slice(start: number, end: number)
 }
 
 /** Newline-first chunking (redactableBodyText joins JSON leaves with "\n"); hard-split giant lines. */
-function chunkText(text: string): string[] {
+export function chunkText(text: string): string[] {
   if (text.length <= MAX_CHUNK_CHARS) return [text];
   const chunks: string[] = [];
   let current = "";
@@ -275,7 +275,11 @@ function hardSplit(line: string): string[] {
 }
 
 /** Run `fn` over items with bounded concurrency, preserving input order. Rejects on first failure. */
-async function mapConcurrent<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+export async function mapConcurrent<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
   const results = new Array<R>(items.length);
   let next = 0;
   async function worker(): Promise<void> {
@@ -289,7 +293,7 @@ async function mapConcurrent<T, R>(items: readonly T[], limit: number, fn: (item
   return results;
 }
 
-function dedupeByValue(values: readonly ProtectedValue[]): ProtectedValue[] {
+export function dedupeByValue(values: readonly ProtectedValue[]): ProtectedValue[] {
   const seen = new Set<string>();
   const out: ProtectedValue[] = [];
   for (const value of values) {
@@ -322,7 +326,7 @@ function connectionErrorCode(err: unknown): string {
   return typeof code === "string" ? code : "connection failed";
 }
 
-function isAbortError(err: unknown): boolean {
+export function isAbortError(err: unknown): boolean {
   return (
     typeof err === "object" &&
     err !== null &&
@@ -331,7 +335,7 @@ function isAbortError(err: unknown): boolean {
   );
 }
 
-function safeHost(url: string): string {
+export function safeHost(url: string): string {
   try {
     return new URL(url).host;
   } catch {
@@ -339,22 +343,22 @@ function safeHost(url: string): string {
   }
 }
 
-function stripTrailingSlash(url: string): string {
+export function stripTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
-function readNumber(raw: string | undefined, fallback: number): number {
+export function readNumber(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw.trim() === "") return fallback;
   const n = Number(raw);
   return Number.isFinite(n) ? n : fallback;
 }
 
-function readPositiveInt(raw: string | undefined, fallback: number): number {
+export function readPositiveInt(raw: string | undefined, fallback: number): number {
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
-function readList(raw: string | undefined): string[] {
+export function readList(raw: string | undefined): string[] {
   return (raw ?? "")
     .split(",")
     .map((entry) => entry.trim())

@@ -11,8 +11,7 @@ import {
   type AgentIntegration,
   activeBackends,
   agentIntegrations,
-  checkMedicalHealth,
-  checkPresidioHealth,
+  backendHealthCheck,
   loadPluginRegistry,
   type PluginDiscovery,
   parseUserExclusionRule,
@@ -161,8 +160,9 @@ export async function collectDoctorReport(opts: DoctorOptions = {}): Promise<Doc
       });
     }
     for (const { name } of backends) {
-      if (name !== "presidio" && name !== "medical") continue;
-      const health = name === "medical" ? await checkMedicalHealth() : await checkPresidioHealth();
+      const probe = backendHealthCheck(name);
+      if (!probe) continue;
+      const health = await probe();
       if (!health.ok) {
         const consequence = detectorFailClosed(piiFailClosed())
           ? "requests will be BLOCKED (503) until it is reachable (fail-closed)"

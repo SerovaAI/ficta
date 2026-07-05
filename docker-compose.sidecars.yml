@@ -1,0 +1,54 @@
+# The PII detection sidecars ficta's networked backends talk to. This file is the way to run them
+# outside `pnpm dev` (which can manage them itself and reuses anything already healthy here):
+#
+#   pnpm sidecars        # docker compose -f docker-compose.sidecars.yml up -d --wait
+#   pnpm sidecars:down
+#
+# Both images are pulled from their upstream registries. Set OPENMED_IMAGE to pin a tag or use a
+# locally built (patched) image instead.
+#
+# Ports bind loopback only, matching ficta's default backend URLs (presidio 5002, openmed 5004).
+# A deployment that needs network exposure must change that deliberately.
+
+services:
+  presidio-analyzer:
+    image: ghcr.io/data-privacy-stack/presidio-analyzer:latest
+    ports:
+      - "127.0.0.1:5002:3000"
+    volumes:
+      - ./packages/ficta/presidio/default_recognizers.za.yaml:/app/ficta-presidio-recognizers.yaml:ro
+    environment:
+      RECOGNIZER_REGISTRY_CONF_FILE: /app/ficta-presidio-recognizers.yaml
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/health', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped
+
+  openmed:
+    image: ${OPENMED_IMAGE:-ghcr.io/maziyarpanahi/openmed:latest}
+    ports:
+      - "127.0.0.1:5004:8080"
+    environment:
+      # Preload so a cold container is ready before the first request; the HF cache volume keeps
+      # the model across restarts, so only the first start on a machine downloads it.
+      OPENMED_SERVICE_PRELOAD_MODELS: ${OPENMED_PRELOAD_MODELS:-OpenMed/OpenMed-PII-SuperClinical-Small-44M-v1}
+      # Required: the CPU image's torch rejects SDPA attention for the DeBERTa-based PII models.
+      OPENMED_TORCH_ATTENTION_BACKEND: eager
+      OPENMED_SERVICE_KEEP_ALIVE: ${OPENMED_KEEP_ALIVE:-10m}
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - openmed-hf-cache:/root/.cache/huggingface
+    # The OpenMed image ships its own HEALTHCHECK, so `up --wait` blocks until it is actually ready.
+    restart: unless-stopped
+
+volumes:
+  openmed-hf-cache:

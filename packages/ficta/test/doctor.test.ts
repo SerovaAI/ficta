@@ -33,6 +33,8 @@ const ENV_KEYS = [
   "FICTA_FAIL_CLOSED_DETECTION",
   "FICTA_PII_PRESIDIO_URL",
   "FICTA_PII_PRESIDIO_TIMEOUT_MS",
+  "FICTA_PII_OPENMED_URL",
+  "FICTA_PII_OPENMED_TIMEOUT_MS",
 ] as const;
 
 let savedEnv: Record<string, string | undefined>;
@@ -248,6 +250,24 @@ describe("ficta doctor", () => {
     const report = await collectDoctorReport({ agent: "claude" });
 
     expect(report.issues.some((i) => i.severity === "warning" && i.message.includes("BLOCKED"))).toBe(true);
+  });
+
+  it("warns when the openmed backend is selected but unreachable", async () => {
+    const bin = tempDir("ficta-doctor-bin-");
+    executable(join(bin, "claude"));
+    process.env.PATH = bin;
+    process.env.FICTA_REGISTRY_DOPPLER_ENABLED = "0";
+    process.env.FICTA_REGISTRY_PROCESS_ENV_ENABLED = "0";
+    process.env.FICTA_PII_ENABLED = "1";
+    process.env.FICTA_PII_BACKEND = "openmed";
+    process.env.FICTA_PII_OPENMED_URL = `http://127.0.0.1:${await closedPort()}`;
+    process.env.FICTA_PII_OPENMED_TIMEOUT_MS = "300";
+
+    const report = await collectDoctorReport({ agent: "claude" });
+
+    expect(report.issues.some((i) => i.severity === "warning" && i.message.includes('PII backend "openmed"'))).toBe(
+      true,
+    );
   });
 
   it("does not probe presidio when the regex backend is selected", async () => {

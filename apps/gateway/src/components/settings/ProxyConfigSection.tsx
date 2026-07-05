@@ -154,14 +154,6 @@ function ConfigEditor({
           locked={edit.locked.restoreIntoTools}
         />
       </SettingRow>
-      {piiHealth?.ok && piiHealth.activity ? (
-        <SettingRow
-          label="Withheld from tool calls"
-          description="Values the model placed in tool arguments that were replaced with placeholders this run."
-        >
-          <Value warn={piiHealth.activity.withheldFromTools > 0}>{piiHealth.activity.withheldFromTools}</Value>
-        </SettingRow>
-      ) : null}
       <SettingRow label="Surrogate style" description="Shape of the placeholder tokens sent upstream.">
         <SelectControl
           value={draft.surrogateStyle}

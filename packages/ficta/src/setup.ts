@@ -66,9 +66,9 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
     piiValues.FICTA_PII_AGENTS = piiAgents ? "1" : "0";
 
     const currentBackends = selectedBackendNames(process.env).filter((backend) =>
-      ["regex", "presidio", "medical"].includes(backend),
-    ) as Array<"regex" | "presidio" | "medical">;
-    const backends = await promptMultiselect<"regex" | "presidio" | "medical">(
+      ["regex", "presidio", "openmed"].includes(backend),
+    ) as Array<"regex" | "presidio" | "openmed">;
+    const backends = await promptMultiselect<"regex" | "presidio" | "openmed">(
       "PII detection: backends",
       [
         { value: "regex", label: "Built-in regex — emails, SSNs, cards; in-process, no dependencies" },
@@ -77,8 +77,8 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
           label: "Microsoft Presidio — names, addresses, orgs, phones (needs a running presidio-analyzer sidecar)",
         },
         {
-          value: "medical",
-          label: "Medical OpenMed — learned medical/PHI-style identifiers (needs the medical analyzer service)",
+          value: "openmed",
+          label: "OpenMed — learned medical/PHI-style identifiers (needs a running OpenMed REST sidecar)",
         },
       ],
       currentBackends.length > 0 ? currentBackends : ["regex"],
@@ -93,14 +93,14 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
         "The presidio-analyzer REST endpoint; run it yourself (e.g. via Docker).",
       );
     }
-    if (selectedBackends.includes("medical")) {
-      piiValues.FICTA_PII_MEDICAL_URL = await promptText(
-        "PII detection: medical analyzer URL",
-        process.env.FICTA_PII_MEDICAL_URL || "http://127.0.0.1:5003",
-        "The medical OpenMed analyzer REST endpoint; run it yourself (e.g. via Docker).",
+    if (selectedBackends.includes("openmed")) {
+      piiValues.FICTA_PII_OPENMED_URL = await promptText(
+        "PII detection: OpenMed service URL",
+        process.env.FICTA_PII_OPENMED_URL || "http://127.0.0.1:5004",
+        "The OpenMed REST endpoint; run it yourself (e.g. via Docker).",
       );
     }
-    if (selectedBackends.some((backend) => backend === "presidio" || backend === "medical")) {
+    if (selectedBackends.some((backend) => backend === "presidio" || backend === "openmed")) {
       // Only meaningful for a networked backend (the in-process regex never fails). Default this
       // prompt to Yes: someone who deliberately chose a networked backend is the user most likely
       // to want its outages enforced, even though the *runtime* default stays fail-open

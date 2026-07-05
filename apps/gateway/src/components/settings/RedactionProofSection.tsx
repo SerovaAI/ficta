@@ -58,9 +58,10 @@ function ProofRows({ proof }: { proof: Extract<ProtectionStats, { ok: true }> })
         <Metric label="Survived" value={totals.survivingValues} warn={totals.survivingValues > 0} />
         <Metric label="Blocked" value={totals.blockedRequests} warn={totals.blockedRequests > 0} />
         <Metric
-          label="Withheld from tools"
+          label="Withheld from tool calls"
           value={totals.withheldFromToolsValues}
           warn={totals.withheldFromToolsValues > 0}
+          description="Values the model placed in tool arguments that were replaced with placeholders this run."
         />
       </div>
 
@@ -94,11 +95,22 @@ function ProofRows({ proof }: { proof: Extract<ProtectionStats, { ok: true }> })
   );
 }
 
-function Metric({ label, value, warn }: { label: string; value: number; warn?: boolean }) {
+function Metric({
+  label,
+  value,
+  warn,
+  description,
+}: {
+  label: string;
+  value: number;
+  warn?: boolean;
+  description?: string;
+}) {
   return (
     <div className="min-w-0 border border-border px-3 py-2">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className={cn("pt-0.5 text-lg font-semibold", warn && "text-amber-700 dark:text-amber-300")}>{value}</div>
+      {description ? <div className="pt-1 text-muted-foreground text-xs leading-snug">{description}</div> : null}
     </div>
   );
 }

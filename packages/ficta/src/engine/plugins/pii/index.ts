@@ -3,7 +3,7 @@ import { engineWarn } from "../../diagnostics.js";
 import { envFlag, parseBoolean } from "../../env-flags.js";
 import { DetectorUnavailableError } from "../../redaction-engine.js";
 import type { DetectorPlugin, PluginDiscovery, ProtectedValue } from "../types.js";
-import { medicalConfig } from "./medical-recognizer.js";
+import { OpenmedUnavailableError, openmedConfig } from "./openmed-recognizer.js";
 import { PresidioUnavailableError, presidioConfig } from "./presidio-recognizer.js";
 import { activeBackends, ENV_BACKEND, ENV_BACKENDS } from "./registry.js";
 
@@ -17,7 +17,7 @@ const ENV_FAIL_CLOSED = "FICTA_PII_FAIL_CLOSED";
  * The legacy single-backend setting (`FICTA_PII_BACKEND` / `[pii] backend`) remains supported when
  * `backends` is unset. Each backend plugs in behind {@link import("./recognizer.js").PiiRecognizer}.
  * The plugin coordinates backend calls, records per-backend outages, and merges detected values so
- * combinations like `presidio,medical` can keep their containers separate while sharing one Ficta
+ * combinations like `presidio,openmed` can keep their containers separate while sharing one Ficta
  * detector policy.
  */
 
@@ -95,7 +95,9 @@ function notePiiRecognizerFailure(name: string, err: unknown): { reason: string;
 }
 
 function classifyRecognizerFailure(err: unknown): { reason: string; detail?: string } {
-  if (err instanceof PresidioUnavailableError) return { reason: err.reason, detail: err.detail };
+  if (err instanceof PresidioUnavailableError || err instanceof OpenmedUnavailableError) {
+    return { reason: err.reason, detail: err.detail };
+  }
   return { reason: "error", detail: err instanceof Error ? err.name : undefined };
 }
 
@@ -118,7 +120,7 @@ export const piiPlugin: DetectorPlugin = {
   kind: "detector",
   name: PLUGIN_NAME,
   description:
-    "Best-effort PII detection (regex + optional Microsoft Presidio sidecar), tokenized like any protected value",
+    "Best-effort PII detection (regex + optional Presidio/OpenMed sidecars), tokenized like any protected value",
   config: {
     envDefaults: {
       [ENV_ENABLED]: "0",
@@ -131,11 +133,12 @@ export const piiPlugin: DetectorPlugin = {
       FICTA_PII_PRESIDIO_SCORE_THRESHOLD: "0.5",
       FICTA_PII_PRESIDIO_ENTITIES: "",
       FICTA_PII_PRESIDIO_TIMEOUT_MS: "1500",
-      FICTA_PII_MEDICAL_URL: "http://127.0.0.1:5003",
-      FICTA_PII_MEDICAL_LANGUAGE: "",
-      FICTA_PII_MEDICAL_SCORE_THRESHOLD: "",
-      FICTA_PII_MEDICAL_ENTITIES: "",
-      FICTA_PII_MEDICAL_TIMEOUT_MS: "",
+      FICTA_PII_OPENMED_URL: "http://127.0.0.1:5004",
+      FICTA_PII_OPENMED_MODEL: "",
+      FICTA_PII_OPENMED_LANG: "en",
+      FICTA_PII_OPENMED_SCORE_THRESHOLD: "0.5",
+      FICTA_PII_OPENMED_ENTITIES: "",
+      FICTA_PII_OPENMED_TIMEOUT_MS: "2500",
     },
     bindings: [
       { env: ENV_ENABLED, path: ["pii", "enabled"], kind: "boolean" },
@@ -148,16 +151,17 @@ export const piiPlugin: DetectorPlugin = {
       { env: "FICTA_PII_PRESIDIO_SCORE_THRESHOLD", path: ["pii", "presidio", "score_threshold"], kind: "number" },
       { env: "FICTA_PII_PRESIDIO_ENTITIES", path: ["pii", "presidio", "entities"], kind: "string-array-comma" },
       { env: "FICTA_PII_PRESIDIO_TIMEOUT_MS", path: ["pii", "presidio", "timeout_ms"], kind: "number" },
-      { env: "FICTA_PII_MEDICAL_URL", path: ["pii", "medical", "url"], kind: "string" },
-      { env: "FICTA_PII_MEDICAL_LANGUAGE", path: ["pii", "medical", "language"], kind: "string" },
-      { env: "FICTA_PII_MEDICAL_SCORE_THRESHOLD", path: ["pii", "medical", "score_threshold"], kind: "number" },
-      { env: "FICTA_PII_MEDICAL_ENTITIES", path: ["pii", "medical", "entities"], kind: "string-array-comma" },
-      { env: "FICTA_PII_MEDICAL_TIMEOUT_MS", path: ["pii", "medical", "timeout_ms"], kind: "number" },
+      { env: "FICTA_PII_OPENMED_URL", path: ["pii", "openmed", "url"], kind: "string" },
+      { env: "FICTA_PII_OPENMED_MODEL", path: ["pii", "openmed", "model"], kind: "string" },
+      { env: "FICTA_PII_OPENMED_LANG", path: ["pii", "openmed", "lang"], kind: "string" },
+      { env: "FICTA_PII_OPENMED_SCORE_THRESHOLD", path: ["pii", "openmed", "score_threshold"], kind: "number" },
+      { env: "FICTA_PII_OPENMED_ENTITIES", path: ["pii", "openmed", "entities"], kind: "string-array-comma" },
+      { env: "FICTA_PII_OPENMED_TIMEOUT_MS", path: ["pii", "openmed", "timeout_ms"], kind: "number" },
     ],
     sections: [
       { path: ["pii"], keys: ["enabled", "agents", "fail_closed", "backend", "backends"] },
       { path: ["pii", "presidio"], keys: ["url", "language", "score_threshold", "entities", "timeout_ms"] },
-      { path: ["pii", "medical"], keys: ["url", "language", "score_threshold", "entities", "timeout_ms"] },
+      { path: ["pii", "openmed"], keys: ["url", "model", "lang", "score_threshold", "entities", "timeout_ms"] },
     ],
   },
   setup: {
@@ -236,7 +240,7 @@ function discoverPii(): PluginDiscovery {
 
 function backendLabelFor(name: string): string {
   if (name === "presidio") return `presidio (${presidioConfig().url})`;
-  if (name === "medical") return `medical (${medicalConfig().url})`;
+  if (name === "openmed") return `openmed (${openmedConfig().url})`;
   return name;
 }
 
@@ -274,10 +278,15 @@ function preferValue(a: ProtectedValue, b: ProtectedValue): ProtectedValue {
   const bConfidence = confidence[b.confidence ?? "probabilistic"];
   if (aConfidence !== bConfidence) return aConfidence > bConfidence ? a : b;
 
-  const aMedical = a.source === "pii-medical" || a.name.includes("medical") || a.name.includes("health");
-  const bMedical = b.source === "pii-medical" || b.name.includes("medical") || b.name.includes("health");
+  const aMedical = isMedicalValue(a);
+  const bMedical = isMedicalValue(b);
   if (aMedical !== bMedical) return aMedical ? a : b;
 
   if (a.value.length !== b.value.length) return a.value.length > b.value.length ? a : b;
   return a.source <= b.source ? a : b;
+}
+
+/** Medical-specific detections win ties: the clinical backends' labels beat generic ones. */
+function isMedicalValue(value: ProtectedValue): boolean {
+  return value.source === "pii-openmed" || value.name.includes("medical") || value.name.includes("health");
 }

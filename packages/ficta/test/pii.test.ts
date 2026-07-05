@@ -162,8 +162,8 @@ describe("pii backend selection", () => {
     "FICTA_FAIL_CLOSED_DETECTION",
     "FICTA_PII_PRESIDIO_URL",
     "FICTA_PII_PRESIDIO_TIMEOUT_MS",
-    "FICTA_PII_MEDICAL_URL",
-    "FICTA_PII_MEDICAL_TIMEOUT_MS",
+    "FICTA_PII_OPENMED_URL",
+    "FICTA_PII_OPENMED_TIMEOUT_MS",
   ] as const;
   let saved: Record<string, string | undefined>;
 
@@ -346,23 +346,56 @@ describe("pii backend selection", () => {
   });
 
   it("skips unknown names in a multi-backend list while keeping known backends", () => {
-    process.env.FICTA_PII_BACKENDS = "bogus,regex,presidio";
+    process.env.FICTA_PII_BACKENDS = "bogus,regex,presidio,openmed";
     const selection = activeBackends();
-    expect(selection.backends.map((backend) => backend.name)).toEqual(["regex", "presidio"]);
+    expect(selection.backends.map((backend) => backend.name)).toEqual(["regex", "presidio", "openmed"]);
     expect(selection.unknown).toEqual(["bogus"]);
   });
 
-  it("declares config bindings for backend selection and presidio", () => {
+  it("prefers the openmed detection when it duplicates another backend's value at equal confidence", async () => {
+    const person = "Jonathan Q Appleseed";
+    // Presidio-shaped stub: span array with a generic PERSON label.
+    const presidio = await start((text) => {
+      const idx = text.indexOf(person);
+      return idx < 0 ? [] : [{ entity_type: "PERSON", start: idx, end: idx + person.length, score: 0.6 }];
+    });
+    // OpenMed-shaped stub: same value, same confidence tier, clinical label.
+    const openmed = await startOpenmed((text) =>
+      text.includes(person) ? [{ text: person, label: "PATIENT", confidence: 0.6 }] : [],
+    );
+    process.env.FICTA_PII_ENABLED = "1";
+    process.env.FICTA_PII_BACKENDS = "presidio,openmed";
+    process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${presidio.port}`;
+    process.env.FICTA_PII_OPENMED_URL = `http://127.0.0.1:${openmed.port}`;
+
+    try {
+      const values = (await piiPlugin.detectText?.(`for ${person}`, { surface: "body" })) ?? [];
+      expect(values).toHaveLength(1);
+      expect(values[0]).toMatchObject({ value: person, source: "pii-openmed", name: "patient" });
+    } finally {
+      await close(presidio.server);
+      await close(openmed.server);
+    }
+  });
+
+  it("declares config bindings for backend selection and the sidecar backends", () => {
     const envs = piiPlugin.config?.bindings.map((b) => b.env) ?? [];
     expect(envs).toContain("FICTA_PII_BACKEND");
     expect(envs).toContain("FICTA_PII_BACKENDS");
     expect(envs).toContain("FICTA_PII_PRESIDIO_URL");
-    expect(envs).toContain("FICTA_PII_MEDICAL_URL");
     expect(envs).toContain("FICTA_PII_PRESIDIO_SCORE_THRESHOLD");
+    expect(envs).toContain("FICTA_PII_OPENMED_URL");
+    expect(envs).toContain("FICTA_PII_OPENMED_MODEL");
+    expect(envs).toContain("FICTA_PII_OPENMED_SCORE_THRESHOLD");
   });
 });
 
 type AnalyzeHandler = (text: string) => unknown;
+
+/** OpenMed-shaped stub: wraps the handler's entities in the /pii/extract response envelope. */
+async function startOpenmed(extract: AnalyzeHandler): Promise<{ server: Server; port: number }> {
+  return start((text) => ({ entities: extract(text) }));
+}
 
 async function start(analyze: AnalyzeHandler): Promise<{ server: Server; port: number }> {
   const server = createServer((req, res) => {

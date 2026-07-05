@@ -61,10 +61,10 @@ every option. The table below is just a quick tour of the most useful knobs:
 | `pii.enabled` | `FICTA_PII_ENABLED` | unconfigured: `false`; after `ficta setup`: prompted, default `true` | Best-effort PII detection for the standalone/web proxy. |
 | `pii.agents` | `FICTA_PII_AGENTS` | `false` | Also enable PII detection for `ficta claude|codex|pi` launches when `pii.enabled` is on. |
 | `pii.backend` | `FICTA_PII_BACKEND` | `regex` | Legacy single PII backend selector. |
-| `pii.backends` | `FICTA_PII_BACKENDS` | unset → `pii.backend` | PII backend set, e.g. `presidio,medical`. |
+| `pii.backends` | `FICTA_PII_BACKENDS` | unset → `pii.backend` | PII backend set, e.g. `presidio,openmed`. |
 | `pii.fail_closed` | `FICTA_PII_FAIL_CLOSED` | `false` | PII-specific detector-outage policy; overrides `detection.fail_closed`. |
 | `pii.presidio.url` | `FICTA_PII_PRESIDIO_URL` | local Presidio sidecar URL | Analyzer URL when the backend set includes `presidio`. |
-| `pii.medical.url` | `FICTA_PII_MEDICAL_URL` | local medical service URL | Analyzer URL when the backend set includes `medical`. |
+| `pii.openmed.url` | `FICTA_PII_OPENMED_URL` | local OpenMed service URL | Service URL when the backend set includes `openmed`. |
 | `surrogate.style` | `FICTA_SURROGATE_STYLE` | `opaque` | Token style: `opaque` (`FICTA_<hex>`) or `typed` (`FICTA_PERSON_…`, `FICTA_SSN_…`) for model fluency; reversibility unchanged. |
 | `logging.log_dir` | `FICTA_LOG_DIR` | `~/.ficta/logs` | Where per-run logs and `stats.json` are written. |
 | `upstreams.anthropic` | `FICTA_ANTHROPIC_UPSTREAM` | Anthropic API | Override the Anthropic upstream (also `..._OPENAI_...` / `..._CHATGPT_...`). |
@@ -84,11 +84,14 @@ local and pattern-based; it does not verify credentials and does not replace the
 registry layer.
 
 **Presidio is a first-class supported PII backend.** Select it with `pii.backend = "presidio"` /
-`FICTA_PII_BACKEND=presidio`, or as part of `pii.backends = ["presidio", "medical"]` /
-`FICTA_PII_BACKENDS=presidio,medical`; ficta will call the configured `presidio-analyzer` URL, check
+`FICTA_PII_BACKEND=presidio`, or as part of `pii.backends = ["presidio", "openmed"]` /
+`FICTA_PII_BACKENDS=presidio,openmed`; ficta will call the configured `presidio-analyzer` URL, check
 `/health` in `ficta doctor` and the web UI status endpoint, and apply the configured
-fail-open/fail-closed detector-outage policy. For coding-agent use, run the analyzer sidecar
-explicitly before launching the agent:
+fail-open/fail-closed detector-outage policy. In a source checkout, `pnpm sidecars` (repo-root
+`docker-compose.sidecars.yml`) starts the Presidio and OpenMed sidecars health-gated, and root
+`pnpm dev` auto-manages the sidecars for the backends selected via `FICTA_PII_BACKENDS` /
+`FICTA_PII_BACKEND`, reusing anything already running. For coding-agent or installed use, you can
+also run the analyzer sidecar explicitly before launching the agent:
 
 ```sh
 docker run --rm -p 5002:3000 \
@@ -105,9 +108,11 @@ ficta claude
 The committed registry config keeps Presidio's default recognizers, enables `ZA_ID_NUMBER`, and adds
 `ZA_COMPANY_REGISTRATION` for South African company registration numbers.
 
-For medical workspaces that need both general PII and medical/PHI-style identifiers, run a separate
-Presidio-compatible OpenMed analyzer Docker service on another port, then set
-`FICTA_PII_BACKENDS=presidio,medical`. Ficta coordinates both external analyzers natively, merges
+For medical workspaces that need both general PII and medical/PHI-style identifiers, run the
+upstream OpenMed REST service alongside Presidio (published image
+`ghcr.io/maziyarpanahi/openmed`, started by `pnpm sidecars` or `pnpm dev`), and set
+`FICTA_PII_BACKENDS=presidio,openmed`. Ficta coordinates both external
+analyzers natively, merges
 detected values, and applies the same fail-open/fail-closed detector policy. Treat this as
 best-effort reduction, not a clinical de-identification guarantee, and use `FICTA_PII_FAIL_CLOSED=1`
 for medical workflows that should block when any selected analyzer is unavailable.
