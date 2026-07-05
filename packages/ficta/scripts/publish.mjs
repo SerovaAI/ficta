@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-/** Publish the single ficta npm package, idempotently. */
+/** Publish the ficta npm packages, idempotently. */
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 const dryRun = process.argv.includes("--dry-run");
 const KNOWN_FLAGS = new Set(["--dry-run"]);
@@ -13,34 +14,34 @@ if (unknownArgs.length > 0) {
 }
 
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+const packageDir = process.cwd();
+const protocolDir = resolve(packageDir, "../protocol");
+const protocolPkg = JSON.parse(readFileSync(resolve(protocolDir, "package.json"), "utf8"));
 const name = String(pkg.name);
 const version = String(pkg.version);
+const protocolName = String(protocolPkg.name);
+const protocolVersion = String(protocolPkg.version);
 const expectedTag = process.env.RELEASE_TAG;
 const distTag = npmDistTag(version);
 
 assertPackageMetadata();
+assertProtocolMetadata();
 assertTagMatchesVersion(expectedTag, version);
 assertChangelogHasVersion(version);
 assertBuildOutputExists();
 
-console.log(`Publishing ${name}@${version} with dist-tag ${distTag}${dryRun ? " (dry run)" : ""}\n`);
+console.log(
+  `Publishing ${protocolName}@${protocolVersion} and ${name}@${version} with dist-tag ${distTag}${dryRun ? " (dry run)" : ""}\n`,
+);
 
-const published = isPublished(name, version);
 if (dryRun) {
-  console.log(
-    published
-      ? `${name}@${version} is already published; validating package contents only.`
-      : `${name}@${version} is not published; validating package contents before publish.`,
-  );
-  validatePack();
+  validatePackage(protocolName, protocolVersion, protocolDir);
+  validatePackage(name, version, packageDir);
   process.exit(0);
 }
 
-if (published) {
-  console.log(`Skipping publish for ${name}@${version}: already published`);
-} else {
-  run("npm", ["publish", "--access", "public", "--provenance", "--ignore-scripts", "--tag", distTag]);
-}
+publishPackage(protocolName, protocolVersion, protocolDir, distTag);
+publishPackage(name, version, packageDir, distTag);
 
 function commandForPlatform(command) {
   return process.platform === "win32" ? `${command}.cmd` : command;
@@ -50,6 +51,7 @@ function run(command, args, options = {}) {
   console.log(`$ ${[command, ...args].join(" ")}`);
   const result = spawnSync(commandForPlatform(command), args, {
     encoding: "utf8",
+    cwd: options.cwd,
     stdio: options.capture ? ["inherit", "pipe", "pipe"] : "inherit",
   });
 
@@ -68,6 +70,21 @@ function run(command, args, options = {}) {
 function assertPackageMetadata() {
   if (name !== "@serovaai/ficta") throw new Error(`package.json has name ${name}, expected @serovaai/ficta`);
   if (pkg.private) throw new Error("package.json private=true; refusing to publish");
+  if (pkg.dependencies?.["@serovaai/ficta-protocol"] !== "workspace:^") {
+    throw new Error(
+      `@serovaai/ficta dependency on @serovaai/ficta-protocol must be workspace:^, got ${pkg.dependencies?.["@serovaai/ficta-protocol"]}`,
+    );
+  }
+}
+
+function assertProtocolMetadata() {
+  if (protocolName !== "@serovaai/ficta-protocol") {
+    throw new Error(`protocol package.json has name ${protocolName}, expected @serovaai/ficta-protocol`);
+  }
+  if (protocolPkg.private) throw new Error("protocol package.json private=true; refusing to publish");
+  if (protocolVersion !== version) {
+    throw new Error(`protocol package version ${protocolVersion} must match @serovaai/ficta version ${version}`);
+  }
 }
 
 function assertTagMatchesVersion(tag, packageVersion) {
@@ -87,12 +104,34 @@ function assertBuildOutputExists() {
   if (!existsSync("dist")) throw new Error("dist does not exist. Run pnpm build before publishing.");
 }
 
-function validatePack() {
-  const result = run("npm", ["pack", "--dry-run", "--ignore-scripts", "--json"], { capture: true });
-  const packed = JSON.parse(result.stdout)[0];
+function validatePackage(packageName, packageVersion, cwd) {
+  const published = isPublished(packageName, packageVersion);
   console.log(
-    `  ${packed.filename}: ${packed.files.length} files, ${packed.size} bytes packed, ${packed.unpackedSize} bytes unpacked`,
+    published
+      ? `${packageName}@${packageVersion} is already published; validating package contents only.`
+      : `${packageName}@${packageVersion} is not published; validating package contents before publish.`,
   );
+  validatePack(cwd);
+}
+
+function publishPackage(packageName, packageVersion, cwd, tag) {
+  const published = isPublished(packageName, packageVersion);
+  if (published) {
+    console.log(`Skipping publish for ${packageName}@${packageVersion}: already published`);
+    return;
+  }
+  run("pnpm", ["publish", "--access", "public", "--provenance", "--ignore-scripts", "--no-git-checks", "--tag", tag], {
+    cwd,
+  });
+}
+
+function validatePack(cwd) {
+  const result = run("pnpm", ["pack", "--dry-run", "--json"], { capture: true, cwd });
+  const parsed = JSON.parse(result.stdout);
+  const packed = Array.isArray(parsed) ? parsed[0] : parsed;
+  const size = packed.size === undefined ? "" : `, ${packed.size} bytes packed`;
+  const unpacked = packed.unpackedSize === undefined ? "" : `, ${packed.unpackedSize} bytes unpacked`;
+  console.log(`  ${packed.filename}: ${packed.files.length} files${size}${unpacked}`);
 }
 
 function isPublished(packageName, packageVersion) {

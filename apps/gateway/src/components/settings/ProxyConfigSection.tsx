@@ -1,25 +1,37 @@
 import type * as React from "react";
 import { useEffect, useState } from "react";
-import { fetchProxyConfig, type ProxyConfig } from "@/lib/proxy-config";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import {
+  type EditableProxyConfigKey,
+  type EditableProxyConfigValues,
+  fetchProxyConfig,
+  type ProxyConfig,
+  updateProxyConfig,
+} from "@/lib/proxy-config";
 import { useProtectionStatus } from "@/lib/use-protection-status";
 import { cn } from "@/lib/utils";
 import { SettingRow } from "./SettingRow";
 
 /**
- * Read-only view of the ficta proxy's effective configuration, for the Admin tab. The data comes
- * from an admin-gated server function (see proxy-config.ts) — it never reaches non-admin browsers.
- * Editing happens where the config lives: FICTA_* env vars or ~/.ficta/config.toml on the proxy
- * host; this section only shows the resulting posture.
+ * Admin editor for the ficta proxy's safety posture. Reads and writes go through admin-gated server
+ * functions (see proxy-config.ts); the browser never talks directly to the loopback proxy.
  */
 export function ProxyConfigSection() {
   const [config, setConfig] = useState<ProxyConfig>();
+  const [draft, setDraft] = useState<EditableProxyConfigValues>();
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveError, setSaveError] = useState("Could not save proxy configuration.");
   const live = useProtectionStatus();
 
   useEffect(() => {
     let alive = true;
     fetchProxyConfig()
       .then((next) => {
-        if (alive) setConfig(next);
+        if (!alive) return;
+        setConfig(next);
+        if (next.ok) setDraft(next.edit.values);
       })
       .catch((err: unknown) => {
         if (!alive) return;
@@ -36,13 +48,28 @@ export function ProxyConfigSection() {
     };
   }, []);
 
+  const save = async () => {
+    if (!draft) return;
+    setSaveStatus("saving");
+    setSaveError("Could not save proxy configuration.");
+    const result = await updateProxyConfig({ data: draft });
+    if (!result.ok) {
+      setSaveStatus("error");
+      setSaveError(result.message);
+      return;
+    }
+    setConfig((current) => (current?.ok ? { ...current, edit: result.edit } : current));
+    setDraft(result.edit.values);
+    setSaveStatus("saved");
+  };
+
   return (
     <section aria-label="Proxy configuration">
       <div className="pt-6 pb-1">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Proxy configuration</h3>
         <p className="pt-1 text-xs text-muted-foreground leading-relaxed">
-          Read-only. Set via <code className="font-mono">FICTA_*</code> environment variables or{" "}
-          <code className="font-mono">~/.ficta/config.toml</code> on the proxy host.
+          Safety settings are written to <code className="font-mono">config.toml</code>. Restart the proxy to apply
+          saved changes.
         </p>
       </div>
 
@@ -50,41 +77,82 @@ export function ProxyConfigSection() {
         <p className="py-4 text-sm text-muted-foreground">Loading proxy configuration…</p>
       ) : !config.ok ? (
         <p className="py-4 text-sm text-muted-foreground">{config.message}</p>
+      ) : draft === undefined ? (
+        <p className="py-4 text-sm text-muted-foreground">Loading editable configuration…</p>
       ) : (
-        <ConfigRows config={config.config} piiHealth={live} />
+        <ConfigEditor
+          config={config}
+          draft={draft}
+          onDraftChange={(next) => {
+            setDraft(next);
+            setSaveStatus("idle");
+          }}
+          piiHealth={live}
+          saveStatus={saveStatus}
+          saveError={saveError}
+          onSave={save}
+        />
       )}
     </section>
   );
 }
 
-function ConfigRows({
+function ConfigEditor({
   config,
+  draft,
+  onDraftChange,
   piiHealth,
+  saveStatus,
+  saveError,
+  onSave,
 }: {
-  config: Extract<ProxyConfig, { ok: true }>["config"];
+  config: Extract<ProxyConfig, { ok: true }>;
+  draft: EditableProxyConfigValues;
+  onDraftChange: (next: EditableProxyConfigValues) => void;
   piiHealth: ReturnType<typeof useProtectionStatus>;
+  saveStatus: "idle" | "saving" | "saved" | "error";
+  saveError: string;
+  onSave: () => void;
 }) {
-  const { protection, detection, transport } = config;
+  const { detection, transport } = config.config;
+  const edit = config.edit;
+  const disabled = edit.disabled || saveStatus === "saving";
+  const set = <K extends keyof EditableProxyConfigValues>(key: K, value: EditableProxyConfigValues[K]) => {
+    onDraftChange({ ...draft, [key]: value });
+  };
 
   return (
     <>
+      {edit.disabled ? (
+        <p className="py-3 text-sm text-amber-700 dark:text-amber-300">
+          Persistent config is disabled with <code className="font-mono">FICTA_CONFIG_FILE=0</code>. Edit proxy
+          environment variables and restart instead.
+        </p>
+      ) : null}
+      {edit.restartRequired ? (
+        <p className="py-3 text-sm text-amber-700 dark:text-amber-300">
+          Saved proxy config differs from the running process. Restart the proxy to apply the saved settings.
+        </p>
+      ) : null}
+
       <GroupHeading>Protection</GroupHeading>
       <SettingRow label="Fail closed" description="Block the request if a registered secret survives redaction.">
-        <Value warn={!protection.failClosed}>{onOff(protection.failClosed)}</Value>
-      </SettingRow>
-      <SettingRow label="Require registry" description="Refuse to launch with no protected values loaded.">
-        <Value>{onOff(protection.requireRegistry)}</Value>
-      </SettingRow>
-      {protection.globallyDisabled ? (
-        <SettingRow label="Globally disabled" description="All protection is bypassed until ficta is re-enabled.">
-          <Value warn>Yes</Value>
-        </SettingRow>
-      ) : null}
-      <SettingRow label="Redact inside paths" description="Also redact secrets embedded in path-like tokens.">
-        <Value>{onOff(protection.redactPaths)}</Value>
+        <BooleanControl
+          id="proxy-fail-closed"
+          checked={draft.failClosed}
+          disabled={isDisabled("failClosed", edit, disabled)}
+          onChange={(checked) => set("failClosed", checked)}
+          locked={edit.locked.failClosed}
+        />
       </SettingRow>
       <SettingRow label="Restore into tool calls" description="Put real values back into tool-call arguments.">
-        <Value warn={protection.restoreIntoTools}>{onOff(protection.restoreIntoTools)}</Value>
+        <BooleanControl
+          id="proxy-restore-into-tools"
+          checked={draft.restoreIntoTools}
+          disabled={isDisabled("restoreIntoTools", edit, disabled)}
+          onChange={(checked) => set("restoreIntoTools", checked)}
+          locked={edit.locked.restoreIntoTools}
+        />
       </SettingRow>
       {piiHealth?.ok && piiHealth.activity ? (
         <SettingRow
@@ -95,14 +163,60 @@ function ConfigRows({
         </SettingRow>
       ) : null}
       <SettingRow label="Surrogate style" description="Shape of the placeholder tokens sent upstream.">
-        <Value>{protection.surrogateStyle}</Value>
+        <SelectControl
+          value={draft.surrogateStyle}
+          disabled={isDisabled("surrogateStyle", edit, disabled)}
+          onChange={(value) => set("surrogateStyle", value as EditableProxyConfigValues["surrogateStyle"])}
+          locked={edit.locked.surrogateStyle}
+          options={[
+            ["opaque", "Opaque"],
+            ["typed", "Typed"],
+          ]}
+        />
       </SettingRow>
 
       <GroupHeading>Detection</GroupHeading>
       <SettingRow label="PII detection" description="Detect and tokenize PII in chat traffic through this gateway.">
-        <Value warn={!detection.pii.standalone}>
-          {detection.pii.standalone ? `On · ${detection.pii.configuredBackend} · ${detection.pii.failureMode}` : "Off"}
-        </Value>
+        <BooleanControl
+          id="proxy-pii-enabled"
+          checked={draft.piiEnabled}
+          disabled={isDisabled("piiEnabled", edit, disabled)}
+          onChange={(checked) => set("piiEnabled", checked)}
+          locked={edit.locked.piiEnabled}
+        />
+      </SettingRow>
+      <SettingRow label="PII backend" description="Regex is in-process; Presidio uses the configured analyzer URL.">
+        <SelectControl
+          value={draft.piiBackend}
+          disabled={isDisabled("piiBackend", edit, disabled)}
+          onChange={(value) => set("piiBackend", value as EditableProxyConfigValues["piiBackend"])}
+          locked={edit.locked.piiBackend}
+          options={[
+            ["regex", "Regex"],
+            ["presidio", "Presidio"],
+          ]}
+        />
+      </SettingRow>
+      <SettingRow label="Presidio URL" htmlFor="proxy-presidio-url" description="Analyzer endpoint used by Presidio.">
+        <div className="space-y-1">
+          <Input
+            id="proxy-presidio-url"
+            value={draft.piiPresidioUrl}
+            disabled={isDisabled("piiPresidioUrl", edit, disabled)}
+            className="w-64 font-mono text-xs"
+            onChange={(event) => set("piiPresidioUrl", event.target.value)}
+          />
+          <LockedText>{edit.locked.piiPresidioUrl}</LockedText>
+        </div>
+      </SettingRow>
+      <SettingRow label="PII outage policy" description="Block sends when the selected PII backend is unavailable.">
+        <BooleanControl
+          id="proxy-pii-fail-closed"
+          checked={draft.piiFailClosed}
+          disabled={isDisabled("piiFailClosed", edit, disabled)}
+          onChange={(checked) => set("piiFailClosed", checked)}
+          locked={edit.locked.piiFailClosed}
+        />
       </SettingRow>
       {piiHealth?.ok && detection.pii.standalone ? (
         <SettingRow label="PII detector health" description="Live status of the configured detection backend.">
@@ -112,8 +226,35 @@ function ConfigRows({
         </SettingRow>
       ) : null}
       <SettingRow label="Secret-shape detection" description="Detect unregistered API keys, JWTs, and private keys.">
-        <Value>{onOff(detection.secretShapes.standalone)}</Value>
+        <BooleanControl
+          id="proxy-secret-shapes-enabled"
+          checked={draft.secretShapesEnabled}
+          disabled={isDisabled("secretShapesEnabled", edit, disabled)}
+          onChange={(checked) => set("secretShapesEnabled", checked)}
+          locked={edit.locked.secretShapesEnabled}
+        />
       </SettingRow>
+
+      <GroupHeading>Upstream policy</GroupHeading>
+      <SettingRow label="Custom upstreams" description="Allow forwarding provider auth to non-default upstreams.">
+        <BooleanControl
+          id="proxy-allow-custom-upstream"
+          checked={draft.allowCustomUpstream}
+          disabled={isDisabled("allowCustomUpstream", edit, disabled)}
+          onChange={(checked) => set("allowCustomUpstream", checked)}
+          locked={edit.locked.allowCustomUpstream}
+        />
+      </SettingRow>
+
+      <div className="flex flex-wrap items-center justify-end gap-3 py-4">
+        {saveStatus === "saved" ? (
+          <p className="text-xs text-muted-foreground">Saved. Restart the proxy to apply changes.</p>
+        ) : null}
+        {saveStatus === "error" ? <p className="text-xs text-destructive">{saveError}</p> : null}
+        <Button type="button" size="sm" disabled={disabled} onClick={onSave}>
+          {saveStatus === "saving" ? "Saving…" : "Save proxy config"}
+        </Button>
+      </div>
 
       <GroupHeading>Transport</GroupHeading>
       <SettingRow label="Listen address" description="Where the proxy accepts local traffic.">
@@ -137,9 +278,6 @@ function ConfigRows({
           </Value>
         </SettingRow>
       ) : null}
-      <SettingRow label="Custom upstreams" description="Allow forwarding provider auth to non-default upstreams.">
-        <Value warn={transport.allowCustomUpstream}>{transport.allowCustomUpstream ? "Allowed" : "Blocked"}</Value>
-      </SettingRow>
       <SettingRow label="Log level">
         <Value>{transport.logLevel}</Value>
       </SettingRow>
@@ -151,6 +289,74 @@ function ConfigRows({
       </SettingRow>
     </>
   );
+}
+
+function BooleanControl({
+  id,
+  checked,
+  disabled,
+  locked,
+  onChange,
+}: {
+  id: string;
+  checked: boolean;
+  disabled?: boolean;
+  locked?: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <label htmlFor={id} className="flex cursor-pointer items-center justify-end gap-2.5 text-sm">
+        <Checkbox id={id} checked={checked} disabled={disabled} onCheckedChange={(state) => onChange(state === true)} />
+        <span className={checked ? "font-medium" : "text-muted-foreground"}>{onOff(checked)}</span>
+      </label>
+      <LockedText>{locked}</LockedText>
+    </div>
+  );
+}
+
+function SelectControl({
+  value,
+  options,
+  disabled,
+  locked,
+  onChange,
+}: {
+  value: string;
+  options: Array<[string, string]>;
+  disabled?: boolean;
+  locked?: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <select
+        value={value}
+        disabled={disabled}
+        className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30"
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {options.map(([optionValue, label]) => (
+          <option key={optionValue} value={optionValue}>
+            {label}
+          </option>
+        ))}
+      </select>
+      <LockedText>{locked}</LockedText>
+    </div>
+  );
+}
+
+function LockedText({ children }: { children?: React.ReactNode }) {
+  return children ? <p className="max-w-64 text-right text-xs text-muted-foreground">{children}</p> : null;
+}
+
+function isDisabled(
+  field: EditableProxyConfigKey,
+  edit: Extract<ProxyConfig, { ok: true }>["edit"],
+  disabled: boolean,
+): boolean {
+  return disabled || Boolean(edit.locked[field]);
 }
 
 function GroupHeading({ children }: { children: React.ReactNode }) {

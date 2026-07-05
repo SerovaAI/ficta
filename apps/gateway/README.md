@@ -111,6 +111,12 @@ Minimum production-like posture:
 - Consider egress allow-listing so the gateway host can reach only the approved model provider,
   Presidio sidecar, document-converter sidecar, database, and auth provider.
 
+Gateway admins can edit a narrow set of proxy safety settings from the Admin settings dialog:
+registered-secret fail-closed behavior, PII/secret-shape detection, PII backend and outage policy,
+surrogate style, tool-call restore policy, and custom-upstream allowance. These edits are written to
+the proxy's `config.toml`; restart the proxy before treating the saved settings as active. Fields set
+by explicit `FICTA_*` environment variables remain read-only in the UI.
+
 Example production-like env shape:
 
 ```sh
@@ -179,6 +185,8 @@ Proxy-side env commonly used with the gateway:
 | `FICTA_PII_BACKEND` | Select `regex` or `presidio` PII backend | `regex` |
 | `FICTA_PII_FAIL_CLOSED` | PII detector outage policy: block instead of skip detection | `0` |
 | `FICTA_PII_PRESIDIO_URL` | Presidio analyzer URL when using the `presidio` backend | local sidecar URL |
+| `FICTA_RESTORE_INTO_TOOLS` | Restore real values into model tool-call arguments instead of withholding them | `0` |
+| `FICTA_ALLOW_CUSTOM_UPSTREAM` | Permit forwarding provider auth headers to trusted non-default upstreams | `0` |
 | `FICTA_LOG_LEVEL` | Runtime logging level; `trace` writes raw bodies | `info` standalone |
 
 ## Verification

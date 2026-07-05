@@ -17,6 +17,7 @@ const CORE_CONFIG_BINDINGS: readonly ConfigBinding[] = [
   { env: "FICTA_FAIL_CLOSED", path: ["redaction", "fail_closed"], kind: "boolean" },
   { env: "FICTA_FAIL_CLOSED_DETECTION", path: ["detection", "fail_closed"], kind: "boolean" },
   { env: "FICTA_REDACT_PATHS", path: ["redaction", "redact_paths"], kind: "boolean" },
+  { env: "FICTA_RESTORE_INTO_TOOLS", path: ["redaction", "restore_into_tools"], kind: "boolean" },
   { env: "FICTA_LOG_MAX_BYTES", path: ["logging", "max_bytes"], kind: "number" },
   { env: "FICTA_LOG_DIR", path: ["logging", "log_dir"], kind: "string" },
   { env: "FICTA_SURROGATE_KEY", path: ["surrogate", "key"], kind: "string" },
@@ -31,7 +32,7 @@ const CORE_CONFIG_BINDINGS: readonly ConfigBinding[] = [
 
 const CORE_SECTION_ORDER: readonly ConfigSection[] = [
   { path: ["registry"], keys: ["min_len", "exclude_names", "require"] },
-  { path: ["redaction"], keys: ["fail_closed", "redact_paths"] },
+  { path: ["redaction"], keys: ["fail_closed", "redact_paths", "restore_into_tools"] },
   { path: ["detection"], keys: ["fail_closed"] },
   { path: ["logging"], keys: ["max_bytes", "log_dir"] },
   { path: ["surrogate"], keys: ["key", "style"] },
@@ -49,6 +50,7 @@ function configSectionOrder(): ConfigSection[] {
 }
 
 let loaded = false;
+const loadedConfigEnv = new Set<string>();
 
 function defaultConfigPath(): string {
   return join(homedir(), ".ficta", "config.toml");
@@ -69,8 +71,16 @@ export function loadUserConfig(): void {
   if (!path || !existsSync(path)) return;
 
   for (const [key, value] of Object.entries(readUserConfig(path))) {
-    process.env[key] ??= value;
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+      loadedConfigEnv.add(key);
+    }
   }
+}
+
+/** True when `loadUserConfig()` supplied this process env key from config.toml, not the shell. */
+export function wasLoadedFromUserConfig(key: string): boolean {
+  return loadedConfigEnv.has(key);
 }
 
 export function writeUserConfig(values: Record<string, string>, path = defaultConfigPath()): void {

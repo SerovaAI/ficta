@@ -2,7 +2,8 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { argv } from "node:process";
 import { fileURLToPath } from "node:url";
-import { serve } from "@hono/node-server";
+import { type HttpBindings, serve } from "@hono/node-server";
+import { FICTA_CONFIG_PATH, FICTA_HEALTH_PATH, FICTA_STATUS_PATH } from "@serovaai/ficta-protocol";
 import { type Context, Hono } from "hono";
 import { loadConfig, resolveTarget, upstreamPolicyIssue } from "./config.js";
 import { configPosture } from "./config-posture.js";
@@ -34,6 +35,12 @@ import {
   secretShapesEnabled,
   selectedBackendName,
 } from "./plugins/index.js";
+import {
+  applyProxyConfigPatch,
+  isLoopbackAddress,
+  proxyConfigEditState,
+  proxyConfigLockedFields,
+} from "./proxy-config-edit.js";
 
 export interface ProxyHandle {
   port: number;
@@ -58,25 +65,61 @@ export async function startProxy(
   // (cli.ts → startProxy). A bare-library engine with no sink wired stays silent by design.
   setEngineWarnSink((fields, message) => log.warn(fields, message));
   const cfg = loadConfig();
+  const configEditLocks = proxyConfigLockedFields();
   const engine: RedactionEngine = new ProtectionEngine({ plugins: opts.plugins ?? defaultRedactionPlugins });
   const stats = new ProtectionStats(runDir);
-  const app = new Hono();
+  const app = new Hono<{ Bindings: HttpBindings }>();
 
   app.all("*", async (c) => {
     const url = new URL(c.req.url);
-    if (url.pathname === HEALTH_PATH) return c.json({ ok: true, service: "ficta" });
-    if (url.pathname === STATUS_PATH) return c.json(await protectionStatus(engine, stats));
-    // Values-free config posture (see ConfigPosture). Kept separate from STATUS_PATH, which the
+    const method = c.req.method;
+    if (url.pathname === FICTA_HEALTH_PATH) return c.json({ ok: true, service: "ficta" });
+    if (url.pathname === FICTA_STATUS_PATH) return c.json(await protectionStatus(engine, stats));
+    // Values-free config posture (see ConfigPosture). Kept separate from FICTA_STATUS_PATH, which the
     // gateway's non-admin protection widget polls: transport config (upstreams, host/port, log dir)
     // is admin-facing, and the gateway gates its fetch server-side. The proxy itself stays
     // auth-free and loopback-bound; this endpoint adds no secrets to expose.
-    if (url.pathname === CONFIG_PATH) return c.json({ ok: true, service: "ficta", config: configPosture(cfg) });
+    if (url.pathname === FICTA_CONFIG_PATH) {
+      if (method === "GET") {
+        return c.json({
+          ok: true,
+          service: "ficta",
+          config: configPosture(cfg),
+          edit: proxyConfigEditState(cfg, configEditLocks),
+        });
+      }
+      if (method === "PATCH") {
+        const remoteAddress = c.env.incoming.socket.remoteAddress;
+        if (!isLoopbackAddress(remoteAddress)) {
+          return c.json(
+            {
+              ok: false,
+              service: "ficta",
+              status: "forbidden",
+              message: "Proxy config edits are accepted only from loopback clients.",
+            },
+            403,
+          );
+        }
+        let patch: unknown;
+        try {
+          patch = await c.req.json();
+        } catch {
+          return c.json(
+            { ok: false, service: "ficta", status: "invalid_patch", message: "Config patch must be valid JSON." },
+            400,
+          );
+        }
+        const result = applyProxyConfigPatch(cfg, patch, configEditLocks);
+        return c.json(result, result.ok ? 200 : result.status === "locked" ? 409 : 400);
+      }
+      return c.json({ error: { type: "method_not_allowed", message: "Use GET or PATCH for proxy config." } }, 405);
+    }
 
     // Protect every outbound request body, query string, and non-auth header by default.
     // Provider/client paths change, and an "unknown" route can still carry conversation/tool
     // content; exact-match redaction is safe.
     const protect = engine.protecting;
-    const method = c.req.method;
     const wire = wireOf(url.pathname);
 
     // One scope per request: registered secrets (the permanent layer) are shared, while detected
@@ -517,9 +560,6 @@ async function protectionStatus(engine: RedactionEngine, stats: ProtectionStats)
   };
 }
 
-const HEALTH_PATH = "/__ficta/health";
-const STATUS_PATH = "/__ficta/status";
-const CONFIG_PATH = "/__ficta/config";
 const REQUIRED_AUTH_HEADER_NAMES = new Set(["authorization", "proxy-authorization", "x-api-key", "cookie"]);
 const SURROGATE_RE = /FICTA_[0-9a-f]{32}/;
 

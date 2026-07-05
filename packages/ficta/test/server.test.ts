@@ -1101,11 +1101,13 @@ describe("config posture endpoint", () => {
     "FICTA_REGISTRY_ENV_FILE_ENABLED",
     "FICTA_REGISTRY_PROCESS_ENV_ENABLED",
     "FICTA_REGISTRY_DOPPLER_ENABLED",
+    "FICTA_CONFIG_FILE",
     "FICTA_LOG_LEVEL",
     "FICTA_LOG_DIR",
     "FICTA_SURROGATE_KEY",
     "FICTA_SURROGATE_STYLE",
     "FICTA_FAIL_CLOSED",
+    "FICTA_RESTORE_INTO_TOOLS",
     "FICTA_ALLOW_CUSTOM_UPSTREAM",
   ] as const;
 
@@ -1170,12 +1172,72 @@ describe("config posture endpoint", () => {
             logBodies: false,
           },
         },
+        edit: {
+          disabled: expect.any(Boolean),
+          restartRequired: expect.any(Boolean),
+          values: {
+            failClosed: expect.any(Boolean),
+            piiEnabled: expect.any(Boolean),
+            piiBackend: expect.stringMatching(/^(regex|presidio)$/),
+            piiFailClosed: expect.any(Boolean),
+            piiPresidioUrl: expect.any(String),
+            secretShapesEnabled: expect.any(Boolean),
+            surrogateStyle: expect.stringMatching(/^(opaque|typed)$/),
+            restoreIntoTools: expect.any(Boolean),
+            allowCustomUpstream: expect.any(Boolean),
+          },
+          locked: expect.any(Object),
+        },
       });
 
       // The posture is values-free: no registered secret, no surrogate key material.
       const raw = JSON.stringify(body);
       expect(raw).not.toContain(REGISTERED_SECRET);
       expect(raw).not.toContain(SURROGATE_KEY_FIXTURE);
+    } finally {
+      proxy?.close();
+      for (const [k, v] of Object.entries(original)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
+  it("persists proxy config edits from loopback without hot-applying the running posture", async () => {
+    const original = Object.fromEntries(CONFIG_ENV.map((k) => [k, process.env[k]]));
+    const path = join(mkdtempSync(join(tmpdir(), "ficta-config-edit-server-")), "config.toml");
+
+    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    try {
+      process.env.FICTA_CONFIG_FILE = path;
+      process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+      process.env.FICTA_REGISTRY_PROCESS_ENV_ENABLED = "0";
+      process.env.FICTA_REGISTRY_DOPPLER_ENABLED = "0";
+      process.env.FICTA_LOG_LEVEL = "silent";
+      process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-config-edit-"));
+      delete process.env.FICTA_FAIL_CLOSED;
+
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0, plugins: [] });
+
+      const res = await fetch(`http://127.0.0.1:${proxy.port}/__ficta/config`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ failClosed: false, piiEnabled: true, piiBackend: "regex" }),
+      });
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body).toMatchObject({
+        ok: true,
+        service: "ficta",
+        edit: { restartRequired: true, values: { failClosed: false, piiEnabled: true, piiBackend: "regex" } },
+      });
+
+      const getRes = await fetch(`http://127.0.0.1:${proxy.port}/__ficta/config`);
+      const getBody = await getRes.json();
+      expect(getBody.config.protection.failClosed).toBe(true);
+      expect(getBody.edit.values.failClosed).toBe(false);
     } finally {
       proxy?.close();
       for (const [k, v] of Object.entries(original)) {

@@ -1,0 +1,44 @@
+{
+  "name": "@serovaai/ficta-protocol",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "Shared wire contracts for the Ficta proxy control plane",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SerovaAI/ficta.git",
+    "directory": "packages/protocol"
+  },
+  "bugs": {
+    "url": "https://github.com/SerovaAI/ficta/issues"
+  },
+  "homepage": "https://ficta.sh",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    }
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node -e \"process.exit(0)\"",
+    "typecheck": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 src/index.d.ts",
+    "check": "biome check .",
+    "test": "node -e \"process.exit(0)\""
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.2",
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

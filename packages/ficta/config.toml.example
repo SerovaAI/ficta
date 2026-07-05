@@ -29,6 +29,9 @@ timeout_ms = 5000
 # Registered exact-secret leaks fail closed by default.
 fail_closed = true
 redact_paths = false
+# Tool-call arguments keep placeholders by default. Set true only when tools legitimately need the
+# restored real value.
+restore_into_tools = false
 
 [detection]
 # Detector-backend outages default to fail-open (skip detection and forward).
