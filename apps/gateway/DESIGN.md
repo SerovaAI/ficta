@@ -8,7 +8,7 @@ colors:
   panel: "oklch(1 0 0)"
   panel-ink: "oklch(0.145 0 0)"
   muted-rail: "oklch(0.97 0 0)"
-  muted-ink: "oklch(0.556 0 0)"
+  muted-ink: "oklch(0.52 0 0)"
   line: "oklch(0.922 0 0)"
   focus-ring: "oklch(0.708 0 0)"
   dark-paper: "oklch(0.145 0 0)"
@@ -140,7 +140,7 @@ The palette is neutral-first, with semantic status color carrying the few moment
 ### Neutral
 
 - **Line** (`oklch(0.922 0 0)`): Borders, dividers, input strokes, scroll thumbs, and low-emphasis separation.
-- **Muted Ink** (`oklch(0.556 0 0)`): Secondary copy, thread rows at rest, metadata, helper text, and inactive icons.
+- **Muted Ink** (`oklch(0.52 0 0)`): Secondary copy, thread rows at rest, metadata, helper text, and inactive icons. Dark enough to keep small muted text AA-compliant on muted/accent surfaces.
 - **Dark Paper** (`oklch(0.145 0 0)`): Dark-mode app background.
 - **Dark Panel** (`oklch(0.205 0 0)`): Dark-mode cards and popovers.
 - **Dark Muted Rail** (`oklch(0.269 0 0)`): Dark-mode secondary, muted, and accent surfaces.

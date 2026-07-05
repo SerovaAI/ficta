@@ -242,6 +242,11 @@ function ComposerModelControl({
   const models = MODELS.filter((m) => isModelAllowed(instance, modelKey(m)));
   const selectedReasoning = REASONING_EFFORTS.find((effort) => effort.value === reasoningEffort);
   const reasoningDisabled = model.provider !== "openai";
+  const reasoningLabel = selectedReasoning?.label ?? "Medium";
+  const selectedModelKey = modelKey(model);
+  const controlLabel = reasoningDisabled
+    ? `Choose model and reasoning settings. Current model: ${model.sublabel}. Reasoning is available for OpenAI models only.`
+    : `Choose model and reasoning settings. Current model: ${model.sublabel}. Current reasoning: ${reasoningLabel}.`;
 
   return (
     <DropdownMenu>
@@ -250,55 +255,58 @@ function ComposerModelControl({
           type="button"
           variant="secondary"
           size="sm"
-          className="h-8 shrink-0 gap-1.5 rounded-lg px-2.5"
+          className="h-8 max-w-[9.5rem] shrink-0 gap-1.5 rounded-lg px-2.5 sm:max-w-[14rem]"
           disabled={disabled}
-          aria-label="Choose reasoning level and model"
+          aria-label={controlLabel}
+          title={model.sublabel}
         >
-          <span className="font-medium">{selectedReasoning?.label ?? "Medium"}</span>
+          <span className="min-w-0 truncate font-medium">{model.sublabel}</span>
           <ChevronDown className="size-3.5 opacity-60" aria-hidden />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={8} className="w-64">
-        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Reasoning</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={reasoningEffort}
-          onValueChange={(value) => {
-            if (isReasoningValue(value)) onReasoningEffortChange(value);
-          }}
-        >
-          {REASONING_EFFORTS.map((effort) => (
-            <DropdownMenuRadioItem key={effort.value} value={effort.value} disabled={reasoningDisabled}>
-              {effort.label}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-        {reasoningDisabled ? (
-          <DropdownMenuItem disabled className="text-xs">
-            OpenAI models only
+        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Model</DropdownMenuLabel>
+        {models.map((m) => (
+          <DropdownMenuItem
+            key={modelKey(m)}
+            onSelect={() => onModelChange(m)}
+            className="flex items-center justify-between gap-2"
+          >
+            <span className="flex min-w-0 flex-col">
+              <span className="font-medium">{m.label}</span>
+              <span className="truncate text-xs text-muted-foreground">{m.sublabel}</span>
+            </span>
+            {modelKey(m) === selectedModelKey ? <Check className="size-4" aria-hidden /> : null}
           </DropdownMenuItem>
-        ) : null}
+        ))}
         <DropdownMenuSeparator />
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <span className="min-w-0 flex-1 truncate">Model</span>
-            <span className="max-w-32 truncate text-muted-foreground">{model.sublabel}</span>
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="w-64">
-            {models.map((m) => (
-              <DropdownMenuItem
-                key={m.model}
-                onSelect={() => onModelChange(m)}
-                className="flex items-center justify-between gap-2"
+        {reasoningDisabled ? (
+          <DropdownMenuItem disabled className="flex items-center justify-between gap-2">
+            <span>Reasoning</span>
+            <span className="text-xs text-muted-foreground">OpenAI only</span>
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <span className="min-w-0 flex-1 truncate">Reasoning</span>
+              <span className="max-w-24 truncate text-muted-foreground">{reasoningLabel}</span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-40">
+              <DropdownMenuRadioGroup
+                value={reasoningEffort}
+                onValueChange={(value) => {
+                  if (isReasoningValue(value)) onReasoningEffortChange(value);
+                }}
               >
-                <span className="flex min-w-0 flex-col">
-                  <span className="font-medium">{m.label}</span>
-                  <span className="truncate text-xs text-muted-foreground">{m.sublabel}</span>
-                </span>
-                {m.model === model.model ? <Check className="size-4" aria-hidden /> : null}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
+                {REASONING_EFFORTS.map((effort) => (
+                  <DropdownMenuRadioItem key={effort.value} value={effort.value}>
+                    {effort.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
