@@ -56,6 +56,10 @@ function initialModel(userSettings: UserSettings | undefined, instance: Instance
   return preferred ?? allowed[0] ?? MODELS[0];
 }
 
+function initialReasoningEffort(userSettings: UserSettings | undefined): ReasoningEffort {
+  return userSettings?.defaultReasoningEffort ?? DEFAULT_REASONING_EFFORT;
+}
+
 /**
  * Owns the conversation: the useChat client, the composer input, and the model choice. A fresh chat on
  * `/` generates its own thread id and, once the first exchange completes, persists a snapshot and syncs
@@ -84,7 +88,7 @@ export function ChatView({
   const [passthroughAck, setPassthroughAck] = useState(false);
   const [input, setInput] = useState("");
   const [model, setModel] = useState<ModelChoice>(() => initialModel(userSettings, instance));
-  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(DEFAULT_REASONING_EFFORT);
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(() => initialReasoningEffort(userSettings));
   const [attachments, setAttachments] = useState<TextAttachment[]>([]);
   const [uploadWarning, setUploadWarning] = useState<string[]>();
   const [isExtracting, setIsExtracting] = useState(false);

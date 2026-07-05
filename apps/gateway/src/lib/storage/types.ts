@@ -4,11 +4,14 @@
  * the `Storage` seam (storage.server.ts); everything crossing the server-function boundary is one of
  * these plain, JSON-serializable objects, which is also what keeps a future Convex backend a drop-in.
  */
+import type { ReasoningEffort } from "@/lib/models";
 
 /** Per-user preferences. All fields optional; reads merge over code defaults so a fresh user is valid. */
 export interface UserSettings {
   /** The model pre-selected in a new chat. Validated against MODELS on write; ignored on read if stale. */
   defaultModel?: { provider: string; model: string };
+  /** The reasoning level pre-selected for OpenAI models in the composer. */
+  defaultReasoningEffort?: ReasoningEffort;
 }
 
 /** Instance-wide (admin-owned) settings. One row, shared by everyone on this deployment. */

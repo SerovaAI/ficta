@@ -28,9 +28,14 @@ describe("user settings", () => {
     const first = await store.patchUserSettings("u-1", { defaultModel: { provider: "openai", model: "gpt-5" } });
     expect(first.defaultModel).toEqual({ provider: "openai", model: "gpt-5" });
 
+    const withReasoning = await store.patchUserSettings("u-1", { defaultReasoningEffort: "high" });
+    expect(withReasoning.defaultModel).toEqual({ provider: "openai", model: "gpt-5" });
+    expect(withReasoning.defaultReasoningEffort).toBe("high");
+
     // A patch merges over the stored object rather than replacing it.
     const second = await store.patchUserSettings("u-1", {});
     expect(second.defaultModel).toEqual({ provider: "openai", model: "gpt-5" });
+    expect(second.defaultReasoningEffort).toBe("high");
     expect(await store.getUserSettings("u-1")).toEqual(second);
   });
 
