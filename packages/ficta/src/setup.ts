@@ -3,7 +3,7 @@ import { defaultLogDir, FICTA_DEFAULTS } from "./defaults.js";
 import { envFlag, parseBoolean } from "./engine/env-flags.js";
 import { installShims } from "./install.js";
 import type { RegistrySetupPromptContext, RegistrySetupSource } from "./plugins/index.js";
-import { registrySetupDefaults, registrySetupSources, selectedBackendName } from "./plugins/index.js";
+import { registrySetupDefaults, registrySetupSources, selectedBackendNames } from "./plugins/index.js";
 import { reviewExcludeNamesInteractively } from "./review.js";
 import { configPath, ensureSurrogateKey, readUserConfig, writeUserConfig } from "./user-config.js";
 
@@ -65,33 +65,50 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
     );
     piiValues.FICTA_PII_AGENTS = piiAgents ? "1" : "0";
 
-    const currentBackend = selectedBackendName(process.env) === "presidio" ? "presidio" : "regex";
-    const backend = await promptSelect<"regex" | "presidio">(
-      "PII detection: backend",
+    const currentBackends = selectedBackendNames(process.env).filter((backend) =>
+      ["regex", "presidio", "medical"].includes(backend),
+    ) as Array<"regex" | "presidio" | "medical">;
+    const backends = await promptMultiselect<"regex" | "presidio" | "medical">(
+      "PII detection: backends",
       [
         { value: "regex", label: "Built-in regex — emails, SSNs, cards; in-process, no dependencies" },
         {
           value: "presidio",
           label: "Microsoft Presidio — names, addresses, orgs, phones (needs a running presidio-analyzer sidecar)",
         },
+        {
+          value: "medical",
+          label: "Medical OpenMed — learned medical/PHI-style identifiers (needs the medical analyzer service)",
+        },
       ],
-      currentBackend,
+      currentBackends.length > 0 ? currentBackends : ["regex"],
     );
-    piiValues.FICTA_PII_BACKEND = backend;
-    if (backend === "presidio") {
+    const selectedBackends = backends.length > 0 ? backends : ["regex"];
+    piiValues.FICTA_PII_BACKENDS = selectedBackends.join(",");
+    piiValues.FICTA_PII_BACKEND = selectedBackends[0] ?? "regex";
+    if (selectedBackends.includes("presidio")) {
       piiValues.FICTA_PII_PRESIDIO_URL = await promptText(
         "PII detection: Presidio analyzer URL",
         process.env.FICTA_PII_PRESIDIO_URL || "http://127.0.0.1:5002",
         "The presidio-analyzer REST endpoint; run it yourself (e.g. via Docker).",
       );
+    }
+    if (selectedBackends.includes("medical")) {
+      piiValues.FICTA_PII_MEDICAL_URL = await promptText(
+        "PII detection: medical analyzer URL",
+        process.env.FICTA_PII_MEDICAL_URL || "http://127.0.0.1:5003",
+        "The medical OpenMed analyzer REST endpoint; run it yourself (e.g. via Docker).",
+      );
+    }
+    if (selectedBackends.some((backend) => backend === "presidio" || backend === "medical")) {
       // Only meaningful for a networked backend (the in-process regex never fails). Default this
-      // prompt to Yes: someone who deliberately chose the heavyweight Presidio backend is the user
-      // most likely to want its outages enforced, even though the *runtime* default stays fail-open
+      // prompt to Yes: someone who deliberately chose a networked backend is the user most likely
+      // to want its outages enforced, even though the *runtime* default stays fail-open
       // for everyone who never runs setup. An explicit prior choice (shell env or existing config,
       // loaded before setup) still wins; runtime defaults are not applied to env in the setup path,
       // so an unset var reads as undefined → Yes.
       const failClosed = await promptConfirm(
-        "PII detection: block requests if Presidio is unreachable? (fail-closed — nothing reaches the model while the sidecar is down; recommended when you rely on Presidio. Choose No to keep forwarding best-effort.)",
+        "PII detection: block requests if a selected sidecar is unreachable? (fail-closed — nothing reaches the model while a sidecar is down; recommended when you rely on sidecars. Choose No to keep forwarding best-effort.)",
         parseBoolean(process.env.FICTA_PII_FAIL_CLOSED) ?? true,
       );
       piiValues.FICTA_PII_FAIL_CLOSED = failClosed ? "1" : "0";

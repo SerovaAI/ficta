@@ -7,11 +7,13 @@ import { regexRecognizer } from "../src/engine/plugins/pii/regex-recognizer.js";
 import { DetectorUnavailableError } from "../src/engine/redaction-engine.js";
 import {
   activeBackend,
+  activeBackends,
   type ProtectedValue,
   piiPlugin,
   resetPiiRecognizerStateForTests,
   resolveAgentPiiEnabled,
   selectedBackendName,
+  selectedBackendNames,
 } from "../src/plugins/index.js";
 
 const EMAIL = "alice@example.com";
@@ -155,10 +157,13 @@ describe("pii backend selection", () => {
   const BACKEND_ENVS = [
     "FICTA_PII_ENABLED",
     "FICTA_PII_BACKEND",
+    "FICTA_PII_BACKENDS",
     "FICTA_PII_FAIL_CLOSED",
     "FICTA_FAIL_CLOSED_DETECTION",
     "FICTA_PII_PRESIDIO_URL",
     "FICTA_PII_PRESIDIO_TIMEOUT_MS",
+    "FICTA_PII_MEDICAL_URL",
+    "FICTA_PII_MEDICAL_TIMEOUT_MS",
   ] as const;
   let saved: Record<string, string | undefined>;
 
@@ -181,13 +186,15 @@ describe("pii backend selection", () => {
 
   it("defaults to the regex backend and never reaches for a sidecar", () => {
     expect(selectedBackendName()).toBe("regex");
+    expect(selectedBackendNames()).toEqual(["regex"]);
     const selection = activeBackend();
     expect(selection.name).toBe("regex");
     expect(selection.backend).toBe(regexRecognizer);
     expect(selection.unknown).toBeUndefined();
+    expect(activeBackends().backends.map((backend) => backend.name)).toEqual(["regex"]);
   });
 
-  it("runs only the selected backend (presidio), not regex", async () => {
+  it("keeps the legacy single backend selection behavior", async () => {
     const person = "Jonathan Q Appleseed";
     const { server, port } = await start((text) => {
       const idx = text.indexOf(person);
@@ -212,14 +219,39 @@ describe("pii backend selection", () => {
     }
   });
 
-  it("fails open to no detection when the presidio backend is down (no regex fallback), warning once", async () => {
+  it("runs each selected backend and merges their detections", async () => {
+    const person = "Jonathan Q Appleseed";
+    const { server, port } = await start((text) => {
+      const idx = text.indexOf(person);
+      return idx < 0 ? [] : [{ entity_type: "PERSON", start: idx, end: idx + person.length, score: 0.9 }];
+    });
+    process.env.FICTA_PII_ENABLED = "1";
+    process.env.FICTA_PII_BACKENDS = "presidio,regex";
+    process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
+
+    try {
+      const engine = new ProtectionEngine({ plugins: [piiPlugin] });
+      const body = JSON.stringify({ content: `email ${EMAIL} for ${person}` });
+      const redacted = await engine.redactBodyDetailed(body);
+
+      expect(redacted.count).toBe(2);
+      expect(redacted.body).not.toContain(person);
+      expect(redacted.body).not.toContain(EMAIL);
+      expect(engine.restoreText(redacted.body)).toContain(person);
+      expect(engine.restoreText(redacted.body)).toContain(EMAIL);
+    } finally {
+      await close(server);
+    }
+  });
+
+  it("fails open by skipping only the unavailable backend while reachable backends still run", async () => {
     // The unavailable-backend warning goes through the engine warn sink (which ficta wires to pino).
     // Install a capturing sink — a bare-library engine has a no-op sink by default.
     const warnings: Array<{ fields: Record<string, unknown>; message: string }> = [];
     setEngineWarnSink((fields, message) => warnings.push({ fields, message }));
     const port = await closedPort(); // nothing listening → unreachable
     process.env.FICTA_PII_ENABLED = "1";
-    process.env.FICTA_PII_BACKEND = "presidio";
+    process.env.FICTA_PII_BACKENDS = "presidio,regex";
     process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
 
     try {
@@ -229,10 +261,9 @@ describe("pii backend selection", () => {
       const first = await engine.redactBodyDetailed(body);
       const second = await engine.redactBodyDetailed(body);
 
-      // Exclusive + fail-open: the selected backend is down and there is NO regex fallback, so the
-      // email is not detected. The request is not blocked (default fail-open).
-      expect(first.count).toBe(0);
-      expect(second.count).toBe(0);
+      // Multi-backend + fail-open: the unavailable backend is skipped, but regex still runs.
+      expect(first.count).toBe(1);
+      expect(second.count).toBe(1);
       const backendWarnings = warnings.filter((w) => w.fields.backend === "presidio");
       expect(backendWarnings).toHaveLength(1); // throttled: repeats within the re-warn interval warn once
     } finally {
@@ -314,10 +345,19 @@ describe("pii backend selection", () => {
     expect(details.some((line) => line.includes("bogus"))).toBe(true);
   });
 
+  it("skips unknown names in a multi-backend list while keeping known backends", () => {
+    process.env.FICTA_PII_BACKENDS = "bogus,regex,presidio";
+    const selection = activeBackends();
+    expect(selection.backends.map((backend) => backend.name)).toEqual(["regex", "presidio"]);
+    expect(selection.unknown).toEqual(["bogus"]);
+  });
+
   it("declares config bindings for backend selection and presidio", () => {
     const envs = piiPlugin.config?.bindings.map((b) => b.env) ?? [];
     expect(envs).toContain("FICTA_PII_BACKEND");
+    expect(envs).toContain("FICTA_PII_BACKENDS");
     expect(envs).toContain("FICTA_PII_PRESIDIO_URL");
+    expect(envs).toContain("FICTA_PII_MEDICAL_URL");
     expect(envs).toContain("FICTA_PII_PRESIDIO_SCORE_THRESHOLD");
   });
 });

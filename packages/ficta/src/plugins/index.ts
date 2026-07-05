@@ -39,6 +39,10 @@ export {
   resolveAgentPiiEnabled,
 } from "../engine/plugins/pii/index.js";
 export {
+  checkMedicalHealth,
+  medicalConfig,
+} from "../engine/plugins/pii/medical-recognizer.js";
+export {
   checkPresidioHealth,
   PresidioUnavailableError,
   presidioConfig,
@@ -46,10 +50,13 @@ export {
 export type { PiiRecognizer } from "../engine/plugins/pii/recognizer.js";
 export {
   activeBackend,
+  activeBackends,
   builtInBackendNames,
   DEFAULT_BACKEND,
   ENV_BACKEND,
+  ENV_BACKENDS,
   selectedBackendName,
+  selectedBackendNames,
 } from "../engine/plugins/pii/registry.js";
 export type { UserExclusionParse } from "../engine/plugins/policy.js";
 export {

@@ -10,7 +10,7 @@ import {
   resolveAgentPiiEnabled,
   resolveAgentSecretShapesEnabled,
   secretShapesEnabled,
-  selectedBackendName,
+  selectedBackendNames,
 } from "./plugins/index.js";
 
 /**
@@ -35,6 +35,7 @@ export interface ConfigPosture {
       /** PII detection for launched coding agents (needs `[pii] enabled` AND `[pii] agents`). */
       agents: boolean;
       configuredBackend: string;
+      configuredBackends: string[];
       failureMode: "fail-open" | "fail-closed";
     };
     secretShapes: {
@@ -80,7 +81,8 @@ export function configPosture(
         standalone: piiEnabled(env),
         // Posture, not a per-run override, so the agent gate is evaluated with no shell value.
         agents: resolveAgentPiiEnabled({ enabled: env.FICTA_PII_ENABLED, agents: env.FICTA_PII_AGENTS }),
-        configuredBackend: selectedBackendName(env),
+        configuredBackends: selectedBackendNames(env),
+        configuredBackend: selectedBackendNames(env).join(","),
         failureMode: detectorFailClosed(piiFailClosed(env), env) ? "fail-closed" : "fail-open",
       },
       secretShapes: {

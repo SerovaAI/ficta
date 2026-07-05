@@ -2,9 +2,10 @@ import { detectorFailClosed } from "../../detection-policy.js";
 import { engineWarn } from "../../diagnostics.js";
 import { envFlag, parseBoolean } from "../../env-flags.js";
 import { DetectorUnavailableError } from "../../redaction-engine.js";
-import type { DetectorPlugin, PluginDiscovery } from "../types.js";
+import type { DetectorPlugin, PluginDiscovery, ProtectedValue } from "../types.js";
+import { medicalConfig } from "./medical-recognizer.js";
 import { PresidioUnavailableError, presidioConfig } from "./presidio-recognizer.js";
-import { activeBackend, ENV_BACKEND } from "./registry.js";
+import { activeBackends, ENV_BACKEND, ENV_BACKENDS } from "./registry.js";
 
 const PLUGIN_NAME = "pii";
 const ENV_ENABLED = "FICTA_PII_ENABLED";
@@ -12,14 +13,12 @@ const ENV_AGENTS = "FICTA_PII_AGENTS";
 const ENV_FAIL_CLOSED = "FICTA_PII_FAIL_CLOSED";
 
 /**
- * A single detection backend is selected at a time — `FICTA_PII_BACKEND` ↔ `[pii] backend` (default
- * `regex`); see {@link activeBackend}. The in-process `regex` backend (sync) is the always-available
- * default; a `presidio` backend (async Microsoft Presidio sidecar for names/addresses/orgs) plugs in
- * behind {@link import("./recognizer.js").PiiRecognizer}. The engine's detection path is async, so
- * `detectText` awaits the backend (sync or async). The selected backend is the ONLY backend — there
- * is no cross-backend fallback. If it cannot run, `detectText` throws a neutral
- * {@link DetectorUnavailableError}; the *core* decides whether that blocks the request (resolving
- * this plugin's {@link piiFailClosed} override against the global default). The plugin never enforces.
+ * PII detection can run one or more configured backends — `FICTA_PII_BACKENDS` ↔ `[pii] backends`.
+ * The legacy single-backend setting (`FICTA_PII_BACKEND` / `[pii] backend`) remains supported when
+ * `backends` is unset. Each backend plugs in behind {@link import("./recognizer.js").PiiRecognizer}.
+ * The plugin coordinates backend calls, records per-backend outages, and merges detected values so
+ * combinations like `presidio,medical` can keep their containers separate while sharing one Ficta
+ * detector policy.
  */
 
 /** Exported so `ficta doctor` can gate its presidio reachability check on PII actually being on. */
@@ -126,26 +125,39 @@ export const piiPlugin: DetectorPlugin = {
       [ENV_AGENTS]: "0",
       [ENV_FAIL_CLOSED]: "0",
       FICTA_PII_BACKEND: "regex",
+      FICTA_PII_BACKENDS: "",
       FICTA_PII_PRESIDIO_URL: "http://127.0.0.1:5002",
       FICTA_PII_PRESIDIO_LANGUAGE: "en",
       FICTA_PII_PRESIDIO_SCORE_THRESHOLD: "0.5",
       FICTA_PII_PRESIDIO_ENTITIES: "",
       FICTA_PII_PRESIDIO_TIMEOUT_MS: "1500",
+      FICTA_PII_MEDICAL_URL: "http://127.0.0.1:5003",
+      FICTA_PII_MEDICAL_LANGUAGE: "",
+      FICTA_PII_MEDICAL_SCORE_THRESHOLD: "",
+      FICTA_PII_MEDICAL_ENTITIES: "",
+      FICTA_PII_MEDICAL_TIMEOUT_MS: "",
     },
     bindings: [
       { env: ENV_ENABLED, path: ["pii", "enabled"], kind: "boolean" },
       { env: ENV_AGENTS, path: ["pii", "agents"], kind: "boolean" },
       { env: ENV_FAIL_CLOSED, path: ["pii", "fail_closed"], kind: "boolean" },
       { env: ENV_BACKEND, path: ["pii", "backend"], kind: "string" },
+      { env: ENV_BACKENDS, path: ["pii", "backends"], kind: "string-array-comma" },
       { env: "FICTA_PII_PRESIDIO_URL", path: ["pii", "presidio", "url"], kind: "string" },
       { env: "FICTA_PII_PRESIDIO_LANGUAGE", path: ["pii", "presidio", "language"], kind: "string" },
       { env: "FICTA_PII_PRESIDIO_SCORE_THRESHOLD", path: ["pii", "presidio", "score_threshold"], kind: "number" },
       { env: "FICTA_PII_PRESIDIO_ENTITIES", path: ["pii", "presidio", "entities"], kind: "string-array-comma" },
       { env: "FICTA_PII_PRESIDIO_TIMEOUT_MS", path: ["pii", "presidio", "timeout_ms"], kind: "number" },
+      { env: "FICTA_PII_MEDICAL_URL", path: ["pii", "medical", "url"], kind: "string" },
+      { env: "FICTA_PII_MEDICAL_LANGUAGE", path: ["pii", "medical", "language"], kind: "string" },
+      { env: "FICTA_PII_MEDICAL_SCORE_THRESHOLD", path: ["pii", "medical", "score_threshold"], kind: "number" },
+      { env: "FICTA_PII_MEDICAL_ENTITIES", path: ["pii", "medical", "entities"], kind: "string-array-comma" },
+      { env: "FICTA_PII_MEDICAL_TIMEOUT_MS", path: ["pii", "medical", "timeout_ms"], kind: "number" },
     ],
     sections: [
-      { path: ["pii"], keys: ["enabled", "agents", "fail_closed", "backend"] },
+      { path: ["pii"], keys: ["enabled", "agents", "fail_closed", "backend", "backends"] },
       { path: ["pii", "presidio"], keys: ["url", "language", "score_threshold", "entities", "timeout_ms"] },
+      { path: ["pii", "medical"], keys: ["url", "language", "score_threshold", "entities", "timeout_ms"] },
     ],
   },
   setup: {
@@ -165,16 +177,24 @@ export const piiPlugin: DetectorPlugin = {
   failClosed: piiFailClosed,
   async detectText(text, ctx) {
     if (!text || !piiEnabled()) return [];
-    const { name, backend } = activeBackend();
-    try {
-      // The backend may be sync (regex) or async (a Presidio/NER sidecar); await normalizes both.
-      return [...(await backend.detect(text, ctx))];
-    } catch (err) {
-      // The selected backend is the only backend — no cross-backend fallback. Record the failure
-      // (warn-once) and signal it neutrally; the core decides whether the outage blocks the request.
-      const { reason, detail } = notePiiRecognizerFailure(name, err);
-      throw new DetectorUnavailableError(PLUGIN_NAME, detail ? `${reason} (${detail})` : reason);
+    const { backends } = activeBackends();
+    const values: ProtectedValue[] = [];
+    const failures: string[] = [];
+
+    for (const { name, backend } of backends) {
+      try {
+        // The backend may be sync (regex) or async (a Presidio/NER sidecar); await normalizes both.
+        values.push(...(await backend.detect(text, ctx)));
+      } catch (err) {
+        const { reason, detail } = notePiiRecognizerFailure(name, err);
+        failures.push(`${name}: ${detail ? `${reason} (${detail})` : reason}`);
+      }
     }
+
+    if (failures.length > 0 && detectorFailClosed(piiFailClosed())) {
+      throw new DetectorUnavailableError(PLUGIN_NAME, failures.join("; "));
+    }
+    return mergeDetectedValues(values);
   },
 };
 
@@ -190,12 +210,12 @@ function discoverPii(): PluginDiscovery {
     };
   }
 
-  const { name, unknown } = activeBackend();
-  const backendLabel = name === "presidio" ? `presidio (${presidioConfig().url})` : name;
+  const { backends, unknown } = activeBackends();
+  const backendLabel = backends.map(({ name }) => backendLabelFor(name)).join(", ");
   const onFailure = detectorFailClosed(piiFailClosed()) ? "block request" : "skip detection";
 
   const details: string[] = [];
-  if (unknown) details.push(`unknown backend "${unknown}" — using ${name}`);
+  for (const name of unknown) details.push(`unknown backend "${name}" — skipped`);
   for (const [failedName, failure] of piiRecognizerFailures()) {
     details.push(
       `${failedName}: last request failed — ${failure.reason}${failure.detail ? ` (${failure.detail})` : ""}`,
@@ -209,7 +229,55 @@ function discoverPii(): PluginDiscovery {
     // A detector holds no pre-loaded values — it matches each request at runtime — so report `active`
     // with no valueCount rather than a misleading "(0 values)" that reads as idle.
     status: "active",
-    message: `active — matches each request; backend: ${backendLabel}; on backend failure: ${onFailure}; tokenized on egress and restored on responses`,
+    message: `active — matches each request; backends: ${backendLabel}; on backend failure: ${onFailure}; tokenized on egress and restored on responses`,
     details: details.length > 0 ? details : undefined,
   };
+}
+
+function backendLabelFor(name: string): string {
+  if (name === "presidio") return `presidio (${presidioConfig().url})`;
+  if (name === "medical") return `medical (${medicalConfig().url})`;
+  return name;
+}
+
+function mergeDetectedValues(values: readonly ProtectedValue[]): ProtectedValue[] {
+  const accepted: ProtectedValue[] = [];
+  for (const value of values) {
+    if (!value.value.trim()) continue;
+    const exact = accepted.find((existing) => existing.value === value.value);
+    if (exact) {
+      if (preferValue(value, exact) === value) {
+        accepted.splice(accepted.indexOf(exact), 1, value);
+      }
+      continue;
+    }
+
+    const overlaps = accepted.filter((existing) => containsEither(existing.value, value.value));
+    if (overlaps.length === 0) {
+      accepted.push(value);
+      continue;
+    }
+    if (overlaps.some((existing) => preferValue(existing, value) === existing)) continue;
+    for (const overlap of overlaps) accepted.splice(accepted.indexOf(overlap), 1);
+    accepted.push(value);
+  }
+  return accepted;
+}
+
+function containsEither(a: string, b: string): boolean {
+  return a.includes(b) || b.includes(a);
+}
+
+function preferValue(a: ProtectedValue, b: ProtectedValue): ProtectedValue {
+  const confidence = { exact: 3, high: 2, probabilistic: 1 } as const;
+  const aConfidence = confidence[a.confidence ?? "probabilistic"];
+  const bConfidence = confidence[b.confidence ?? "probabilistic"];
+  if (aConfidence !== bConfidence) return aConfidence > bConfidence ? a : b;
+
+  const aMedical = a.source === "pii-medical" || a.name.includes("medical") || a.name.includes("health");
+  const bMedical = b.source === "pii-medical" || b.name.includes("medical") || b.name.includes("health");
+  if (aMedical !== bMedical) return aMedical ? a : b;
+
+  if (a.value.length !== b.value.length) return a.value.length > b.value.length ? a : b;
+  return a.source <= b.source ? a : b;
 }

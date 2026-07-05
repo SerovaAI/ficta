@@ -9,8 +9,9 @@ import type { LogLevel } from "./log-level.js";
 import { codexUsesChatgptAuth } from "./plugins/agents.js";
 import {
   type AgentIntegration,
-  activeBackend,
+  activeBackends,
   agentIntegrations,
+  checkMedicalHealth,
   checkPresidioHealth,
   loadPluginRegistry,
   type PluginDiscovery,
@@ -20,7 +21,6 @@ import {
   type RegistryPolicy,
   registryDiscoveryLines,
   registryPolicyLines,
-  selectedBackendName,
 } from "./plugins/index.js";
 import { configPath } from "./user-config.js";
 
@@ -153,22 +153,23 @@ export async function collectDoctorReport(opts: DoctorOptions = {}): Promise<Doc
   }
 
   if (piiEnabled()) {
-    const { unknown } = activeBackend();
-    if (unknown) {
+    const { backends, unknown } = activeBackends();
+    for (const name of unknown) {
       issues.push({
         severity: "warning",
-        message: `unknown PII backend "${unknown}" configured — falling back to regex`,
+        message: `unknown PII backend "${name}" configured — skipping it`,
       });
     }
-    if (selectedBackendName() === "presidio") {
-      const health = await checkPresidioHealth();
+    for (const { name } of backends) {
+      if (name !== "presidio" && name !== "medical") continue;
+      const health = name === "medical" ? await checkMedicalHealth() : await checkPresidioHealth();
       if (!health.ok) {
         const consequence = detectorFailClosed(piiFailClosed())
           ? "requests will be BLOCKED (503) until it is reachable (fail-closed)"
-          : "PII detection is skipped for those requests (fail-open)";
+          : "that backend is skipped while reachable backends still run (fail-open)";
         issues.push({
           severity: "warning",
-          message: `PII backend "presidio" is selected but ${health.url} is unreachable${
+          message: `PII backend "${name}" is selected but ${health.url} is unreachable${
             health.detail ? ` (${health.detail})` : ""
           } — ${consequence}`,
         });
