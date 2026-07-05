@@ -11,3 +11,21 @@ export const MODELS = [
 ] as const;
 
 export type ModelChoice = (typeof MODELS)[number];
+
+export const REASONING_EFFORTS = [
+  { value: "none", label: "Instant" },
+  { value: "minimal", label: "Minimal" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+] as const;
+
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number]["value"];
+
+export const DEFAULT_REASONING_EFFORT: ReasoningEffort = "medium";
+
+const REASONING_EFFORT_VALUES = new Set(REASONING_EFFORTS.map((effort) => effort.value));
+
+export function isReasoningEffort(value: unknown): value is ReasoningEffort {
+  return typeof value === "string" && REASONING_EFFORT_VALUES.has(value as ReasoningEffort);
+}

@@ -24,7 +24,7 @@ import {
   type TextAttachment,
   textAttachmentFromFile,
 } from "@/lib/file-attachments";
-import { MODELS, type ModelChoice } from "@/lib/models";
+import { DEFAULT_REASONING_EFFORT, MODELS, type ModelChoice, type ReasoningEffort } from "@/lib/models";
 import type { ProtectionStatus } from "@/lib/protection-status";
 import { uiToStored } from "@/lib/storage/messages";
 import { invalidateThreads, threadKeys } from "@/lib/storage/threadQueries";
@@ -82,6 +82,7 @@ export function ChatView({
   const [passthroughAck, setPassthroughAck] = useState(false);
   const [input, setInput] = useState("");
   const [model, setModel] = useState<ModelChoice>(() => initialModel(userSettings, instance));
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(DEFAULT_REASONING_EFFORT);
   const [attachments, setAttachments] = useState<TextAttachment[]>([]);
   const [uploadWarning, setUploadWarning] = useState<string[]>();
   const [isExtracting, setIsExtracting] = useState(false);
@@ -90,8 +91,8 @@ export function ChatView({
   // A new chat gets a stable id up front so its snapshot has a home before the first save.
   const tid = useMemo(() => threadId ?? crypto.randomUUID(), [threadId]);
   const forwardedProps = useMemo(
-    () => ({ provider: model.provider, model: model.model }),
-    [model.provider, model.model],
+    () => ({ provider: model.provider, model: model.model, reasoningEffort }),
+    [model.provider, model.model, reasoningEffort],
   );
 
   const { messages, sendMessage, isLoading, error, stop, reload, clear } = useChat({
@@ -304,14 +305,7 @@ export function ChatView({
         />
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <TopBar
-            model={model}
-            onModelChange={setModel}
-            busy={isLoading}
-            sidebarOpen={sidebar.open}
-            onToggleSidebar={sidebar.toggle}
-            protectionStatus={protectionStatus}
-          />
+          <TopBar sidebarOpen={sidebar.open} onToggleSidebar={sidebar.toggle} protectionStatus={protectionStatus} />
 
           <MessageList
             messages={messages}
@@ -337,6 +331,10 @@ export function ChatView({
             isLoading={isLoading}
             isExtracting={isExtracting}
             disabledReason={posture.kind === "blocked" ? posture.reason : undefined}
+            model={model}
+            onModelChange={setModel}
+            reasoningEffort={reasoningEffort}
+            onReasoningEffortChange={setReasoningEffort}
             attachments={attachments}
             uploadWarning={uploadWarning}
             autoFocus={!threadId && messages.length === 0}
