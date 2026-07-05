@@ -21,6 +21,7 @@
 
 ### Fixed
 
+- Fixed Gateway admin proxy configuration so PII backend editing uses the multi-backend `FICTA_PII_BACKENDS` model and exposes OpenMed/medical detection alongside Regex and Presidio.
 - Fixed Gateway admin model availability saves being reported as failed when the save succeeded but route refresh failed.
 - Improved Gateway muted text contrast on quiet tinted surfaces.
 - Fixed Gateway dev-server hangs from manual TanStack server-function prewarming and IPv6-only localhost binding.

@@ -1,9 +1,11 @@
 import type {
   EditableProxyConfigKey,
   EditableProxyConfigValues,
+  PiiBackendName,
   ProxyConfigEditState,
   ProxyConfigPatchResponse,
 } from "@serovaai/ficta-protocol";
+import { normalizePiiBackends } from "@serovaai/ficta-protocol";
 import type { Config } from "./config.js";
 import { configPosture } from "./config-posture.js";
 import { parseBoolean } from "./engine/env-flags.js";
@@ -12,14 +14,17 @@ import { configPath, readUserConfig, wasLoadedFromUserConfig, writeUserConfig } 
 const FIELD_ENV: Record<EditableProxyConfigKey, string> = {
   failClosed: "FICTA_FAIL_CLOSED",
   piiEnabled: "FICTA_PII_ENABLED",
-  piiBackend: "FICTA_PII_BACKEND",
+  piiBackends: "FICTA_PII_BACKENDS",
   piiFailClosed: "FICTA_PII_FAIL_CLOSED",
   piiPresidioUrl: "FICTA_PII_PRESIDIO_URL",
+  piiOpenmedUrl: "FICTA_PII_OPENMED_URL",
   secretShapesEnabled: "FICTA_SECRET_SHAPES_ENABLED",
   surrogateStyle: "FICTA_SURROGATE_STYLE",
   restoreIntoTools: "FICTA_RESTORE_INTO_TOOLS",
   allowCustomUpstream: "FICTA_ALLOW_CUSTOM_UPSTREAM",
 };
+
+const LEGACY_BACKEND_ENV = "FICTA_PII_BACKEND";
 
 const EDITABLE_KEYS = new Set<EditableProxyConfigKey>(Object.keys(FIELD_ENV) as EditableProxyConfigKey[]);
 
@@ -40,9 +45,10 @@ export function proxyConfigEditState(
   const values: EditableProxyConfigValues = {
     failClosed: boolValue("failClosed", fileValues, effective.failClosed, locked),
     piiEnabled: boolValue("piiEnabled", fileValues, effective.piiEnabled, locked),
-    piiBackend: piiBackendValue(fileValues, effective.piiBackend, locked),
+    piiBackends: piiBackendsValue(fileValues, effective.piiBackends, locked),
     piiFailClosed: boolValue("piiFailClosed", fileValues, effective.piiFailClosed, locked),
     piiPresidioUrl: stringValue("piiPresidioUrl", fileValues, effective.piiPresidioUrl, locked),
+    piiOpenmedUrl: stringValue("piiOpenmedUrl", fileValues, effective.piiOpenmedUrl, locked),
     secretShapesEnabled: boolValue("secretShapesEnabled", fileValues, effective.secretShapesEnabled, locked),
     surrogateStyle: surrogateStyleValue(fileValues, effective.surrogateStyle, locked),
     restoreIntoTools: boolValue("restoreIntoTools", fileValues, effective.restoreIntoTools, locked),
@@ -84,7 +90,7 @@ export function applyProxyConfigPatch(
         service: "ficta",
         status: "locked",
         field,
-        message: `${FIELD_ENV[field]} is set in the proxy environment; edit that environment value and restart instead.`,
+        message: `${locked[field] ?? `${FIELD_ENV[field]} is set in the proxy environment.`} Edit that environment value and restart instead.`,
       };
     }
   }
@@ -92,6 +98,7 @@ export function applyProxyConfigPatch(
   const envValues = readUserConfig(path);
   for (const [field, value] of Object.entries(validation.patch) as Array<[EditableProxyConfigKey, EditableValue]>) {
     envValues[FIELD_ENV[field]] = envString(field, value);
+    if (field === "piiBackends") delete envValues[LEGACY_BACKEND_ENV];
   }
   writeUserConfig(envValues, path);
 
@@ -140,30 +147,38 @@ function validateField(
     case "restoreIntoTools":
     case "allowCustomUpstream":
       return typeof value === "boolean" ? { ok: true, value } : invalid(`${field} must be a boolean.`, field);
-    case "piiBackend":
-      return value === "regex" || value === "presidio"
-        ? { ok: true, value }
-        : invalid("piiBackend must be regex or presidio.", field);
+    case "piiBackends": {
+      const backends = normalizePiiBackends(value);
+      return backends ? { ok: true, value: backends } : invalid("piiBackends must include known PII backends.", field);
+    }
     case "surrogateStyle":
       return value === "opaque" || value === "typed"
         ? { ok: true, value }
         : invalid("surrogateStyle must be opaque or typed.", field);
     case "piiPresidioUrl":
-      if (typeof value !== "string") return invalid("piiPresidioUrl must be a string.", field);
-      try {
-        const url = new URL(value.trim());
-        if (url.protocol !== "http:" && url.protocol !== "https:") {
-          return invalid("piiPresidioUrl must use http or https.", field);
-        }
-        return { ok: true, value: value.trim().replace(/\/+$/, "") };
-      } catch {
-        return invalid("piiPresidioUrl must be a valid URL.", field);
-      }
+    case "piiOpenmedUrl":
+      return validateUrlField(field, value);
   }
 }
 
 function invalid(message: string, field?: EditableProxyConfigKey): Extract<PatchValidation, { ok: false }> {
   return { ok: false, service: "ficta", status: "invalid_patch", message, field };
+}
+
+function validateUrlField(
+  field: "piiPresidioUrl" | "piiOpenmedUrl",
+  value: unknown,
+): { ok: true; value: string } | Extract<PatchValidation, { ok: false }> {
+  if (typeof value !== "string") return invalid(`${field} must be a string.`, field);
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return invalid(`${field} must use http or https.`, field);
+    }
+    return { ok: true, value: value.trim().replace(/\/+$/, "") };
+  } catch {
+    return invalid(`${field} must be a valid URL.`, field);
+  }
 }
 
 function lockedFields(): Partial<Record<EditableProxyConfigKey, string>> {
@@ -173,6 +188,9 @@ function lockedFields(): Partial<Record<EditableProxyConfigKey, string>> {
       out[field] = `${env} is set in the proxy environment.`;
     }
   }
+  if (process.env[LEGACY_BACKEND_ENV] !== undefined && !wasLoadedFromUserConfig(LEGACY_BACKEND_ENV)) {
+    out.piiBackends = `${LEGACY_BACKEND_ENV} is set in the proxy environment.`;
+  }
   return out;
 }
 
@@ -181,9 +199,10 @@ function effectiveEditableValues(cfg: Config): EditableProxyConfigValues {
   return {
     failClosed: posture.protection.failClosed,
     piiEnabled: posture.detection.pii.standalone,
-    piiBackend: posture.detection.pii.configuredBackend === "presidio" ? "presidio" : "regex",
+    piiBackends: normalizeConfiguredPiiBackends(posture.detection.pii.configuredBackends),
     piiFailClosed: posture.detection.pii.failureMode === "fail-closed",
     piiPresidioUrl: process.env.FICTA_PII_PRESIDIO_URL?.trim().replace(/\/+$/, "") || "http://127.0.0.1:5002",
+    piiOpenmedUrl: process.env.FICTA_PII_OPENMED_URL?.trim().replace(/\/+$/, "") || "http://127.0.0.1:5004",
     secretShapesEnabled: posture.detection.secretShapes.standalone,
     surrogateStyle: posture.protection.surrogateStyle,
     restoreIntoTools: posture.protection.restoreIntoTools,
@@ -211,13 +230,16 @@ function stringValue(
   return values[FIELD_ENV[field]]?.trim().replace(/\/+$/, "") || fallback;
 }
 
-function piiBackendValue(
+function piiBackendsValue(
   values: Record<string, string>,
-  fallback: "regex" | "presidio",
+  fallback: PiiBackendName[],
   locked: Partial<Record<EditableProxyConfigKey, string>>,
-): "regex" | "presidio" {
-  if (locked.piiBackend) return fallback;
-  return values.FICTA_PII_BACKEND?.trim().toLowerCase() === "presidio" ? "presidio" : "regex";
+): PiiBackendName[] {
+  if (locked.piiBackends) return fallback;
+  const backends = backendsFromCommaList(values.FICTA_PII_BACKENDS);
+  if (backends) return backends;
+  const legacyBackend = backendsFromCommaList(values[LEGACY_BACKEND_ENV]);
+  return legacyBackend ?? fallback;
 }
 
 function surrogateStyleValue(
@@ -238,15 +260,36 @@ function envString(field: EditableProxyConfigKey, value: EditableValue): string 
     case "restoreIntoTools":
     case "allowCustomUpstream":
       return value ? "1" : "0";
-    case "piiBackend":
+    case "piiBackends":
+      return (value as PiiBackendName[]).join(",");
     case "surrogateStyle":
     case "piiPresidioUrl":
+    case "piiOpenmedUrl":
       return String(value);
   }
 }
 
 function editableValuesEqual(a: EditableProxyConfigValues, b: EditableProxyConfigValues): boolean {
-  return (Object.keys(FIELD_ENV) as EditableProxyConfigKey[]).every((key) => a[key] === b[key]);
+  return (Object.keys(FIELD_ENV) as EditableProxyConfigKey[]).every((key) => {
+    const av = a[key];
+    const bv = b[key];
+    if (Array.isArray(av) && Array.isArray(bv)) return av.length === bv.length && av.every((item, i) => item === bv[i]);
+    return av === bv;
+  });
+}
+
+function normalizeConfiguredPiiBackends(values: readonly string[]): PiiBackendName[] {
+  return normalizePiiBackends(values) ?? ["regex"];
+}
+
+function backendsFromCommaList(value: string | undefined): PiiBackendName[] | undefined {
+  if (value === undefined) return undefined;
+  return normalizePiiBackends(
+    value
+      .split(",")
+      .map((name) => name.trim().toLowerCase())
+      .filter(Boolean),
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

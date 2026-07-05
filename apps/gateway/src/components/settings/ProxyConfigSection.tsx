@@ -7,6 +7,8 @@ import {
   type EditableProxyConfigPatch,
   type EditableProxyConfigValues,
   fetchProxyConfig,
+  PII_BACKEND_NAMES,
+  type PiiBackendName,
   type ProxyConfig,
   updateProxyConfig,
 } from "@/lib/proxy-config";
@@ -15,8 +17,24 @@ import { cn } from "@/lib/utils";
 import { SettingRow } from "./SettingRow";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
+type TextConfigKey = Extract<EditableProxyConfigKey, "piiPresidioUrl" | "piiOpenmedUrl">;
 
 const TEXT_SAVE_DELAY_MS = 600;
+
+const PII_BACKEND_LABELS: Record<PiiBackendName, { label: string; description: string }> = {
+  regex: {
+    label: "Regex",
+    description: "In-process emails, SSNs, and cards.",
+  },
+  presidio: {
+    label: "Presidio",
+    description: "Names, addresses, orgs, and phones via sidecar.",
+  },
+  openmed: {
+    label: "OpenMed",
+    description: "Medical and PHI-style identifiers via sidecar.",
+  },
+};
 
 /**
  * Admin editor for the ficta proxy's safety posture. Reads and writes go through admin-gated server
@@ -28,8 +46,8 @@ export function ProxyConfigSection() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [saveError, setSaveError] = useState("Could not save proxy configuration.");
   const saveSeq = useRef(0);
-  const textTimer = useRef<number | undefined>(undefined);
-  const pendingPresidioUrl = useRef<string | undefined>(undefined);
+  const textTimers = useRef<Partial<Record<TextConfigKey, number>>>({});
+  const pendingTextValues = useRef<Partial<Record<TextConfigKey, string>>>({});
   const live = useProtectionStatus();
 
   useEffect(() => {
@@ -57,13 +75,18 @@ export function ProxyConfigSection() {
 
   useEffect(() => {
     return () => {
-      if (textTimer.current !== undefined) window.clearTimeout(textTimer.current);
+      for (const timer of Object.values(textTimers.current)) {
+        if (timer !== undefined) window.clearTimeout(timer);
+      }
     };
   }, []);
 
   const savePatch = async (
     patch: EditableProxyConfigPatch,
-    options: { previous?: EditableProxyConfigValues; presidioUrl?: string } = {},
+    options: {
+      pendingText?: { key: TextConfigKey; value: string };
+      revert?: { key: EditableProxyConfigKey; value: EditableProxyConfigValues[EditableProxyConfigKey] };
+    } = {},
   ) => {
     const seq = saveSeq.current + 1;
     saveSeq.current = seq;
@@ -75,25 +98,33 @@ export function ProxyConfigSection() {
       if (saveSeq.current !== seq) return;
 
       if (!result.ok) {
-        if (options.previous) setDraft(options.previous);
+        if (options.revert) {
+          const { key, value } = options.revert;
+          setDraft((current) => (current ? { ...current, [key]: value } : current));
+        }
         setSaveStatus("error");
         setSaveError(result.message);
         return;
       }
 
-      if (options.presidioUrl !== undefined && pendingPresidioUrl.current === options.presidioUrl) {
-        pendingPresidioUrl.current = undefined;
+      if (
+        options.pendingText !== undefined &&
+        pendingTextValues.current[options.pendingText.key] === options.pendingText.value
+      ) {
+        delete pendingTextValues.current[options.pendingText.key];
       }
       setConfig((current) => (current?.ok ? { ...current, edit: result.edit } : current));
-      setDraft((current) =>
-        current && pendingPresidioUrl.current !== undefined
-          ? { ...result.edit.values, piiPresidioUrl: current.piiPresidioUrl }
-          : result.edit.values,
-      );
+      setDraft((current) => {
+        const pending = pendingTextValues.current;
+        return current && Object.keys(pending).length > 0 ? { ...result.edit.values, ...pending } : result.edit.values;
+      });
       setSaveStatus("saved");
     } catch (err) {
       if (saveSeq.current !== seq) return;
-      if (options.previous) setDraft(options.previous);
+      if (options.revert) {
+        const { key, value } = options.revert;
+        setDraft((current) => (current ? { ...current, [key]: value } : current));
+      }
       setSaveStatus("error");
       setSaveError(err instanceof Error ? err.message : "Could not save proxy configuration.");
     }
@@ -105,24 +136,27 @@ export function ProxyConfigSection() {
     options: { debounce?: boolean } = {},
   ) => {
     if (!draft || draft[key] === value) return;
-    const previous = draft;
+    const previous = draft[key];
     const next = { ...draft, [key]: value };
     setDraft(next);
     setSaveError("Could not save proxy configuration.");
 
     if (options.debounce) {
+      if (!isTextConfigKey(key)) return;
       saveSeq.current += 1;
-      if (textTimer.current !== undefined) window.clearTimeout(textTimer.current);
-      pendingPresidioUrl.current = String(value);
+      if (textTimers.current[key] !== undefined) window.clearTimeout(textTimers.current[key]);
+      pendingTextValues.current[key] = String(value);
       setSaveStatus("saving");
-      textTimer.current = window.setTimeout(() => {
-        textTimer.current = undefined;
-        void savePatch({ [key]: value } as EditableProxyConfigPatch, { presidioUrl: String(value) });
+      textTimers.current[key] = window.setTimeout(() => {
+        delete textTimers.current[key];
+        void savePatch({ [key]: value } as EditableProxyConfigPatch, {
+          pendingText: { key, value: String(value) },
+        });
       }, TEXT_SAVE_DELAY_MS);
       return;
     }
 
-    void savePatch({ [key]: value } as EditableProxyConfigPatch, { previous });
+    void savePatch({ [key]: value } as EditableProxyConfigPatch, { revert: { key, value: previous } });
   };
 
   return (
@@ -179,6 +213,12 @@ function ConfigEditor({
   const disabled = edit.disabled;
   const set = <K extends EditableProxyConfigKey>(key: K, value: EditableProxyConfigValues[K]) => {
     onFieldChange(key, value);
+  };
+  const toggleBackend = (backend: PiiBackendName, checked: boolean) => {
+    const next = new Set(draft.piiBackends);
+    if (checked) next.add(backend);
+    else next.delete(backend);
+    set("piiBackends", orderedBackends(next));
   };
 
   return (
@@ -237,30 +277,45 @@ function ConfigEditor({
           locked={edit.locked.piiEnabled}
         />
       </SettingRow>
-      <SettingRow label="PII backend" description="Regex is in-process; Presidio uses the configured analyzer URL.">
-        <SelectControl
-          value={draft.piiBackend}
-          disabled={isDisabled("piiBackend", edit, disabled)}
-          onChange={(value) => set("piiBackend", value as EditableProxyConfigValues["piiBackend"])}
-          locked={edit.locked.piiBackend}
-          options={[
-            ["regex", "Regex"],
-            ["presidio", "Presidio"],
-          ]}
+      <SettingRow
+        label="PII backends"
+        description="Select one or more detectors for chat traffic through this gateway."
+      >
+        <BackendCheckboxGroup
+          selected={draft.piiBackends}
+          disabled={isDisabled("piiBackends", edit, disabled)}
+          locked={edit.locked.piiBackends}
+          onChange={toggleBackend}
         />
       </SettingRow>
-      <SettingRow label="Presidio URL" htmlFor="proxy-presidio-url" description="Analyzer endpoint used by Presidio.">
-        <div className="space-y-1">
-          <Input
-            id="proxy-presidio-url"
-            value={draft.piiPresidioUrl}
-            disabled={isDisabled("piiPresidioUrl", edit, disabled)}
-            className="w-64 font-mono text-xs"
-            onChange={(event) => onFieldChange("piiPresidioUrl", event.target.value, { debounce: true })}
-          />
-          <LockedText>{edit.locked.piiPresidioUrl}</LockedText>
-        </div>
-      </SettingRow>
+      {draft.piiBackends.includes("presidio") ? (
+        <SettingRow label="Presidio URL" htmlFor="proxy-presidio-url" description="Analyzer endpoint used by Presidio.">
+          <div className="space-y-1">
+            <Input
+              id="proxy-presidio-url"
+              value={draft.piiPresidioUrl}
+              disabled={isDisabled("piiPresidioUrl", edit, disabled)}
+              className="w-64 font-mono text-xs"
+              onChange={(event) => onFieldChange("piiPresidioUrl", event.target.value, { debounce: true })}
+            />
+            <LockedText>{edit.locked.piiPresidioUrl}</LockedText>
+          </div>
+        </SettingRow>
+      ) : null}
+      {draft.piiBackends.includes("openmed") ? (
+        <SettingRow label="OpenMed URL" htmlFor="proxy-openmed-url" description="REST endpoint used by OpenMed.">
+          <div className="space-y-1">
+            <Input
+              id="proxy-openmed-url"
+              value={draft.piiOpenmedUrl}
+              disabled={isDisabled("piiOpenmedUrl", edit, disabled)}
+              className="w-64 font-mono text-xs"
+              onChange={(event) => onFieldChange("piiOpenmedUrl", event.target.value, { debounce: true })}
+            />
+            <LockedText>{edit.locked.piiOpenmedUrl}</LockedText>
+          </div>
+        </SettingRow>
+      ) : null}
       <SettingRow label="PII outage policy" description="Block sends when the selected PII backend is unavailable.">
         <BooleanControl
           id="proxy-pii-fail-closed"
@@ -344,6 +399,46 @@ function InlineStatus({ status, error }: { status: SaveStatus; error: string }) 
     <p className={cn("py-4 text-right text-xs", status === "error" ? "text-destructive" : "text-muted-foreground")}>
       {status === "saving" ? "Saving…" : error}
     </p>
+  );
+}
+
+function BackendCheckboxGroup({
+  selected,
+  disabled,
+  locked,
+  onChange,
+}: {
+  selected: PiiBackendName[];
+  disabled?: boolean;
+  locked?: string;
+  onChange: (backend: PiiBackendName, checked: boolean) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      {PII_BACKEND_NAMES.map((backend) => {
+        const id = `proxy-pii-backend-${backend}`;
+        const meta = PII_BACKEND_LABELS[backend];
+        return (
+          <label
+            key={backend}
+            htmlFor={id}
+            className="flex cursor-pointer items-start justify-end gap-2.5 text-right text-sm [@media(pointer:coarse)]:min-h-11"
+          >
+            <span>
+              <span className={selected.includes(backend) ? "font-medium" : "text-muted-foreground"}>{meta.label}</span>
+              <span className="block max-w-64 text-xs leading-relaxed text-muted-foreground">{meta.description}</span>
+            </span>
+            <Checkbox
+              id={id}
+              checked={selected.includes(backend)}
+              disabled={disabled}
+              onCheckedChange={(state) => onChange(backend, state === true)}
+            />
+          </label>
+        );
+      })}
+      <LockedText>{locked}</LockedText>
+    </div>
   );
 }
 
@@ -436,4 +531,13 @@ function Value({ children, warn, mono }: { children: React.ReactNode; warn?: boo
 
 function onOff(value: boolean): string {
   return value ? "On" : "Off";
+}
+
+function orderedBackends(backends: Set<PiiBackendName>): PiiBackendName[] {
+  const ordered = PII_BACKEND_NAMES.filter((backend) => backends.has(backend));
+  return ordered.length > 0 ? ordered : ["regex"];
+}
+
+function isTextConfigKey(key: EditableProxyConfigKey): key is TextConfigKey {
+  return key === "piiPresidioUrl" || key === "piiOpenmedUrl";
 }

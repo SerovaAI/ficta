@@ -15,7 +15,13 @@ function validPayload() {
         surrogateStyle: "opaque",
       },
       detection: {
-        pii: { standalone: true, agents: false, configuredBackend: "regex", failureMode: "fail-open" },
+        pii: {
+          standalone: true,
+          agents: false,
+          configuredBackend: "regex",
+          configuredBackends: ["regex"],
+          failureMode: "fail-open",
+        },
         secretShapes: { standalone: false, agents: false },
       },
       transport: {
@@ -39,9 +45,10 @@ function validPayload() {
       values: {
         failClosed: true,
         piiEnabled: true,
-        piiBackend: "regex",
+        piiBackends: ["regex", "openmed"],
         piiFailClosed: false,
         piiPresidioUrl: "http://127.0.0.1:5002",
+        piiOpenmedUrl: "http://127.0.0.1:5004",
         secretShapesEnabled: false,
         surrogateStyle: "opaque",
         restoreIntoTools: false,
@@ -103,7 +110,7 @@ describe("isProxyConfigOk", () => {
     expect(isProxyConfigOk(badFailureMode)).toBe(false);
 
     const badEditBackend = validPayload();
-    (badEditBackend.edit.values as Record<string, unknown>).piiBackend = "other";
+    (badEditBackend.edit.values as Record<string, unknown>).piiBackends = ["other"];
     expect(isProxyConfigOk(badEditBackend)).toBe(false);
   });
 

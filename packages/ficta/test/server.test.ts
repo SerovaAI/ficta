@@ -1247,6 +1247,10 @@ describe("config posture endpoint", () => {
     "FICTA_SURROGATE_KEY",
     "FICTA_SURROGATE_STYLE",
     "FICTA_FAIL_CLOSED",
+    "FICTA_PII_BACKEND",
+    "FICTA_PII_BACKENDS",
+    "FICTA_PII_OPENMED_URL",
+    "FICTA_PII_PRESIDIO_URL",
     "FICTA_RESTORE_INTO_TOOLS",
     "FICTA_ALLOW_CUSTOM_UPSTREAM",
   ] as const;
@@ -1301,7 +1305,11 @@ describe("config posture endpoint", () => {
             surrogateStyle: "typed",
           },
           detection: {
-            pii: { configuredBackend: expect.any(String), failureMode: expect.stringMatching(/^fail-(open|closed)$/) },
+            pii: {
+              configuredBackend: expect.any(String),
+              configuredBackends: expect.any(Array),
+              failureMode: expect.stringMatching(/^fail-(open|closed)$/),
+            },
             secretShapes: { standalone: expect.any(Boolean), agents: expect.any(Boolean) },
           },
           transport: {
@@ -1318,9 +1326,10 @@ describe("config posture endpoint", () => {
           values: {
             failClosed: expect.any(Boolean),
             piiEnabled: expect.any(Boolean),
-            piiBackend: expect.stringMatching(/^(regex|presidio)$/),
+            piiBackends: expect.any(Array),
             piiFailClosed: expect.any(Boolean),
             piiPresidioUrl: expect.any(String),
+            piiOpenmedUrl: expect.any(String),
             secretShapesEnabled: expect.any(Boolean),
             surrogateStyle: expect.stringMatching(/^(opaque|typed)$/),
             restoreIntoTools: expect.any(Boolean),
@@ -1363,7 +1372,7 @@ describe("config posture endpoint", () => {
       const res = await fetch(`http://127.0.0.1:${proxy.port}/__ficta/config`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ failClosed: false, piiEnabled: true, piiBackend: "regex" }),
+        body: JSON.stringify({ failClosed: false, piiEnabled: true, piiBackends: ["regex", "openmed"] }),
       });
       const body = await res.json();
 
@@ -1371,7 +1380,10 @@ describe("config posture endpoint", () => {
       expect(body).toMatchObject({
         ok: true,
         service: "ficta",
-        edit: { restartRequired: true, values: { failClosed: false, piiEnabled: true, piiBackend: "regex" } },
+        edit: {
+          restartRequired: true,
+          values: { failClosed: false, piiEnabled: true, piiBackends: ["regex", "openmed"] },
+        },
       });
 
       const getRes = await fetch(`http://127.0.0.1:${proxy.port}/__ficta/config`);

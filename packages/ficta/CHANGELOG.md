@@ -15,6 +15,7 @@
 
 ### Changed
 
+- Updated the Gateway proxy-configuration control plane to edit the multi-backend PII setting (`FICTA_PII_BACKENDS`) and expose OpenMed/medical detection alongside Regex and Presidio.
 - Added an admin-only Ficta Gateway editor for proxy safety settings. Gateway now reads editable proxy metadata, writes a narrow loopback-only `PATCH /__ficta/config` to persist changes into `config.toml`, leaves explicit `FICTA_*` environment overrides locked, and warns that saved settings require a proxy restart before they affect the running posture. The proxy/Gateway control-plane wire contracts now live in the new dependency-free `@serovaai/ficta-protocol` package.
 - Route Ficta Gateway dev startup through the same Doppler-aware env wrapper as the root dev command, falling back to local `.env` files when the Doppler CLI is unavailable.
 - Documented how to repair agent shims when the installed `ficta` CLI path moves, including published package reinstalls, durable local source-checkout installs, stale generated launcher guidance, and local installs whose global `ficta` wrapper is already broken.

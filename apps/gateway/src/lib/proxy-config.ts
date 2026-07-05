@@ -5,6 +5,9 @@ import {
   FICTA_CONFIG_PATH,
   isProxyConfigOk,
   isProxyConfigUpdateOk,
+  normalizePiiBackends,
+  PII_BACKEND_NAMES,
+  type PiiBackendName,
   type ProxyConfig,
   type ProxyConfigUpdate,
 } from "@serovaai/ficta-protocol";
@@ -13,8 +16,8 @@ import { requireAdmin } from "@/lib/auth/guards.server";
 import { proxyBaseUrl } from "@/lib/protection-status";
 
 export type EditableProxyConfigPatch = Partial<EditableProxyConfigValues>;
-export type { EditableProxyConfigKey, EditableProxyConfigValues, ProxyConfig, ProxyConfigUpdate };
-export { isProxyConfigOk, isProxyConfigUpdateOk };
+export type { EditableProxyConfigKey, EditableProxyConfigValues, PiiBackendName, ProxyConfig, ProxyConfigUpdate };
+export { isProxyConfigOk, isProxyConfigUpdateOk, PII_BACKEND_NAMES };
 
 const CONFIG_TIMEOUT_MS = 1500;
 const EDITABLE_PROXY_CONFIG_KEY_SET = new Set<string>(EDITABLE_PROXY_CONFIG_KEYS);
@@ -133,16 +136,19 @@ function validateEditablePatch(input: unknown): EditableProxyConfigPatch {
         if (typeof value !== "boolean") throw new Error("invalid proxy config boolean");
         patch[field] = value;
         break;
-      case "piiBackend":
-        if (value !== "regex" && value !== "presidio") throw new Error("invalid proxy config backend");
-        patch[field] = value;
+      case "piiBackends": {
+        const normalized = normalizePiiBackends(value);
+        if (normalized === undefined) throw new Error("invalid proxy config backends");
+        patch[field] = normalized;
         break;
+      }
       case "surrogateStyle":
         if (value !== "opaque" && value !== "typed") throw new Error("invalid proxy config surrogate style");
         patch[field] = value;
         break;
       case "piiPresidioUrl":
-        if (typeof value !== "string") throw new Error("invalid proxy config presidio url");
+      case "piiOpenmedUrl":
+        if (typeof value !== "string") throw new Error("invalid proxy config url");
         patch[field] = value;
         break;
     }
