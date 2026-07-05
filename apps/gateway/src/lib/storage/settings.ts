@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { optionalScope, requireAdminScope, requireUserId } from "@/lib/auth/guards.server";
-import { MODELS } from "@/lib/models";
+import { isReasoningEffort, MODELS } from "@/lib/models";
 import { getStorage } from "./storage.server";
 import { type InstanceSettings, modelKey, type UserSettings } from "./types";
 
@@ -31,6 +31,11 @@ function validateUserPatch(input: unknown): Partial<UserSettings> {
       throw new Error("unknown model");
     }
     patch.defaultModel = { provider, model };
+  }
+  if ("defaultReasoningEffort" in i) {
+    const effort = i.defaultReasoningEffort;
+    if (!isReasoningEffort(effort)) throw new Error("invalid defaultReasoningEffort");
+    patch.defaultReasoningEffort = effort;
   }
   return patch;
 }
