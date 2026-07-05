@@ -5,6 +5,8 @@ import {
   isEditableProxyConfigValues,
   isProxyConfigOk,
   isProxyConfigUpdateOk,
+  PII_BACKEND_NAMES,
+  type PiiBackendName,
   type ProxyConfig,
   type ProxyConfigUpdate,
 } from "@serovaai/ficta-protocol";
@@ -12,8 +14,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireAdmin } from "@/lib/auth/guards.server";
 import { proxyBaseUrl } from "@/lib/protection-status";
 
-export type { EditableProxyConfigKey, EditableProxyConfigValues, ProxyConfig, ProxyConfigUpdate };
-export { isProxyConfigOk, isProxyConfigUpdateOk };
+export type { EditableProxyConfigKey, EditableProxyConfigValues, PiiBackendName, ProxyConfig, ProxyConfigUpdate };
+export { isProxyConfigOk, isProxyConfigUpdateOk, PII_BACKEND_NAMES };
 
 const CONFIG_TIMEOUT_MS = 1500;
 

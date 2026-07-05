@@ -1,4 +1,5 @@
 import { confirm, intro, isCancel, multiselect, note, outro, select, text } from "@clack/prompts";
+import { PII_BACKEND_NAMES, type PiiBackendName } from "@serovaai/ficta-protocol";
 import { defaultLogDir, FICTA_DEFAULTS } from "./defaults.js";
 import { envFlag, parseBoolean } from "./engine/env-flags.js";
 import { installShims } from "./install.js";
@@ -65,10 +66,10 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
     );
     piiValues.FICTA_PII_AGENTS = piiAgents ? "1" : "0";
 
-    const currentBackends = selectedBackendNames(process.env).filter((backend) =>
-      ["regex", "presidio", "openmed"].includes(backend),
-    ) as Array<"regex" | "presidio" | "openmed">;
-    const backends = await promptMultiselect<"regex" | "presidio" | "openmed">(
+    const currentBackends = selectedBackendNames(process.env).filter((backend): backend is PiiBackendName =>
+      (PII_BACKEND_NAMES as readonly string[]).includes(backend),
+    );
+    const backends = await promptMultiselect<PiiBackendName>(
       "PII detection: backends",
       [
         { value: "regex", label: "Built-in regex — emails, SSNs, cards; in-process, no dependencies" },
