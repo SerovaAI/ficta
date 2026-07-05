@@ -74,31 +74,44 @@ interface PresidioSpan {
 export const presidioRecognizer: PiiRecognizer = {
   name: "presidio",
   async detect(text, ctx) {
-    // One sidecar round-trip per request body; per-component header/query calls stay regex-only.
-    if (!text || ctx.surface !== "body") return [];
-    const config = presidioConfig();
-    const chunks = chunkText(text);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), config.timeoutMs);
-    try {
-      const perChunk = await mapConcurrent(chunks, MAX_CONCURRENCY, (chunk) =>
-        detectChunk(config, chunk, controller.signal),
-      );
-      return dedupeByValue(perChunk.flat());
-    } catch (err) {
-      controller.abort(); // cancel any still-in-flight sibling requests before surfacing the failure
-      throw asPresidioError(err, config);
-    } finally {
-      clearTimeout(timer);
-    }
+    return detectWithPresidioCompatibleAnalyzer(text, ctx, presidioConfig(), "presidio");
   },
 };
+
+export async function detectWithPresidioCompatibleAnalyzer(
+  text: string,
+  ctx: Parameters<PiiRecognizer["detect"]>[1],
+  config: PresidioConfig,
+  sourceLabel: string,
+): Promise<ProtectedValue[]> {
+  // One sidecar round-trip per request body; per-component header/query calls stay regex-only.
+  if (!text || ctx.surface !== "body") return [];
+  const chunks = chunkText(text);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), config.timeoutMs);
+  try {
+    const perChunk = await mapConcurrent(chunks, MAX_CONCURRENCY, (chunk) =>
+      detectChunk(config, chunk, controller.signal, sourceLabel),
+    );
+    return dedupeByValue(perChunk.flat());
+  } catch (err) {
+    controller.abort(); // cancel any still-in-flight sibling requests before surfacing the failure
+    throw asPresidioError(err, config);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /** GET /health for `ficta doctor`. Never throws — returns a safe reachability verdict. */
 export async function checkPresidioHealth(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<{ ok: boolean; url: string; detail?: string }> {
-  const config = presidioConfig(env);
+  return checkPresidioCompatibleAnalyzerHealth(presidioConfig(env));
+}
+
+export async function checkPresidioCompatibleAnalyzerHealth(
+  config: PresidioConfig,
+): Promise<{ ok: boolean; url: string; detail?: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), config.timeoutMs);
   try {
@@ -115,9 +128,14 @@ export async function checkPresidioHealth(
   }
 }
 
-async function detectChunk(config: PresidioConfig, chunk: string, signal: AbortSignal): Promise<ProtectedValue[]> {
+async function detectChunk(
+  config: PresidioConfig,
+  chunk: string,
+  signal: AbortSignal,
+  sourceLabel: string,
+): Promise<ProtectedValue[]> {
   const spans = await analyzeChunk(config, chunk, signal);
-  return spansToValues(chunk, spans, config);
+  return spansToValues(chunk, spans, config, sourceLabel);
 }
 
 async function analyzeChunk(config: PresidioConfig, chunk: string, signal: AbortSignal): Promise<PresidioSpan[]> {
@@ -159,7 +177,12 @@ async function analyzeChunk(config: PresidioConfig, chunk: string, signal: Abort
   return spans;
 }
 
-function spansToValues(chunk: string, spans: readonly PresidioSpan[], config: PresidioConfig): ProtectedValue[] {
+function spansToValues(
+  chunk: string,
+  spans: readonly PresidioSpan[],
+  config: PresidioConfig,
+  sourceLabel: string,
+): ProtectedValue[] {
   const index = makeCodepointIndexer(chunk);
   const allowlist =
     config.entities.length > 0 ? new Set(config.entities.map((entity) => entity.toUpperCase())) : undefined;
@@ -178,7 +201,7 @@ function spansToValues(chunk: string, spans: readonly PresidioSpan[], config: Pr
     out.push({
       name: categoryOf(span.entity_type),
       value,
-      source: "pii-presidio",
+      source: `pii-${sourceLabel}`,
       kind: "pii",
       confidence: span.score >= HIGH_CONFIDENCE_SCORE ? "high" : "probabilistic",
     });

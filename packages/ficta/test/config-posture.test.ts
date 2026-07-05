@@ -38,7 +38,13 @@ describe("configPosture", () => {
         surrogateStyle: "opaque",
       },
       detection: {
-        pii: { standalone: false, agents: false, configuredBackend: "regex", failureMode: "fail-open" },
+        pii: {
+          standalone: false,
+          agents: false,
+          configuredBackend: "regex",
+          configuredBackends: ["regex"],
+          failureMode: "fail-open",
+        },
         secretShapes: { standalone: false, agents: false },
       },
       transport: {
@@ -87,6 +93,7 @@ describe("configPosture", () => {
       standalone: true,
       agents: true,
       configuredBackend: "presidio",
+      configuredBackends: ["presidio"],
       failureMode: "fail-closed",
     });
     expect(posture.detection.secretShapes).toEqual({ standalone: true, agents: false });

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- Added native multi-backend PII detection and a Dockerized medical analyzer service for medical
+  workflows. Ficta can now run `presidio` and `medical` backends together via `FICTA_PII_BACKENDS`
+  / `[pii] backends`, keeping Microsoft Presidio and `OpenMed/privacy-filter-nemotron-v2` in
+  separate containers while Ficta coordinates failures and merges detected values.
+
 ### Changed
 
 - Route Ficta Gateway dev startup through the same Doppler-aware env wrapper as the root dev command, falling back to local `.env` files when the Doppler CLI is unavailable.

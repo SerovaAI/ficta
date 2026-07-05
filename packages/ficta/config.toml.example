@@ -49,13 +49,15 @@ agents = false
 enabled = true
 # Coding-agent launches stay off unless this is also true (or FICTA_PII_ENABLED is set for one run).
 agents = false
-# Exactly one backend runs: "regex" or "presidio".
+# One or more backends can run. `backend` is the legacy single-backend setting; `backends`
+# takes precedence when set.
 backend = "regex"
+# backends = ["presidio", "medical"]
 # PII-specific detector-outage policy; overrides [detection] fail_closed.
 fail_closed = false
 
 [pii.presidio]
-# Used only when [pii] backend = "presidio". Presidio is a first-class supported backend,
+# Used when [pii] backend/backends includes "presidio". Presidio is a first-class supported backend,
 # backed by a presidio-analyzer sidecar. The source-checkout `pnpm dev` wrapper can manage a local
 # Docker sidecar; installed/runtime deployments should run the analyzer sidecar explicitly.
 url = "http://127.0.0.1:5002"
@@ -63,6 +65,16 @@ language = "en"
 score_threshold = 0.5
 entities = [] # empty = all entities returned by Presidio
 # Total detection budget per request.
+timeout_ms = 1500
+
+[pii.medical]
+# Used when [pii] backends includes "medical". Run an OpenMed medical analyzer Docker service
+# separately from Presidio and point Ficta at it.
+url = "http://127.0.0.1:5003"
+# Leave these unset/empty to inherit the Presidio defaults above.
+language = ""
+score_threshold = 0.5
+entities = []
 timeout_ms = 1500
 
 [logging]
