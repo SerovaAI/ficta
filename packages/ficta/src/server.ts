@@ -66,6 +66,7 @@ export async function startProxy(
     const url = new URL(c.req.url);
     if (url.pathname === HEALTH_PATH) return c.json({ ok: true, service: "ficta" });
     if (url.pathname === STATUS_PATH) return c.json(await protectionStatus(engine, stats));
+    if (url.pathname === PROTECTION_STATS_PATH) return c.json(protectionStatsResponse(stats, url));
     // Values-free config posture (see ConfigPosture). Kept separate from STATUS_PATH, which the
     // gateway's non-admin protection widget polls: transport config (upstreams, host/port, log dir)
     // is admin-facing, and the gateway gates its fetch server-side. The proxy itself stays
@@ -520,6 +521,9 @@ async function protectionStatus(engine: RedactionEngine, stats: ProtectionStats)
 const HEALTH_PATH = "/__ficta/health";
 const STATUS_PATH = "/__ficta/status";
 const CONFIG_PATH = "/__ficta/config";
+const PROTECTION_STATS_PATH = "/__ficta/protection-stats";
+const DEFAULT_PROTECTION_STATS_LIMIT = 100;
+const MAX_PROTECTION_STATS_LIMIT = 500;
 const REQUIRED_AUTH_HEADER_NAMES = new Set(["authorization", "proxy-authorization", "x-api-key", "cookie"]);
 const SURROGATE_RE = /FICTA_[0-9a-f]{32}/;
 
@@ -532,6 +536,27 @@ interface SurfaceRedaction {
 
 interface QueryRedaction extends SurfaceRedaction {
   search: string;
+}
+
+/** Values-free redaction proof for first-party/admin UIs. */
+function protectionStatsResponse(stats: ProtectionStats, url: URL) {
+  const limit = protectionStatsLimit(url.searchParams.get("limit"));
+  const snapshot = stats.snapshot();
+  return {
+    ok: true,
+    service: "ficta",
+    stats: {
+      ...snapshot,
+      events: snapshot.events.slice(-limit).reverse(),
+    },
+  };
+}
+
+function protectionStatsLimit(raw: string | null): number {
+  if (raw === null || raw.trim() === "") return DEFAULT_PROTECTION_STATS_LIMIT;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1) return DEFAULT_PROTECTION_STATS_LIMIT;
+  return Math.min(MAX_PROTECTION_STATS_LIMIT, Math.floor(n));
 }
 
 function isRestorableContentType(contentType: string): boolean {
