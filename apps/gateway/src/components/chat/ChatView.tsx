@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CreateWorkspaceDialog } from "@/components/onboarding/CreateWorkspaceDialog";
+import { AdminSettingsDialog } from "@/components/settings/AdminSettingsDialog";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -76,6 +77,7 @@ export function ChatView({
   const protectionStatus = useProtectionStatus();
   const composerRef = useRef<ComposerHandle>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
   const [confirmSendOpen, setConfirmSendOpen] = useState(false);
   // Passthrough (unprotected but working) asks for consent once per chat, not on every send.
@@ -299,6 +301,7 @@ export function ChatView({
           onToggle={sidebar.toggle}
           onClose={sidebar.close}
           onNewChat={resetChat}
+          onOpenAdmin={() => setAdminOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
           onCreateWorkspace={() => setCreateWorkspaceOpen(true)}
           activeThreadId={activeThreadId}
@@ -347,6 +350,7 @@ export function ChatView({
         </div>
 
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} userSettings={userSettings} />
+        <AdminSettingsDialog open={adminOpen} onOpenChange={setAdminOpen} />
         <CreateWorkspaceDialog open={createWorkspaceOpen} onOpenChange={setCreateWorkspaceOpen} />
 
         <Dialog open={confirmSendOpen} onOpenChange={setConfirmSendOpen}>

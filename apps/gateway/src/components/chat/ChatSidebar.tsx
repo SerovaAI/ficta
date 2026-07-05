@@ -1,9 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { PanelLeft, PanelLeftClose, Plus, Settings, Trash2 } from "lucide-react";
+import { PanelLeft, PanelLeftClose, Plus, Settings, Shield, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { isAdmin } from "@/lib/auth/types";
 import { useAuthState } from "@/lib/auth/useAuthState";
 import { cancelThreadDeletion, scheduleThreadDeletion } from "@/lib/storage/threadDeletion";
 import { threadKeys, threadsQueryOptions } from "@/lib/storage/threadQueries";
@@ -27,6 +28,7 @@ export function ChatSidebar({
   onToggle,
   onClose,
   onNewChat,
+  onOpenAdmin,
   onOpenSettings,
   onCreateWorkspace,
   activeThreadId,
@@ -35,6 +37,7 @@ export function ChatSidebar({
   onToggle: () => void;
   onClose: () => void;
   onNewChat: () => void;
+  onOpenAdmin?: () => void;
   onOpenSettings: () => void;
   onCreateWorkspace: () => void;
   activeThreadId?: string;
@@ -42,7 +45,9 @@ export function ChatSidebar({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { instanceName } = useInstanceSettings();
-  const { user } = useAuthState();
+  const auth = useAuthState();
+  const { user } = auth;
+  const showAdmin = isAdmin(auth) && onOpenAdmin !== undefined;
   const threadsQuery = useQuery(threadsQueryOptions);
   const threads = threadsQuery.data ?? [];
 
@@ -60,6 +65,11 @@ export function ChatSidebar({
   const openSettings = () => {
     closeOnMobile();
     onOpenSettings();
+  };
+
+  const openAdmin = () => {
+    closeOnMobile();
+    onOpenAdmin?.();
   };
 
   const createWorkspace = () => {
@@ -141,11 +151,17 @@ export function ChatSidebar({
 
             {/* New chat is an action in the sidebar body, not the header — same standalone role it has in
                 the collapsed rail. */}
-            <div className="p-2 pb-0">
+            <div className="space-y-2 p-2 pb-0">
               <Button variant="outline" className="w-full justify-start gap-2" onClick={startNewChat}>
                 <Plus className="size-4" aria-hidden />
                 New chat
               </Button>
+              {showAdmin ? (
+                <Button variant="ghost" className="w-full justify-start gap-2" onClick={openAdmin}>
+                  <Shield className="size-4" aria-hidden />
+                  Admin
+                </Button>
+              ) : null}
             </div>
 
             <nav className="flex-1 overflow-y-auto p-2">
@@ -236,6 +252,16 @@ export function ChatSidebar({
                 </TooltipTrigger>
                 <TooltipContent side="right">New chat</TooltipContent>
               </Tooltip>
+              {showAdmin ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" onClick={openAdmin} aria-label="Admin">
+                      <Shield className="size-4" aria-hidden />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">Admin</TooltipContent>
+                </Tooltip>
+              ) : null}
             </div>
 
             {/* Account/settings pinned to the bottom of the rail. The avatar carries its own dropdown, so
