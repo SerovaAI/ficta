@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isProxyConfigOk } from "@/lib/proxy-config";
+import { isProxyConfigOk, isProxyConfigUpdateOk } from "@/lib/proxy-config";
 
 function validPayload() {
   return {
@@ -32,6 +32,23 @@ function validPayload() {
         logDir: "/home/user/.ficta/logs",
       },
     },
+    edit: {
+      path: "/home/user/.ficta/config.toml",
+      disabled: false,
+      restartRequired: false,
+      values: {
+        failClosed: true,
+        piiEnabled: true,
+        piiBackend: "regex",
+        piiFailClosed: false,
+        piiPresidioUrl: "http://127.0.0.1:5002",
+        secretShapesEnabled: false,
+        surrogateStyle: "opaque",
+        restoreIntoTools: false,
+        allowCustomUpstream: false,
+      },
+      locked: {},
+    },
   };
 }
 
@@ -62,6 +79,12 @@ describe("isProxyConfigOk", () => {
     expect(isProxyConfigOk(payload)).toBe(false);
   });
 
+  it("rejects a payload with missing edit metadata", () => {
+    const payload = validPayload();
+    delete (payload as Record<string, unknown>).edit;
+    expect(isProxyConfigOk(payload)).toBe(false);
+  });
+
   it("rejects mistyped fields", () => {
     const badFailClosed = validPayload();
     (badFailClosed.config.protection as Record<string, unknown>).failClosed = "yes";
@@ -78,5 +101,14 @@ describe("isProxyConfigOk", () => {
     const badFailureMode = validPayload();
     (badFailureMode.config.detection.pii as Record<string, unknown>).failureMode = "open";
     expect(isProxyConfigOk(badFailureMode)).toBe(false);
+
+    const badEditBackend = validPayload();
+    (badEditBackend.edit.values as Record<string, unknown>).piiBackend = "other";
+    expect(isProxyConfigOk(badEditBackend)).toBe(false);
+  });
+
+  it("accepts proxy config update responses with edit metadata", () => {
+    expect(isProxyConfigUpdateOk({ ok: true, service: "ficta", edit: validPayload().edit })).toBe(true);
+    expect(isProxyConfigUpdateOk({ ok: true, service: "ficta", edit: { disabled: false } })).toBe(false);
   });
 });

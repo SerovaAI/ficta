@@ -1,3 +1,4 @@
+import { FICTA_PROTECTION_STATS_PATH } from "@serovaai/ficta-protocol";
 import { createServerFn } from "@tanstack/react-start";
 import { requireAdmin } from "@/lib/auth/guards.server";
 import { proxyBaseUrl } from "@/lib/protection-status";
@@ -99,7 +100,7 @@ export const fetchProtectionStats = createServerFn({ method: "GET" }).handler(as
   const timer = setTimeout(() => controller.abort(), STATS_TIMEOUT_MS);
 
   try {
-    const res = await fetch(`${proxyUrl}/__ficta/protection-stats`, {
+    const res = await fetch(`${proxyUrl}${FICTA_PROTECTION_STATS_PATH}`, {
       headers: { accept: "application/json" },
       signal: controller.signal,
     });

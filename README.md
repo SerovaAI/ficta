@@ -103,12 +103,14 @@ auth/storage guidance, sidecar notes, and production-like deployment cautions li
 
 ## What's In This Repo
 
-This is a monorepo. The published package is the Ficta CLI/proxy; Gateway is the self-hosted private
-chat surface built on the same redaction engine.
+This is a monorepo. The main published package is the Ficta CLI/proxy; Gateway is the self-hosted
+private chat surface built on the same redaction engine.
 
 - **[`packages/ficta`](packages/ficta)** - [`@serovaai/ficta`](https://www.npmjs.com/package/@serovaai/ficta),
   the MIT-licensed CLI, redaction proxy, registry sources, agent integrations, detector backends, and
   plugin seams. This is the package published to npm.
+- **[`packages/protocol`](packages/protocol)** - [`@serovaai/ficta-protocol`](https://www.npmjs.com/package/@serovaai/ficta-protocol),
+  the dependency-free wire contract package shared by the proxy and Gateway control-plane calls.
 - **[`apps/gateway`](apps/gateway)** - Ficta Gateway, a self-hosted TanStack Start chat UI with
   server-side BYO OpenAI/Anthropic keys, chat history/settings storage, optional WorkOS
   auth/workspaces, protection-status polling, and text/document attachments.
