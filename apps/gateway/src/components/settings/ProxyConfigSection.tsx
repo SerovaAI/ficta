@@ -1,10 +1,10 @@
 import type * as React from "react";
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { useEffect, useRef, useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   type EditableProxyConfigKey,
+  type EditableProxyConfigPatch,
   type EditableProxyConfigValues,
   fetchProxyConfig,
   PII_BACKEND_NAMES,
@@ -15,6 +15,11 @@ import {
 import { useProtectionStatus } from "@/lib/use-protection-status";
 import { cn } from "@/lib/utils";
 import { SettingRow } from "./SettingRow";
+
+type SaveStatus = "idle" | "saving" | "saved" | "error";
+type TextConfigKey = Extract<EditableProxyConfigKey, "piiPresidioUrl" | "piiOpenmedUrl">;
+
+const TEXT_SAVE_DELAY_MS = 600;
 
 const PII_BACKEND_LABELS: Record<PiiBackendName, { label: string; description: string }> = {
   regex: {
@@ -38,8 +43,11 @@ const PII_BACKEND_LABELS: Record<PiiBackendName, { label: string; description: s
 export function ProxyConfigSection() {
   const [config, setConfig] = useState<ProxyConfig>();
   const [draft, setDraft] = useState<EditableProxyConfigValues>();
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [saveError, setSaveError] = useState("Could not save proxy configuration.");
+  const saveSeq = useRef(0);
+  const textTimers = useRef<Partial<Record<TextConfigKey, number>>>({});
+  const pendingTextValues = useRef<Partial<Record<TextConfigKey, string>>>({});
   const live = useProtectionStatus();
 
   useEffect(() => {
@@ -65,19 +73,90 @@ export function ProxyConfigSection() {
     };
   }, []);
 
-  const save = async () => {
-    if (!draft) return;
+  useEffect(() => {
+    return () => {
+      for (const timer of Object.values(textTimers.current)) {
+        if (timer !== undefined) window.clearTimeout(timer);
+      }
+    };
+  }, []);
+
+  const savePatch = async (
+    patch: EditableProxyConfigPatch,
+    options: {
+      pendingText?: { key: TextConfigKey; value: string };
+      revert?: { key: EditableProxyConfigKey; value: EditableProxyConfigValues[EditableProxyConfigKey] };
+    } = {},
+  ) => {
+    const seq = saveSeq.current + 1;
+    saveSeq.current = seq;
     setSaveStatus("saving");
     setSaveError("Could not save proxy configuration.");
-    const result = await updateProxyConfig({ data: draft });
-    if (!result.ok) {
+
+    try {
+      const result = await updateProxyConfig({ data: patch });
+      if (saveSeq.current !== seq) return;
+
+      if (!result.ok) {
+        if (options.revert) {
+          const { key, value } = options.revert;
+          setDraft((current) => (current ? { ...current, [key]: value } : current));
+        }
+        setSaveStatus("error");
+        setSaveError(result.message);
+        return;
+      }
+
+      if (
+        options.pendingText !== undefined &&
+        pendingTextValues.current[options.pendingText.key] === options.pendingText.value
+      ) {
+        delete pendingTextValues.current[options.pendingText.key];
+      }
+      setConfig((current) => (current?.ok ? { ...current, edit: result.edit } : current));
+      setDraft((current) => {
+        const pending = pendingTextValues.current;
+        return current && Object.keys(pending).length > 0 ? { ...result.edit.values, ...pending } : result.edit.values;
+      });
+      setSaveStatus("saved");
+    } catch (err) {
+      if (saveSeq.current !== seq) return;
+      if (options.revert) {
+        const { key, value } = options.revert;
+        setDraft((current) => (current ? { ...current, [key]: value } : current));
+      }
       setSaveStatus("error");
-      setSaveError(result.message);
+      setSaveError(err instanceof Error ? err.message : "Could not save proxy configuration.");
+    }
+  };
+
+  const changeField = <K extends EditableProxyConfigKey>(
+    key: K,
+    value: EditableProxyConfigValues[K],
+    options: { debounce?: boolean } = {},
+  ) => {
+    if (!draft || draft[key] === value) return;
+    const previous = draft[key];
+    const next = { ...draft, [key]: value };
+    setDraft(next);
+    setSaveError("Could not save proxy configuration.");
+
+    if (options.debounce) {
+      if (!isTextConfigKey(key)) return;
+      saveSeq.current += 1;
+      if (textTimers.current[key] !== undefined) window.clearTimeout(textTimers.current[key]);
+      pendingTextValues.current[key] = String(value);
+      setSaveStatus("saving");
+      textTimers.current[key] = window.setTimeout(() => {
+        delete textTimers.current[key];
+        void savePatch({ [key]: value } as EditableProxyConfigPatch, {
+          pendingText: { key, value: String(value) },
+        });
+      }, TEXT_SAVE_DELAY_MS);
       return;
     }
-    setConfig((current) => (current?.ok ? { ...current, edit: result.edit } : current));
-    setDraft(result.edit.values);
-    setSaveStatus("saved");
+
+    void savePatch({ [key]: value } as EditableProxyConfigPatch, { revert: { key, value: previous } });
   };
 
   return (
@@ -100,14 +179,10 @@ export function ProxyConfigSection() {
         <ConfigEditor
           config={config}
           draft={draft}
-          onDraftChange={(next) => {
-            setDraft(next);
-            setSaveStatus("idle");
-          }}
+          onFieldChange={changeField}
           piiHealth={live}
           saveStatus={saveStatus}
           saveError={saveError}
-          onSave={save}
         />
       )}
     </section>
@@ -117,25 +192,27 @@ export function ProxyConfigSection() {
 function ConfigEditor({
   config,
   draft,
-  onDraftChange,
+  onFieldChange,
   piiHealth,
   saveStatus,
   saveError,
-  onSave,
 }: {
   config: Extract<ProxyConfig, { ok: true }>;
   draft: EditableProxyConfigValues;
-  onDraftChange: (next: EditableProxyConfigValues) => void;
+  onFieldChange: <K extends EditableProxyConfigKey>(
+    key: K,
+    value: EditableProxyConfigValues[K],
+    options?: { debounce?: boolean },
+  ) => void;
   piiHealth: ReturnType<typeof useProtectionStatus>;
-  saveStatus: "idle" | "saving" | "saved" | "error";
+  saveStatus: SaveStatus;
   saveError: string;
-  onSave: () => void;
 }) {
   const { detection, transport } = config.config;
   const edit = config.edit;
-  const disabled = edit.disabled || saveStatus === "saving";
-  const set = <K extends keyof EditableProxyConfigValues>(key: K, value: EditableProxyConfigValues[K]) => {
-    onDraftChange({ ...draft, [key]: value });
+  const disabled = edit.disabled;
+  const set = <K extends EditableProxyConfigKey>(key: K, value: EditableProxyConfigValues[K]) => {
+    onFieldChange(key, value);
   };
   const toggleBackend = (backend: PiiBackendName, checked: boolean) => {
     const next = new Set(draft.piiBackends);
@@ -219,7 +296,7 @@ function ConfigEditor({
               value={draft.piiPresidioUrl}
               disabled={isDisabled("piiPresidioUrl", edit, disabled)}
               className="w-64 font-mono text-xs"
-              onChange={(event) => set("piiPresidioUrl", event.target.value)}
+              onChange={(event) => onFieldChange("piiPresidioUrl", event.target.value, { debounce: true })}
             />
             <LockedText>{edit.locked.piiPresidioUrl}</LockedText>
           </div>
@@ -233,7 +310,7 @@ function ConfigEditor({
               value={draft.piiOpenmedUrl}
               disabled={isDisabled("piiOpenmedUrl", edit, disabled)}
               className="w-64 font-mono text-xs"
-              onChange={(event) => set("piiOpenmedUrl", event.target.value)}
+              onChange={(event) => onFieldChange("piiOpenmedUrl", event.target.value, { debounce: true })}
             />
             <LockedText>{edit.locked.piiOpenmedUrl}</LockedText>
           </div>
@@ -276,15 +353,7 @@ function ConfigEditor({
         />
       </SettingRow>
 
-      <div className="flex flex-wrap items-center justify-end gap-3 py-4">
-        {saveStatus === "saved" ? (
-          <p className="text-xs text-muted-foreground">Saved. Restart the proxy to apply changes.</p>
-        ) : null}
-        {saveStatus === "error" ? <p className="text-xs text-destructive">{saveError}</p> : null}
-        <Button type="button" size="sm" disabled={disabled} onClick={onSave}>
-          {saveStatus === "saving" ? "Saving…" : "Save proxy config"}
-        </Button>
-      </div>
+      <InlineStatus status={saveStatus} error={saveError} />
 
       <GroupHeading>Transport</GroupHeading>
       <SettingRow label="Listen address" description="Where the proxy accepts local traffic.">
@@ -318,6 +387,18 @@ function ConfigEditor({
         <Value mono>{transport.logDir}</Value>
       </SettingRow>
     </>
+  );
+}
+
+function InlineStatus({ status, error }: { status: SaveStatus; error: string }) {
+  if (status === "idle") return null;
+  if (status === "saved") {
+    return <p className="py-4 text-right text-xs text-muted-foreground">Saved. Restart the proxy to apply changes.</p>;
+  }
+  return (
+    <p className={cn("py-4 text-right text-xs", status === "error" ? "text-destructive" : "text-muted-foreground")}>
+      {status === "saving" ? "Saving…" : error}
+    </p>
   );
 }
 
@@ -455,4 +536,8 @@ function onOff(value: boolean): string {
 function orderedBackends(backends: Set<PiiBackendName>): PiiBackendName[] {
   const ordered = PII_BACKEND_NAMES.filter((backend) => backends.has(backend));
   return ordered.length > 0 ? ordered : ["regex"];
+}
+
+function isTextConfigKey(key: EditableProxyConfigKey): key is TextConfigKey {
+  return key === "piiPresidioUrl" || key === "piiOpenmedUrl";
 }

@@ -1,10 +1,11 @@
 import {
+  EDITABLE_PROXY_CONFIG_KEYS,
   type EditableProxyConfigKey,
   type EditableProxyConfigValues,
   FICTA_CONFIG_PATH,
-  isEditableProxyConfigValues,
   isProxyConfigOk,
   isProxyConfigUpdateOk,
+  normalizePiiBackends,
   PII_BACKEND_NAMES,
   type PiiBackendName,
   type ProxyConfig,
@@ -14,10 +15,12 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireAdmin } from "@/lib/auth/guards.server";
 import { proxyBaseUrl } from "@/lib/protection-status";
 
+export type EditableProxyConfigPatch = Partial<EditableProxyConfigValues>;
 export type { EditableProxyConfigKey, EditableProxyConfigValues, PiiBackendName, ProxyConfig, ProxyConfigUpdate };
 export { isProxyConfigOk, isProxyConfigUpdateOk, PII_BACKEND_NAMES };
 
 const CONFIG_TIMEOUT_MS = 1500;
+const EDITABLE_PROXY_CONFIG_KEY_SET = new Set<string>(EDITABLE_PROXY_CONFIG_KEYS);
 
 /**
  * Admin-only, server-only read of the proxy's effective configuration. `requireAdmin()` is the real
@@ -116,9 +119,41 @@ export const updateProxyConfig = createServerFn({ method: "POST" })
     }
   });
 
-function validateEditablePatch(input: unknown): EditableProxyConfigValues {
-  if (!isEditableProxyConfigValues(input)) throw new Error("invalid proxy config patch");
-  return input;
+function validateEditablePatch(input: unknown): EditableProxyConfigPatch {
+  if (!isRecord(input)) throw new Error("invalid proxy config patch");
+
+  const patch: EditableProxyConfigPatch = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (!EDITABLE_PROXY_CONFIG_KEY_SET.has(key)) throw new Error("invalid proxy config field");
+    const field = key as EditableProxyConfigKey;
+    switch (field) {
+      case "failClosed":
+      case "piiEnabled":
+      case "piiFailClosed":
+      case "secretShapesEnabled":
+      case "restoreIntoTools":
+      case "allowCustomUpstream":
+        if (typeof value !== "boolean") throw new Error("invalid proxy config boolean");
+        patch[field] = value;
+        break;
+      case "piiBackends": {
+        const normalized = normalizePiiBackends(value);
+        if (normalized === undefined) throw new Error("invalid proxy config backends");
+        patch[field] = normalized;
+        break;
+      }
+      case "surrogateStyle":
+        if (value !== "opaque" && value !== "typed") throw new Error("invalid proxy config surrogate style");
+        patch[field] = value;
+        break;
+      case "piiPresidioUrl":
+      case "piiOpenmedUrl":
+        if (typeof value !== "string") throw new Error("invalid proxy config url");
+        patch[field] = value;
+        break;
+    }
+  }
+  return patch;
 }
 
 function proxyUpdateErrorMessage(value: unknown, status: number): string {

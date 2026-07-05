@@ -11,6 +11,7 @@
 
 ### Changed
 
+- Changed Gateway proxy configuration controls to autosave on edit instead of requiring a form-level save button.
 - Moved the Gateway admin entry into the signed-in user menu instead of showing it as a separate sidebar action.
 - Moved the Gateway tool-call withholding runtime count out of proxy configuration and into redaction proof.
 
