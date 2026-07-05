@@ -5,10 +5,14 @@ export declare const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
 
 export type DetectorFailureMode = "fail-open" | "fail-closed";
 export type PiiStatusState = "off" | "ok" | "degraded" | "blocking";
+export type PiiBackendName = "regex" | "presidio" | "openmed";
+
+export declare const PII_BACKEND_NAMES: readonly PiiBackendName[];
 
 export interface PiiProtectionStatus {
   enabled: boolean;
   configuredBackend: string;
+  configuredBackends?: string[];
   backend: string;
   status: PiiStatusState;
   failureMode: DetectorFailureMode;
@@ -64,6 +68,7 @@ export interface ProxyConfigPosture {
       standalone: boolean;
       agents: boolean;
       configuredBackend: string;
+      configuredBackends?: string[];
       failureMode: DetectorFailureMode;
     };
     secretShapes: {
@@ -86,9 +91,10 @@ export interface ProxyConfigPosture {
 export type EditableProxyConfigKey =
   | "failClosed"
   | "piiEnabled"
-  | "piiBackend"
+  | "piiBackends"
   | "piiFailClosed"
   | "piiPresidioUrl"
+  | "piiOpenmedUrl"
   | "secretShapesEnabled"
   | "surrogateStyle"
   | "restoreIntoTools"
@@ -99,9 +105,10 @@ export declare const EDITABLE_PROXY_CONFIG_KEYS: readonly EditableProxyConfigKey
 export interface EditableProxyConfigValues {
   failClosed: boolean;
   piiEnabled: boolean;
-  piiBackend: "regex" | "presidio";
+  piiBackends: PiiBackendName[];
   piiFailClosed: boolean;
   piiPresidioUrl: string;
+  piiOpenmedUrl: string;
   secretShapesEnabled: boolean;
   surrogateStyle: "opaque" | "typed";
   restoreIntoTools: boolean;
@@ -164,3 +171,5 @@ export declare function isProxyConfigOk(value: unknown): value is ProxyConfigOk;
 export declare function isProxyConfigUpdateOk(value: unknown): value is ProxyConfigUpdateOk;
 export declare function isProxyConfigEditState(value: unknown): value is ProxyConfigEditState;
 export declare function isEditableProxyConfigValues(value: unknown): value is EditableProxyConfigValues;
+export declare function isPiiBackendName(value: unknown): value is PiiBackendName;
+export declare function normalizePiiBackends(value: unknown): PiiBackendName[] | undefined;

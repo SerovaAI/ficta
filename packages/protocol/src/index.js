@@ -3,12 +3,16 @@ export const FICTA_STATUS_PATH = "/__ficta/status";
 export const FICTA_CONFIG_PATH = "/__ficta/config";
 export const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
 
+export const PII_BACKEND_NAMES = ["regex", "presidio", "openmed"];
+const PII_BACKEND_NAME_SET = new Set(PII_BACKEND_NAMES);
+
 export const EDITABLE_PROXY_CONFIG_KEYS = [
   "failClosed",
   "piiEnabled",
-  "piiBackend",
+  "piiBackends",
   "piiFailClosed",
   "piiPresidioUrl",
+  "piiOpenmedUrl",
   "secretShapesEnabled",
   "surrogateStyle",
   "restoreIntoTools",
@@ -35,6 +39,7 @@ export function isProxyConfigOk(value) {
     typeof detection.pii.standalone === "boolean" &&
     typeof detection.pii.agents === "boolean" &&
     typeof detection.pii.configuredBackend === "string" &&
+    (detection.pii.configuredBackends === undefined || isStringArray(detection.pii.configuredBackends)) &&
     (detection.pii.failureMode === "fail-open" || detection.pii.failureMode === "fail-closed") &&
     typeof detection.secretShapes.standalone === "boolean" &&
     typeof detection.secretShapes.agents === "boolean" &&
@@ -73,14 +78,31 @@ export function isEditableProxyConfigValues(value) {
     isRecord(value) &&
     typeof value.failClosed === "boolean" &&
     typeof value.piiEnabled === "boolean" &&
-    (value.piiBackend === "regex" || value.piiBackend === "presidio") &&
+    normalizePiiBackends(value.piiBackends) !== undefined &&
     typeof value.piiFailClosed === "boolean" &&
     typeof value.piiPresidioUrl === "string" &&
+    typeof value.piiOpenmedUrl === "string" &&
     typeof value.secretShapesEnabled === "boolean" &&
     (value.surrogateStyle === "opaque" || value.surrogateStyle === "typed") &&
     typeof value.restoreIntoTools === "boolean" &&
     typeof value.allowCustomUpstream === "boolean"
   );
+}
+
+/** @param {unknown} value */
+export function isPiiBackendName(value) {
+  return typeof value === "string" && PII_BACKEND_NAME_SET.has(value);
+}
+
+/** @param {unknown} value */
+export function normalizePiiBackends(value) {
+  if (!Array.isArray(value)) return undefined;
+  const out = [];
+  for (const entry of value) {
+    if (!isPiiBackendName(entry)) return undefined;
+    if (!out.includes(entry)) out.push(entry);
+  }
+  return out.length > 0 ? out : ["regex"];
 }
 
 /** @param {unknown} value */
@@ -99,6 +121,7 @@ export function isProtectionStatusOk(value) {
     typeof value.secretShapes.message === "string" &&
     typeof value.pii.enabled === "boolean" &&
     typeof value.pii.configuredBackend === "string" &&
+    (value.pii.configuredBackends === undefined || isStringArray(value.pii.configuredBackends)) &&
     typeof value.pii.backend === "string" &&
     isPiiStatusState(value.pii.status) &&
     isDetectorFailureMode(value.pii.failureMode) &&
@@ -121,6 +144,10 @@ function isPiiStatusState(value) {
 /** @param {unknown} value */
 function isDetectorFailureMode(value) {
   return value === "fail-open" || value === "fail-closed";
+}
+
+function isStringArray(value) {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
 /** @param {unknown} value */

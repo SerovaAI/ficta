@@ -7,12 +7,29 @@ import {
   type EditableProxyConfigKey,
   type EditableProxyConfigValues,
   fetchProxyConfig,
+  PII_BACKEND_NAMES,
+  type PiiBackendName,
   type ProxyConfig,
   updateProxyConfig,
 } from "@/lib/proxy-config";
 import { useProtectionStatus } from "@/lib/use-protection-status";
 import { cn } from "@/lib/utils";
 import { SettingRow } from "./SettingRow";
+
+const PII_BACKEND_LABELS: Record<PiiBackendName, { label: string; description: string }> = {
+  regex: {
+    label: "Regex",
+    description: "In-process emails, SSNs, and cards.",
+  },
+  presidio: {
+    label: "Presidio",
+    description: "Names, addresses, orgs, and phones via sidecar.",
+  },
+  openmed: {
+    label: "OpenMed",
+    description: "Medical and PHI-style identifiers via sidecar.",
+  },
+};
 
 /**
  * Admin editor for the ficta proxy's safety posture. Reads and writes go through admin-gated server
@@ -120,6 +137,12 @@ function ConfigEditor({
   const set = <K extends keyof EditableProxyConfigValues>(key: K, value: EditableProxyConfigValues[K]) => {
     onDraftChange({ ...draft, [key]: value });
   };
+  const toggleBackend = (backend: PiiBackendName, checked: boolean) => {
+    const next = new Set(draft.piiBackends);
+    if (checked) next.add(backend);
+    else next.delete(backend);
+    set("piiBackends", orderedBackends(next));
+  };
 
   return (
     <>
@@ -177,30 +200,45 @@ function ConfigEditor({
           locked={edit.locked.piiEnabled}
         />
       </SettingRow>
-      <SettingRow label="PII backend" description="Regex is in-process; Presidio uses the configured analyzer URL.">
-        <SelectControl
-          value={draft.piiBackend}
-          disabled={isDisabled("piiBackend", edit, disabled)}
-          onChange={(value) => set("piiBackend", value as EditableProxyConfigValues["piiBackend"])}
-          locked={edit.locked.piiBackend}
-          options={[
-            ["regex", "Regex"],
-            ["presidio", "Presidio"],
-          ]}
+      <SettingRow
+        label="PII backends"
+        description="Select one or more detectors for chat traffic through this gateway."
+      >
+        <BackendCheckboxGroup
+          selected={draft.piiBackends}
+          disabled={isDisabled("piiBackends", edit, disabled)}
+          locked={edit.locked.piiBackends}
+          onChange={toggleBackend}
         />
       </SettingRow>
-      <SettingRow label="Presidio URL" htmlFor="proxy-presidio-url" description="Analyzer endpoint used by Presidio.">
-        <div className="space-y-1">
-          <Input
-            id="proxy-presidio-url"
-            value={draft.piiPresidioUrl}
-            disabled={isDisabled("piiPresidioUrl", edit, disabled)}
-            className="w-64 font-mono text-xs"
-            onChange={(event) => set("piiPresidioUrl", event.target.value)}
-          />
-          <LockedText>{edit.locked.piiPresidioUrl}</LockedText>
-        </div>
-      </SettingRow>
+      {draft.piiBackends.includes("presidio") ? (
+        <SettingRow label="Presidio URL" htmlFor="proxy-presidio-url" description="Analyzer endpoint used by Presidio.">
+          <div className="space-y-1">
+            <Input
+              id="proxy-presidio-url"
+              value={draft.piiPresidioUrl}
+              disabled={isDisabled("piiPresidioUrl", edit, disabled)}
+              className="w-64 font-mono text-xs"
+              onChange={(event) => set("piiPresidioUrl", event.target.value)}
+            />
+            <LockedText>{edit.locked.piiPresidioUrl}</LockedText>
+          </div>
+        </SettingRow>
+      ) : null}
+      {draft.piiBackends.includes("openmed") ? (
+        <SettingRow label="OpenMed URL" htmlFor="proxy-openmed-url" description="REST endpoint used by OpenMed.">
+          <div className="space-y-1">
+            <Input
+              id="proxy-openmed-url"
+              value={draft.piiOpenmedUrl}
+              disabled={isDisabled("piiOpenmedUrl", edit, disabled)}
+              className="w-64 font-mono text-xs"
+              onChange={(event) => set("piiOpenmedUrl", event.target.value)}
+            />
+            <LockedText>{edit.locked.piiOpenmedUrl}</LockedText>
+          </div>
+        </SettingRow>
+      ) : null}
       <SettingRow label="PII outage policy" description="Block sends when the selected PII backend is unavailable.">
         <BooleanControl
           id="proxy-pii-fail-closed"
@@ -280,6 +318,46 @@ function ConfigEditor({
         <Value mono>{transport.logDir}</Value>
       </SettingRow>
     </>
+  );
+}
+
+function BackendCheckboxGroup({
+  selected,
+  disabled,
+  locked,
+  onChange,
+}: {
+  selected: PiiBackendName[];
+  disabled?: boolean;
+  locked?: string;
+  onChange: (backend: PiiBackendName, checked: boolean) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      {PII_BACKEND_NAMES.map((backend) => {
+        const id = `proxy-pii-backend-${backend}`;
+        const meta = PII_BACKEND_LABELS[backend];
+        return (
+          <label
+            key={backend}
+            htmlFor={id}
+            className="flex cursor-pointer items-start justify-end gap-2.5 text-right text-sm [@media(pointer:coarse)]:min-h-11"
+          >
+            <span>
+              <span className={selected.includes(backend) ? "font-medium" : "text-muted-foreground"}>{meta.label}</span>
+              <span className="block max-w-64 text-xs leading-relaxed text-muted-foreground">{meta.description}</span>
+            </span>
+            <Checkbox
+              id={id}
+              checked={selected.includes(backend)}
+              disabled={disabled}
+              onCheckedChange={(state) => onChange(backend, state === true)}
+            />
+          </label>
+        );
+      })}
+      <LockedText>{locked}</LockedText>
+    </div>
   );
 }
 
@@ -372,4 +450,9 @@ function Value({ children, warn, mono }: { children: React.ReactNode; warn?: boo
 
 function onOff(value: boolean): string {
   return value ? "On" : "Off";
+}
+
+function orderedBackends(backends: Set<PiiBackendName>): PiiBackendName[] {
+  const ordered = PII_BACKEND_NAMES.filter((backend) => backends.has(backend));
+  return ordered.length > 0 ? ordered : ["regex"];
 }
