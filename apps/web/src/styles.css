@@ -37,6 +37,32 @@
   --restored: oklch(0.86 0.15 165);
 }
 
+@supports not (color: oklch(0 0 0)) {
+  :root {
+    --background: #0a0a0c;
+    --foreground: #f4f3ee;
+    --card: #141519;
+    --card-foreground: #f4f3ee;
+    --popover: #141519;
+    --popover-foreground: #f4f3ee;
+    --primary: #ff5a36;
+    --primary-foreground: #26120d;
+    --secondary: #222328;
+    --secondary-foreground: #f4f3ee;
+    --muted: #222328;
+    --muted-foreground: #aaa9af;
+    --accent: #222328;
+    --accent-foreground: #f4f3ee;
+    --destructive: #e63f24;
+    --destructive-foreground: #f4f3ee;
+    --border: rgb(255 255 255 / 10%);
+    --input: rgb(255 255 255 / 14%);
+    --ring: #ff5a36;
+    --redaction: #35363b;
+    --restored: #50e5b7;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -95,6 +121,13 @@
   p {
     text-wrap: pretty;
   }
+  :where(h1, h2, h3, p, li, summary, a) {
+    overflow-wrap: break-word;
+  }
+  :where(a, button, summary):focus-visible {
+    outline: 3px solid oklch(0.67 0.2 33 / 55%);
+    outline-offset: 3px;
+  }
   ::selection {
     background: var(--primary);
     color: var(--primary-foreground);
@@ -103,6 +136,39 @@
     html {
       scroll-behavior: auto;
     }
+  }
+}
+
+.skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 1rem;
+  z-index: 50;
+  transform: translateY(-160%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  padding: 0.5rem 1rem;
+  font-weight: 600;
+  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+@media (forced-colors: active) {
+  :where(a, button, summary):focus-visible,
+  .skip-link:focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: 3px;
+  }
+
+  .skip-link {
+    border: 2px solid ButtonText;
+    forced-color-adjust: auto;
   }
 }
 

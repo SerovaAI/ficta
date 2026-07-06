@@ -13,6 +13,9 @@ const DOCS = "https://github.com/SerovaAI/ficta/tree/main/packages/ficta#readme"
 const THREAT_MODEL = "https://github.com/SerovaAI/ficta/blob/main/packages/ficta/docs/threat-model.md";
 const CONTACT_EMAIL = "hello@ficta.sh";
 const CONTACT = `mailto:${CONTACT_EMAIL}?subject=ficta%20Gateway`;
+const COPY_RESET_MS = 1600;
+
+type CopyStatus = "idle" | "copied" | "manual";
 
 /** A tokenized value as it appears on the wire — the surrogate the model actually receives. */
 function Token({ children }: { children: React.ReactNode }) {
@@ -71,44 +74,80 @@ function Wordmark({ className = "" }: { className?: string }) {
 
 /** Copy `text` with clipboard-API → execCommand fallbacks; selects `fallbackNode` as a last resort. */
 function useCopy(text: string) {
-  const [copied, setCopied] = React.useState(false);
-  const copy = async (fallbackNode?: HTMLElement | null) => {
-    try {
-      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        // Legacy / insecure-context fallback.
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        ta.setAttribute("readonly", "");
-        ta.style.position = "absolute";
-        ta.style.left = "-9999px";
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-      }
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    } catch {
-      // Last resort: select the text so a manual copy is one keystroke away.
-      const selection = typeof window !== "undefined" ? window.getSelection() : null;
-      if (fallbackNode && selection) {
-        const range = document.createRange();
-        range.selectNodeContents(fallbackNode);
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
+  const [status, setStatus] = React.useState<CopyStatus>("idle");
+  const resetTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleReset = React.useCallback(() => {
+    if (resetTimerRef.current) {
+      clearTimeout(resetTimerRef.current);
     }
-  };
-  return { copied, copy };
+    resetTimerRef.current = setTimeout(() => setStatus("idle"), COPY_RESET_MS);
+  }, []);
+
+  React.useEffect(
+    () => () => {
+      if (resetTimerRef.current) {
+        clearTimeout(resetTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const copy = React.useCallback(
+    async (fallbackNode?: HTMLElement | null) => {
+      const finish = (nextStatus: CopyStatus) => {
+        setStatus(nextStatus);
+        scheduleReset();
+      };
+
+      try {
+        if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          // Legacy / insecure-context fallback.
+          if (typeof document === "undefined") {
+            throw new Error("Clipboard is unavailable");
+          }
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.setAttribute("readonly", "");
+          ta.style.position = "absolute";
+          ta.style.left = "-9999px";
+          document.body.appendChild(ta);
+          ta.select();
+          try {
+            const copied = document.execCommand("copy");
+            if (!copied) {
+              throw new Error("execCommand copy failed");
+            }
+          } finally {
+            document.body.removeChild(ta);
+          }
+        }
+        finish("copied");
+      } catch {
+        // Last resort: select the text so a manual copy is one keystroke away.
+        const selection = typeof window !== "undefined" ? window.getSelection() : null;
+        if (fallbackNode && selection) {
+          const range = document.createRange();
+          range.selectNodeContents(fallbackNode);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+        finish("manual");
+      }
+    },
+    [scheduleReset, text],
+  );
+
+  return { copied: status === "copied", manualCopy: status === "manual", status, copy };
 }
 
 /** The contact address as visible text with a copy affordance — mailto can silently fail on
  * locked-down machines, so the address itself must be graspable. */
 function ContactEmail() {
   const emailRef = React.useRef<HTMLAnchorElement>(null);
-  const { copied, copy } = useCopy(CONTACT_EMAIL);
+  const { copied, manualCopy, copy } = useCopy(CONTACT_EMAIL);
   return (
     <span className="inline-flex items-baseline gap-0.5">
       <a
@@ -127,7 +166,7 @@ function ContactEmail() {
         {copied ? <Check className="size-3 text-restored" /> : <Copy className="size-3" />}
       </button>
       <span aria-live="polite" className="sr-only">
-        {copied ? "Email address copied" : ""}
+        {copied ? "Email address copied" : manualCopy ? "Email address selected for manual copy" : ""}
       </span>
     </span>
   );
@@ -136,13 +175,13 @@ function ContactEmail() {
 function InstallLine() {
   const codeRef = React.useRef<HTMLElement>(null);
   const cmd = "npm i -g @serovaai/ficta";
-  const { copied, copy } = useCopy(cmd);
+  const { copied, manualCopy, copy } = useCopy(cmd);
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-border bg-card/60 py-2 pr-2 pl-3.5 font-mono text-sm">
+    <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-card/60 py-2 pr-2 pl-3.5 font-mono text-sm">
       <span aria-hidden className="text-muted-foreground">
         $
       </span>
-      <code ref={codeRef} className="text-foreground/90">
+      <code ref={codeRef} className="min-w-0 overflow-x-auto whitespace-nowrap text-foreground/90">
         {cmd}
       </code>
       <button
@@ -154,7 +193,7 @@ function InstallLine() {
         {copied ? <Check className="size-3.5 text-restored" /> : <Copy className="size-3.5" />}
       </button>
       <span aria-live="polite" className="sr-only">
-        {copied ? "Copied to clipboard" : ""}
+        {copied ? "Copied to clipboard" : manualCopy ? "Install command selected for manual copy" : ""}
       </span>
     </div>
   );
@@ -166,7 +205,7 @@ function ExternalLink({ href, children }: { href: string; children: React.ReactN
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="inline-flex items-center gap-1 text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+      className="inline-flex items-center gap-1 text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
     >
       {children}
       <span className="sr-only"> (opens in new tab)</span>
@@ -177,12 +216,13 @@ function ExternalLink({ href, children }: { href: string; children: React.ReactN
 
 function Home() {
   return (
-    <div className="min-h-dvh bg-background text-foreground">
+    <div className="min-h-dvh overflow-x-clip bg-background text-foreground">
       <SiteHeader />
-      <main>
+      <main id="main">
         <Hero />
         <HowItWorks />
-        <Products />
+        <GatewaySection />
+        <OssProof />
         <Faq />
         <ScopeNote />
       </main>
@@ -196,17 +236,32 @@ function SiteHeader() {
     <header className="sticky top-0 z-20 border-border/70 border-b bg-background/80 backdrop-blur-md">
       <div className="mx-auto flex h-15 max-w-6xl items-center gap-6 px-5 sm:px-8">
         <Wordmark />
-        <nav className="ml-auto hidden items-center gap-6 text-sm text-muted-foreground sm:flex">
-          <a href="#how" className="transition-colors hover:text-foreground">
+        <nav className="ml-auto hidden items-center gap-6 text-sm text-muted-foreground lg:flex">
+          <a
+            href="#how"
+            className="inline-flex items-center transition-colors hover:text-foreground [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+          >
             How it works
           </a>
-          <a href="#products" className="transition-colors hover:text-foreground">
+          <a
+            href="#gateway"
+            className="inline-flex items-center transition-colors hover:text-foreground [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+          >
             ficta Gateway
           </a>
-          <a href="#faq" className="transition-colors hover:text-foreground">
+          <a
+            href="#oss"
+            className="inline-flex items-center transition-colors hover:text-foreground [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+          >
+            OSS engine
+          </a>
+          <a
+            href="#faq"
+            className="inline-flex items-center transition-colors hover:text-foreground [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+          >
             FAQ
           </a>
-          <ExternalLink href={DOCS}>Docs</ExternalLink>
+          <ExternalLink href={THREAT_MODEL}>Threat model</ExternalLink>
           <ExternalLink href={GITHUB}>GitHub</ExternalLink>
         </nav>
         <Button asChild size="sm" className="ml-auto sm:ml-0">
@@ -229,25 +284,22 @@ function Hero() {
         }}
       />
       <div className="mx-auto grid max-w-6xl gap-14 px-5 pt-20 pb-24 sm:px-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:pt-28 lg:pb-32">
-        <div className="animate-rise">
+        <div className="min-w-0 animate-rise">
           <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-card/50 py-1 pr-3 pl-2 text-muted-foreground text-xs">
             <span className="inline-block size-1.5 rounded-full bg-restored" />
-            Local · reversible · no telemetry
+            self-hosted Gateway · local restore
           </p>
           <h1 className="font-semibold text-[clamp(2.5rem,4.2vw,3.3rem)] leading-[0.98]">
-            The model sees a token.
-            <br />
-            <span className="text-muted-foreground">You keep the value.</span>
+            AI chat behind your <br />
+            <span className="text-muted-foreground">redaction boundary.</span>
           </h1>
           <p className="mt-6 max-w-xl text-[1.05rem] text-muted-foreground leading-relaxed">
-            ficta runs on your machine and replaces registered secrets, secret-shaped keys, and (opt-in) detected PII
-            with local surrogates <em className="text-foreground/90 not-italic">before</em> a request leaves for the
-            model — then restores the real values locally in the reply.
+            ficta Gateway is a self-hosted AI workspace for regulated teams. It swaps registered client names, matter
+            IDs, secrets, and opt-in detected PII for local surrogates{" "}
+            <em className="text-foreground/90 not-italic">before</em> requests reach the model — then restores the reply
+            inside your environment.
           </p>
-          <div className="mt-8 max-w-md">
-            <InstallLine />
-          </div>
-          <div className="mt-5 flex flex-wrap items-center gap-3">
+          <div className="mt-8 flex flex-wrap items-center gap-3">
             <Button asChild size="lg">
               <a href={CONTACT}>
                 Talk to us
@@ -255,19 +307,19 @@ function Hero() {
               </a>
             </Button>
             <Button asChild size="lg" variant="outline">
-              <a href={DOCS} target="_blank" rel="noreferrer">
-                Read the docs
+              <a href={THREAT_MODEL} target="_blank" rel="noreferrer">
+                Read the threat model
                 <ArrowUpRight className="size-4" />
               </a>
             </Button>
           </div>
           <p className="mt-5 text-muted-foreground text-sm">
-            Running a regulated team?{" "}
+            Built on an inspectable open-source engine.{" "}
             <a
-              href="#products"
+              href="#oss"
               className="text-foreground underline decoration-primary/50 underline-offset-4 transition-colors hover:decoration-primary"
             >
-              See ficta&nbsp;Gateway →
+              See the source path →
             </a>
           </p>
         </div>
@@ -280,14 +332,14 @@ function Hero() {
 /** The airlock, made literal: real values on your machine, tokens on the wire, restored on return. */
 function WireCard() {
   return (
-    <div className="animate-rise [animation-delay:120ms]">
-      <div className="rounded-xl border border-border bg-card/70 shadow-2xl shadow-black/40">
+    <div className="min-w-0 animate-rise [animation-delay:120ms]">
+      <div className="min-w-0 rounded-xl border border-border bg-card/70 shadow-2xl shadow-black/40">
         <div className="flex items-center gap-2 border-border/70 border-b px-4 py-2.5 font-mono text-muted-foreground text-xs">
           <Lock className="size-3.5 text-primary" />
           POST /v1/messages
           <span className="ml-auto text-restored">on your machine</span>
         </div>
-        <pre className="overflow-x-auto px-4 py-4 font-mono text-[0.82rem] leading-6">
+        <pre className="max-w-full overflow-x-auto px-4 py-4 font-mono text-[0.82rem] leading-6">
           <code>
             {"Authorization: Bearer "}
             <Passthrough>sk-live-4a9f…c2</Passthrough>
@@ -306,7 +358,7 @@ function WireCard() {
         <div className="px-4 py-2.5 font-mono text-muted-foreground text-xs">
           <span className="text-primary">→ leaves for the model</span>
         </div>
-        <pre className="overflow-x-auto px-4 pt-0 pb-4 font-mono text-[0.82rem] leading-6">
+        <pre className="max-w-full overflow-x-auto px-4 pt-0 pb-4 font-mono text-[0.82rem] leading-6">
           <code>
             {"Authorization: Bearer "}
             <Passthrough>sk-live-4a9f…c2</Passthrough>
@@ -325,7 +377,7 @@ function WireCard() {
         <div className="px-4 py-2.5 font-mono text-muted-foreground text-xs">
           <span className="text-restored">← restored in the reply</span>
         </div>
-        <pre className="overflow-x-auto px-4 pt-0 pb-4 font-mono text-[0.82rem] leading-6">
+        <pre className="max-w-full overflow-x-auto px-4 pt-0 pb-4 font-mono text-[0.82rem] leading-6">
           <code>
             {"{\n"}
             {'  "content": "Here\'s your draft to '}
@@ -370,8 +422,8 @@ function HowItWorks() {
             A one-way airlock for model traffic
           </h2>
           <p className="mt-4 text-muted-foreground leading-relaxed">
-            Point your agent or app at the local ficta proxy. Everything on the way out is redacted; everything on the
-            way back is restored. Reversible by design.
+            Point Gateway, an agent, or an app at the local ficta proxy. Everything on the way out is redacted;
+            everything on the way back is restored. Reversible by design.
           </p>
         </div>
         <ol className="mt-12 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
@@ -390,23 +442,36 @@ function HowItWorks() {
   );
 }
 
-function Products() {
+function GatewaySection() {
   return (
-    <section id="products" className="scroll-mt-16 border-border/60 border-t">
+    <section id="gateway" className="scroll-mt-16 border-border/60 border-t">
       <div className="mx-auto max-w-6xl px-5 py-20 sm:px-8 lg:py-28">
-        <div className="max-w-2xl">
-          <h2 className="font-semibold text-[clamp(1.75rem,3.5vw,2.5rem)] leading-tight">
-            One engine. Two ways to run it.
-          </h2>
-          <p className="mt-4 text-muted-foreground leading-relaxed">
-            The same local redaction core, shipped for two very different jobs.
-          </p>
-        </div>
-        {/* DOM order puts ficta Gateway first so the enterprise card leads the mobile stack;
-            lg:order-first on the OSS card keeps the desktop OSS-left → Gateway-right narrative. */}
-        <div className="mt-12 grid gap-6 lg:grid-cols-2">
-          {/* Product B — enterprise, calmer, vermilion-signalled. */}
-          <article className="relative flex flex-col overflow-hidden rounded-xl border border-primary/30 bg-card p-7">
+        <div className="grid gap-10 lg:grid-cols-[0.92fr_1.08fr] lg:items-start">
+          <div className="max-w-2xl">
+            <h2 className="font-semibold text-[clamp(1.75rem,3.5vw,2.5rem)] leading-tight">
+              Self-hosted AI chat with the redaction boundary in front of the model.
+            </h2>
+            <p className="mt-4 text-muted-foreground leading-relaxed">
+              Gateway packages ficta's local redact-and-restore engine as an internal workspace for law, health,
+              finance, and other teams that need AI workflows without sending known sensitive values straight into
+              provider context.
+            </p>
+            <div className="mt-7 flex flex-wrap items-center gap-3">
+              <Button asChild>
+                <a href={CONTACT}>
+                  Talk to us
+                  <ArrowUpRight className="size-4" />
+                </a>
+              </Button>
+              <Button asChild variant="outline">
+                <a href="#faq">Review the boundary</a>
+              </Button>
+            </div>
+            <p className="mt-4 text-muted-foreground text-sm">
+              Design-partner pilots now — or email <ContactEmail />
+            </p>
+          </div>
+          <article className="relative overflow-hidden rounded-xl border border-primary/30 bg-card p-7">
             <div
               aria-hidden
               className="pointer-events-none absolute inset-0"
@@ -416,23 +481,19 @@ function Products() {
             />
             <div className="relative flex items-center gap-2.5 text-muted-foreground">
               <ShieldCheck className="size-4 text-primary" />
-              <span className="font-mono text-xs uppercase tracking-widest">enterprise · self-hosted</span>
+              <span className="font-mono text-xs uppercase tracking-widest">Gateway · self-hosted</span>
             </div>
             <h3 className="relative mt-4 font-semibold text-2xl">
-              ficta&nbsp;Gateway <span className="text-muted-foreground">— the confidential workspace</span>
+              What Gateway adds <span className="text-muted-foreground">around the engine</span>
             </h3>
-            <p className="relative mt-3 text-muted-foreground leading-relaxed">
-              An internal AI chat gateway for regulated teams — law, health, finance. A control you{" "}
-              <strong className="font-medium text-foreground">run and audit</strong>, not a processor you send data to.
-            </p>
-            <ul className="relative mt-5 space-y-2.5 text-sm">
+            <ul className="relative mt-5 grid gap-4 text-sm sm:grid-cols-2">
               {[
-                "Deployed inside your environment: on-prem infrastructure, private cloud, or VPC",
-                "No ficta-hosted processing required",
-                "Load your client / matter roster as exact-match values",
-                "Presidio support for ZA ID and company registration numbers",
-                "Run best-effort PII detection fail-closed when the sidecar is required",
-                "SSO, workspaces, and chat history on your own database",
+                "Deploys inside your perimeter, with chat history on your own database",
+                "Loads client, matter, patient, vendor, and case rosters as exact-match values",
+                "Runs Presidio / OpenMed sidecars fail-closed when detection is required",
+                "Supports regional recognizers, including South African ID and company numbers",
+                "Admin controls and redaction proof without logging protected values",
+                "SSO, workspaces, private support, and commercial licensing for teams",
               ].map((item) => (
                 <li key={item} className="flex gap-2.5 text-muted-foreground">
                   <Check className="mt-0.5 size-4 shrink-0 text-restored" />
@@ -440,55 +501,62 @@ function Products() {
                 </li>
               ))}
             </ul>
-            <div className="relative mt-auto flex flex-wrap items-center gap-3 pt-7">
-              <Button asChild>
-                <a href={CONTACT}>
-                  Talk to us
-                  <ArrowUpRight className="size-4" />
-                </a>
-              </Button>
-              <p className="text-muted-foreground text-xs">
-                Design-partner pilots now — or email <ContactEmail />
-              </p>
-            </div>
-          </article>
-
-          {/* Product A — OSS, terminal-flavored. */}
-          <article className="flex flex-col rounded-xl border border-border bg-card p-7 lg:order-first">
-            <div className="flex items-center gap-2.5 text-muted-foreground">
-              <Terminal className="size-4 text-foreground" />
-              <span className="font-mono text-xs uppercase tracking-widest">open source · MIT</span>
-            </div>
-            <h3 className="mt-4 font-semibold text-2xl">
-              ficta <span className="text-muted-foreground">— the secret airlock</span>
-            </h3>
-            <p className="mt-3 text-muted-foreground leading-relaxed">
-              For developers running <strong className="font-medium text-foreground">Claude Code</strong>,{" "}
-              <strong className="font-medium text-foreground">Codex</strong>, and{" "}
-              <strong className="font-medium text-foreground">Pi</strong>. Keeps real keys out of provider request logs
-              and long-lived model context.
-            </p>
-            <ul className="mt-5 space-y-2.5 text-sm">
-              {[
-                "Exact-match protection for registered .env / process-env / Doppler secrets",
-                "Fail-closed: blocks the request if a protected value would leave verbatim",
-                "Runs locally per launch — no account, no telemetry",
-              ].map((item) => (
-                <li key={item} className="flex gap-2.5 text-muted-foreground">
-                  <Check className="mt-0.5 size-4 shrink-0 text-restored" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-            <div className="mt-6 max-w-xs">
-              <InstallLine />
-            </div>
-            <div className="mt-6 flex items-center gap-5 border-border/60 border-t pt-5 text-sm">
-              <ExternalLink href={GITHUB}>GitHub</ExternalLink>
-              <ExternalLink href={NPM}>npm</ExternalLink>
-            </div>
           </article>
         </div>
+      </div>
+    </section>
+  );
+}
+
+function OssProof() {
+  return (
+    <section id="oss" className="scroll-mt-16 border-border/60 border-t">
+      <div className="mx-auto grid max-w-6xl gap-10 px-5 py-20 sm:px-8 lg:grid-cols-[0.85fr_1.15fr] lg:py-24">
+        <div className="max-w-xl">
+          <h2 className="font-semibold text-[clamp(1.75rem,3.5vw,2.5rem)] leading-tight">
+            Open source where the boundary needs proof.
+          </h2>
+          <p className="mt-4 text-muted-foreground leading-relaxed">
+            The engine and CLI stay visible because technical evaluators should be able to inspect the redaction path,
+            run it locally, and compare the shipped behavior against the written threat model.
+          </p>
+        </div>
+        <article className="rounded-xl border border-border bg-card p-7">
+          <div className="flex items-center gap-2.5 text-muted-foreground">
+            <Terminal className="size-4 text-foreground" />
+            <span className="font-mono text-xs uppercase tracking-widest">open source · MIT engine</span>
+          </div>
+          <h3 className="mt-4 font-semibold text-2xl">
+            Same redaction core. <span className="text-muted-foreground">Readable, installable, auditable.</span>
+          </h3>
+          <p className="mt-3 text-muted-foreground leading-relaxed">
+            Developers can run the CLI with <strong className="font-medium text-foreground">Claude Code</strong>,{" "}
+            <strong className="font-medium text-foreground">Codex</strong>, and{" "}
+            <strong className="font-medium text-foreground">Pi</strong>. Gateway builds the team workspace around that
+            same local mechanism.
+          </p>
+          <div className="mt-6 max-w-md">
+            <InstallLine />
+          </div>
+          <ul className="mt-6 grid gap-3 text-sm sm:grid-cols-3">
+            {[
+              "Exact-match protection for registered secrets",
+              "Fail-closed if a protected value would leave verbatim",
+              "Runs locally per launch, with no account or telemetry",
+            ].map((item) => (
+              <li key={item} className="flex gap-2.5 text-muted-foreground">
+                <Check className="mt-0.5 size-4 shrink-0 text-restored" />
+                {item}
+              </li>
+            ))}
+          </ul>
+          <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 border-border/60 border-t pt-5 text-sm">
+            <ExternalLink href={GITHUB}>GitHub</ExternalLink>
+            <ExternalLink href={NPM}>npm</ExternalLink>
+            <ExternalLink href={DOCS}>Docs</ExternalLink>
+            <ExternalLink href={THREAT_MODEL}>Threat model</ExternalLink>
+          </div>
+        </article>
       </div>
     </section>
   );
@@ -559,8 +627,8 @@ function Faq() {
         <div className="border-border/70 border-y">
           {FAQ_ITEMS.map((item) => (
             <details key={item.question} className="group border-border/70 border-t first:border-t-0">
-              <summary className="flex cursor-pointer list-none items-start gap-4 py-5 text-left font-medium text-foreground transition-colors hover:text-primary [&::-webkit-details-marker]:hidden">
-                <span className="pt-0.5">{item.question}</span>
+              <summary className="flex cursor-pointer list-none items-start gap-4 rounded-sm py-5 text-left font-medium text-foreground transition-colors hover:text-primary [&::-webkit-details-marker]:hidden">
+                <span className="min-w-0 pt-0.5">{item.question}</span>
                 <ChevronDown className="mt-1 ml-auto size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180 group-hover:text-primary" />
               </summary>
               <div className="max-w-2xl pb-5 text-muted-foreground text-sm leading-relaxed">{item.answer}</div>
@@ -662,7 +730,10 @@ function SiteFooter() {
           <ExternalLink href={NPM}>npm</ExternalLink>
           <ExternalLink href={DOCS}>Docs</ExternalLink>
           <ExternalLink href={THREAT_MODEL}>Threat model</ExternalLink>
-          <a href={CONTACT} className="text-muted-foreground transition-colors hover:text-foreground">
+          <a
+            href={CONTACT}
+            className="inline-flex items-center text-muted-foreground transition-colors hover:text-foreground [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+          >
             Talk to us
           </a>
         </nav>
@@ -670,7 +741,10 @@ function SiteFooter() {
       <div className="mx-auto max-w-6xl border-border/40 border-t px-5 py-5 text-muted-foreground text-xs sm:px-8">
         Engine + CLI are MIT. ficta&nbsp;Gateway is AGPL-3.0 with a commercial option. © 2026 ficta — built by
         Stefan&nbsp;Lesicnik ·{" "}
-        <a href={CONTACT} className="underline underline-offset-4 transition-colors hover:text-foreground">
+        <a
+          href={CONTACT}
+          className="inline-flex items-center underline underline-offset-4 transition-colors hover:text-foreground [@media(pointer:coarse)]:min-h-11"
+        >
           {CONTACT_EMAIL}
         </a>
       </div>

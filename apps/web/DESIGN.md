@@ -1,6 +1,6 @@
 ---
 name: ficta site
-description: Dark-only marketing site for ficta — the local redaction gateway for model traffic.
+description: Dark-only marketing site for ficta Gateway — the self-hosted redaction boundary for AI chat.
 colors:
   ink: "oklch(0.165 0.006 264)"
   chalk: "oklch(0.96 0.004 90)"
@@ -109,11 +109,11 @@ components:
 
 **Creative North Star: "The Redaction Stamp"**
 
-The ficta site is a dark, precise marketing surface built around one physical metaphor: the redaction stamp. Near-black ink is the page; a single saturated vermilion is the stamp — it marks the wordmark's brackets, the CTAs, text selection, and the faint radial wash "bleeding in" at the hero's corner. The identity itself is the brand's **Token Wrapper** direction (`assets/brand/`): the wordmark is `[ficta]`, a value wrapped in vermilion brackets — the surrogate it becomes on the wire. Its counterpart is a sparing mint that means exactly one thing: a real value, restored, still on your machine. The page doesn't argue that the mechanism is safe; it shows the mechanism — a request stamped on the way out, restored on the way back — and lets the honesty of the demo carry the pitch.
+The ficta site is a dark, precise marketing surface for ficta Gateway, built around one physical metaphor: the redaction stamp. Near-black ink is the page; a single saturated vermilion is the stamp — it marks the wordmark's brackets, the CTAs, text selection, and the faint radial wash "bleeding in" at the hero's corner. The identity itself is the brand's **Token Wrapper** direction (`assets/brand/`): the wordmark is `[ficta]`, a value wrapped in vermilion brackets — the surrogate it becomes on the wire. Its counterpart is a sparing mint that means exactly one thing: a real value, restored, still on your machine. The page doesn't argue that the mechanism is safe; it shows the mechanism — a request stamped on the way out, restored on the way back — and lets the honesty of the demo carry the Gateway pitch.
 
 The system is bolder than the ficta product UI (large fluid display type, an animated wire demo, atmospheric color washes) but shares its anti-theater DNA. It explicitly rejects cybersecurity theater (padlocks, shields, matrix green, fear copy), flashy AI-SaaS landing grammar (gradient text, glassmorphism, orbs, hero-metric blocks, identical icon-card grids), and generic enterprise-security styling. Expressiveness lives in typography, the stamp, and motion — never in adjectives or security imagery.
 
-Layout is a single scannable page: a 72rem (`max-w-6xl`) container, generous section padding (80px, 112px at desktop), hairline top-borders separating sections instead of background shifts, and content capped at readable measures (`max-w-2xl` intros, `max-w-xl` hero prose). Motion is a single entrance vocabulary — `.animate-rise`, a 14px rise-and-fade on `cubic-bezier(0.22, 1, 0.36, 1)` — gated on `prefers-reduced-motion: no-preference` so the page is fully visible by default and the animation only enhances.
+Layout is a single scannable page: Gateway leads the hero, conversion path, and dominant product section; the open-source engine appears later as an inspectability/proof band with install, GitHub, npm, docs, and threat-model links. Use a 72rem (`max-w-6xl`) container, generous section padding (80px, 112px at desktop), hairline top-borders separating sections instead of background shifts, and content capped at readable measures (`max-w-2xl` intros, `max-w-xl` hero prose). Motion is a single entrance vocabulary — `.animate-rise`, a 14px rise-and-fade on `cubic-bezier(0.22, 1, 0.36, 1)` — gated on `prefers-reduced-motion: no-preference` so the page is fully visible by default and the animation only enhances.
 
 **Key Characteristics:**
 
@@ -121,6 +121,7 @@ Layout is a single scannable page: a 72rem (`max-w-6xl`) container, generous sec
 - One vermilion accent carrying both brand identity and every CTA; one mint signal reserved for restored values and affirmative checks.
 - Fragment Mono for everything "on the wire" (wordmark, install command, tokens, kickers); Hanken Grotesk for everything human.
 - Flat, hairline-bordered surfaces; a single dramatic shadow under the one floating object (the wire demo).
+- Gateway is the offer; OSS is the proof layer. Never present them as equal product cards.
 - Honest copy as a design element: limits stated plainly, in body type, on the page.
 
 ## 2. Colors
@@ -165,9 +166,9 @@ A near-monochrome ink field where vermilion is the only voice and mint is the on
 
 ### Hierarchy
 
-- **Display** (600, `clamp(2.5rem, 4.2vw, 3.3rem)`, 0.98, −0.02em): The hero H1 only. Two-line structure with the second line in Muted Chalk ("The model sees a token. / You keep the value."). The cap is sized so each sentence holds a single line inside the hero column at every ≥1024px width — do not raise it without re-measuring the couplet.
+- **Display** (600, `clamp(2.5rem, 4.2vw, 3.3rem)`, 0.98, −0.02em): The hero H1 only. Two-line structure with the second line in Muted Chalk ("AI chat behind your / redaction boundary."). The cap is sized so each sentence holds a single line inside the hero column at every ≥1024px width — do not raise it without re-measuring the couplet.
 - **Headline** (600, `clamp(1.75rem, 3.5vw, 2.5rem)`, 1.25, −0.02em): Section H2s. The ScopeNote uses a quieter `clamp(1.5rem, 3vw, 2rem)`.
-- **Title** (600, `1.5rem`, 1.3, −0.02em): Product-card H3s, with the suffix epithet in Muted Chalk ("ficta — the secret airlock"). Step titles drop to `1.125rem`/500.
+- **Title** (600, `1.5rem`, 1.3, −0.02em): Gateway and OSS proof H3s, with the trailing phrase in Muted Chalk ("What Gateway adds / around the engine"). Step titles drop to `1.125rem`/500.
 - **Body** (400, `1rem`, 1.625): Section prose in Muted Chalk. Hero lede runs `1.05rem`. Emphasis inside body is weight-500 Chalk, never color. Keep measures ≤ `max-w-2xl`.
 - **Label** (Fragment Mono, `0.75rem`, uppercase, ~0.1em tracking): Kickers ("open source · MIT"), wire-flow dividers ("ficta · redact"). A deliberate, sparing device — not a per-section scaffold.
 - **Mono** (Fragment Mono, `0.82rem`, leading-6): The wire demo's request bodies, the install command, inline tokens and kept values (sized `0.82em` when inline).
@@ -211,13 +212,13 @@ The system is flat and border-led. Depth comes from three tonal steps (Ink → P
 - **Corner Style:** `rounded-xl` (`14px`) for section-level cards; the wire demo and product cards share it.
 - **Background:** Panel (solid on product cards, 60–70% alpha where the ink should breathe through).
 - **Shadow Strategy:** Border-led per the One Floating Object Rule; only the WireCard lifts.
-- **Border:** 1px Hairline everywhere; the ficta Gateway card upgrades to `border-primary/30` plus its corner wash — differentiation by stamp, not by size.
+- **Border:** 1px Hairline everywhere; the ficta Gateway section card upgrades to `border-primary/30` plus its corner wash — differentiation by stamp, not by size. The OSS proof band uses the plain hairline treatment.
 - **Internal Padding:** `28px` (`p-7`) on product cards, `24px` (`p-6`) on steps.
 
 ### Navigation
 
-- **Style:** Sticky header, `60px` tall, Header Veil treatment, wordmark left, text links + one primary sm button right. Nav links are `0.875rem` Muted Chalk transitioning to Chalk on hover; external links append a `14px` arrow-up-right and underline on hover.
-- **Mobile Treatment:** Text nav hides below `sm`; wordmark and the GitHub button remain. No hamburger — the page is single-scroll with anchor sections.
+- **Style:** Sticky header, `60px` tall, Header Veil treatment, wordmark left, text links + one primary sm button right. Nav links are `0.875rem` Muted Chalk transitioning to Chalk on hover; external links append a `14px` arrow-up-right and underline on hover. Gateway, How it works, OSS engine, FAQ, threat model, and GitHub are visible in desktop nav; `Talk to us` remains the only button. Coarse-pointer nav links get 44px minimum targets.
+- **Mobile / Tablet Treatment:** Text nav hides below `lg`; wordmark and the `Talk to us` button remain. No hamburger — the page is single-scroll with anchor sections.
 
 ### Wordmark (signature)
 
@@ -229,23 +230,32 @@ The hero demo and the brand argument in one component: a Panel card (Artifact Li
 
 ### InstallLine
 
-A mono one-liner in a hairline-bordered, `10px`-radius, Panel-60% bar: muted `$` prompt, `npm i -g @serovaai/ficta` in Chalk-90, and a ghost copy button whose success state is a Restored Mint check for 1.6s.
+A mono one-liner in a hairline-bordered, `10px`-radius, Panel-60% bar: muted `$` prompt, `npm i -g @serovaai/ficta` in Chalk-90, and a ghost copy button whose success state is a Restored Mint check for 1.6s. If clipboard access fails, the command is selected for manual copy and announced through the live region. It belongs in the OSS proof section, not above the fold.
+
+### Resilience
+
+- **Keyboard path:** Root document includes a visible-on-focus skip link to `#main`. All buttons, standalone links, and FAQ summaries keep a vermilion focus outline; forced-colors mode gets a system Highlight outline.
+- **Fallback pages:** Unknown routes and render failures use the same dark ink surface, wordmark, direct recovery actions, and visible contact email. Do not fall through to unbranded framework defaults.
+- **Browser fallbacks:** `src/styles.css` carries hex/RGB fallbacks for browsers without OKLCH support. The dark-only identity remains the source of truth; fallbacks are approximation only.
+- **No-JS state:** Server-rendered content remains readable. A `<noscript>` strip explains that copy buttons are unavailable while the install command and contact email remain visible for manual copy.
 
 ## 6. Do's and Don'ts
 
 ### Do:
 
 - **Do** treat `src/styles.css` as the single source of truth; every color in this file exists there as a custom property (`--background`, `--primary`, `--redaction`, `--restored`, …). Use the Tailwind tokens (`bg-redaction`, `text-restored`) rather than raw values.
-- **Do** keep vermilion scarce enough to stay loud: CTAs, the wordmark brackets, selection, wire labels, and corner washes at ≤14% alpha — nothing else.
-- **Do** show the mechanism when explaining the product: reuse the WireCard's redact→restore pattern, Token chips, and Kept values instead of abstract security imagery.
+- **Do** keep vermilion scarce enough to stay loud: CTAs, the wordmark brackets, selection, wire labels, Gateway section emphasis, and corner washes at ≤14% alpha — nothing else.
+- **Do** show the mechanism when explaining Gateway: reuse the WireCard's redact→restore pattern, Token chips, and Kept values instead of abstract security imagery.
 - **Do** gate every animation on `prefers-reduced-motion: no-preference` with the content fully visible by default, following the `.animate-rise` precedent (0.7s, `cubic-bezier(0.22, 1, 0.36, 1)`, 14px rise). Stagger with `animation-delay` (~120ms steps).
 - **Do** hold WCAG AA on the ink field: Muted Chalk is the floor for body text; pair the vermilion/mint semantics with text or shape (the mint dot has a label; tokens have the `FICTA_` prefix), never color alone.
+- **Do** keep failure and degraded states on-brand: branded 404/error surfaces, manual-copy fallbacks, no-JS guidance, and system-color focus outlines are part of the public site.
 - **Do** keep hairline borders (1px white-alpha) as the separation system, and reserve the one dramatic shadow for the artifact being demonstrated.
 
 ### Don't:
 
 - **Don't** ship cybersecurity theater: no padlocks-as-decoration, shields, hooded figures, neon-green matrix aesthetics, or fear-based copy. (Lucide `Lock`/`ShieldCheck` appear only as small semantic markers next to wire labels and the enterprise kicker.)
 - **Don't** use flashy AI-SaaS landing grammar: no gradient text, no glassmorphism cards (the header's backdrop-blur is the single sanctioned blur), no orb/bokeh backgrounds, no hero-metric blocks, no identical icon-card grids.
+- **Don't** present the OSS CLI and Gateway as equal product choices. Gateway is the page's commercial offer; OSS is the inspectable engine and developer path underneath it.
 - **Don't** over-claim in copy or visuals; "best-effort" stays "best-effort", and nothing may imply guarantees beyond tokenization + local restore.
 - **Don't** add a light theme, per-section uppercase eyebrows (the label register is reserved for mono kickers with real meaning), side-stripe borders, or numbered markers outside the How-it-works sequence — the 01–04 steps are a real ordered pipeline, which is why they're numbered.
 - **Don't** use Restored Mint for generic success or links, vermilion for dividers or decorative icons, or Signal Red for anything but genuine errors.

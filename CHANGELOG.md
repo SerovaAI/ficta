@@ -11,7 +11,7 @@
 
 ### Changed
 
-- Updated public website Gateway positioning to clarify deployment inside the customer's environment and the boundary for confidential legal content.
+- Updated public website Gateway positioning to lead with the self-hosted Gateway offer and move OSS install/source links into a supporting proof section.
 - Changed Gateway proxy configuration controls to autosave on edit instead of requiring a form-level save button.
 - Moved the Gateway admin entry into the signed-in user menu instead of showing it as a separate sidebar action.
 - Moved the Gateway tool-call withholding runtime count out of proxy configuration and into redaction proof.
@@ -22,9 +22,12 @@
 
 ### Fixed
 
+- Hardened the public website with branded 404/error fallbacks, no-JS guidance, keyboard focus paths, and clipboard manual-copy recovery.
+- Improved public website responsive behavior for tablet touch targets and very narrow mobile widths.
 - Fixed Gateway admin proxy configuration so PII backend editing uses the multi-backend `FICTA_PII_BACKENDS` model and exposes OpenMed/medical detection alongside Regex and Presidio.
 - Fixed Gateway admin model availability saves being reported as failed when the save succeeded but route refresh failed.
 - Added a Gateway PGlite data-dir lock and startup probe so embedded storage fails clearly instead of double-opening or surfacing raw WASM aborts.
 - Improved Gateway muted text contrast on quiet tinted surfaces.
 - Fixed Gateway dev-server hangs from manual TanStack server-function prewarming and IPv6-only localhost binding.
 - Fixed Gateway dev-server resolution of the local `@serovaai/ficta-protocol` workspace package.
+- Aligned the published package-local pnpm pin with the workspace release toolchain so package publish scripts run under pnpm 11.10.0.

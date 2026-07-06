@@ -25,6 +25,7 @@
 - Moved Ficta Gateway's TanStack Query setup into the router-level SSR integration and added an in-menu retry action for workspace-switcher load failures.
 - Show the active WorkOS workspace name in the Ficta Gateway account menu and surface workspace-load failures instead of silently hiding the switcher.
 - Prewarm Ficta Gateway TanStack Start server functions in dev so cold server-function requests no longer fail with `Invalid server function ID`.
+- Aligned the published package-local pnpm pin with the workspace release toolchain so package publish scripts run under pnpm 11.10.0.
 
 ## 0.1.0 - 2026-07-04
 
