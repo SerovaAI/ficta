@@ -427,7 +427,8 @@ function Products() {
             </p>
             <ul className="relative mt-5 space-y-2.5 text-sm">
               {[
-                "Deploys inside your perimeter; registered identifiers leave as surrogates",
+                "Deployed inside your environment: on-prem infrastructure, private cloud, or VPC",
+                "No ficta-hosted processing required",
                 "Load your client / matter roster as exact-match values",
                 "Presidio support for ZA ID and company registration numbers",
                 "Run best-effort PII detection fail-closed when the sidecar is required",
@@ -513,6 +514,16 @@ const FAQ_ITEMS = [
     ),
   },
   {
+    question: "Does Ficta make privileged or confidential legal content safe to send?",
+    answer: (
+      <>
+        No. Legal confidentiality is broader than identifiers and PII. Ficta reduces exposure of registered identifiers
+        and detectable PII, but factual content can still be confidential or privileged even after names are removed.
+        Use Gateway inside your own policy boundary and treat external model use accordingly.
+      </>
+    ),
+  },
+  {
     question: "What happens if Presidio is unavailable?",
     answer: (
       <>
@@ -578,6 +589,10 @@ function ScopeNote() {
             they are not a completeness guarantee, and undetected values can still reach the model. ficta is
             secret-hygiene and PII-reduction tooling — <strong className="font-medium text-foreground">not</strong>{" "}
             enterprise DLP, a compliance product, or a sandbox.
+          </p>
+          <p>
+            Ficta reduces exposure of registered identifiers and detectable PII. It does not make all confidential legal
+            content safe to send to an external model.
           </p>
           <p>
             The exact boundary — every covered surface and deliberate exception — is written down in the{" "}
