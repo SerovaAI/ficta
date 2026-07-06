@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { drizzle as drizzleNodePg } from "drizzle-orm/node-postgres";
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
 import { applyMigrations, type SqlRunner } from "./migrate.server";
+import { acquirePgliteDataDirLock, assertPgliteReadable, type PgliteDataDirLock } from "./pglite-guard.server";
 import * as schema from "./schema";
 
 /**
@@ -27,6 +28,7 @@ export type Database =
 interface Handle {
   db: Database;
   ready: Promise<void>;
+  lock?: PgliteDataDirLock;
 }
 
 // Stash on globalThis so HMR / SSR re-imports don't double-open. The symbol keeps it off the typed global.
@@ -51,14 +53,34 @@ function create(): Handle {
   // PGlite's own mkdir isn't recursive, so a fresh `.data/pglite` (missing parent) throws ENOENT.
   // Pre-create the tree for real filesystem paths; skip URL-scheme dirs like `memory://` / `idb://`.
   if (!dataDir.includes("://")) mkdirSync(dataDir, { recursive: true });
-  const db = drizzlePglite(dataDir, { schema });
-  const runner: SqlRunner = {
-    exec: async (sql) => {
-      await db.$client.exec(sql);
-    },
-    rows: async (sql) => (await db.$client.query(sql)).rows as Array<Record<string, unknown>>,
-  };
-  return { db, ready: applyMigrations(runner) };
+  const lock = acquirePgliteDataDirLock(dataDir);
+  try {
+    const db = drizzlePglite(dataDir, { schema });
+    const runner: SqlRunner = {
+      exec: async (sql) => {
+        await db.$client.exec(sql);
+      },
+      rows: async (sql) => (await db.$client.query(sql)).rows as Array<Record<string, unknown>>,
+    };
+    const ready = (async () => {
+      try {
+        await assertPgliteReadable(dataDir, (sql) => db.$client.query(sql));
+        await applyMigrations(runner);
+      } catch (error) {
+        try {
+          await db.$client.close();
+        } catch {
+          // The startup error is more useful than a best-effort close failure.
+        }
+        lock?.release();
+        throw error;
+      }
+    })();
+    return { db, ready, lock };
+  } catch (error) {
+    lock?.release();
+    throw error;
+  }
 }
 
 /** The migrated database handle. Awaits migrations on first call, then hands back the shared instance. */
