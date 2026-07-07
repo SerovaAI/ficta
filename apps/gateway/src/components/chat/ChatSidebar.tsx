@@ -47,6 +47,7 @@ export function ChatSidebar({
   const { instanceName } = useInstanceSettings();
   const auth = useAuthState();
   const { user } = auth;
+  const hostedAuth = auth.requiresAuth;
   const showAdmin = isAdmin(auth) && onOpenAdmin !== undefined;
   const threadsQuery = useQuery(threadsQueryOptions);
   const threads = threadsQuery.data ?? [];
@@ -198,18 +199,20 @@ export function ChatSidebar({
               )}
             </nav>
 
-            {/* Account footer, pinned to the bottom by the flex-1 nav above. The menu opens upward. In
-                `none` mode there's no user, so this is the app's Settings entry instead. */}
+            {/* Account footer, pinned to the bottom by the flex-1 nav above. The menu opens upward. */}
             <div className="shrink-0 border-t border-border p-2">
               {user ? (
                 <UserMenu
                   user={user}
+                  description={hostedAuth ? undefined : "No sign-in required"}
                   variant="row"
                   side="top"
                   align="start"
                   onOpenAdmin={showAdmin ? openAdmin : undefined}
                   onOpenSettings={openSettings}
                   onCreateWorkspace={createWorkspace}
+                  showWorkspaces={hostedAuth}
+                  showSignOut={hostedAuth}
                 />
               ) : (
                 <Button
@@ -271,12 +274,15 @@ export function ChatSidebar({
               {user ? (
                 <UserMenu
                   user={user}
+                  description={hostedAuth ? undefined : "No sign-in required"}
                   variant="icon"
                   side="right"
                   align="end"
                   onOpenAdmin={showAdmin ? openAdmin : undefined}
                   onOpenSettings={openSettings}
                   onCreateWorkspace={createWorkspace}
+                  showWorkspaces={hostedAuth}
+                  showSignOut={hostedAuth}
                 />
               ) : (
                 <Tooltip>

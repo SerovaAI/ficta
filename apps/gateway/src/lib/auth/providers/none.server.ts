@@ -1,5 +1,5 @@
 import { type AuthProvider, redirectResponse } from "../provider.server";
-import type { AuthState } from "../types";
+import { LOCAL_AUTH_STATE } from "../types";
 
 /**
  * The default, self-hosted provider: no auth at all. The app is fully open and every surface behaves
@@ -7,12 +7,11 @@ import type { AuthState } from "../types";
  * they just bounce back to `/` — so the routing surface is identical whether or not auth is enabled.
  */
 export function createProvider(): AuthProvider {
-  const state: AuthState = { provider: "none", requiresAuth: false, user: null };
   return {
     name: "none",
     requiresAuth: false,
     async getAuthState() {
-      return state;
+      return LOCAL_AUTH_STATE;
     },
     async getSignInUrl() {
       return "/";

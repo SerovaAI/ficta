@@ -29,8 +29,8 @@ export interface Scope {
  * - unauthenticated under a real provider → `null`.
  */
 export function scopeFromAuth(auth: AuthState): Scope | null {
-  if (auth.user) return { userId: auth.user.id, orgId: auth.user.organizationId ?? `user:${auth.user.id}` };
   if (auth.provider === "none") return { userId: "local", orgId: "local" };
+  if (auth.user) return { userId: auth.user.id, orgId: auth.user.organizationId ?? `user:${auth.user.id}` };
   return null;
 }
 

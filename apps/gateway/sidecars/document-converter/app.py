@@ -1,9 +1,9 @@
 """
 Reference document-converter sidecar for ficta's web UI.
 
-ficta does NOT manage this process's lifecycle (same model as the Presidio analyzer): you run it and
-point `FICTA_DOC_CONVERTER_URL` at it. It exposes the one uniform contract the web client speaks, so the
-Node side stays backend-agnostic:
+In a source checkout, root `pnpm dev` starts/reuses this Docker sidecar by default. Outside that
+wrapper, run it yourself and point `FICTA_DOC_CONVERTER_URL` at it. It exposes the one uniform contract
+the web client speaks, so the Node side stays backend-agnostic:
 
     POST /convert   multipart/form-data, field `file`   ->   200 {"markdown": "..."}
     GET  /health                                        ->   200 {"status": "ok", "backend": "..."}

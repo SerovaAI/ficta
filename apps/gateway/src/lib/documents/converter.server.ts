@@ -5,10 +5,11 @@
  * attachment path (inlined into the chat message → /api/chat → ficta proxy → Presidio redaction), so no
  * new PII code is needed here.
  *
- * Modelled on the ficta package's presidio-recognizer.ts: an out-of-process REST sidecar that ficta does
- * NOT lifecycle-manage — you run it (markitdown or docling, e.g. via Docker) and point
- * `FICTA_DOC_CONVERTER_URL` at it. Both backends speak one uniform contract so this client stays
- * backend-agnostic (the sidecar normalizes; see sidecars/document-converter/ for the reference wrapper):
+ * Modelled on the ficta package's networked recognizers: an out-of-process REST sidecar. In the source
+ * checkout, root `pnpm dev` starts/reuses the default Docker sidecar; outside that wrapper, run one
+ * yourself (markitdown or docling) and point `FICTA_DOC_CONVERTER_URL` at it. Both backends speak one
+ * uniform contract so this client stays backend-agnostic (the sidecar normalizes; see
+ * sidecars/document-converter/ for the reference wrapper):
  *   - POST {url}/convert   multipart/form-data, field `file`  →  200 { markdown: string }
  *   - GET  {url}/health                                       →  200
  *

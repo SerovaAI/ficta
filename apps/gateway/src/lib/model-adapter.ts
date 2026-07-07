@@ -33,8 +33,10 @@ export function createModelAdapter({ provider, model, fictaScope }: ModelChoice)
       defaultHeaders,
     });
   }
-  // ficta routes `/v1/chat/completions` → the OpenAI upstream; the OpenAI-compatible adapter emits it.
+  // Gateway uses OpenAI's Responses API so reasoning controls map to the correct wire shape.
+  // ficta routes `/v1/responses` → the OpenAI upstream.
   return openaiCompatibleText(model, {
+    api: "responses",
     baseURL: `${FICTA_PROXY_URL}/v1`,
     apiKey: requireKey("OPENAI_API_KEY"),
     defaultHeaders,

@@ -81,8 +81,10 @@ pnpm dev
 Open http://localhost:4747.
 
 `pnpm dev` auto-runs through Doppler when the Doppler CLI is installed; otherwise it loads local
-`.env` files and starts the proxy plus the web app. When the effective env selects
-`FICTA_PII_BACKEND=presidio`, the dev wrapper can start or reuse a local Docker
+`.env` files and starts the proxy plus the web app. It starts or reuses the local Docker
+document-converter sidecar by default so PDF/DOCX uploads work in dev; set
+`FICTA_DOC_CONVERTER_MANAGED=0` to opt out. When the effective env selects
+`FICTA_PII_BACKEND=presidio`, the dev wrapper can also start or reuse a local Docker
 `presidio-analyzer` sidecar and mount
 `../../packages/ficta/presidio/default_recognizers.za.yaml`.
 
@@ -157,6 +159,9 @@ Plain text attachments are read in the browser and inlined into the chat request
 through the document-converter sidecar (`FICTA_DOC_CONVERTER_URL`) via `POST /api/extract`, then the
 extracted Markdown is inlined and redacted through the same path.
 
+In a source checkout, root `pnpm dev` starts/reuses the default converter on `http://127.0.0.1:5003`.
+Outside that wrapper, use `pnpm sidecars` or run `apps/gateway/sidecars/document-converter` yourself.
+
 Extraction fidelity matters. If the converter drops scanned text, OCR, or table structure, the PII
 detector may never see the value. For real document workflows, run the converter inside the same
 network boundary and validate it on representative documents before using real sensitive files.
@@ -175,6 +180,8 @@ Web app env:
 | `DATABASE_URL` | Postgres connection for shared/multi-process deployments | embedded PGlite when unset |
 | `FICTA_GATEWAY_DATA_DIR` | PGlite data directory when `DATABASE_URL` is unset | `.data/pglite` |
 | `FICTA_DOC_CONVERTER_URL` | Document-converter sidecar URL for PDF/DOCX extraction | `http://127.0.0.1:5003` |
+| `FICTA_DOC_CONVERTER_MANAGED` | Source-checkout `pnpm dev` lifecycle toggle for the converter sidecar | `1` |
+| `FICTA_DOC_CONVERTER_BACKEND` | Converter backend label/env passed to the managed sidecar: `markitdown` or `docling` | `markitdown` |
 
 Proxy-side env commonly used with the gateway:
 

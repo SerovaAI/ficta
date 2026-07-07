@@ -28,6 +28,19 @@ export interface AuthState {
   user: AuthUser | null;
 }
 
+/** The implicit account used by self-hosted `none` mode. */
+export const LOCAL_AUTH_USER: AuthUser = {
+  id: "local",
+  email: "local@ficta.local",
+  name: "Local user",
+};
+
+export const LOCAL_AUTH_STATE: AuthState = {
+  provider: "none",
+  requiresAuth: false,
+  user: LOCAL_AUTH_USER,
+};
+
 /** One organization (tenant) a user belongs to. Client-safe — backs the workspace switcher. */
 export interface OrgSummary {
   id: string;

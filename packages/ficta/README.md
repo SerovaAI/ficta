@@ -88,9 +88,10 @@ registry layer.
 `FICTA_PII_BACKENDS=presidio,openmed`; ficta will call the configured `presidio-analyzer` URL, check
 `/health` in `ficta doctor` and the web UI status endpoint, and apply the configured
 fail-open/fail-closed detector-outage policy. In a source checkout, `pnpm sidecars` (repo-root
-`docker-compose.sidecars.yml`) starts the Presidio and OpenMed sidecars health-gated, and root
-`pnpm dev` auto-manages the sidecars for the backends selected via `FICTA_PII_BACKENDS` /
-`FICTA_PII_BACKEND`, reusing anything already running. For coding-agent or installed use, you can
+`docker-compose.sidecars.yml`) starts the Gateway document converter plus Presidio and OpenMed
+health-gated, and root `pnpm dev` auto-manages the document converter by default plus the PII
+sidecars for the backends selected via `FICTA_PII_BACKENDS` / `FICTA_PII_BACKEND`, reusing anything
+already running. For coding-agent or installed use, you can
 also run the analyzer sidecar explicitly before launching the agent:
 
 ```sh

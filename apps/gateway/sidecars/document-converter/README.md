@@ -2,8 +2,9 @@
 
 Turns uploaded PDF/DOCX into Markdown so the web UI can attach documents. The extracted Markdown is
 inlined into the chat message and redacted by the ficta proxy on the way to the model — exactly like a
-pasted text file. ficta does not manage this process; you run it and point the app at it, the same way
-you run the Presidio analyzer.
+pasted text file. In a source checkout, root `pnpm dev` starts/reuses this Docker sidecar by default,
+and `pnpm sidecars` runs it detached with the other local sidecars. Outside those workflows, run it and
+point the app at it.
 
 ## Contract
 
@@ -20,6 +21,13 @@ GET  /health                                         ->   200 {"status": "ok", "
 | `docling`           | docling    | Heavy (layout + tables + OCR). Better on scanned/table-heavy PDFs — and better PII recall, since format-anchored entities (SSNs, cards) survive extraction more reliably. Uncomment `docling` in `requirements.txt`. |
 
 ## Run
+
+Source checkout:
+
+```sh
+pnpm dev       # starts/reuses this sidecar by default
+pnpm sidecars  # detached sidecar stack
+```
 
 Docker (default markitdown backend):
 
@@ -45,6 +53,8 @@ export FICTA_DOC_CONVERTER_BACKEND=markitdown   # informational on the Node side
 ## Env (web app side)
 
 - `FICTA_DOC_CONVERTER_URL` — sidecar base URL (default `http://127.0.0.1:5003`).
+- `FICTA_DOC_CONVERTER_MANAGED` — source-checkout root `pnpm dev` lifecycle toggle (`1` by default;
+  set `0` to opt out).
 - `FICTA_DOC_CONVERTER_BACKEND` — `markitdown` (default) | `docling`. Informational label; both speak the
   same `/convert` contract.
 - `FICTA_DOC_CONVERTER_TIMEOUT_MS` — per-conversion budget (default `30000`).

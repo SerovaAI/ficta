@@ -1,16 +1,38 @@
-# The PII detection sidecars ficta's networked backends talk to. This file is the way to run them
-# outside `pnpm dev` (which can manage them itself and reuses anything already healthy here):
+# Gateway/document and PII detection sidecars ficta's networked backends talk to. This file is the way
+# to run them outside `pnpm dev` (which can manage them itself and reuses anything already healthy here):
 #
 #   pnpm sidecars        # docker compose -f docker-compose.sidecars.yml up -d --wait
 #   pnpm sidecars:down
 #
-# Both images are pulled from their upstream registries. Set OPENMED_IMAGE to pin a tag or use a
-# locally built (patched) image instead.
+# The document converter is built from the source checkout. The PII images are pulled from their
+# upstream registries. Set OPENMED_IMAGE to pin a tag or use a locally built (patched) image instead.
 #
-# Ports bind loopback only, matching ficta's default backend URLs (presidio 5002, openmed 5004).
-# A deployment that needs network exposure must change that deliberately.
+# Ports bind loopback only, matching ficta's default backend URLs (document converter 5003,
+# presidio 5002, openmed 5004). A deployment that needs network exposure must change that deliberately.
 
 services:
+  document-converter:
+    image: ficta-doc-converter:dev
+    build:
+      context: ./apps/gateway/sidecars/document-converter
+    ports:
+      - "127.0.0.1:5003:5003"
+    environment:
+      CONVERTER_BACKEND: ${FICTA_DOC_CONVERTER_BACKEND:-markitdown}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5003/health', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
   presidio-analyzer:
     image: ghcr.io/data-privacy-stack/presidio-analyzer:latest
     ports:

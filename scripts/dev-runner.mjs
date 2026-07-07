@@ -18,6 +18,11 @@ const DEFAULT_PRESIDIO_CONFIG = resolve(rootDir, "packages/ficta/presidio/defaul
 const CONTAINER_CONFIG_PATH = "/app/ficta-presidio-recognizers.yaml";
 const DEFAULT_STARTUP_TIMEOUT_MS = 60_000;
 
+const DEFAULT_DOC_CONVERTER_URL = "http://127.0.0.1:5003";
+const DEFAULT_DOC_CONVERTER_IMAGE = "ficta-doc-converter:dev";
+const DEFAULT_DOC_CONVERTER_CONTEXT = resolve(rootDir, "apps/gateway/sidecars/document-converter");
+const DEFAULT_DOC_CONVERTER_STARTUP_TIMEOUT_MS = 120_000;
+
 const DEFAULT_OPENMED_URL = "http://127.0.0.1:5004";
 // Upstream's published multi-arch service image; override FICTA_PII_OPENMED_IMAGE for a pinned tag
 // or a locally built (patched) image.
@@ -37,6 +42,8 @@ const forwardArgs = process.argv.slice(2);
 const sidecars = [];
 
 try {
+  const docConverter = await maybeStartDocConverter(env);
+  if (docConverter) sidecars.push(docConverter);
   const presidio = await maybeStartPresidio(env);
   if (presidio) sidecars.push(presidio);
   const openmed = await maybeStartOpenmed(env);
@@ -171,6 +178,68 @@ async function maybeStartOpenmed(env) {
   return { name: "openmed", child };
 }
 
+async function maybeStartDocConverter(env) {
+  const explicit = parseBoolean(env.FICTA_DOC_CONVERTER_MANAGED);
+  if (explicit === false) return undefined;
+
+  const url = stripTrailingSlash(env.FICTA_DOC_CONVERTER_URL?.trim() || DEFAULT_DOC_CONVERTER_URL);
+  env.FICTA_DOC_CONVERTER_URL = url;
+
+  const parsed = parseManagedSidecarUrl(url, "document converter", "FICTA_DOC_CONVERTER_URL");
+  if (!parsed.ok) {
+    if (explicit === true) {
+      throw new Error(parsed.reason);
+    }
+    console.log(`[dev] not managing document converter sidecar: ${parsed.reason}`);
+    return undefined;
+  }
+
+  if (await healthOk(url, 750)) {
+    console.log(`[dev] using existing document converter at ${url}`);
+    return undefined;
+  }
+
+  const imageOverride = env.FICTA_DOC_CONVERTER_IMAGE?.trim();
+  const image = imageOverride || DEFAULT_DOC_CONVERTER_IMAGE;
+  const containerName = env.FICTA_DOC_CONVERTER_CONTAINER_NAME?.trim() || `ficta-doc-converter-${process.pid}`;
+  const backend = env.FICTA_DOC_CONVERTER_BACKEND?.trim().toLowerCase() || "markitdown";
+  const startupTimeoutMs = readPositiveInt(
+    env.FICTA_DOC_CONVERTER_STARTUP_TIMEOUT_MS,
+    DEFAULT_DOC_CONVERTER_STARTUP_TIMEOUT_MS,
+  );
+
+  if (!imageOverride) {
+    console.log(`[dev] building document converter sidecar image ${image}`);
+    await runChecked("docker", ["build", "-t", image, DEFAULT_DOC_CONVERTER_CONTEXT], env);
+  }
+
+  console.log(`[dev] starting document converter sidecar at ${url}`);
+
+  const child = spawn(
+    "docker",
+    [
+      "run",
+      "--rm",
+      "--name",
+      containerName,
+      "-p",
+      `127.0.0.1:${parsed.port}:5003`,
+      "-e",
+      `CONVERTER_BACKEND=${backend}`,
+      image,
+    ],
+    {
+      cwd: rootDir,
+      env,
+      stdio: "inherit",
+    },
+  );
+
+  await waitForSidecarHealth(child, url, startupTimeoutMs, "document converter");
+  console.log(`[dev] document converter is healthy at ${url}`);
+  return { name: "document converter", child };
+}
+
 /**
  * Manage a sidecar when its FICTA_PII_<NAME>_MANAGED flag is explicitly set, else automatically
  * when the backend is selected — via FICTA_PII_BACKENDS or the legacy single FICTA_PII_BACKEND.
@@ -224,6 +293,26 @@ async function waitForSidecarHealth(child, url, timeoutMs, label) {
   });
 
   await Promise.race([waitForHealth(url, timeoutMs, () => exit, label), errorPromise]);
+}
+
+function runChecked(command, args, env) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: rootDir,
+      env,
+      stdio: "inherit",
+    });
+
+    child.once("error", (error) => reject(new Error(`failed to start ${command}: ${error.message}`)));
+    child.once("exit", (code, signal) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      const detail = signal ? `signal ${signal}` : `exit code ${code ?? 0}`;
+      reject(new Error(`${command} ${args[0] ?? ""} failed (${detail})`.trim()));
+    });
+  });
 }
 
 async function waitForHealth(url, timeoutMs, exited, label) {

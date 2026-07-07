@@ -19,9 +19,8 @@ type MenuSide = React.ComponentProps<typeof DropdownMenuContent>["side"];
 type MenuAlign = React.ComponentProps<typeof DropdownMenuContent>["align"];
 
 /**
- * Account control shown in the sidebar footer when hosted auth is on. Rendered only when there's a user,
- * so it simply doesn't appear in `none` mode. Sign-out is a top-level navigation to the sign-out server
- * route.
+ * Account control shown in the sidebar footer. Hosted auth passes a real user and enables workspace and
+ * sign-out actions; `none` mode passes a local user so settings/admin live in the same menu shape.
  *
  * When the user belongs to WorkOS organizations, a "Workspace" radio group lets them switch the active
  * one and create more. The list is warmed as soon as the account control mounts, so opening the menu
@@ -35,28 +34,36 @@ type MenuAlign = React.ComponentProps<typeof DropdownMenuContent>["align"];
  */
 export function UserMenu({
   user,
+  description,
   variant = "icon",
   side = "top",
   align = "start",
   onOpenAdmin,
   onOpenSettings,
   onCreateWorkspace,
+  showWorkspaces = true,
+  showSignOut = true,
 }: {
   user: AuthUser;
+  description?: string;
   variant?: "row" | "icon";
   side?: MenuSide;
   align?: MenuAlign;
   onOpenAdmin?: () => void;
   onOpenSettings: () => void;
   onCreateWorkspace: () => void;
+  showWorkspaces?: boolean;
+  showSignOut?: boolean;
 }) {
   const label = user.name ?? user.email;
+  const secondaryLabel = description ?? user.email;
   const initial = label.trim().charAt(0).toUpperCase() || "?";
-  const organizationsQuery = useQuery(organizationsQueryOptions);
-  const orgs = organizationsQuery.data ?? [];
-  const activeOrg = user.organizationId ? orgs.find((org) => org.id === user.organizationId) : undefined;
+  const organizationsQuery = useQuery({ ...organizationsQueryOptions, enabled: showWorkspaces });
+  const orgs = showWorkspaces ? (organizationsQuery.data ?? []) : [];
+  const activeOrg =
+    showWorkspaces && user.organizationId ? orgs.find((org) => org.id === user.organizationId) : undefined;
   const workspaceLabel =
-    activeOrg?.name ?? (user.organizationId && organizationsQuery.isPending ? "Loading workspace..." : undefined);
+    showWorkspaces && user.organizationId && organizationsQuery.isPending ? "Loading workspace..." : activeOrg?.name;
 
   const handleSwitch = async (organizationId: string) => {
     if (organizationId === user.organizationId) return;
@@ -87,6 +94,8 @@ export function UserMenu({
               <span className="max-w-full truncate text-sm font-medium">{label}</span>
               {workspaceLabel ? (
                 <span className="max-w-full truncate text-xs font-normal text-muted-foreground">{workspaceLabel}</span>
+              ) : description ? (
+                <span className="max-w-full truncate text-xs font-normal text-muted-foreground">{description}</span>
               ) : null}
             </span>
           </Button>
@@ -99,18 +108,18 @@ export function UserMenu({
       <DropdownMenuContent side={side} align={align} className="min-w-52">
         <DropdownMenuLabel className="flex flex-col gap-0.5">
           {user.name ? <span className="truncate font-medium">{user.name}</span> : null}
-          <span className="truncate text-xs font-normal text-muted-foreground">{user.email}</span>
+          <span className="truncate text-xs font-normal text-muted-foreground">{secondaryLabel}</span>
           {workspaceLabel ? (
             <span className="truncate text-xs font-normal text-muted-foreground">{workspaceLabel}</span>
           ) : null}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {organizationsQuery.isPending ? (
+        {showWorkspaces && organizationsQuery.isPending ? (
           <>
             <DropdownMenuItem disabled>Loading workspaces…</DropdownMenuItem>
             <DropdownMenuSeparator />
           </>
-        ) : organizationsQuery.isError ? (
+        ) : showWorkspaces && organizationsQuery.isError ? (
           <>
             <DropdownMenuItem disabled>Could not load workspaces</DropdownMenuItem>
             <DropdownMenuItem
@@ -124,7 +133,7 @@ export function UserMenu({
             </DropdownMenuItem>
             <DropdownMenuSeparator />
           </>
-        ) : orgs.length > 0 ? (
+        ) : showWorkspaces && orgs.length > 0 ? (
           <>
             <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Workspace</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={user.organizationId} onValueChange={handleSwitch}>
@@ -151,10 +160,12 @@ export function UserMenu({
           <Settings className="size-4" aria-hidden />
           Settings
         </DropdownMenuItem>
-        <DropdownMenuItem variant="destructive" onSelect={() => window.location.assign("/api/auth/sign-out")}>
-          <LogOut className="size-4" aria-hidden />
-          Sign out
-        </DropdownMenuItem>
+        {showSignOut ? (
+          <DropdownMenuItem variant="destructive" onSelect={() => window.location.assign("/api/auth/sign-out")}>
+            <LogOut className="size-4" aria-hidden />
+            Sign out
+          </DropdownMenuItem>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

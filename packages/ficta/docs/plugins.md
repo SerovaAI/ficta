@@ -259,9 +259,10 @@ managed ways to run it (both mount `packages/ficta/presidio/default_recognizers.
 keeps Presidio's default recognizers, enables South African ID numbers, and adds a South African
 company registration number pattern recognizer):
 
-- **`pnpm sidecars`** (repo root, ↔ `docker-compose.sidecars.yml`) starts both PII sidecars detached
-  with health-gated `--wait`; `pnpm sidecars:down` stops them. This is the way to run them outside
-  the dev wrapper — a server, a teammate's machine, a POC box.
+- **`pnpm sidecars`** (repo root, ↔ `docker-compose.sidecars.yml`) starts the shared sidecar stack
+  detached with health-gated `--wait`: the Gateway document converter plus both PII sidecars.
+  `pnpm sidecars:down` stops them. This is the way to run them outside the dev wrapper — a server, a
+  teammate's machine, a POC box.
 - **Root `pnpm dev`** auto-manages the sidecars for whichever backends `FICTA_PII_BACKENDS` /
   `FICTA_PII_BACKEND` selects (force per-sidecar with `FICTA_PII_PRESIDIO_MANAGED` /
   `FICTA_PII_OPENMED_MANAGED`). It reuses anything already healthy at the configured URL — including
