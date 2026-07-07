@@ -24,7 +24,7 @@ import {
 } from "./engine/redaction-engine.js";
 import { surrogateKeyWarning } from "./engine/vault.js";
 import { type Wire, wireOf } from "./engine/wire.js";
-import { logRequest, logResponse, runDir } from "./log.js";
+import { logRequest, logResponse, restoredBodyTap, runDir, writeRestoredBody } from "./log.js";
 import { log } from "./logger.js";
 import {
   activeBackends,
@@ -360,7 +360,7 @@ export async function startProxy(
         // (see Vault.restoreSseRecord). Cross-event reassembly needs a known wire schema, so it is
         // intentionally not attempted here.
         return new Response(
-          toClient.pipeThrough(scope.restoreEventStream(wire)).pipeThrough(tapStreamFlush(logRestore)),
+          toClient.pipeThrough(scope.restoreEventStream(wire)).pipeThrough(restoredBodyTap(n, logRestore)),
           {
             status: upstreamRes.status,
             headers: resHeaders,
@@ -373,12 +373,13 @@ export async function startProxy(
         const text = await new Response(toClient).text();
         const restored = restoreBufferedBody(scope, wire, contentType, text);
         logRestore();
+        writeRestoredBody(n, restored);
         return new Response(restored, {
           status: upstreamRes.status,
           headers: resHeaders,
         });
       }
-      return new Response(toClient.pipeThrough(scope.restoreStream()).pipeThrough(tapStreamFlush(logRestore)), {
+      return new Response(toClient.pipeThrough(scope.restoreStream()).pipeThrough(restoredBodyTap(n, logRestore)), {
         status: upstreamRes.status,
         headers: resHeaders,
       });
@@ -387,7 +388,10 @@ export async function startProxy(
     const body = await upstreamRes.text();
     void logResponse({ n, path: url.pathname, status: upstreamRes.status, contentType, body });
     const restoredBody = restoreResponse ? restoreBufferedBody(scope, wire, contentType, body) : body;
-    if (restoreResponse) logRestore();
+    if (restoreResponse) {
+      logRestore();
+      writeRestoredBody(n, restoredBody);
+    }
     return new Response(restoredBody, { status: upstreamRes.status, headers: resHeaders });
   });
 
@@ -630,20 +634,6 @@ function isJsonContentType(contentType: string): boolean {
  */
 function restoreBufferedBody(scope: RequestScope, wire: Wire, contentType: string, body: string): string {
   return isJsonContentType(contentType) ? scope.restoreJson(body, wire) : scope.restoreText(body);
-}
-
-/**
- * A pass-through stream whose `flush` runs once the upstream (restore) transform has fully drained.
- * Appended after a streaming restore so the final restored-value count can be logged: the count is
- * only settled when the stream closes, which is after the restore transform's own flush has emitted
- * its last rewritten chunk.
- */
-function tapStreamFlush(onFlush: () => void): TransformStream<Uint8Array, Uint8Array> {
-  return new TransformStream({
-    flush() {
-      onFlush();
-    },
-  });
 }
 
 /**

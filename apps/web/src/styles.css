@@ -188,42 +188,4 @@
       transform: none;
     }
   }
-
-  /* The wire round-trip: in the WireCard's reply pane, the surrogate token briefly reappears and
-   * restores to the real (mint) value on a slow loop. The static default is the restored value;
-   * the loop only replays the swap. Opacity-only, bounded to one inline span. */
-  .wire-restore-token {
-    animation: wire-token 7s cubic-bezier(0.22, 1, 0.36, 1) 1.5s infinite;
-  }
-  .wire-restore-value {
-    animation: wire-value 7s cubic-bezier(0.22, 1, 0.36, 1) 1.5s infinite;
-  }
-  @keyframes wire-token {
-    0%,
-    4% {
-      opacity: 0;
-    }
-    12%,
-    38% {
-      opacity: 1;
-    }
-    50%,
-    100% {
-      opacity: 0;
-    }
-  }
-  @keyframes wire-value {
-    0%,
-    4% {
-      opacity: 1;
-    }
-    12%,
-    38% {
-      opacity: 0;
-    }
-    50%,
-    100% {
-      opacity: 1;
-    }
-  }
 }

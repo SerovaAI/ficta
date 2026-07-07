@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowUpRight, Check, ChevronDown, Copy, Lock, ShieldCheck, Terminal } from "lucide-react";
+import { ArrowUpRight, Check, ChevronDown, Copy, ShieldCheck, Terminal } from "lucide-react";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 
@@ -11,6 +11,7 @@ const GITHUB = "https://github.com/SerovaAI/ficta";
 const NPM = "https://www.npmjs.com/package/@serovaai/ficta";
 const DOCS = "https://github.com/SerovaAI/ficta/tree/main/packages/ficta#readme";
 const THREAT_MODEL = "https://github.com/SerovaAI/ficta/blob/main/packages/ficta/docs/threat-model.md";
+const SEROVA = "https://serova.ai";
 const CONTACT_EMAIL = "hello@ficta.sh";
 const CONTACT = `mailto:${CONTACT_EMAIL}?subject=ficta%20Gateway`;
 const COPY_RESET_MS = 1600;
@@ -20,7 +21,7 @@ type CopyStatus = "idle" | "copied" | "manual";
 /** A tokenized value as it appears on the wire — the surrogate the model actually receives. */
 function Token({ children }: { children: React.ReactNode }) {
   return (
-    <span className="rounded-[3px] bg-redaction px-1.5 py-0.5 font-mono text-[0.82em] text-foreground/85">
+    <span className="rounded-[3px] bg-redaction px-1.5 py-0.5 font-mono text-[0.82em] text-foreground/85 break-words">
       {children}
     </span>
   );
@@ -28,32 +29,7 @@ function Token({ children }: { children: React.ReactNode }) {
 
 /** A real value that stays local — shown in the mint "restored" signal. */
 function Kept({ children }: { children: React.ReactNode }) {
-  return <span className="font-mono text-[0.82em] text-restored">{children}</span>;
-}
-
-/** Required provider auth passes through; it is not part of the protected model payload. */
-function Passthrough({ children }: { children: React.ReactNode }) {
-  return <span className="font-mono text-[0.82em] text-muted-foreground">{children}</span>;
-}
-
-/** The return leg, animated: the reply arrives carrying the surrogate, which restores to the real
- * value in place. Static (and reduced-motion) default is the restored value — the loop only
- * replays the swap. Both layers share one grid cell so the swap never shifts layout. */
-function RestoredSwap({ token, value, suffix = "" }: { token: string; value: string; suffix?: string }) {
-  // `suffix` rides inside both layers so trailing punctuation hugs whichever value is visible;
-  // the cell's slack (token is wider) then falls at the end of the line, where it's invisible.
-  return (
-    <span className="inline-grid align-baseline">
-      <span aria-hidden className="wire-restore-token col-start-1 row-start-1 opacity-0">
-        <Token>{token}</Token>
-        {suffix}
-      </span>
-      <span className="wire-restore-value col-start-1 row-start-1">
-        <Kept>{value}</Kept>
-        {suffix}
-      </span>
-    </span>
-  );
+  return <span className="font-mono text-[0.82em] text-restored break-words">{children}</span>;
 }
 
 /* The Token Wrapper wordmark — `[ficta]`, brackets in vermilion, letters in chalk (assets/brand).
@@ -283,7 +259,7 @@ function Hero() {
           background: "radial-gradient(60rem 40rem at 82% -8%, oklch(0.67 0.2 33 / 0.14), transparent 60%)",
         }}
       />
-      <div className="mx-auto grid max-w-6xl gap-14 px-5 pt-20 pb-24 sm:px-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:pt-28 lg:pb-32">
+      <div className="mx-auto grid max-w-6xl gap-14 px-5 pt-20 pb-24 sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:pt-28 lg:pb-32">
         <div className="min-w-0 animate-rise">
           <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-card/50 py-1 pr-3 pl-2 text-muted-foreground text-xs">
             <span className="inline-block size-1.5 rounded-full bg-restored" />
@@ -323,73 +299,99 @@ function Hero() {
             </a>
           </p>
         </div>
-        <WireCard />
+        <GatewayHeroArt />
       </div>
     </section>
   );
 }
 
-/** The airlock, made literal: real values on your machine, tokens on the wire, restored on return. */
-function WireCard() {
+/** Product-art version of the Gateway boundary: local values on one side, model-bound tokens on the other. */
+function GatewayHeroArt() {
   return (
-    <div className="min-w-0 animate-rise [animation-delay:120ms]">
-      <div className="min-w-0 rounded-xl border border-border bg-card/70 shadow-2xl shadow-black/40">
-        <div className="flex items-center gap-2 border-border/70 border-b px-4 py-2.5 font-mono text-muted-foreground text-xs">
-          <Lock className="size-3.5 text-primary" />
-          POST /v1/messages
-          <span className="ml-auto text-restored">on your machine</span>
+    <div
+      role="img"
+      aria-label="Gateway boundary showing local sensitive values redacted into FICTA tokens before the request is sent to the model."
+      className="w-full min-w-0 max-w-full animate-rise [animation-delay:120ms] lg:-mr-10"
+    >
+      <div aria-hidden="true" className="relative mx-auto w-full max-w-[760px] lg:w-[736px] lg:max-w-none">
+        <div className="-z-10 absolute inset-y-8 right-12 left-12 rounded-full bg-primary/8 blur-3xl" />
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-2xl shadow-black/40">
+          <div className="flex min-w-0 items-center gap-3 border-border/70 border-b bg-background/35 px-4 py-3">
+            <div className="flex gap-1.5">
+              <span className="size-2.5 rounded-full border border-border" />
+              <span className="size-2.5 rounded-full border border-border" />
+              <span className="size-2.5 rounded-full border border-border" />
+            </div>
+            <div className="flex min-w-0 items-baseline gap-2">
+              <Wordmark className="text-sm" />
+              <span className="font-medium text-foreground text-sm">Gateway boundary</span>
+            </div>
+            <div className="ml-auto hidden items-center gap-2 rounded-full border border-border px-2.5 py-1 font-mono text-[0.68rem] text-restored sm:flex">
+              <span className="size-1.5 rounded-full bg-restored" />
+              local
+            </div>
+          </div>
+
+          <div className="grid min-w-0 grid-cols-1 bg-border md:grid-cols-[minmax(0,1fr)_4rem_minmax(0,1fr)]">
+            <div className="min-w-0 bg-card p-4 sm:p-5">
+              <div className="mb-4 flex min-w-0 items-center justify-between gap-3">
+                <div>
+                  <p className="font-mono text-[0.64rem] text-restored uppercase tracking-[0.14em]">local Gateway</p>
+                  <p className="mt-1 text-muted-foreground text-xs">Real values remain readable here.</p>
+                </div>
+                <span className="rounded-full border border-border px-2.5 py-1 font-mono text-[0.65rem] text-restored">
+                  before send
+                </span>
+              </div>
+              <div className="rounded-xl border border-border/80 bg-secondary p-4 text-[0.9rem] text-foreground leading-relaxed break-words">
+                Follow up with <Kept>Emily Carter</Kept> at <Kept>emily.carter@northwind.co</Kept> about matter{" "}
+                <Kept>invoice-4471</Kept>.
+              </div>
+              <div className="mt-4 rounded-lg border border-border bg-background/40 p-3 font-mono text-[0.7rem] text-muted-foreground leading-5">
+                client: <Kept>Northwind Health</Kept>
+                <br />
+                email: <Kept>emily.carter@northwind.co</Kept>
+                <br />
+                matter: <Kept>invoice-4471</Kept>
+              </div>
+            </div>
+
+            <div className="relative flex min-h-16 items-center justify-center bg-background md:min-h-full">
+              <div className="absolute inset-x-5 top-1/2 border-border/80 border-t border-dashed md:inset-x-auto md:inset-y-5 md:left-1/2 md:border-t-0 md:border-l" />
+              <span className="relative z-10 bg-background px-3 font-mono text-[0.62rem] text-primary uppercase tracking-[0.28em] md:absolute md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:rotate-90 md:px-2 md:py-1">
+                redact
+              </span>
+            </div>
+
+            <div className="min-w-0 bg-card p-4 sm:p-5">
+              <div className="mb-4 flex min-w-0 items-center justify-between gap-3">
+                <div>
+                  <p className="font-mono text-[0.64rem] text-primary uppercase tracking-[0.14em]">sent to model</p>
+                  <p className="mt-1 text-muted-foreground text-xs">Only local surrogates cross the boundary.</p>
+                </div>
+                <span className="rounded-full border border-primary/40 px-2.5 py-1 font-mono text-[0.65rem] text-primary">
+                  egress
+                </span>
+              </div>
+              <div className="rounded-xl border border-border/80 bg-background/50 p-4 font-mono text-[0.78rem] text-foreground/85 leading-6 break-words">
+                Follow up with <Token>FICTA_4b1e7d...</Token> at <Token>FICTA_9f3a2c...</Token> about matter{" "}
+                <Token>FICTA_71d4aa...</Token>.
+              </div>
+              <div className="mt-4 rounded-lg border border-border bg-background/40 p-3 font-mono text-[0.7rem] text-muted-foreground leading-5">
+                client: <Token>FICTA_82a1c0...</Token>
+                <br />
+                email: <Token>FICTA_9f3a2c...</Token>
+                <br />
+                matter: <Token>FICTA_71d4aa...</Token>
+              </div>
+            </div>
+          </div>
         </div>
-        <pre className="max-w-full overflow-x-auto px-4 py-4 font-mono text-[0.82rem] leading-6">
-          <code>
-            {"Authorization: Bearer "}
-            <Passthrough>sk-live-4a9f…c2</Passthrough>
-            {"\n\n"}
-            {"{\n"}
-            {'  "content": "email me at '}
-            <Kept>ada@acme.co</Kept>
-            {'"\n}'}
-          </code>
-        </pre>
-        <div className="flex items-center justify-center gap-3 border-border/70 border-t border-b py-2 font-mono text-[0.7rem] text-muted-foreground uppercase tracking-widest">
-          <span className="h-px w-8 bg-border" />
-          ficta · redact
-          <span className="h-px w-8 bg-border" />
-        </div>
-        <div className="px-4 py-2.5 font-mono text-muted-foreground text-xs">
-          <span className="text-primary">→ leaves for the model</span>
-        </div>
-        <pre className="max-w-full overflow-x-auto px-4 pt-0 pb-4 font-mono text-[0.82rem] leading-6">
-          <code>
-            {"Authorization: Bearer "}
-            <Passthrough>sk-live-4a9f…c2</Passthrough>
-            {"\n\n"}
-            {"{\n"}
-            {'  "content": "email me at '}
-            <Token>FICTA_1b8e4d…</Token>
-            {'"\n}'}
-          </code>
-        </pre>
-        <div className="flex items-center justify-center gap-3 border-border/70 border-t border-b py-2 font-mono text-[0.7rem] text-muted-foreground uppercase tracking-widest">
-          <span className="h-px w-8 bg-border" />
-          ficta · restore
-          <span className="h-px w-8 bg-border" />
-        </div>
-        <div className="px-4 py-2.5 font-mono text-muted-foreground text-xs">
-          <span className="text-restored">← restored in the reply</span>
-        </div>
-        <pre className="max-w-full overflow-x-auto px-4 pt-0 pb-4 font-mono text-[0.82rem] leading-6">
-          <code>
-            {"{\n"}
-            {'  "content": "Here\'s your draft to '}
-            <RestoredSwap token="FICTA_1b8e4d…" value="ada@acme.co" suffix={'"'} />
-            {"\n}"}
-          </code>
-        </pre>
+
+        <p className="mt-3 px-1 text-muted-foreground text-xs">
+          The model-bound request is the same prompt, with protected values replaced before it leaves your machine.
+        </p>
       </div>
-      <p className="mt-3 px-1 text-muted-foreground text-xs">
-        The provider receives required auth headers; protected payload values leave as tokens, and the mapping never
-        leaves your machine.
-      </p>
     </div>
   );
 }
@@ -685,7 +687,7 @@ function ScopeNote() {
               </a>
             </Button>
             <p className="text-muted-foreground text-sm">
-              If that boundary fits your team, email <ContactEmail /> — you'll hear back from the founder within a day.
+              If that boundary fits your team, email <ContactEmail />.
             </p>
           </div>
           <p className="mt-5 text-muted-foreground text-sm">
@@ -698,18 +700,8 @@ function ScopeNote() {
             >
               read every line
               <span className="sr-only"> (opens in new tab)</span>
-            </a>{" "}
-            — built and run by{" "}
-            <a
-              href="https://github.com/SerovaAI"
-              target="_blank"
-              rel="noreferrer"
-              className="text-foreground underline decoration-primary/50 underline-offset-4 transition-colors hover:decoration-primary"
-            >
-              Stefan Lesicnik
-              <span className="sr-only"> (opens in new tab)</span>
             </a>
-            .
+            {"."}
           </p>
         </div>
       </div>
@@ -739,8 +731,17 @@ function SiteFooter() {
         </nav>
       </div>
       <div className="mx-auto max-w-6xl border-border/40 border-t px-5 py-5 text-muted-foreground text-xs sm:px-8">
-        Engine + CLI are MIT. ficta&nbsp;Gateway is AGPL-3.0 with a commercial option. © 2026 ficta — built by
-        Stefan&nbsp;Lesicnik ·{" "}
+        Engine + CLI are MIT. ficta&nbsp;Gateway is AGPL-3.0 with a commercial option. © 2026 ficta — built and owned by{" "}
+        <a
+          href={SEROVA}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center underline underline-offset-4 transition-colors hover:text-foreground [@media(pointer:coarse)]:min-h-11"
+        >
+          Serova
+          <span className="sr-only"> (opens in new tab)</span>
+        </a>{" "}
+        ·{" "}
         <a
           href={CONTACT}
           className="inline-flex items-center underline underline-offset-4 transition-colors hover:text-foreground [@media(pointer:coarse)]:min-h-11"

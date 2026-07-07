@@ -1,6 +1,6 @@
 import type { Config } from "./config.js";
 import { detectorFailClosed } from "./engine/detection-policy.js";
-import { envFlag } from "./engine/env-flags.js";
+import { envFlag, type RestoreIntoToolsPolicy, restoreIntoToolsPolicy } from "./engine/env-flags.js";
 import { surrogateStyle } from "./engine/surrogate.js";
 import { isGloballyDisabled } from "./global-disable.js";
 import type { LogLevel } from "./log-level.js";
@@ -25,7 +25,7 @@ export interface ConfigPosture {
     requireRegistry: boolean;
     globallyDisabled: boolean;
     redactPaths: boolean;
-    restoreIntoTools: boolean;
+    restoreIntoTools: RestoreIntoToolsPolicy;
     surrogateStyle: "opaque" | "typed";
   };
   detection: {
@@ -73,7 +73,7 @@ export function configPosture(
       requireRegistry: env.FICTA_REQUIRE_REGISTRY === "1",
       globallyDisabled: opts.globallyDisabled ?? isGloballyDisabled(),
       redactPaths: envFlag(env.FICTA_REDACT_PATHS),
-      restoreIntoTools: envFlag(env.FICTA_RESTORE_INTO_TOOLS),
+      restoreIntoTools: restoreIntoToolsPolicy(env.FICTA_RESTORE_INTO_TOOLS),
       surrogateStyle: surrogateStyle(env),
     },
     detection: {

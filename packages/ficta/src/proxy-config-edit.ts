@@ -5,10 +5,10 @@ import type {
   ProxyConfigEditState,
   ProxyConfigPatchResponse,
 } from "@serovaai/ficta-protocol";
-import { normalizePiiBackends } from "@serovaai/ficta-protocol";
+import { normalizePiiBackends, normalizeRestoreIntoToolsPolicy } from "@serovaai/ficta-protocol";
 import type { Config } from "./config.js";
 import { configPosture } from "./config-posture.js";
-import { parseBoolean } from "./engine/env-flags.js";
+import { parseBoolean, restoreIntoToolsPolicy } from "./engine/env-flags.js";
 import { configPath, readUserConfig, wasLoadedFromUserConfig, writeUserConfig } from "./user-config.js";
 
 const FIELD_ENV: Record<EditableProxyConfigKey, string> = {
@@ -51,7 +51,7 @@ export function proxyConfigEditState(
     piiOpenmedUrl: stringValue("piiOpenmedUrl", fileValues, effective.piiOpenmedUrl, locked),
     secretShapesEnabled: boolValue("secretShapesEnabled", fileValues, effective.secretShapesEnabled, locked),
     surrogateStyle: surrogateStyleValue(fileValues, effective.surrogateStyle, locked),
-    restoreIntoTools: boolValue("restoreIntoTools", fileValues, effective.restoreIntoTools, locked),
+    restoreIntoTools: restoreIntoToolsValue(fileValues, effective.restoreIntoTools, locked),
     allowCustomUpstream: boolValue("allowCustomUpstream", fileValues, effective.allowCustomUpstream, locked),
   };
 
@@ -144,9 +144,13 @@ function validateField(
     case "piiEnabled":
     case "piiFailClosed":
     case "secretShapesEnabled":
-    case "restoreIntoTools":
     case "allowCustomUpstream":
       return typeof value === "boolean" ? { ok: true, value } : invalid(`${field} must be a boolean.`, field);
+    case "restoreIntoTools": {
+      // Accept the three policy names; tolerate the historical booleans (true→all, false→none).
+      const policy = normalizeRestoreIntoToolsPolicy(value);
+      return policy ? { ok: true, value: policy } : invalid("restoreIntoTools must be all, none, or detected.", field);
+    }
     case "piiBackends": {
       const backends = normalizePiiBackends(value);
       return backends ? { ok: true, value: backends } : invalid("piiBackends must include known PII backends.", field);
@@ -251,17 +255,27 @@ function surrogateStyleValue(
   return values.FICTA_SURROGATE_STYLE?.trim().toLowerCase() === "typed" ? "typed" : fallback;
 }
 
+function restoreIntoToolsValue(
+  values: Record<string, string>,
+  fallback: EditableProxyConfigValues["restoreIntoTools"],
+  locked: Partial<Record<EditableProxyConfigKey, string>>,
+): EditableProxyConfigValues["restoreIntoTools"] {
+  if (locked.restoreIntoTools) return fallback;
+  const raw = values.FICTA_RESTORE_INTO_TOOLS;
+  return raw === undefined ? fallback : restoreIntoToolsPolicy(raw);
+}
+
 function envString(field: EditableProxyConfigKey, value: EditableValue): string {
   switch (field) {
     case "failClosed":
     case "piiEnabled":
     case "piiFailClosed":
     case "secretShapesEnabled":
-    case "restoreIntoTools":
     case "allowCustomUpstream":
       return value ? "1" : "0";
     case "piiBackends":
       return (value as PiiBackendName[]).join(",");
+    case "restoreIntoTools":
     case "surrogateStyle":
     case "piiPresidioUrl":
     case "piiOpenmedUrl":

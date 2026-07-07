@@ -96,6 +96,24 @@ describe("secret-shape detector", () => {
       delete process.env.FICTA_SECRET_SHAPES_ENABLED;
     }
   });
+
+  it("does not treat code references as secret-assignment values", () => {
+    // Dotted identifier chains and bare mixed-case identifiers are code, not secrets. The value
+    // char class also stops before a call/index expression so `foo(` never enters the candidate.
+    const cases = [
+      "const secret = envData.ADMIN_JWT_SECRET",
+      "const token = localStorage.getItem('admin_token')",
+      "const authToken = getAuthorizationTokenValue",
+    ];
+    for (const source of cases) {
+      expect(detectSecretShapes(source)).toEqual([]);
+    }
+  });
+
+  it("still detects a real key inside a secret-ish assignment", () => {
+    const found = detectSecretShapes(`API_KEY=${OPENAI}`);
+    expect(found.map((value) => value.value)).toContain(OPENAI);
+  });
 });
 
 describe("resolveAgentSecretShapesEnabled", () => {

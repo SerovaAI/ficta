@@ -1,4 +1,4 @@
-import { envFlag } from "./env-flags.js";
+import { envFlag, type RestoreIntoToolsPolicy, restoreIntoToolsPolicy } from "./env-flags.js";
 import type { ProtectedValueKind } from "./plugins/types.js";
 import { type SurrogateStrategy, surrogateStrategy } from "./surrogate.js";
 
@@ -41,13 +41,24 @@ export function surrogateKeyWarning(): string | undefined {
  * separate stores that share a single {@link SurrogateStrategy}, so the same raw value mints the
  * same surrogate in either layer (deterministic HMAC → cross-turn/cross-layer consistency).
  */
+/**
+ * Where a layer's values came from, used by the `detected` restore-into-tools policy: `permanent`
+ * holds registry secrets (the model only ever saw placeholders for these — keep withholding into
+ * tools), `detected` holds values the agent read from local content this request (restoring their
+ * placeholders into a tool leaks nothing new — the model already had the raw bytes).
+ */
+export type LayerProvenance = "permanent" | "detected";
+
 export class SurrogateTable {
   readonly values: string[] = []; // known values, longest first
   private readonly seen = new Set<string>();
   readonly toSur = new Map<string, string>();
   readonly toVal = new Map<string, string>();
 
-  constructor(readonly surrogate: SurrogateStrategy) {}
+  constructor(
+    readonly surrogate: SurrogateStrategy,
+    readonly provenance: LayerProvenance = "permanent",
+  ) {}
 
   get size(): number {
     return this.values.length;
@@ -160,6 +171,14 @@ export abstract class VaultView {
     return undefined;
   }
 
+  /** Provenance of the layer that maps `surrogate` (first match wins, mirroring {@link valueFor}). */
+  private provenanceFor(surrogate: string): LayerProvenance | undefined {
+    for (const layer of this.layers) {
+      if (layer.toVal.has(surrogate)) return layer.provenance;
+    }
+    return undefined;
+  }
+
   /** Redact known values in a raw string. */
   redactText(text: string, preservePaths = true): { text: string; count: number } {
     const result = this.redactTextDetailed(text, preservePaths);
@@ -241,12 +260,30 @@ export abstract class VaultView {
     });
   }
 
-  /** Record which known values were withheld from a tool-call argument fragment, for logging. */
-  private noteWithheldTool(rawFragmentValue: string): void {
-    for (const token of rawFragmentValue.match(this.surrogate.pattern) ?? []) {
-      const value = this.valueFor(token);
-      if (value !== undefined) this.withheldFromTools.add(value);
-    }
+  /**
+   * Restore surrogates inside a (reassembled) tool-call argument fragment under `policy`. `all`
+   * restores every mapped token; `none` restores none; `detected` restores detected-layer tokens
+   * (content the agent already read locally) and keeps permanent-registry tokens as placeholders.
+   * Every token left as a placeholder is added to `withheldSink` — the per-event deep sweep skips
+   * those so it cannot re-restore them — and recorded in {@link withheldFromTools} for accounting.
+   * Only complete tokens are acted on; a surrogate split across fragments is stitched back together
+   * by the caller's `pending` reassembly before it reaches here, so split tokens are counted and
+   * withheld/restored as a unit rather than silently passing through raw.
+   */
+  private restoreToolArgText(text: string, policy: RestoreIntoToolsPolicy, withheldSink: Set<string>): string {
+    if (!this.hasSurrogates || !text) return text;
+    return text.replace(this.surrogate.pattern, (m) => {
+      const value = this.valueFor(m);
+      if (value === undefined) return m; // unmapped placeholder — pass through untouched
+      const restoreHere = policy === "all" || (policy === "detected" && this.provenanceFor(m) === "detected");
+      if (restoreHere) {
+        this.restored.add(value);
+        return value;
+      }
+      withheldSink.add(m);
+      this.withheldFromTools.add(value);
+      return m;
+    });
   }
 
   /**
@@ -259,9 +296,10 @@ export abstract class VaultView {
    * text restore for bodies that are not valid JSON.
    *
    * When a wire's {@link BufferedRestoreAdapter} is supplied, tool-call argument regions are subject
-   * to the same restore-into-tools withholding as the streaming path: their surrogates stay
-   * placeholders unless FICTA_RESTORE_INTO_TOOLS=1. Without an adapter (unknown wire) the blanket
-   * restore is kept — there is no shape knowledge to classify tool arguments.
+   * to the same restore-into-tools withholding as the streaming path under FICTA_RESTORE_INTO_TOOLS:
+   * `none` keeps every surrogate a placeholder, `detected` (default) restores content-derived
+   * detections but withholds registry secrets, and `all` restores everything. Without an adapter
+   * (unknown wire) the blanket restore is kept — there is no shape knowledge to classify tool arguments.
    */
   restoreJson(body: string, adapter: BufferedRestoreAdapter = NOOP_BUFFERED_RESTORE_ADAPTER): string {
     if (!this.hasSurrogates || !body) return body;
@@ -271,25 +309,38 @@ export abstract class VaultView {
     } catch {
       return this.restoreText(body);
     }
-    return this.restoreJsonText(body, this.collectWithheldToolTokens(adapter, parsed));
+    return this.restoreJsonText(body, this.collectWithheldToolTokens(adapter, parsed, this.toolPolicy()));
+  }
+
+  /** The active restore-into-tools policy (read per call, mirroring the streaming path). */
+  private toolPolicy(): RestoreIntoToolsPolicy {
+    return restoreIntoToolsPolicy(process.env.FICTA_RESTORE_INTO_TOOLS);
   }
 
   /**
-   * Surrogate tokens inside the tool-call argument regions of a parsed payload, when the
-   * restore-into-tools policy withholds (the default). Each region is also reported to
-   * {@link noteWithheldTool} so `withheldFromToolsCount` spans buffered and streaming restore alike.
-   * Empty when the operator opted in with FICTA_RESTORE_INTO_TOOLS=1 (same per-call read as the
-   * streaming path) or the payload carries no tool arguments.
+   * Surrogate tokens inside the tool-call argument regions of a parsed payload that the
+   * restore-into-tools `policy` keeps as placeholders — the buffered/replay analogue of
+   * {@link restoreToolArgText}. `all` withholds nothing (empty set → blanket restore); `none`
+   * withholds every mapped token; `detected` withholds only permanent-registry tokens, letting
+   * detected-layer tokens restore. Each withheld token is recorded in {@link withheldFromTools} so
+   * the count spans buffered and streaming restore alike.
    */
-  private collectWithheldToolTokens(adapter: BufferedRestoreAdapter, parsed: unknown): ReadonlySet<string> {
-    if (envFlag(process.env.FICTA_RESTORE_INTO_TOOLS)) return EMPTY_SKIP;
+  private collectWithheldToolTokens(
+    adapter: BufferedRestoreAdapter,
+    parsed: unknown,
+    policy: RestoreIntoToolsPolicy,
+  ): ReadonlySet<string> {
+    if (policy === "all") return EMPTY_SKIP;
     let withheld: Set<string> | undefined;
     for (const region of adapter.toolArgumentTexts(parsed)) {
-      const tokens = region.match(this.surrogate.pattern);
-      if (!tokens) continue;
-      withheld ??= new Set();
-      for (const token of tokens) withheld.add(token);
-      this.noteWithheldTool(region);
+      for (const token of region.match(this.surrogate.pattern) ?? []) {
+        if (policy === "detected" && this.provenanceFor(token) === "detected") continue; // will be restored
+        const value = this.valueFor(token);
+        if (value === undefined) continue;
+        withheld ??= new Set();
+        withheld.add(token);
+        this.withheldFromTools.add(value);
+      }
     }
     return withheld ?? EMPTY_SKIP;
   }
@@ -392,19 +443,21 @@ export abstract class VaultView {
     adapter: SseRestoreAdapter,
     buffered: BufferedRestoreAdapter = NOOP_BUFFERED_RESTORE_ADAPTER,
   ): TransformStream<Uint8Array, Uint8Array> {
-    // Default (safe): do NOT restore surrogates that the model placed inside a tool-call argument.
-    // Restoring there would hand the real secret to whatever the agent executes (a `curl`, a file
-    // write) — the surrogate is a worthless fake, so letting it flow out is the fail-safe. Opt back
-    // in with FICTA_RESTORE_INTO_TOOLS=1 when a tool legitimately needs the real value. The
-    // `buffered` adapter extends the same policy to full-payload replay events (deltas already
-    // withheld must not be restored when the provider re-sends the completed tool call).
-    const restoreIntoTools = envFlag(process.env.FICTA_RESTORE_INTO_TOOLS);
+    // Restore-into-tools policy (default `detected`): surrogates the model placed inside a tool-call
+    // argument are handled by provenance. A registry secret restored there would hand the real value
+    // to whatever the agent executes (a `curl`, a file write) — and the model only ever saw its
+    // placeholder — so those stay withheld; a detected-layer value (content the agent already read
+    // locally) restores, since withholding it only corrupts files without denying the model anything
+    // it lacked. `all` restores everything, `none` withholds everything. The `buffered` adapter
+    // extends the same policy to full-payload replay events (deltas already withheld must not be
+    // restored when the provider re-sends the completed tool call).
+    const policy = restoreIntoToolsPolicy(process.env.FICTA_RESTORE_INTO_TOOLS);
     return createSseRestoreStream((text) => this.restoreText(text), adapter, this.surrogate, {
-      withhold: !restoreIntoTools,
+      withhold: policy !== "all",
       restoreExcept: (text, skip) => this.restoreTextExcept(text, skip),
       restoreJsonExcept: (text, skip) => this.restoreJsonText(text, skip),
-      collectWithheld: (data) => this.collectWithheldToolTokens(buffered, data),
-      onWithhold: (raw) => this.noteWithheldTool(raw),
+      collectWithheld: (data) => this.collectWithheldToolTokens(buffered, data, policy),
+      restoreToolArg: (text, withheldSink) => this.restoreToolArgText(text, policy, withheldSink),
     });
   }
 }
@@ -420,7 +473,7 @@ export class Vault extends VaultView {
   private readonly permanent: SurrogateTable;
 
   constructor(values: ReadonlyArray<VaultValue> = [], surrogate: SurrogateStrategy = surrogateStrategy()) {
-    const permanent = new SurrogateTable(surrogate);
+    const permanent = new SurrogateTable(surrogate, "permanent");
     permanent.register(values);
     super([permanent]);
     this.permanent = permanent;
@@ -451,7 +504,7 @@ export class Vault extends VaultView {
 
   /** A detached detected-PII layer sharing this vault's strategy, for persistent keyed scopes. */
   newDetectedLayer(): SurrogateTable {
-    return new SurrogateTable(this.permanent.surrogate);
+    return new SurrogateTable(this.permanent.surrogate, "detected");
   }
 }
 
@@ -465,7 +518,10 @@ export class Vault extends VaultView {
 export class ScopedVault extends VaultView {
   private readonly detected: SurrogateTable;
 
-  constructor(permanent: SurrogateTable, detected: SurrogateTable = new SurrogateTable(permanent.surrogate)) {
+  constructor(
+    permanent: SurrogateTable,
+    detected: SurrogateTable = new SurrogateTable(permanent.surrogate, "detected"),
+  ) {
     super([detected, permanent]); // detected shares the permanent strategy → same surrogates
     this.detected = detected;
   }
@@ -537,10 +593,14 @@ export const NOOP_BUFFERED_RESTORE_ADAPTER: BufferedRestoreAdapter = { toolArgum
 
 /**
  * Restore-into-tools policy for the SSE restore. When `withhold` is true, surrogates that appear in
- * a tool-call argument fragment are left as-is (a placeholder reaches the executed tool, never the
- * real secret); the per-event deep sweep restores everything else via `restoreExcept`, skipping the
- * tokens already held back so it cannot re-restore them. `onWithhold` reports each withheld tool
- * fragment so the view can record which known values were kept from the sink.
+ * a tool-call argument fragment are resolved by `restoreToolArg`, which restores the tokens the
+ * policy permits (all, or detected-layer only) and leaves the rest as placeholders so a placeholder
+ * reaches the executed tool, never the real secret. Crucially the tool path takes the SAME
+ * cross-fragment reassembly as text: `restoreToolArg` runs on the reassembled `pending`+fragment
+ * text, so a surrogate split across several `input_json_delta` chunks is stitched back to a whole
+ * token before the per-token decision — the split-token bug that let placeholder pieces pass through
+ * verbatim (and never counted) onto disk. Each token it withholds is added to `withheldSink` so the
+ * per-event deep sweep (`restoreExcept`) cannot re-restore it, and counted for the Gateway view.
  */
 interface ToolRestorePolicy {
   withhold: boolean;
@@ -549,7 +609,8 @@ interface ToolRestorePolicy {
   restoreJsonExcept: (text: string, skip: ReadonlySet<string>) => string;
   /** Tool-argument tokens in a complete event payload (replay events), already counted as withheld. */
   collectWithheld: (data: unknown) => ReadonlySet<string>;
-  onWithhold: (rawFragmentValue: string) => void;
+  /** Restore a reassembled tool-argument fragment per policy; withheld tokens go to `withheldSink`. */
+  restoreToolArg: (text: string, withheldSink: Set<string>) => string;
 }
 
 function createSseRestoreStream(
@@ -630,16 +691,16 @@ function restoreSseRecord(
   // them either (a single delta can carry a whole surrogate, not just a split fragment).
   const withheld = tool.withhold ? new Set<string>() : undefined;
   for (const fragment of fragments) {
-    if (withheld && fragment.kind === "tool") {
-      // A surrogate the model emitted into a tool argument: leave it as the placeholder so the
-      // executed tool never receives the real value. Record any complete token so the deep sweep
-      // cannot restore it, and report the fragment for logging.
-      for (const token of fragment.value.match(surrogate.pattern) ?? []) withheld.add(token);
-      tool.onWithhold(fragment.value);
-      continue;
-    }
+    // Tool fragments take the SAME pending-reassembly as text: a surrogate split across several
+    // `input_json_delta` chunks is stitched back to a whole token here, then `restoreToolArg`
+    // makes the per-token restore/withhold decision on the complete token. Under withhold this is
+    // the fix for split-token pass-through — a partial fragment can no longer slip a placeholder
+    // piece through unrestored and uncounted. Text fragments (and, under `all`, tool fragments)
+    // use the blanket restore.
+    const restore =
+      withheld && fragment.kind === "tool" ? (text: string) => tool.restoreToolArg(text, withheld) : restoreText;
     const combined = (pending.get(fragment.key)?.value ?? "") + fragment.value;
-    const restored = restoreText(combined);
+    const restored = restore(combined);
     const { emit, hold } = splitForPotentialSurrogate(restored, surrogate);
     if (hold) pending.set(fragment.key, { value: hold, eventName: fragment.eventName, flushData: fragment.flushData });
     else pending.delete(fragment.key);

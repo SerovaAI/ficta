@@ -79,7 +79,7 @@ describe("proxy config edits", () => {
       piiOpenmedUrl: "http://127.0.0.1:5004/",
       secretShapesEnabled: true,
       surrogateStyle: "typed",
-      restoreIntoTools: true,
+      restoreIntoTools: "all",
       allowCustomUpstream: true,
     });
 
@@ -93,10 +93,10 @@ describe("proxy config edits", () => {
       FICTA_PII_OPENMED_URL: "http://127.0.0.1:5004",
       FICTA_SECRET_SHAPES_ENABLED: "1",
       FICTA_SURROGATE_STYLE: "typed",
-      FICTA_RESTORE_INTO_TOOLS: "1",
+      FICTA_RESTORE_INTO_TOOLS: "all",
       FICTA_ALLOW_CUSTOM_UPSTREAM: "1",
     });
-    expect(readFileSync(path, "utf8")).toContain("restore_into_tools = true");
+    expect(readFileSync(path, "utf8")).toContain('restore_into_tools = "all"');
     expect(result.ok && result.edit.restartRequired).toBe(true);
     expect(result.ok && result.edit.values.failClosed).toBe(false);
   });

@@ -412,6 +412,98 @@ describe("vault", () => {
     expect(toolInput).not.toContain(secret);
     expect(vault.withheldFromToolsCount).toBe(1);
   });
+
+  it("withholds a registry surrogate split across two tool-input deltas (the report's corruption shape)", async () => {
+    // The reporter's Write persisted a placeholder because a split surrogate never matched the
+    // per-fragment withhold check. The withhold branch now reassembles across fragments before
+    // deciding, so the whole placeholder is emitted intact and the secret never reaches the tool.
+    const permValue = "alpha-registry-eu-west-1x";
+    const vault = new Vault([{ value: permValue }]);
+    const surrogate = vault.redactText(permValue).text;
+    const first = `{\\"cmd\\":\\"echo ${surrogate.slice(0, 18)}`;
+    const second = `${surrogate.slice(18)}\\"}`;
+    const sse = [
+      anthropicInputDelta(0, first),
+      anthropicInputDelta(0, second),
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+    ].join("");
+
+    const out = await transformText(vault.restoreEventStream(sseRestoreAdapterFor("anthropic")), [sse]);
+    const toolInput = streamedJsonData(out)
+      .map((event) => event?.delta?.partial_json ?? "")
+      .join("");
+
+    expect(toolInput).toContain(surrogate); // reassembled and emitted whole, never fragmented onto disk
+    expect(toolInput).not.toContain(permValue); // the registry secret never reaches the tool
+    expect(vault.withheldFromToolsCount).toBe(1); // and the split token is now counted
+  });
+
+  it("default `detected` policy restores a content-detected token but withholds a registry token in the same tool arg", async () => {
+    const permValue = "alpha-registry-eu-west-1x";
+    const detValue = "bravo-content-hostname-9z";
+    const vault = new Vault([{ value: permValue }]);
+    const scope = vault.beginScope();
+    scope.register([{ value: detValue }]);
+    const permSur = scope.redactText(permValue).text;
+    const detSur = scope.redactText(detValue).text;
+    const sse = [
+      anthropicInputDelta(0, `{\\"cmd\\":\\"echo ${detSur} && curl https://x/?k=${permSur}\\"}`),
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+    ].join("");
+
+    const out = await transformText(scope.restoreEventStream(sseRestoreAdapterFor("anthropic")), [sse]);
+    const toolInput = streamedJsonData(out)
+      .map((event) => event?.delta?.partial_json ?? "")
+      .join("");
+
+    expect(toolInput).toContain(detValue); // content-derived detection round-trips into the tool
+    expect(toolInput).not.toContain(detSur);
+    expect(toolInput).not.toContain(permValue); // registry secret stays withheld
+    expect(toolInput).toContain(permSur); // its placeholder reaches the tool instead
+    expect(scope.withheldFromToolsCount).toBe(1);
+  });
+
+  it("`none` withholds both layers; `all` restores both", async () => {
+    const permValue = "alpha-registry-eu-west-1x";
+    const detValue = "bravo-content-hostname-9z";
+    const build = () => {
+      const vault = new Vault([{ value: permValue }]);
+      const scope = vault.beginScope();
+      scope.register([{ value: detValue }]);
+      const permSur = scope.redactText(permValue).text;
+      const detSur = scope.redactText(detValue).text;
+      const sse = [
+        anthropicInputDelta(0, `{\\"cmd\\":\\"echo ${detSur} ${permSur}\\"}`),
+        `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+      ].join("");
+      return { scope, sse, permSur, detSur };
+    };
+
+    process.env.FICTA_RESTORE_INTO_TOOLS = "none";
+    const off = build();
+    const offInput = streamedJsonData(
+      await transformText(off.scope.restoreEventStream(sseRestoreAdapterFor("anthropic")), [off.sse]),
+    )
+      .map((event) => event?.delta?.partial_json ?? "")
+      .join("");
+    expect(offInput).toContain(off.detSur);
+    expect(offInput).toContain(off.permSur);
+    expect(offInput).not.toContain(detValue);
+    expect(offInput).not.toContain(permValue);
+    expect(off.scope.withheldFromToolsCount).toBe(2);
+
+    process.env.FICTA_RESTORE_INTO_TOOLS = "all";
+    const on = build();
+    const onInput = streamedJsonData(
+      await transformText(on.scope.restoreEventStream(sseRestoreAdapterFor("anthropic")), [on.sse]),
+    )
+      .map((event) => event?.delta?.partial_json ?? "")
+      .join("");
+    expect(onInput).toContain(detValue);
+    expect(onInput).toContain(permValue);
+    expect(onInput).not.toContain("FICTA_");
+    expect(on.scope.withheldFromToolsCount).toBe(0);
+  });
 });
 
 // The buffered (non-SSE) restore path and full-payload SSE replay events must withhold tool-call

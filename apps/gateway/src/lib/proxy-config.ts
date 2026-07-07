@@ -6,6 +6,7 @@ import {
   isProxyConfigOk,
   isProxyConfigUpdateOk,
   normalizePiiBackends,
+  normalizeRestoreIntoToolsPolicy,
   PII_BACKEND_NAMES,
   type PiiBackendName,
   type ProxyConfig,
@@ -131,11 +132,16 @@ function validateEditablePatch(input: unknown): EditableProxyConfigPatch {
       case "piiEnabled":
       case "piiFailClosed":
       case "secretShapesEnabled":
-      case "restoreIntoTools":
       case "allowCustomUpstream":
         if (typeof value !== "boolean") throw new Error("invalid proxy config boolean");
         patch[field] = value;
         break;
+      case "restoreIntoTools": {
+        const policy = normalizeRestoreIntoToolsPolicy(value);
+        if (policy === undefined) throw new Error("invalid proxy config restore-into-tools policy");
+        patch[field] = policy;
+        break;
+      }
       case "piiBackends": {
         const normalized = normalizePiiBackends(value);
         if (normalized === undefined) throw new Error("invalid proxy config backends");

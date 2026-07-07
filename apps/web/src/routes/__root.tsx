@@ -86,7 +86,7 @@ function RouteError({ error, reset }: { error: unknown; reset: () => void }) {
     <FallbackPage
       eyebrow="render boundary"
       title="The page failed before it could finish rendering."
-      body="Try the page again. If it keeps failing, email the exact URL and browser to the founder so the broken surface can be fixed."
+      body="Try the page again. If it keeps failing, contact us with the exact URL and browser so the broken surface can be fixed."
       detail={import.meta.env.DEV ? message : undefined}
       action={
         <button

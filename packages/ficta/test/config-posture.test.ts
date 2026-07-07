@@ -34,7 +34,7 @@ describe("configPosture", () => {
         requireRegistry: false,
         globallyDisabled: false,
         redactPaths: false,
-        restoreIntoTools: false,
+        restoreIntoTools: "detected",
         surrogateStyle: "opaque",
       },
       detection: {
@@ -86,7 +86,7 @@ describe("configPosture", () => {
       requireRegistry: true,
       globallyDisabled: true,
       redactPaths: true,
-      restoreIntoTools: true,
+      restoreIntoTools: "all",
       surrogateStyle: "typed",
     });
     expect(posture.detection.pii).toEqual({

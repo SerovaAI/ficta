@@ -113,7 +113,7 @@ const SECRET_SHAPE_PATTERNS: readonly SecretShapePattern[] = [
   {
     category: "secret-assignment",
     regex:
-      /\b([A-Za-z][A-Za-z0-9_.-]*(?:api[_-]?key|token|secret|password|passwd|pwd|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]*)\b\s*[:=]\s*["'`]?([^\s"'`,;{}<>\])]+)["'`]?/gi,
+      /\b([A-Za-z][A-Za-z0-9_.-]*(?:api[_-]?key|token|secret|password|passwd|pwd|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]*)\b\s*[:=]\s*["'`]?([^\s"'`,;{}<>()[\]]+)["'`]?/gi,
     confidence: "probabilistic",
     validate: isLikelySecretValue,
   },
@@ -122,7 +122,7 @@ const SECRET_SHAPE_PATTERNS: readonly SecretShapePattern[] = [
     // pairs such as {"api_key":"..."} are visible as "api_key\n...".
     category: "secret-json-value",
     regex:
-      /\b([A-Za-z][A-Za-z0-9_.-]*(?:api[_-]?key|token|secret|password|passwd|pwd|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]*)\b\s*\n\s*["'`]?([^\s"'`,;{}<>\])]+)["'`]?/gi,
+      /\b([A-Za-z][A-Za-z0-9_.-]*(?:api[_-]?key|token|secret|password|passwd|pwd|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]*)\b\s*\n\s*["'`]?([^\s"'`,;{}<>()[\]]+)["'`]?/gi,
     confidence: "probabilistic",
     validate: isLikelySecretValue,
   },
@@ -238,6 +238,10 @@ function isLikelySecretValue(raw: string): boolean {
   resetPatternState();
   if (/^(?:true|false|null|undefined|none|password|secret|token|example|changeme)$/i.test(value)) return false;
   if (/^[a-z][a-z0-9-]*$/i.test(value) && value.length < 20) return false;
+  // Code references, not secrets: dotted identifier chains (localStorage.getItem,
+  // envData.ADMIN_JWT_SECRET) and bare mixed-case identifiers with no digits (getValidApiKeys).
+  if (/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(value)) return false;
+  if (/^[A-Za-z_$][\w$]*$/.test(value) && !/\d/.test(value) && /[a-z]/.test(value) && /[A-Z]/.test(value)) return false;
 
   const classes = [/[a-z]/.test(value), /[A-Z]/.test(value), /\d/.test(value), /[^A-Za-z0-9]/.test(value)].filter(
     Boolean,

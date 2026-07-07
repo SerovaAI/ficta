@@ -245,13 +245,20 @@ function ConfigEditor({
           locked={edit.locked.failClosed}
         />
       </SettingRow>
-      <SettingRow label="Restore into tool calls" description="Put real values back into tool-call arguments.">
-        <BooleanControl
-          id="proxy-restore-into-tools"
-          checked={draft.restoreIntoTools}
+      <SettingRow
+        label="Restore into tool calls"
+        description="Which redacted values are put back into tool-call arguments: detected (locally-read content only, registry secrets withheld), all, or none."
+      >
+        <SelectControl
+          value={draft.restoreIntoTools}
           disabled={isDisabled("restoreIntoTools", edit, disabled)}
-          onChange={(checked) => set("restoreIntoTools", checked)}
+          onChange={(value) => set("restoreIntoTools", value as EditableProxyConfigValues["restoreIntoTools"])}
           locked={edit.locked.restoreIntoTools}
+          options={[
+            ["detected", "Detected (default)"],
+            ["all", "All"],
+            ["none", "None"],
+          ]}
         />
       </SettingRow>
       <SettingRow label="Surrogate style" description="Shape of the placeholder tokens sent upstream.">

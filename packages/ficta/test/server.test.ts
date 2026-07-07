@@ -1332,7 +1332,7 @@ describe("config posture endpoint", () => {
             piiOpenmedUrl: expect.any(String),
             secretShapesEnabled: expect.any(Boolean),
             surrogateStyle: expect.stringMatching(/^(opaque|typed)$/),
-            restoreIntoTools: expect.any(Boolean),
+            restoreIntoTools: expect.stringMatching(/^(all|none|detected)$/),
             allowCustomUpstream: expect.any(Boolean),
           },
           locked: expect.any(Object),

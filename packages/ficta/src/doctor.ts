@@ -3,6 +3,7 @@ import { configuredUpstreamPolicyIssues, loadConfig } from "./config.js";
 import { configPosture } from "./config-posture.js";
 import { applyRuntimeEnvDefaults } from "./defaults.js";
 import { detectorFailClosed } from "./engine/detection-policy.js";
+import type { RestoreIntoToolsPolicy } from "./engine/env-flags.js";
 import { globalDisablePath, isGloballyDisabled } from "./global-disable.js";
 import { defaultShimDir, findExecutable } from "./install.js";
 import type { LogLevel } from "./log-level.js";
@@ -49,8 +50,8 @@ export interface DoctorReport {
     secretShapesAgents: boolean;
     /** Active surrogate token style (governed by [surrogate] style / FICTA_SURROGATE_STYLE). */
     surrogateStyle: "opaque" | "typed";
-    /** Whether surrogates are restored into tool-call arguments (FICTA_RESTORE_INTO_TOOLS; default off = withhold). */
-    restoreIntoTools: boolean;
+    /** Restore-into-tools policy (FICTA_RESTORE_INTO_TOOLS; default `detected`). */
+    restoreIntoTools: RestoreIntoToolsPolicy;
     upstreams: { anthropic: string; openai: string; chatgpt: string };
     forcedUpstream?: string;
     allowCustomUpstream: boolean;
@@ -266,11 +267,7 @@ export function renderDoctorReport(report: DoctorReport): string {
       report.config.surrogateStyle === "typed" ? "typed (FICTA_<TYPE>_… tokens)" : "opaque (FICTA_… tokens)"
     }`,
   );
-  lines.push(
-    report.config.restoreIntoTools
-      ? "  ! restore into tools: on — tool-call arguments receive REAL values (FICTA_RESTORE_INTO_TOOLS=1)"
-      : "  - restore into tools: off — tool-call arguments keep placeholder surrogates (fail-safe default)",
-  );
+  lines.push(restoreIntoToolsLine(report.config.restoreIntoTools));
   lines.push("");
 
   lines.push("registry");
@@ -328,6 +325,17 @@ export function renderDoctorReport(report: DoctorReport): string {
 
 export function doctorExitCode(report: DoctorReport): number {
   return report.issues.some((issue) => issue.severity === "error") ? 1 : 0;
+}
+
+function restoreIntoToolsLine(policy: RestoreIntoToolsPolicy): string {
+  switch (policy) {
+    case "all":
+      return "  ! restore into tools: all — tool-call arguments receive REAL values, registry secrets included (FICTA_RESTORE_INTO_TOOLS=all)";
+    case "none":
+      return "  - restore into tools: none — every tool-call argument keeps placeholder surrogates (FICTA_RESTORE_INTO_TOOLS=none)";
+    case "detected":
+      return "  - restore into tools: detected — locally-read content restored into tool-call arguments; registry secrets kept as placeholders (default)";
+  }
 }
 
 function doctorAgentReport(agent: AgentIntegration, selected: boolean): DoctorAgentReport {

@@ -26,3 +26,32 @@ export function envFlag(value: string | undefined): boolean {
 export function envEnabled(value: string | undefined, fallback: boolean): boolean {
   return parseBoolean(value) ?? fallback;
 }
+
+/**
+ * Restore-into-tools policy — how surrogates the model emits into a tool-call argument are handled
+ * on the way back:
+ *  - `all`      restore every surrogate (registry secrets included) into tool arguments.
+ *  - `none`     restore nothing into tool arguments; every surrogate stays a placeholder.
+ *  - `detected` restore surrogates for values the agent already read locally (the ephemeral
+ *               detected layer — PII/secret-shapes) but keep registry secrets (values the model only
+ *               ever saw as placeholders) as placeholders. The default: it fixes file corruption
+ *               from echoed local content without reopening the registry-secret exfil channel.
+ */
+export type RestoreIntoToolsPolicy = "all" | "none" | "detected";
+
+/**
+ * Parse `FICTA_RESTORE_INTO_TOOLS`. Accepts the three policy names plus the historical boolean
+ * spellings (`1`/`true`/… → `all`, `0`/`false`/… → `none`) so existing configs keep working. Unset
+ * or unrecognized input is the safe provenance default `detected`.
+ */
+export function restoreIntoToolsPolicy(value: string | undefined): RestoreIntoToolsPolicy {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return "detected";
+  if (normalized === "all") return "all";
+  if (normalized === "none" || normalized === "strict") return "none";
+  if (normalized === "detected" || normalized === "provenance") return "detected";
+  const bool = parseBoolean(normalized);
+  if (bool === true) return "all";
+  if (bool === false) return "none";
+  return "detected";
+}

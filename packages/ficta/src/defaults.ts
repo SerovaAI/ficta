@@ -11,7 +11,9 @@ const CORE_DEFAULTS = {
   // leaks, default on). A detector's own [<plugin>] fail_closed overrides this.
   FICTA_FAIL_CLOSED_DETECTION: "0",
   FICTA_REDACT_PATHS: "0",
-  FICTA_RESTORE_INTO_TOOLS: "0",
+  // Provenance default: restore locally-read content into tool args (so echoed file text is not
+  // corrupted) while keeping registry secrets as placeholders. `all`/`none` force the extremes.
+  FICTA_RESTORE_INTO_TOOLS: "detected",
   FICTA_LOG_MAX_BYTES: String(256 * 1024),
   FICTA_ALLOW_CUSTOM_UPSTREAM: "0",
 } as const;

@@ -17,7 +17,7 @@ const CORE_CONFIG_BINDINGS: readonly ConfigBinding[] = [
   { env: "FICTA_FAIL_CLOSED", path: ["redaction", "fail_closed"], kind: "boolean" },
   { env: "FICTA_FAIL_CLOSED_DETECTION", path: ["detection", "fail_closed"], kind: "boolean" },
   { env: "FICTA_REDACT_PATHS", path: ["redaction", "redact_paths"], kind: "boolean" },
-  { env: "FICTA_RESTORE_INTO_TOOLS", path: ["redaction", "restore_into_tools"], kind: "boolean" },
+  { env: "FICTA_RESTORE_INTO_TOOLS", path: ["redaction", "restore_into_tools"], kind: "string" },
   { env: "FICTA_LOG_MAX_BYTES", path: ["logging", "max_bytes"], kind: "number" },
   { env: "FICTA_LOG_DIR", path: ["logging", "log_dir"], kind: "string" },
   { env: "FICTA_SURROGATE_KEY", path: ["surrogate", "key"], kind: "string" },

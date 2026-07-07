@@ -7,7 +7,16 @@ export type DetectorFailureMode = "fail-open" | "fail-closed";
 export type PiiStatusState = "off" | "ok" | "degraded" | "blocking";
 export type PiiBackendName = "regex" | "presidio" | "openmed";
 
+/**
+ * How surrogates the model emits into a tool-call argument are restored on the way back:
+ * `all` restores every mapped token (registry secrets included), `none` withholds every token, and
+ * `detected` (the default) restores content the agent already read locally while keeping registry
+ * secrets as placeholders.
+ */
+export type RestoreIntoToolsPolicy = "all" | "none" | "detected";
+
 export declare const PII_BACKEND_NAMES: readonly PiiBackendName[];
+export declare const RESTORE_INTO_TOOLS_POLICIES: readonly RestoreIntoToolsPolicy[];
 
 export interface PiiProtectionStatus {
   enabled: boolean;
@@ -60,7 +69,7 @@ export interface ProxyConfigPosture {
     requireRegistry: boolean;
     globallyDisabled: boolean;
     redactPaths: boolean;
-    restoreIntoTools: boolean;
+    restoreIntoTools: RestoreIntoToolsPolicy;
     surrogateStyle: "opaque" | "typed";
   };
   detection: {
@@ -111,7 +120,7 @@ export interface EditableProxyConfigValues {
   piiOpenmedUrl: string;
   secretShapesEnabled: boolean;
   surrogateStyle: "opaque" | "typed";
-  restoreIntoTools: boolean;
+  restoreIntoTools: RestoreIntoToolsPolicy;
   allowCustomUpstream: boolean;
 }
 
@@ -173,3 +182,10 @@ export declare function isProxyConfigEditState(value: unknown): value is ProxyCo
 export declare function isEditableProxyConfigValues(value: unknown): value is EditableProxyConfigValues;
 export declare function isPiiBackendName(value: unknown): value is PiiBackendName;
 export declare function normalizePiiBackends(value: unknown): PiiBackendName[] | undefined;
+export declare function isRestoreIntoToolsPolicy(value: unknown): value is RestoreIntoToolsPolicy;
+/**
+ * Coerce a value to a {@link RestoreIntoToolsPolicy}: the three policy names pass through; the
+ * historical booleans map `true`→`all` / `false`→`none` for cross-version tolerance; anything else
+ * is `undefined`.
+ */
+export declare function normalizeRestoreIntoToolsPolicy(value: unknown): RestoreIntoToolsPolicy | undefined;

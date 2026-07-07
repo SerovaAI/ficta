@@ -201,6 +201,56 @@ export async function logResponse(args: {
   if (cfg.logBodies && raw) writePrivateFile(join(runDir, `res-${pad(args.n)}.txt`), raw);
 }
 
+/**
+ * Buffered twin of the streaming `restoredBodyTap`: at trace, persist the client-bound (post-restore)
+ * body to res-XXXX.restored.txt. Pairs with the pre-restore res-XXXX.txt so an operator can diff
+ * exactly which surrogates reached the client vs which were withheld from tool arguments.
+ */
+export function writeRestoredBody(n: number, body: string): void {
+  if (!cfg.logBodies || !body) return;
+  const raw = byteLen(body) > cfg.logMaxBytes ? body.slice(0, cfg.logMaxBytes) : body;
+  writePrivateFile(join(runDir, `res-${pad(n)}.restored.txt`), raw);
+}
+
+/**
+ * Pass-through tap that (at trace) accumulates the client-bound, post-restore stream into
+ * res-XXXX.restored.txt, capped at logMaxBytes, then runs `onFlush` once the stream drains. Replaces
+ * a bare flush tap on the streaming restore paths so the restored bytes are captured for forensics.
+ */
+export function restoredBodyTap(n: number, onFlush: () => void): TransformStream<Uint8Array, Uint8Array> {
+  const capture = cfg.logBodies;
+  const decoder = new TextDecoder();
+  let raw = "";
+  let bytes = 0;
+  let truncated = false;
+  return new TransformStream({
+    transform(chunk, controller) {
+      controller.enqueue(chunk);
+      if (!capture || truncated) return;
+      const remaining = cfg.logMaxBytes - bytes;
+      if (remaining <= 0) {
+        truncated = true;
+        return;
+      }
+      if (chunk.byteLength > remaining) {
+        raw += decoder.decode(chunk.slice(0, remaining));
+        bytes += remaining;
+        truncated = true;
+        return;
+      }
+      raw += decoder.decode(chunk, { stream: true });
+      bytes += chunk.byteLength;
+    },
+    flush() {
+      if (capture) {
+        if (!truncated) raw += decoder.decode();
+        if (raw) writePrivateFile(join(runDir, `res-${pad(n)}.restored.txt`), raw);
+      }
+      onFlush();
+    },
+  });
+}
+
 // ---------------------------------------------------------------- safe metadata sidecars
 
 function byteLen(s: string): number {

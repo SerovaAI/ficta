@@ -6,6 +6,9 @@ export const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
 export const PII_BACKEND_NAMES = ["regex", "presidio", "openmed"];
 const PII_BACKEND_NAME_SET = new Set(PII_BACKEND_NAMES);
 
+export const RESTORE_INTO_TOOLS_POLICIES = ["all", "none", "detected"];
+const RESTORE_INTO_TOOLS_POLICY_SET = new Set(RESTORE_INTO_TOOLS_POLICIES);
+
 export const EDITABLE_PROXY_CONFIG_KEYS = [
   "failClosed",
   "piiEnabled",
@@ -34,7 +37,7 @@ export function isProxyConfigOk(value) {
     typeof protection.requireRegistry === "boolean" &&
     typeof protection.globallyDisabled === "boolean" &&
     typeof protection.redactPaths === "boolean" &&
-    typeof protection.restoreIntoTools === "boolean" &&
+    isRestoreIntoToolsPolicy(protection.restoreIntoTools) &&
     (protection.surrogateStyle === "opaque" || protection.surrogateStyle === "typed") &&
     typeof detection.pii.standalone === "boolean" &&
     typeof detection.pii.agents === "boolean" &&
@@ -84,7 +87,7 @@ export function isEditableProxyConfigValues(value) {
     typeof value.piiOpenmedUrl === "string" &&
     typeof value.secretShapesEnabled === "boolean" &&
     (value.surrogateStyle === "opaque" || value.surrogateStyle === "typed") &&
-    typeof value.restoreIntoTools === "boolean" &&
+    isRestoreIntoToolsPolicy(value.restoreIntoTools) &&
     typeof value.allowCustomUpstream === "boolean"
   );
 }
@@ -103,6 +106,19 @@ export function normalizePiiBackends(value) {
     if (!out.includes(entry)) out.push(entry);
   }
   return out.length > 0 ? out : ["regex"];
+}
+
+/** @param {unknown} value */
+export function isRestoreIntoToolsPolicy(value) {
+  return typeof value === "string" && RESTORE_INTO_TOOLS_POLICY_SET.has(value);
+}
+
+/** @param {unknown} value */
+export function normalizeRestoreIntoToolsPolicy(value) {
+  if (isRestoreIntoToolsPolicy(value)) return value;
+  if (value === true) return "all";
+  if (value === false) return "none";
+  return undefined;
 }
 
 /** @param {unknown} value */

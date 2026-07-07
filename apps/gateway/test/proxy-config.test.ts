@@ -11,7 +11,7 @@ function validPayload() {
         requireRegistry: false,
         globallyDisabled: false,
         redactPaths: false,
-        restoreIntoTools: false,
+        restoreIntoTools: "detected",
         surrogateStyle: "opaque",
       },
       detection: {
@@ -51,7 +51,7 @@ function validPayload() {
         piiOpenmedUrl: "http://127.0.0.1:5004",
         secretShapesEnabled: false,
         surrogateStyle: "opaque",
-        restoreIntoTools: false,
+        restoreIntoTools: "detected",
         allowCustomUpstream: false,
       },
       locked: {},
