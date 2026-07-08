@@ -1,4 +1,4 @@
-import { FICTA_RESTORE_HIGHLIGHT_HEADER } from "@serovaai/ficta-protocol";
+import { FICTA_RESTORE_HIGHLIGHT_HEADER, FICTA_SCOPE_HEADER } from "@serovaai/ficta-protocol";
 import { anthropicText } from "@tanstack/ai-anthropic";
 import { openaiCompatibleText } from "@tanstack/ai-openai/compatible";
 
@@ -30,7 +30,7 @@ export function createModelAdapter({ provider, model, fictaScope }: ModelChoice)
     // it's sent unconditionally: the single switch for highlights is the proxy's FICTA_TRACE_AUDIT,
     // which is what actually decides whether markers are emitted. No separate gateway flag needed.
     [FICTA_RESTORE_HIGHLIGHT_HEADER]: "1",
-    ...(fictaScope ? { "x-ficta-scope": fictaScope } : {}),
+    ...(fictaScope ? { [FICTA_SCOPE_HEADER]: fictaScope } : {}),
   };
   if (provider === "anthropic") {
     // ficta routes `/v1/messages` → the Anthropic upstream; the Anthropic adapter emits that wire.

@@ -11,7 +11,11 @@ import {
   FICTA_RESTORE_HIGHLIGHT_HEADER,
   FICTA_RESTORE_HIGHLIGHT_METADATA,
   FICTA_RESTORE_HIGHLIGHT_START,
+  FICTA_SCOPE_HEADER,
   FICTA_STATUS_PATH,
+  type ProtectionStatsOk,
+  type ProtectionStatusOk,
+  type ProxyConfigOk,
 } from "@serovaai/ficta-protocol";
 import { type Context, Hono } from "hono";
 import { loadConfig, resolveTarget, upstreamPolicyIssue } from "./config.js";
@@ -93,12 +97,13 @@ export async function startProxy(
     // auth-free and loopback-bound; this endpoint adds no secrets to expose.
     if (url.pathname === FICTA_CONFIG_PATH) {
       if (method === "GET") {
-        return c.json({
+        const response: ProxyConfigOk = {
           ok: true,
           service: "ficta",
           config: configPosture(cfg),
           edit: proxyConfigEditState(cfg, configEditLocks),
-        });
+        };
+        return c.json(response);
       }
       if (method === "PATCH") {
         const remoteAddress = c.env.incoming.socket.remoteAddress;
@@ -197,7 +202,7 @@ export async function startProxy(
     headers.delete("host");
     headers.delete("content-length");
     headers.delete("accept-encoding");
-    headers.delete(SCOPE_HEADER); // internal routing metadata — must never reach the upstream vendor
+    headers.delete(FICTA_SCOPE_HEADER); // internal routing metadata — must never reach the upstream vendor
     headers.delete(FICTA_RESTORE_HIGHLIGHT_HEADER); // trace-demo UI hint — must never reach the upstream vendor
 
     let bodyToSend: string | undefined;
@@ -494,16 +499,15 @@ export async function startProxy(
  * stripped before the request is forwarded upstream.
  */
 function scopeKeyFrom(c: Context): string | undefined {
-  const key = c.req.header(SCOPE_HEADER)?.trim();
+  const key = c.req.header(FICTA_SCOPE_HEADER)?.trim();
   if (!key) return undefined;
   return key.length > MAX_SCOPE_KEY_LENGTH ? key.slice(0, MAX_SCOPE_KEY_LENGTH) : key;
 }
 
-const SCOPE_HEADER = "x-ficta-scope";
 const MAX_SCOPE_KEY_LENGTH = 256;
 
 /** Safe runtime status for first-party UIs. Contains only counts/config/health metadata — never values. */
-async function protectionStatus(engine: RedactionEngine, stats: ProtectionStats) {
+async function protectionStatus(engine: RedactionEngine, stats: ProtectionStats): Promise<ProtectionStatusOk> {
   const enabled = piiEnabled();
   const configuredBackends = selectedBackendNames();
   const backendSet = activeBackends();
@@ -642,7 +646,7 @@ interface QueryRedaction extends SurfaceRedaction {
 }
 
 /** Values-free redaction proof for first-party/admin UIs. */
-function protectionStatsResponse(stats: ProtectionStats, url: URL) {
+function protectionStatsResponse(stats: ProtectionStats, url: URL): ProtectionStatsOk {
   const limit = protectionStatsLimit(url.searchParams.get("limit"));
   const snapshot = stats.snapshot();
   return {

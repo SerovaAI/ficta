@@ -1,9 +1,9 @@
+import type { ProxyConfigPosture } from "@serovaai/ficta-protocol";
 import type { Config } from "./config.js";
 import { detectorFailClosed } from "./engine/detection-policy.js";
-import { envFlag, type RestoreIntoToolsPolicy, restoreIntoToolsPolicy } from "./engine/env-flags.js";
+import { envFlag, restoreIntoToolsPolicy } from "./engine/env-flags.js";
 import { surrogateStyle } from "./engine/surrogate.js";
 import { isGloballyDisabled } from "./global-disable.js";
-import type { LogLevel } from "./log-level.js";
 import {
   piiEnabled,
   piiFailClosed,
@@ -13,48 +13,7 @@ import {
   selectedBackendNames,
 } from "./plugins/index.js";
 
-/**
- * The effective, values-free configuration posture: booleans, enums, counts, and URLs only — never
- * registered secret values, surrogate keys, or detected PII. This is the single typed contract for
- * "what is ficta configured to do": `ficta doctor` renders it and `GET /__ficta/config` serializes
- * it, so the two views cannot drift.
- */
-export interface ConfigPosture {
-  protection: {
-    failClosed: boolean;
-    requireRegistry: boolean;
-    globallyDisabled: boolean;
-    redactPaths: boolean;
-    restoreIntoTools: RestoreIntoToolsPolicy;
-    surrogateStyle: "opaque" | "typed";
-  };
-  detection: {
-    pii: {
-      /** PII detection for the web/standalone proxy (governed by `[pii] enabled`). */
-      standalone: boolean;
-      /** PII detection for launched coding agents (needs `[pii] enabled` AND `[pii] agents`). */
-      agents: boolean;
-      configuredBackend: string;
-      configuredBackends: string[];
-      failureMode: "fail-open" | "fail-closed";
-    };
-    secretShapes: {
-      standalone: boolean;
-      agents: boolean;
-    };
-  };
-  transport: {
-    host: string;
-    port: number;
-    upstreams: { anthropic: string; openai: string; chatgpt: string };
-    forcedUpstream?: string;
-    allowCustomUpstream: boolean;
-    logLevel: LogLevel;
-    logBodies: boolean;
-    traceAudit: boolean;
-    logDir: string;
-  };
-}
+export type ConfigPosture = ProxyConfigPosture;
 
 /**
  * Build the posture from the transport `Config` plus the engine-side env flags. The engine has no

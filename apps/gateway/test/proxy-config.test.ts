@@ -35,6 +35,7 @@ function validPayload() {
         allowCustomUpstream: false,
         logLevel: "info",
         logBodies: false,
+        traceAudit: false,
         logDir: "/home/user/.ficta/logs",
       },
     },
@@ -104,6 +105,10 @@ describe("isProxyConfigOk", () => {
     const badPort = validPayload();
     (badPort.config.transport as Record<string, unknown>).port = "8787";
     expect(isProxyConfigOk(badPort)).toBe(false);
+
+    const badTraceAudit = validPayload();
+    (badTraceAudit.config.transport as Record<string, unknown>).traceAudit = "false";
+    expect(isProxyConfigOk(badTraceAudit)).toBe(false);
 
     const badFailureMode = validPayload();
     (badFailureMode.config.detection.pii as Record<string, unknown>).failureMode = "open";

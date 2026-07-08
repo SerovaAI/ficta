@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { FICTA_SCOPE_HEADER } from "@serovaai/ficta-protocol";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DetectorPlugin } from "../src/plugins/index.js";
 
@@ -73,7 +74,7 @@ describe("multi-turn web chat: restored transcript resent through the proxy", ()
         body += chunk;
       });
       req.on("end", () => {
-        upstreamScopeHeaders.push(req.headers["x-ficta-scope"] as string | undefined);
+        upstreamScopeHeaders.push(req.headers[FICTA_SCOPE_HEADER] as string | undefined);
         upstreamBodies.push(body);
         const token = body.match(/FICTA_[0-9a-f]{32}/)?.[0];
         res.writeHead(200, { "content-type": "application/json" });
@@ -111,7 +112,7 @@ describe("multi-turn web chat: restored transcript resent through the proxy", ()
       const { startProxy } = await import("../src/server.js");
       proxy = await startProxy({ port: 0, plugins: [onceDetector] });
       const url = `http://127.0.0.1:${proxy.port}/v1/chat/completions`;
-      const headers = { "content-type": "application/json", "x-ficta-scope": "org-local:thread-42" };
+      const headers = { "content-type": "application/json", [FICTA_SCOPE_HEADER]: "org-local:thread-42" };
 
       const res1 = await fetch(url, {
         method: "POST",

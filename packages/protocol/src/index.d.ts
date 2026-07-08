@@ -2,6 +2,7 @@ export declare const FICTA_HEALTH_PATH = "/__ficta/health";
 export declare const FICTA_STATUS_PATH = "/__ficta/status";
 export declare const FICTA_CONFIG_PATH = "/__ficta/config";
 export declare const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
+export declare const FICTA_SCOPE_HEADER = "x-ficta-scope";
 export declare const FICTA_RESTORE_HIGHLIGHT_HEADER = "x-ficta-restore-highlights";
 export declare const FICTA_RESTORE_HIGHLIGHT_START = "\u001eFICTA_RESTORE_START\u001e";
 export declare const FICTA_RESTORE_HIGHLIGHT_METADATA = "\u001eFICTA_RESTORE_SURROGATE\u001e";
@@ -10,6 +11,7 @@ export declare const FICTA_RESTORE_HIGHLIGHT_END = "\u001eFICTA_RESTORE_END\u001
 export type DetectorFailureMode = "fail-open" | "fail-closed";
 export type PiiStatusState = "off" | "ok" | "degraded" | "blocking";
 export type PiiBackendName = "regex" | "presidio" | "openmed";
+export type ProxyLogLevel = "silent" | "error" | "warn" | "info" | "debug" | "trace";
 
 /**
  * How surrogates the model emits into a tool-call argument are restored on the way back:
@@ -21,6 +23,7 @@ export type RestoreIntoToolsPolicy = "all" | "none" | "detected";
 
 export declare const PII_BACKEND_NAMES: readonly PiiBackendName[];
 export declare const RESTORE_INTO_TOOLS_POLICIES: readonly RestoreIntoToolsPolicy[];
+export declare const PROXY_LOG_LEVELS: readonly ProxyLogLevel[];
 
 export interface PiiProtectionStatus {
   enabled: boolean;
@@ -67,6 +70,89 @@ export interface ProtectionStatusError {
 
 export type ProtectionStatus = ProtectionStatusOk | ProtectionStatusError;
 
+export type ProtectionStatsSurface = "body" | "query string" | "non-auth headers";
+
+export interface ProtectionHit {
+  name: string;
+  source: string;
+  plugin?: string;
+  kind?: "secret" | "pii" | "custom";
+  confidence?: "exact" | "high" | "probabilistic";
+}
+
+export interface ProtectionStatsTotals {
+  events: number;
+  affectedRequests: number;
+  redactedValues: number;
+  survivingValues: number;
+  blockedRequests: number;
+  keptOutOfModelValues: number;
+  restoredValues: number;
+  withheldFromToolsValues: number;
+}
+
+export interface ProtectionStatsBucket {
+  name: string;
+  requests: number;
+  redactedValues: number;
+  survivingValues: number;
+  blockedRequests: number;
+  keptOutOfModelValues: number;
+}
+
+export interface ProtectionStatsLabelBucket extends ProtectionStatsBucket {
+  source: string;
+  plugin?: string;
+  kind?: ProtectionHit["kind"];
+  confidence?: ProtectionHit["confidence"];
+}
+
+export interface ProtectionStatsEvent {
+  index: number;
+  at: string;
+  requestId?: number;
+  method: string;
+  path: string;
+  wire: string;
+  route?: string;
+  model: string;
+  surface: ProtectionStatsSurface;
+  redactedValues: number;
+  survivingValues: number;
+  blocked: boolean;
+  redactedHits: ProtectionHit[];
+  survivingHits: ProtectionHit[];
+}
+
+export interface ProtectionStatsSnapshot {
+  version: 1;
+  path: string;
+  startedAt: string;
+  updatedAt: string;
+  totals: ProtectionStatsTotals;
+  byModel: ProtectionStatsBucket[];
+  bySurface: ProtectionStatsBucket[];
+  byWire: ProtectionStatsBucket[];
+  byLabel: ProtectionStatsLabelBucket[];
+  events: ProtectionStatsEvent[];
+}
+
+export interface ProtectionStatsOk {
+  ok: true;
+  service: "ficta";
+  stats: ProtectionStatsSnapshot;
+}
+
+export interface ProtectionStatsError {
+  ok: false;
+  proxyUrl: string;
+  status: "unreachable" | "bad_response";
+  message: string;
+  detail?: string;
+}
+
+export type ProtectionStats = ProtectionStatsOk | ProtectionStatsError;
+
 export interface ProxyConfigPosture {
   protection: {
     failClosed: boolean;
@@ -81,7 +167,7 @@ export interface ProxyConfigPosture {
       standalone: boolean;
       agents: boolean;
       configuredBackend: string;
-      configuredBackends?: string[];
+      configuredBackends: string[];
       failureMode: DetectorFailureMode;
     };
     secretShapes: {
@@ -95,8 +181,9 @@ export interface ProxyConfigPosture {
     upstreams: { anthropic: string; openai: string; chatgpt: string };
     forcedUpstream?: string;
     allowCustomUpstream: boolean;
-    logLevel: string;
+    logLevel: ProxyLogLevel;
     logBodies: boolean;
+    traceAudit: boolean;
     logDir: string;
   };
 }
@@ -180,6 +267,7 @@ export interface ProxyConfigPatchError {
 export type ProxyConfigPatchResponse = ProxyConfigUpdateOk | ProxyConfigPatchError;
 
 export declare function isProtectionStatusOk(value: unknown): value is ProtectionStatusOk;
+export declare function isProtectionStatsOk(value: unknown): value is ProtectionStatsOk;
 export declare function isProxyConfigOk(value: unknown): value is ProxyConfigOk;
 export declare function isProxyConfigUpdateOk(value: unknown): value is ProxyConfigUpdateOk;
 export declare function isProxyConfigEditState(value: unknown): value is ProxyConfigEditState;
@@ -187,6 +275,7 @@ export declare function isEditableProxyConfigValues(value: unknown): value is Ed
 export declare function isPiiBackendName(value: unknown): value is PiiBackendName;
 export declare function normalizePiiBackends(value: unknown): PiiBackendName[] | undefined;
 export declare function isRestoreIntoToolsPolicy(value: unknown): value is RestoreIntoToolsPolicy;
+export declare function isProxyLogLevel(value: unknown): value is ProxyLogLevel;
 /**
  * Coerce a value to a {@link RestoreIntoToolsPolicy}: the three policy names pass through; the
  * historical booleans map `true`→`all` / `false`→`none` for cross-version tolerance; anything else
