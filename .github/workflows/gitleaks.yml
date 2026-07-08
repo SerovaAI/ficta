@@ -1,11 +1,11 @@
 name: gitleaks
 
-# Secret scanning: scan every push/PR and weekly, over full history.
+# Secret scanning: scan PRs and weekly, over full history.
 # Organization repos require GITLEAKS_LICENSE.
 
 on:
-  push:
   pull_request:
+    branches: [main]
   schedule:
     - cron: "23 6 * * 1" # Mondays, off the :00 mark
   workflow_dispatch:
