@@ -3,6 +3,7 @@
  * Prepare a ficta release locally.
  *
  * Usage:
+ *   node scripts/release.mjs                       # interactive: pick the bump from a menu
  *   node scripts/release.mjs prerelease [preid]
  *   node scripts/release.mjs stable
  *   node scripts/release.mjs patch|minor|major
@@ -22,16 +23,12 @@
 
 import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
+import { createInterface } from "node:readline/promises";
 
-const RELEASE_TARGET = process.argv[2];
+let releaseTarget = process.argv[2];
 const PREID = process.argv[3] ?? "next";
 const BUMP_TYPES = new Set(["prerelease", "stable", "release", "patch", "minor", "major"]);
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
-
-if (!RELEASE_TARGET || (!BUMP_TYPES.has(RELEASE_TARGET) && !SEMVER_RE.test(RELEASE_TARGET))) {
-  console.error("Usage: node scripts/release.mjs <prerelease|stable|patch|minor|major|x.y.z[-pre.n]> [preid]");
-  process.exit(1);
-}
 
 function run(command, options = {}) {
   console.log(`$ ${command}`);
@@ -179,13 +176,52 @@ function fail(message) {
   process.exit(1);
 }
 
+/** Interactive picker used when no target is passed: show each bump with its resulting version. */
+async function chooseReleaseTarget(version) {
+  if (!process.stdin.isTTY) {
+    fail(
+      "no release target given and stdin is not a TTY.\n" +
+        "Usage: node scripts/release.mjs <prerelease|stable|patch|minor|major|x.y.z[-pre.n]> [preid]",
+    );
+  }
+  // From a stable version, `stable` is a no-op; from a prerelease, `patch` == `stable`. Offer only the
+  // targets that make sense for the current version so every menu entry is a distinct, valid bump.
+  const targets = version.includes("-")
+    ? ["stable", "prerelease", "minor", "major"]
+    : ["patch", "minor", "major", "prerelease"];
+
+  console.log(`Current version: ${version}\n`);
+  targets.forEach((target, i) => console.log(`  ${i + 1}) ${target.padEnd(11)} → ${nextSemver(version, target, PREID)}`));
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = (await rl.question(`\nSelect a release [1-${targets.length}], or q to cancel: `)).trim();
+    if (answer === "" || answer.toLowerCase() === "q") fail("cancelled");
+    const idx = Number(answer) - 1;
+    if (!Number.isInteger(idx) || idx < 0 || idx >= targets.length) fail(`invalid selection: ${answer}`);
+    const chosen = targets[idx];
+    const confirm = (await rl.question(`\nRelease ${version} → ${nextSemver(version, chosen, PREID)}? [y/N]: `))
+      .trim()
+      .toLowerCase();
+    if (confirm !== "y" && confirm !== "yes") fail("cancelled");
+    return chosen;
+  } finally {
+    rl.close();
+  }
+}
+
 console.log("\n=== ficta release ===\n");
 
 const status = run("git status --porcelain", { silent: true });
 if (status.trim()) fail(`working tree is not clean:\n${status}`);
 
 const previousVersion = currentVersion();
-const version = nextSemver(previousVersion, RELEASE_TARGET, PREID);
+if (!releaseTarget) releaseTarget = await chooseReleaseTarget(previousVersion);
+if (!BUMP_TYPES.has(releaseTarget) && !SEMVER_RE.test(releaseTarget)) {
+  fail(`unknown release target: ${releaseTarget} (expected prerelease|stable|patch|minor|major or x.y.z[-pre.n])`);
+}
+
+const version = nextSemver(previousVersion, releaseTarget, PREID);
 assertNoTag(version);
 
 console.log(`Preparing ${previousVersion} -> ${version}\n`);
