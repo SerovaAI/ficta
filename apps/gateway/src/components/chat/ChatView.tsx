@@ -27,6 +27,11 @@ import {
 } from "@/lib/file-attachments";
 import { DEFAULT_REASONING_EFFORT, MODELS, type ModelChoice, type ReasoningEffort } from "@/lib/models";
 import type { ProtectionStatus } from "@/lib/protection-status";
+import {
+  clearRestoreHighlightCache,
+  createRestoreHighlightCache,
+  messagesWithCachedRestoreHighlights,
+} from "@/lib/restore-highlight-cache";
 import { hasRestoreHighlightMarkers, type RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
 import { uiToStored } from "@/lib/storage/messages";
 import { invalidateThreads, threadKeys } from "@/lib/storage/threadQueries";
@@ -118,7 +123,9 @@ export function ChatView({
   messagesRef.current = messages;
   const urlSynced = useRef(false);
   const startingThread = useRef(false);
-  const restoreHighlightsAvailable = transcriptHasRestoreHighlightMarkers(messages);
+  const restoreHighlightCache = useRef(createRestoreHighlightCache());
+  const displayMessages = messagesWithCachedRestoreHighlights(messages, restoreHighlightCache.current);
+  const restoreHighlightsAvailable = transcriptHasRestoreHighlightMarkers(displayMessages);
 
   const syncNewThreadUrl = () => {
     if (threadId || urlSynced.current) return;
@@ -298,6 +305,7 @@ export function ChatView({
       return;
     }
     clear();
+    clearRestoreHighlightCache(restoreHighlightCache.current);
     setInput("");
     setAttachments([]);
     setUploadWarning(undefined);
@@ -331,7 +339,7 @@ export function ChatView({
           />
 
           <MessageList
-            messages={messages}
+            messages={displayMessages}
             isLoading={isLoading}
             onRegenerate={reload}
             onPickSuggestion={pickSuggestion}
