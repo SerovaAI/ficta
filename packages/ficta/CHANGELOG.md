@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.3
+
+### Patch Changes
+
+- [`0edb7be`](https://github.com/SerovaAI/ficta/commit/0edb7be46f58a7dbc674687877a24d1c5ba00185) Thanks [@steflsd](https://github.com/steflsd)! - Limit the shipped Presidio recognizer registry to English-language recognizers so the sidecar no longer declares unsupported language variants at startup.
+
+- [#18](https://github.com/SerovaAI/ficta/pull/18) [`6e5ff5e`](https://github.com/SerovaAI/ficta/commit/6e5ff5e33e56ee7c4a8010d6d1e218caf90b2c6a) Thanks [@steflsd](https://github.com/steflsd)! - Add restore-highlight surrogate metadata for Gateway privacy display toggles and keep streamed marker output from being restored twice.
+
+- Updated dependencies [[`6e5ff5e`](https://github.com/SerovaAI/ficta/commit/6e5ff5e33e56ee7c4a8010d6d1e218caf90b2c6a), [`bac69df`](https://github.com/SerovaAI/ficta/commit/bac69df7879228a70a2573b1f436be39f5adc7b8)]:
+  - @serovaai/ficta-protocol@0.1.3
+
 ## 0.1.2
 
 ### Patch Changes
