@@ -34,6 +34,7 @@ export interface VaultTraceValue {
 
 interface RestoreMarkers {
   start: string;
+  metadata?: string;
   end: string;
 }
 
@@ -302,7 +303,7 @@ export abstract class VaultView {
       const value = this.valueFor(m);
       if (value === undefined) return m;
       this.restored.add(value);
-      return markRestoredValue(value, opts.markers);
+      return markRestoredValue(value, m, opts.markers);
     });
   }
 
@@ -407,7 +408,7 @@ export abstract class VaultView {
       const value = this.valueFor(m);
       if (value === undefined) return m;
       this.restored.add(value);
-      return jsonStringEscape(markRestoredValue(value, opts.markers));
+      return jsonStringEscape(markRestoredValue(value, m, opts.markers));
     });
   }
 
@@ -933,8 +934,11 @@ function jsonStringEscape(value: string): string {
   return json.slice(1, -1);
 }
 
-function markRestoredValue(value: string, markers: RestoreMarkers | undefined): string {
-  return markers ? `${markers.start}${value}${markers.end}` : value;
+function markRestoredValue(value: string, surrogate: string, markers: RestoreMarkers | undefined): string {
+  if (!markers) return value;
+  return markers.metadata
+    ? `${markers.start}${surrogate}${markers.metadata}${value}${markers.end}`
+    : `${markers.start}${value}${markers.end}`;
 }
 
 function containsKnownOutsidePaths(

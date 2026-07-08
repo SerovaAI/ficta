@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   FICTA_RESTORE_HIGHLIGHT_END,
   FICTA_RESTORE_HIGHLIGHT_HEADER,
+  FICTA_RESTORE_HIGHLIGHT_METADATA,
   FICTA_RESTORE_HIGHLIGHT_START,
 } from "@serovaai/ficta-protocol";
 import { describe, expect, it, vi } from "vitest";
@@ -256,8 +257,14 @@ describe("loopback PII round-trip through the real proxy", () => {
 
       expect(res.status).toBe(200);
       expect(upstreamSawHighlightHeader).toBeUndefined();
-      expect(delta).toContain(`${FICTA_RESTORE_HIGHLIGHT_START}${EMAIL}${FICTA_RESTORE_HIGHLIGHT_END}`);
-      expect(delta).not.toMatch(SURROGATE);
+      const markerStart = delta.indexOf(FICTA_RESTORE_HIGHLIGHT_START);
+      const markerEnd = delta.indexOf(FICTA_RESTORE_HIGHLIGHT_END, markerStart);
+      const payload = delta.slice(markerStart + FICTA_RESTORE_HIGHLIGHT_START.length, markerEnd);
+      const [surrogate, value] = payload.split(FICTA_RESTORE_HIGHLIGHT_METADATA);
+      expect(markerStart).toBeGreaterThanOrEqual(0);
+      expect(markerEnd).toBeGreaterThan(markerStart);
+      expect(surrogate).toMatch(SURROGATE);
+      expect(value).toBe(EMAIL);
     } finally {
       proxy?.close();
       await close(upstream);

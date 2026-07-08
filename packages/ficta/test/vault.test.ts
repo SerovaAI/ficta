@@ -352,7 +352,7 @@ describe("vault", () => {
     const vault = new Vault([{ value: toolSecret }, { value: siblingSecret }]);
     const toolSurrogate = vault.redactText(toolSecret).text;
     const siblingSurrogate = vault.redactText(siblingSecret).text;
-    const markers = { start: "«", end: "»" };
+    const markers = { start: "«", metadata: "§", end: "»" };
     const sse = [
       `data: ${JSON.stringify({
         choices: [
@@ -379,7 +379,7 @@ describe("vault", () => {
       .map((toolCall) => toolCall?.function?.arguments ?? "")
       .join("");
 
-    expect(reasoning).toBe(`see ${markers.start}${siblingSecret}${markers.end}`); // restored AND highlighted
+    expect(reasoning).toBe(`see ${markers.start}${siblingSurrogate}${markers.metadata}${siblingSecret}${markers.end}`); // restored AND highlighted
     expect(toolArgs).toContain(toolSurrogate); // the withheld tool arg keeps its placeholder
     expect(toolArgs).not.toContain(toolSecret);
     expect(vault.withheldFromToolsCount).toBe(1);

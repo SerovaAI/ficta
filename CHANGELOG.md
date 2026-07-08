@@ -15,6 +15,7 @@
 - Moved chat model selection into the composer with reasoning settings nested under the model control for OpenAI models.
 - Added an admin-only Gateway redaction proof view backed by a values-free proxy stats endpoint.
 - Added an opt-in restore-highlight visualization for the redaction-proof demo: with `FICTA_TRACE_AUDIT=1` the proxy wraps the values it restores into a response in highlight markers, and the Gateway renders them as highlighted spans in the chat answer while stripping the markers everywhere else — message storage, model replay, and the collapsed reasoning panel. Highlighting is applied consistently across streamed text, JSON, and the sibling fields of tool-adjacent events, so restored values are never shown with raw marker text.
+- Added a live Gateway privacy display toggle for trace-audit restore highlights: restored spans now carry their surrogate metadata, and an icon-only top-bar control can switch the current chat view between restored values and `FICTA_…` surrogates without changing replay or storage.
 - Split user settings and admin controls into separate popouts, with admin sections for general settings, proxy configuration, and redaction proof.
 
 ### Changed
