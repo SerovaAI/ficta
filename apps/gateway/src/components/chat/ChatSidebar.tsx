@@ -6,13 +6,19 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { isAdmin } from "@/lib/auth/types";
 import { useAuthState } from "@/lib/auth/useAuthState";
-import { cancelThreadDeletion, scheduleThreadDeletion } from "@/lib/storage/threadDeletion";
+import {
+  cancelThreadDeletion,
+  scheduleThreadDeletion,
+  THREAD_DELETION_UNDO_DELAY_MS,
+} from "@/lib/storage/threadDeletion";
 import { threadKeys, threadsQueryOptions } from "@/lib/storage/threadQueries";
 import { deleteThread } from "@/lib/storage/threads";
 import type { ThreadSummary } from "@/lib/storage/types";
 import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "./UserMenu";
+
+const CHAT_DELETE_UNDO_TOAST_ID = "chat-delete-undo";
 
 /**
  * Collapsible chat-history sidebar. On `md+` it's a persistent column that collapses to a 48px icon rail
@@ -102,12 +108,15 @@ export function ChatSidebar({
     });
 
     toast(`Deleted "${truncateTitle(thread.title)}"`, {
+      id: CHAT_DELETE_UNDO_TOAST_ID,
+      duration: THREAD_DELETION_UNDO_DELAY_MS,
       action: {
         label: "Undo",
         onClick: () => {
           if (!cancelThreadDeletion(id)) return;
           queryClient.setQueryData(threadKeys.all, previous);
           if (wasActive) navigate({ to: "/chat/$threadId", params: { threadId: id } });
+          toast.dismiss(CHAT_DELETE_UNDO_TOAST_ID);
         },
       },
     });
