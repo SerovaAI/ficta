@@ -1,6 +1,6 @@
 // Microbenchmark of the vault's core ops, isolated from network/model latency.
 // Run: pnpm exec tsx bench/redaction-bench.mts
-import { Vault } from "../src/vault.js";
+import { Vault } from "../src/engine/vault.js";
 
 const ALNUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 function randStr(len: number): string {

@@ -15,7 +15,7 @@ const RESTORE_LITERAL_TAGS = [RESTORE_HIGHLIGHT_TAG];
  * blocks that appear mid-stream (open code fences, half-written tables), with syntax-highlighted,
  * copyable code blocks built in. Swap the dependency here without touching callers.
  */
-export const Markdown = memo(function Markdown({
+const Markdown = memo(function Markdown({
   content,
   restoreDisplayMode = "values",
 }: {

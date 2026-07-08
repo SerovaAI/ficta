@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.1.2
+
+### Patch Changes
+
+- [`ee785fe`](https://github.com/SerovaAI/ficta/commit/ee785feb121c0e88f233792143cdf017f6be58dd) Thanks [@steflsd](https://github.com/steflsd)! - Remove the unused `redactableBodyText` export — use `redactableBodyLeaves` (the same JSON string leaves, returned unjoined). Internal dead-code cleanup; redaction behavior is unchanged.
+
+- Updated dependencies []:
+  - @serovaai/ficta-protocol@0.1.2
 
 ## 0.1.1 - 2026-07-08
 
@@ -66,7 +73,7 @@
 - Made the PII detection backend selectable and added a Microsoft Presidio backend. The active backend is chosen via `FICTA_PII_BACKEND` ↔ `[pii] backend` (default `regex`, so existing behavior is unchanged) — a registry of backends with exactly one selected at a time. The new `presidio` backend plugs in behind the existing `PiiRecognizer` seam and calls a `presidio-analyzer` REST sidecar (`POST /analyze`) for each request body — header/query surfaces stay regex-based — mapping detected spans to the same tokenize-on-egress / restore-on-response path as any protected value, with an entity allowlist, score threshold, minimum length guard, and correct code-point offset handling. You run the sidecar (e.g. via Docker) and point ficta at it with `[pii.presidio] url` (`FICTA_PII_PRESIDIO_URL`, default `http://127.0.0.1:5002`); language, score threshold, entity allowlist, and timeout are configurable. See `docs/plugins.md`.
 - `ficta setup` now prompts for the PII backend (and, for Presidio, the URL and the fail-closed choice) when PII detection is enabled, persisting `[pii] backend`, `[pii.presidio] url`, and `[pii] fail_closed`.
 - `ficta doctor` now probes the Presidio sidecar's `/health` when `presidio` is the selected PII backend and warns if it is unreachable, and warns about an unknown configured backend name.
-- Added a configurable, **core-enforced** detector failure policy. When a detector backend can't run (e.g. the Presidio sidecar is down), the decision to fail-open (skip detection and forward) or fail-closed (block with a `503 ficta_blocked`) is resolved as *per-detector override ?? global default*: a global `[detection] fail_closed` ↔ `FICTA_FAIL_CLOSED_DETECTION` (default off) applies to all detectors, and `[pii] fail_closed` ↔ `FICTA_PII_FAIL_CLOSED` overrides it for PII (unset = defer to the global). The detector only *signals* the outage (a new `DetectorPlugin.failClosed()` exposes config); the engine resolves the policy and the transport returns the 503 — plugins never enforce. Independent of the global `FICTA_FAIL_CLOSED`, which guards registered-secret leaks (different condition, default on).
+- Added a configurable, **core-enforced** detector failure policy. When a detector backend can't run (e.g. the Presidio sidecar is down), the decision to fail-open (skip detection and forward) or fail-closed (block with a `503 ficta_blocked`) is resolved as _per-detector override ?? global default_: a global `[detection] fail_closed` ↔ `FICTA_FAIL_CLOSED_DETECTION` (default off) applies to all detectors, and `[pii] fail_closed` ↔ `FICTA_PII_FAIL_CLOSED` overrides it for PII (unset = defer to the global). The detector only _signals_ the outage (a new `DetectorPlugin.failClosed()` exposes config); the engine resolves the policy and the transport returns the 503 — plugins never enforce. Independent of the global `FICTA_FAIL_CLOSED`, which guards registered-secret leaks (different condition, default on).
 - Added a safe proxy `/__ficta/status` endpoint plus internal web-chat badge/banner polling so Presidio outages are visible in the UI, including whether the active detector policy is fail-open (forwarding without Presidio screening) or fail-closed (blocking before the model).
 - Added text-file attachments to the internal web chat. Supported text files are inlined into the chat request so ficta can redact them, while PDF/DOCX uploads are blocked with a warning to paste the relevant context until local extraction exists.
 - Added self-serve WorkOS workspace onboarding and in-app workspace creation so org-less users can create or select an organization without using the WorkOS dashboard.
@@ -83,15 +90,16 @@
 - The PII detection backend is now purely exclusive — the selected backend is the only backend, with no cross-backend fallback. If the selected backend can't run, behavior follows the core-enforced detector failure policy (see Added): fail-open skips detection for that request, fail-closed blocks it. The startup banner and `ficta doctor` show the active backend, the resolved failure mode, and the last recorded sidecar failure.
 - Consolidated the four ad-hoc verbosity flags into one leveled env var, `FICTA_LOG_LEVEL` (`silent` < `error` < `warn` < `info` < `debug` < `trace`; default `info` standalone, and the agent wrapper sets `silent` so proxy output never garbles the TUI). `trace` is the raw-body tier — it writes real request/response bodies to disk — so, like the old `FICTA_LOG_BODIES`, it is runtime-only and never persisted to `config.toml`. `ficta doctor` reports the active level and still warns when `trace` is set. This is a clean break with no compatibility aliases:
 
-  | Removed | Replacement |
-  | --- | --- |
-  | `FICTA_SILENT=1` | `FICTA_LOG_LEVEL=silent` (the wrapper's default) |
-  | `FICTA_QUIET=1` / `[runtime] quiet` | default `FICTA_LOG_LEVEL=info` — non-model (unknown-wire) request lines now need `debug` |
+  | Removed                                       | Replacement                                                                                                                                    |
+  | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `FICTA_SILENT=1`                              | `FICTA_LOG_LEVEL=silent` (the wrapper's default)                                                                                               |
+  | `FICTA_QUIET=1` / `[runtime] quiet`           | default `FICTA_LOG_LEVEL=info` — non-model (unknown-wire) request lines now need `debug`                                                       |
   | `FICTA_LOG_BODIES=1` / `[logging] log_bodies` | `FICTA_LOG_LEVEL=trace` (also unmutes the console, so under a wrapped agent it now garbles the TUI — capture bodies with the standalone proxy) |
-  | `FICTA_VERBOSE=1` | `--ficta-verbose` (startup diagnostics only; proxy logs stay silent) or `FICTA_LOG_LEVEL=debug` |
+  | `FICTA_VERBOSE=1`                             | `--ficta-verbose` (startup diagnostics only; proxy logs stay silent) or `FICTA_LOG_LEVEL=debug`                                                |
 
   Stale `log_bodies` / `quiet` keys in an existing `config.toml` are ignored (they no longer map to anything) and dropped the next time `ficta setup` rewrites the file.
-- Proxy runtime logging now runs on **pino** (with **pino-pretty**). All proxy log output — the listening banner, per-request `→`/`←` summaries, `🔒 kept` / `♻️ restored`, and upstream/blocked errors — is emitted as structured records to **stderr** (stdout belongs to the wrapped agent's TUI): colorized and human-readable when stderr is an interactive terminal, newline-delimited JSON when redirected or piped (aggregator-friendly; `pid`/`hostname` omitted). `FICTA_LOG_LEVEL` maps directly onto pino's levels, so the level semantics above are unchanged. Command *results* — `ficta --version`, `--help`, the `doctor` report, and `install`/`uninstall`/`enable`/`disable` status — stay plain stdout/stderr so scripts and pipes keep working. The compact aligned startup box is replaced by the structured `ficta listening …` record; per-source registry discovery detail (the old `--ficta-verbose` report) now logs at `debug`.
+
+- Proxy runtime logging now runs on **pino** (with **pino-pretty**). All proxy log output — the listening banner, per-request `→`/`←` summaries, `🔒 kept` / `♻️ restored`, and upstream/blocked errors — is emitted as structured records to **stderr** (stdout belongs to the wrapped agent's TUI): colorized and human-readable when stderr is an interactive terminal, newline-delimited JSON when redirected or piped (aggregator-friendly; `pid`/`hostname` omitted). `FICTA_LOG_LEVEL` maps directly onto pino's levels, so the level semantics above are unchanged. Command _results_ — `ficta --version`, `--help`, the `doctor` report, and `install`/`uninstall`/`enable`/`disable` status — stay plain stdout/stderr so scripts and pipes keep working. The compact aligned startup box is replaced by the structured `ficta listening …` record; per-source registry discovery detail (the old `--ficta-verbose` report) now logs at `debug`.
 
 ### Fixed
 

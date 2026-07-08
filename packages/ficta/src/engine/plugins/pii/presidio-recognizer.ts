@@ -238,7 +238,7 @@ function makeCodepointIndexer(text: string): { slice(start: number, end: number)
   };
 }
 
-/** Newline-first chunking (redactableBodyText joins JSON leaves with "\n"); hard-split giant lines. */
+/** Newline-first chunking for joined redactable body leaves; hard-split giant lines. */
 export function chunkText(text: string): string[] {
   if (text.length <= MAX_CHUNK_CHARS) return [text];
   const chunks: string[] = [];

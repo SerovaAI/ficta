@@ -1,0 +1,11 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.1.4/schema.json",
+  "changelog": ["@changesets/changelog-github", { "repo": "SerovaAI/ficta" }],
+  "commit": false,
+  "fixed": [["@serovaai/ficta", "@serovaai/ficta-protocol"]],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": ["@serovaai/ficta-gateway", "@serovaai/ficta-web"]
+}

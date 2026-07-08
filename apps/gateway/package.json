@@ -52,7 +52,6 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "latest",
     "drizzle-kit": "^0.31.10",
-    "nitro": "latest",
     "typescript": "^6.0.3",
     "vite": "latest",
     "vitest": "^4.1.10"

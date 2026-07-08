@@ -1183,21 +1183,11 @@ function collectStrings(value: unknown, out: string[]): void {
 }
 
 /**
- * The subset of a request body that JSON-aware redaction can actually rewrite: the string leaves
- * (values + object keys) of a JSON document, joined by newlines, or the whole raw body when it is
- * not JSON. Detection should run over THIS text, not the raw body, so that "detected == redactable":
- * a value that appears only as a JSON *number* leaf (e.g. `{"card": 4111111111111111}`) is neither
- * detected nor rewritten, so it never trips the fail-closed leak gate. Numeric-primitive PII is a
- * documented limitation — a surrogate is a string and cannot replace a JSON number without changing
- * the leaf's type. Registered numeric secrets are unaffected: they enter the permanent vault
- * directly (not via detection) and the leak backstop still scans primitives for them.
+ * The individual redactable string leaves (values + object keys) of a JSON body; `[body]` for non-JSON.
+ * Detection runs over these leaves, not the raw body, so "detected == redactable": a value that appears
+ * only as a JSON number leaf is neither detected nor rewritten, and it never trips the fail-closed leak
+ * gate. Registered numeric secrets still enter the permanent vault directly.
  */
-export function redactableBodyText(body: string): string {
-  if (!body) return body;
-  return redactableBodyLeaves(body).join("\n");
-}
-
-/** The individual redactable string leaves (values + object keys) of a body; `[body]` for non-JSON. */
 export function redactableBodyLeaves(body: string): string[] {
   if (!body) return [];
   try {

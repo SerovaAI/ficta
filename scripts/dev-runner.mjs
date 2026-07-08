@@ -36,6 +36,7 @@ const DEFAULT_OPENMED_STARTUP_TIMEOUT_MS = 300_000;
 
 const HEALTH_POLL_MS = 500;
 const STOP_TIMEOUT_MS = 5_000;
+const DEFAULT_DEV_FILTERS = ["--filter=@serovaai/ficta", "--filter=@serovaai/ficta-gateway"];
 
 const env = { ...process.env };
 const forwardArgs = process.argv.slice(2);
@@ -48,7 +49,7 @@ try {
   if (presidio) sidecars.push(presidio);
   const openmed = await maybeStartOpenmed(env);
   if (openmed) sidecars.push(openmed);
-  run("pnpm", ["dev:all", ...forwardArgs], env, sidecars);
+  run("pnpm", ["dev:all", ...DEFAULT_DEV_FILTERS, ...forwardArgs], env, sidecars);
 } catch (err) {
   await stopSidecars(sidecars);
   console.error(`[dev] ${err instanceof Error ? err.message : String(err)}`);
@@ -204,7 +205,7 @@ async function maybeStartDocConverter(env) {
   } catch (err) {
     // Document parsing is on by default but optional. When it was explicitly requested
     // (FICTA_DOC_CONVERTER_MANAGED=1) a failure is fatal; otherwise degrade gracefully — e.g. Docker
-    // isn't installed or the image won't build — so `pnpm dev` still brings up the proxy and web app.
+    // isn't installed or the image won't build — so `pnpm dev` still brings up the proxy and Gateway.
     if (explicit === true) throw err;
     const reason = err instanceof Error ? err.message : String(err);
     console.warn(`[dev] document converter unavailable (${reason}); continuing without document parsing.`);
