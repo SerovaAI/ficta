@@ -1,7 +1,7 @@
 name: gitleaks
 
-# Secret scanning for a public repo: scan every push/PR and weekly, over full history.
-# gitleaks-action v2 is free for personal accounts and public repos (org repos need GITLEAKS_LICENSE).
+# Secret scanning: scan every push/PR and weekly, over full history.
+# Organization repos require GITLEAKS_LICENSE.
 
 on:
   push:
@@ -14,9 +14,10 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # full history, not just the tip, so old commits are scanned too
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}

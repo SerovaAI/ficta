@@ -37,6 +37,7 @@
 
 ### Fixed
 
+- Fixed the gitleaks GitHub Actions workflow by moving it to the current Node 24 action versions and passing the required organization `GITLEAKS_LICENSE` secret.
 - Hardened the public website with branded 404/error fallbacks, no-JS guidance, keyboard focus paths, and clipboard manual-copy recovery.
 - Restored Gateway local-mode account-menu consistency by representing `AUTH_PROVIDER=none` as a local user and keeping Admin/Settings in the same menu shape used by hosted auth.
 - Improved public website responsive behavior for tablet touch targets and very narrow mobile widths.
