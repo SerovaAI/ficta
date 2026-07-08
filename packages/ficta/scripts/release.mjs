@@ -191,7 +191,9 @@ async function chooseReleaseTarget(version) {
     : ["patch", "minor", "major", "prerelease"];
 
   console.log(`Current version: ${version}\n`);
-  targets.forEach((target, i) => console.log(`  ${i + 1}) ${target.padEnd(11)} → ${nextSemver(version, target, PREID)}`));
+  for (const [i, target] of targets.entries()) {
+    console.log(`  ${i + 1}) ${target.padEnd(11)} → ${nextSemver(version, target, PREID)}`);
+  }
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
