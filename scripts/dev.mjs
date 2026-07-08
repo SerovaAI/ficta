@@ -28,6 +28,6 @@ runWithDevEnvironment({
 
 function printHelp() {
   console.log(
-    `Usage: pnpm dev [-- --doppler | --no-doppler]\n\nStarts the proxy, web apps, and managed local dev sidecars. By default this\nwrapper uses Doppler when the Doppler CLI is installed, otherwise it loads\nlocal .env files and starts the same dev tasks without Doppler.\n\nOptions:\n  --doppler      Force Doppler secret injection\n  --no-doppler   Force local .env mode\n`,
+    `Usage: pnpm dev [-- --doppler | --no-doppler]\n\nStarts the proxy, Gateway app, and managed local dev sidecars. It does not\nstart the public website; use pnpm web:dev for that, or pnpm dev:all for every\nworkspace dev task. By default this wrapper uses Doppler when the Doppler CLI\nis installed, otherwise it loads local .env files and starts the same dev tasks\nwithout Doppler.\n\nOptions:\n  --doppler      Force Doppler secret injection\n  --no-doppler   Force local .env mode\n`,
   );
 }

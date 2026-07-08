@@ -27,17 +27,18 @@
     "web:typecheck": "pnpm --filter @serovaai/ficta-web typecheck",
     "dev:all": "turbo run dev",
     "update": "pnpm -r update -i -L",
-    "//release": "Local release prep for @serovaai/ficta (bump + changelog + tag). Pushing the tag triggers CI to publish; run npm publish from packages/ficta only as a manual escape hatch.",
-    "release": "pnpm --filter @serovaai/ficta release",
-    "release:check": "pnpm --filter @serovaai/ficta release:check",
-    "release:prerelease": "pnpm --filter @serovaai/ficta release:prerelease",
-    "release:stable": "pnpm --filter @serovaai/ficta release:stable",
-    "release:patch": "pnpm --filter @serovaai/ficta release:patch",
-    "release:minor": "pnpm --filter @serovaai/ficta release:minor",
-    "release:major": "pnpm --filter @serovaai/ficta release:major"
+    "//release": "Releases are managed by Changesets. Author notes with `pnpm changeset`; CI (.github/workflows/publish.yml) opens a Version PR and, on merge, runs `release` to publish @serovaai/ficta + @serovaai/ficta-protocol together via npm OIDC.",
+    "changeset": "changeset",
+    "release": "changeset publish",
+    "knip": "knip"
   },
   "devDependencies": {
-    "turbo": "^2.10.4"
+    "@changesets/changelog-github": "^0.7.0",
+    "@changesets/cli": "^2.31.0",
+    "@types/node": "^26.1.0",
+    "knip": "^6.25.0",
+    "turbo": "^2.10.4",
+    "typescript": "^6.0.3"
   },
   "packageManager": "pnpm@11.10.0+sha512.0b7f8b98060031904c017e3a41eb187a16d40eeb829b95c4f8cb03681761fc4ab53dd219115b9b447f4dce1a05a214764461e7d3703392a9f32f9511ce8c86c8"
 }

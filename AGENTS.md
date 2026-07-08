@@ -2,9 +2,15 @@
 
 ## Changelog
 
-Location: `CHANGELOG.md`.
+Releases are managed by [Changesets](https://github.com/changesets/changesets). The per-package `CHANGELOG.md` files are **generated** — never hand-edit them.
 
-For any meaningful change, update the `## Unreleased` section before finishing. A meaningful change is anything users or maintainers would expect to see in release notes, including:
+For any meaningful change to a **published** package (`@serovaai/ficta` or `@serovaai/ficta-protocol`), add a changeset before finishing:
+
+```
+pnpm changeset
+```
+
+Pick the affected package(s) and bump type (patch/minor/major), write a one-line summary, and commit the generated `.changeset/*.md` file with your change. A meaningful change is anything users or maintainers would expect to see in release notes, including:
 
 - new features, commands, integrations, or supported flows;
 - bug fixes;
@@ -14,13 +20,11 @@ For any meaningful change, update the `## Unreleased` section before finishing. 
 
 Rules:
 
-- Read the current `## Unreleased` section before editing it.
-- During normal development, only edit `## Unreleased`.
-- Treat previously released version sections as immutable history. Do not add, remove, move, rewrite, or recategorize bullets in released sections.
-- The only exception is the release script's promotion step, which turns the current `## Unreleased` notes into a new version section at release time.
-- Use clear categories when helpful: `### Added`, `### Changed`, `### Fixed`, `### Removed`, or `### Security`. If `## Unreleased` is using plain bullets, keep that style instead of adding empty headings.
-- Skip changelog entries for purely internal refactors, test-only changes, formatting, or agent-instruction-only changes that do not affect shipped behavior.
-- When unsure whether a change is meaningful, add a short changelog bullet.
+- `@serovaai/ficta` and `@serovaai/ficta-protocol` are a **fixed pair** — they always release together at the same version, so a changeset selecting either one bumps both.
+- The apps (`@serovaai/ficta-gateway`, `@serovaai/ficta-web`) are private and not published; they need no changeset.
+- Skip changesets for purely internal refactors, test-only changes, formatting, or agent-instruction-only changes that do not affect shipped behavior.
+- When unsure whether a change is meaningful, add a short changeset.
+- Releasing is automated: on merge to `main`, CI opens a "Version Packages" PR; merging that PR publishes to npm. Never bump versions or edit changelogs by hand.
 
 ## Private notes
 

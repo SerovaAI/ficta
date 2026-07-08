@@ -49,13 +49,6 @@ function validateSnapshot(input: unknown): { threadId: string; messages: StoredM
   return { threadId: i.threadId, messages: i.messages.map(toStoredMessage) };
 }
 
-function validateRename(input: unknown): { threadId: string; title: string } {
-  const i = asObject(input);
-  if (typeof i.threadId !== "string" || !i.threadId) throw new Error("invalid threadId");
-  if (typeof i.title !== "string") throw new Error("invalid title");
-  return { threadId: i.threadId, title: i.title };
-}
-
 export const fetchThreads = createServerFn({ method: "GET" }).handler(async (): Promise<ThreadSummary[]> => {
   const { userId, orgId } = await requireScope();
   return (await getStorage()).listThreads(userId, orgId);
@@ -80,13 +73,6 @@ export const saveThread = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<void> => {
     const { userId, orgId } = await requireScope();
     await (await getStorage()).saveThreadSnapshot(userId, orgId, data.threadId, data.messages);
-  });
-
-export const renameThread = createServerFn({ method: "POST" })
-  .validator(validateRename)
-  .handler(async ({ data }): Promise<void> => {
-    const { userId, orgId } = await requireScope();
-    await (await getStorage()).renameThread(userId, orgId, data.threadId, data.title);
   });
 
 export const deleteThread = createServerFn({ method: "POST" })
