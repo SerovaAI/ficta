@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { optionalScope, requireAdminScope, requireUserId } from "@/lib/auth/guards.server";
 import { isReasoningEffort, MODELS } from "@/lib/models";
 import { getStorage } from "./storage.server";
-import { type InstanceSettings, modelKey, type UserSettings } from "./types";
+import { type InstanceSettings, modelKey, normalizeSuggestedPrompts, type UserSettings } from "./types";
 
 /**
  * Server functions for reading/writing settings. They mirror `fetchAuthState`: the createServerFn boundary
@@ -55,6 +55,9 @@ function validateInstancePatch(input: unknown): Partial<InstanceSettings> {
     // Keep only keys backed by a real model. An empty result means "all allowed" (see isModelAllowed),
     // so an admin unchecking everything can never brick chat.
     patch.allowedModels = list.filter((k): k is string => typeof k === "string" && MODEL_KEYS.has(k));
+  }
+  if ("suggestedPrompts" in i) {
+    patch.suggestedPrompts = normalizeSuggestedPrompts(i.suggestedPrompts);
   }
   return patch;
 }
