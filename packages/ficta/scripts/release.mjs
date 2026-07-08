@@ -58,6 +58,16 @@ function setVersion(version) {
   writePackageJson(pkg);
 }
 
+// @serovaai/ficta depends on @serovaai/ficta-protocol via `workspace:^`, and publish.mjs ships both at
+// the same version and aborts if they differ — so the protocol package must be bumped in lockstep here.
+const PROTOCOL_PACKAGE_PATH = "../protocol/package.json";
+
+function setProtocolVersion(version) {
+  const pkg = JSON.parse(readFileSync(PROTOCOL_PACKAGE_PATH, "utf8"));
+  pkg.version = version;
+  writeFileSync(PROTOCOL_PACKAGE_PATH, `${JSON.stringify(pkg, null, 2)}\n`);
+}
+
 function nextSemver(version, target, preid) {
   if (SEMVER_RE.test(target)) {
     if (compareSemver(target, version) <= 0)
@@ -228,13 +238,14 @@ assertNoTag(version);
 
 console.log(`Preparing ${previousVersion} -> ${version}\n`);
 setVersion(version);
+setProtocolVersion(version);
 promoteChangelog(version);
 
 run("pnpm verify");
 run("pnpm build");
 run("pnpm release:check");
 
-run("git add package.json CHANGELOG.md");
+run("git add package.json CHANGELOG.md ../protocol/package.json");
 run(`git commit -m ${shellEscape(`chore: release v${version}`)}`);
 run(`git tag ${shellEscape(`v${version}`)}`);
 
