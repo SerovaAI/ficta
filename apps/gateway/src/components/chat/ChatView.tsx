@@ -27,12 +27,7 @@ import {
 } from "@/lib/file-attachments";
 import { DEFAULT_REASONING_EFFORT, MODELS, type ModelChoice, type ReasoningEffort } from "@/lib/models";
 import type { ProtectionStatus } from "@/lib/protection-status";
-import {
-  clearRestoreHighlightCache,
-  createRestoreHighlightCache,
-  messagesWithCachedRestoreHighlights,
-} from "@/lib/restore-highlight-cache";
-import { hasRestoreHighlightMarkers, type RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
+import type { RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
 import { uiToStored } from "@/lib/storage/messages";
 import { invalidateThreads, threadKeys } from "@/lib/storage/threadQueries";
 import { saveThread, startThread } from "@/lib/storage/threads";
@@ -45,6 +40,7 @@ import {
 } from "@/lib/storage/types";
 import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
 import { useProtectionStatus } from "@/lib/use-protection-status";
+import { clearRestoreHighlightDisplay, useRestoreHighlightDisplay } from "@/lib/use-restore-highlight-display";
 import { useSidebar } from "@/lib/use-sidebar";
 import { ChatSidebar } from "./ChatSidebar";
 import { Composer, type ComposerHandle } from "./Composer";
@@ -123,9 +119,7 @@ export function ChatView({
   messagesRef.current = messages;
   const urlSynced = useRef(false);
   const startingThread = useRef(false);
-  const restoreHighlightCache = useRef(createRestoreHighlightCache());
-  const displayMessages = messagesWithCachedRestoreHighlights(messages, restoreHighlightCache.current);
-  const restoreHighlightsAvailable = transcriptHasRestoreHighlightMarkers(displayMessages);
+  const { displayMessages, restoreHighlightsAvailable } = useRestoreHighlightDisplay(tid, messages);
 
   const syncNewThreadUrl = () => {
     if (threadId || urlSynced.current) return;
@@ -305,7 +299,7 @@ export function ChatView({
       return;
     }
     clear();
-    clearRestoreHighlightCache(restoreHighlightCache.current);
+    clearRestoreHighlightDisplay(queryClient, tid);
     setInput("");
     setAttachments([]);
     setUploadWarning(undefined);
@@ -428,12 +422,6 @@ function sendPosture(status: ProtectionStatus | undefined): SendPosture {
   }
   if (!status.protection.protecting) return { kind: "passthrough" };
   return { kind: "ok" };
-}
-
-function transcriptHasRestoreHighlightMarkers(messages: UIMessage[]): boolean {
-  return messages.some((message) =>
-    message.parts.some((part) => part.type === "text" && hasRestoreHighlightMarkers(part.content)),
-  );
 }
 
 function userMessage(content: string): UIMessage {

@@ -1,16 +1,17 @@
 import type { UIMessage } from "@tanstack/ai-react";
-import { type RestoreHighlightDisplayMode, stripRestoreHighlightMarkers } from "@/lib/restore-highlights";
+import type { RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
 import { cn } from "@/lib/utils";
 import { MessageActions } from "./MessageActions";
 import { MessageParts } from "./MessageParts";
 import { StreamingIndicator } from "./StreamingIndicator";
 
+// The display transcript already carries marker-free visible text (see use-restore-highlight-display),
+// so copy/aria text is a plain join — no marker stripping needed here.
 function textOf(message: UIMessage): string {
-  const text = message.parts
+  return message.parts
     .filter((p): p is Extract<typeof p, { type: "text" }> => p.type === "text")
     .map((p) => p.content)
     .join("");
-  return stripRestoreHighlightMarkers(text);
 }
 
 export function MessageBubble({

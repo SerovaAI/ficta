@@ -1,7 +1,11 @@
 import type { UIMessage } from "@tanstack/ai-react";
 import { ChevronRight } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
-import { type RestoreHighlightDisplayMode, stripRestoreHighlightMarkers } from "@/lib/restore-highlights";
+import {
+  type RestoreHighlightDisplayMode,
+  type RestoreHighlightPart,
+  stripRestoreHighlightMarkers,
+} from "@/lib/restore-highlights";
 
 const Markdown = lazy(() => import("./Markdown"));
 
@@ -24,7 +28,11 @@ export function MessageParts({
             return (
               // biome-ignore lint/suspicious/noArrayIndexKey: streamed parts are append-only, index is stable
               <Suspense key={i} fallback={<MarkdownFallback content={part.content} />}>
-                <Markdown content={part.content} restoreDisplayMode={restoreDisplayMode} />
+                <Markdown
+                  content={part.content}
+                  restorations={(part as RestoreHighlightPart).restorations}
+                  restoreDisplayMode={restoreDisplayMode}
+                />
               </Suspense>
             );
           case "thinking":

@@ -1,10 +1,10 @@
 import { memo, type ReactNode, useMemo } from "react";
 import { Streamdown } from "streamdown";
 import {
-  hasRestoreHighlightMarkers,
   RESTORE_HIGHLIGHT_TAG,
+  type RestoreHighlight,
   type RestoreHighlightDisplayMode,
-  restoreHighlightsToHtml,
+  renderVisibleHighlights,
 } from "@/lib/restore-highlights";
 
 const RESTORE_ALLOWED_TAGS = { [RESTORE_HIGHLIGHT_TAG]: [] };
@@ -17,21 +17,26 @@ const RESTORE_LITERAL_TAGS = [RESTORE_HIGHLIGHT_TAG];
  */
 const Markdown = memo(function Markdown({
   content,
+  restorations,
   restoreDisplayMode = "values",
 }: {
   content: string;
+  restorations?: RestoreHighlight[];
   restoreDisplayMode?: RestoreHighlightDisplayMode;
 }) {
-  const hasHighlights = hasRestoreHighlightMarkers(content);
+  const { html, highlighted } = useMemo(
+    () => renderVisibleHighlights(content, restorations ?? [], restoreDisplayMode),
+    [content, restorations, restoreDisplayMode],
+  );
   const restoreComponents = useMemo(() => restoreHighlightComponents(restoreDisplayMode), [restoreDisplayMode]);
   return (
     <Streamdown
-      allowedTags={hasHighlights ? RESTORE_ALLOWED_TAGS : undefined}
+      allowedTags={highlighted ? RESTORE_ALLOWED_TAGS : undefined}
       className="max-w-none space-y-3 text-[0.95rem] leading-relaxed"
-      components={hasHighlights ? restoreComponents : undefined}
-      literalTagContent={hasHighlights ? RESTORE_LITERAL_TAGS : undefined}
+      components={highlighted ? restoreComponents : undefined}
+      literalTagContent={highlighted ? RESTORE_LITERAL_TAGS : undefined}
     >
-      {hasHighlights ? restoreHighlightsToHtml(content, restoreDisplayMode) : content}
+      {html}
     </Streamdown>
   );
 });
