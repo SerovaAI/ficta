@@ -6,6 +6,11 @@ process.env.FICTA_REGISTRY_MIN_LEN = "6";
 process.env.FICTA_REDACT_PATHS = "0";
 
 import { createHash } from "node:crypto";
+import {
+  FICTA_RESTORE_HIGHLIGHT_END,
+  FICTA_RESTORE_HIGHLIGHT_METADATA,
+  FICTA_RESTORE_HIGHLIGHT_START,
+} from "@serovaai/ficta-protocol";
 import { afterEach, describe, expect, it } from "vitest";
 import { Vault } from "../src/engine/vault.js";
 import { bufferedRestoreAdapterFor, sseRestoreAdapterFor } from "../src/engine/wire-restore.js";
@@ -383,6 +388,54 @@ describe("vault", () => {
     expect(toolArgs).toContain(toolSurrogate); // the withheld tool arg keeps its placeholder
     expect(toolArgs).not.toContain(toolSecret);
     expect(vault.withheldFromToolsCount).toBe(1);
+  });
+
+  it("does not restore inside restore-highlight metadata during the OpenAI Responses deep sweep", async () => {
+    const cfo = "Amelia Naidoo";
+    const counsel = "Jordan Price";
+    const vault = new Vault([{ value: cfo }, { value: counsel }]);
+    const cfoSurrogate = vault.redactText(cfo).text;
+    const counselSurrogate = vault.redactText(counsel).text;
+    const markers = {
+      start: FICTA_RESTORE_HIGHLIGHT_START,
+      metadata: FICTA_RESTORE_HIGHLIGHT_METADATA,
+      end: FICTA_RESTORE_HIGHLIGHT_END,
+    };
+    const sse = [
+      `event: response.output_text.delta\ndata: ${JSON.stringify({
+        type: "response.output_text.delta",
+        output_index: 0,
+        content_index: 0,
+        delta: `Chief Financial Officer: ${cfoSurrogate}\nGeneral Counsel: ${counselSurrogate}`,
+      })}\n\n`,
+      `event: response.output_text.done\ndata: ${JSON.stringify({
+        type: "response.output_text.done",
+        output_index: 0,
+        content_index: 0,
+      })}\n\n`,
+    ].join("");
+
+    const out = await transformText(
+      vault.restoreEventStream(
+        sseRestoreAdapterFor("openai-responses"),
+        bufferedRestoreAdapterFor("openai-responses"),
+        {
+          markers,
+        },
+      ),
+      [sse],
+    );
+    const delta = streamedJsonData(out)
+      .map((event) => (event?.type === "response.output_text.delta" ? (event.delta ?? "") : ""))
+      .join("");
+
+    expect(delta).toContain(`${markers.start}${cfoSurrogate}${markers.metadata}${cfo}${markers.end}`);
+    expect(delta).toContain(`${markers.start}${counselSurrogate}${markers.metadata}${counsel}${markers.end}`);
+    expect(countOccurrences(delta, markers.start)).toBe(2);
+    expect(countOccurrences(delta, markers.metadata)).toBe(2);
+    expect(countOccurrences(delta, markers.end)).toBe(2);
+    expect(delta).not.toContain(`${markers.start}${markers.start}`);
+    expect(delta).not.toContain(`${markers.end}${markers.metadata}`);
   });
 
   it("NOOP-wire SSE restore restores whole surrogates and re-escapes JSON-special values", async () => {
@@ -764,6 +817,10 @@ function streamedJsonData(sse: string): any[] {
     .map((match) => match[1] ?? "")
     .filter((data) => data !== "[DONE]")
     .map((data) => JSON.parse(data));
+}
+
+function countOccurrences(text: string, needle: string): number {
+  return needle ? text.split(needle).length - 1 : 0;
 }
 
 async function transformText(stream: TransformStream<Uint8Array, Uint8Array>, chunks: string[]): Promise<string> {

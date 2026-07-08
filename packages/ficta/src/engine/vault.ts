@@ -298,7 +298,9 @@ export abstract class VaultView {
    */
   private restoreTextExcept(text: string, skip: ReadonlySet<string>, opts: RestoreOptions = {}): string {
     if (!this.hasSurrogates || !text) return text;
-    return text.replace(this.surrogate.pattern, (m) => {
+    const markerSpans = completeRestoreMarkerSpans(text, opts.markers);
+    return text.replace(this.surrogate.pattern, (m, index: number) => {
+      if (overlapsSpan(markerSpans, index, index + m.length)) return m;
       if (skip.has(m)) return m;
       const value = this.valueFor(m);
       if (value === undefined) return m;
@@ -403,7 +405,9 @@ export abstract class VaultView {
    */
   restoreJsonText(text: string, skip: ReadonlySet<string> = EMPTY_SKIP, opts: RestoreOptions = {}): string {
     if (!this.hasSurrogates || !text) return text;
-    return text.replace(this.surrogate.pattern, (m) => {
+    const markerSpans = completeRestoreMarkerSpans(text, opts.markers, { includeJsonEscaped: true });
+    return text.replace(this.surrogate.pattern, (m, index: number) => {
+      if (overlapsSpan(markerSpans, index, index + m.length)) return m;
       if (skip.has(m)) return m;
       const value = this.valueFor(m);
       if (value === undefined) return m;
@@ -939,6 +943,44 @@ function markRestoredValue(value: string, surrogate: string, markers: RestoreMar
   return markers.metadata
     ? `${markers.start}${surrogate}${markers.metadata}${value}${markers.end}`
     : `${markers.start}${value}${markers.end}`;
+}
+
+function completeRestoreMarkerSpans(
+  text: string,
+  markers: RestoreMarkers | undefined,
+  opts: { includeJsonEscaped?: boolean } = {},
+): ReadonlyArray<readonly [number, number]> {
+  if (!markers || !text) return NO_SPANS;
+  const spans = markerSpansForDelimiters(text, markers.start, markers.end);
+  if (!opts.includeJsonEscaped) return spans.length === 0 ? NO_SPANS : spans;
+
+  const escapedStart = jsonStringEscape(markers.start);
+  const escapedEnd = jsonStringEscape(markers.end);
+  if (escapedStart === markers.start && escapedEnd === markers.end) return spans.length === 0 ? NO_SPANS : spans;
+
+  const escapedSpans = markerSpansForDelimiters(text, escapedStart, escapedEnd);
+  if (spans.length === 0) return escapedSpans.length === 0 ? NO_SPANS : escapedSpans;
+  if (escapedSpans.length === 0) return spans;
+  return [...spans, ...escapedSpans].sort((a, b) => a[0] - b[0]);
+}
+
+function markerSpansForDelimiters(
+  text: string,
+  startMarker: string,
+  endMarker: string,
+): Array<readonly [number, number]> {
+  if (!startMarker || !endMarker) return [];
+  const spans: Array<readonly [number, number]> = [];
+  let cursor = 0;
+  for (;;) {
+    const start = text.indexOf(startMarker, cursor);
+    if (start === -1) return spans;
+    const end = text.indexOf(endMarker, start + startMarker.length);
+    if (end === -1) return spans;
+    const spanEnd = end + endMarker.length;
+    spans.push([start, spanEnd]);
+    cursor = spanEnd;
+  }
 }
 
 function containsKnownOutsidePaths(
