@@ -166,7 +166,7 @@ export function ChatView({
 
   const dispatchSend = (text: string) => {
     const trimmed = text.trim();
-    if ((!trimmed && attachments.length === 0) || isLoading || isExtracting || startingThread.current) return;
+    if (!trimmed || isLoading || isExtracting || startingThread.current) return;
     const content = messageWithAttachments(trimmed, attachments);
     const startedMessage = messagesRef.current.length === 0 ? userMessage(content) : undefined;
     setInput("");
@@ -189,7 +189,7 @@ export function ChatView({
   const send = (text: string) => {
     if (posture.kind === "blocked") return;
     if (posture.kind === "passthrough" && !passthroughAck) {
-      if (!text.trim() && attachments.length === 0) return;
+      if (!text.trim()) return;
       setConfirmSendOpen(true);
       return;
     }
@@ -210,6 +210,8 @@ export function ChatView({
   };
 
   const handleFilesSelected = async (files: File[]) => {
+    requestAnimationFrame(() => composerRef.current?.focus());
+
     const nextAttachments: TextAttachment[] = [];
     const toExtract: File[] = [];
     const warnings: string[] = [];
@@ -278,6 +280,7 @@ export function ChatView({
     }
 
     setUploadWarning(warnings.length > 0 ? warnings : undefined);
+    requestAnimationFrame(() => composerRef.current?.focus());
   };
 
   const resetChat = () => {
