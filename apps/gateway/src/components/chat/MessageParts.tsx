@@ -1,6 +1,7 @@
 import type { UIMessage } from "@tanstack/ai-react";
 import { ChevronRight } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
+import { stripRestoreHighlightMarkers } from "@/lib/restore-highlights";
 
 const Markdown = lazy(() => import("./Markdown"));
 
@@ -42,7 +43,9 @@ export function MessageParts({ parts }: { parts: Part[] }) {
 }
 
 function MarkdownFallback({ content }: { content: string }) {
-  return <div className="whitespace-pre-wrap text-[0.95rem] leading-relaxed">{content}</div>;
+  return (
+    <div className="whitespace-pre-wrap text-[0.95rem] leading-relaxed">{stripRestoreHighlightMarkers(content)}</div>
+  );
 }
 
 function Reasoning({ content }: { content: string }) {
@@ -58,7 +61,9 @@ function Reasoning({ content }: { content: string }) {
         Reasoning
       </button>
       {open ? (
-        <div className="mt-1 whitespace-pre-wrap border-l-2 border-border pl-3 text-muted-foreground">{content}</div>
+        <div className="mt-1 whitespace-pre-wrap border-l-2 border-border pl-3 text-muted-foreground">
+          {stripRestoreHighlightMarkers(content)}
+        </div>
       ) : null}
     </div>
   );

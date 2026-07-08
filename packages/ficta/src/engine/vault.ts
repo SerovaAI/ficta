@@ -26,6 +26,21 @@ export interface VaultValue {
   kind?: ProtectedValueKind;
 }
 
+export interface VaultTraceValue {
+  value: string;
+  surrogate?: string;
+  provenance?: LayerProvenance;
+}
+
+interface RestoreMarkers {
+  start: string;
+  end: string;
+}
+
+interface RestoreOptions {
+  markers?: RestoreMarkers;
+}
+
 export function surrogateKeyWarning(): string | undefined {
   if (!ENV_SURROGATE_KEY) return undefined;
   if (Buffer.byteLength(ENV_SURROGATE_KEY, "utf8") < 32 || new Set(ENV_SURROGATE_KEY).size < 8) {
@@ -179,6 +194,37 @@ export abstract class VaultView {
     return undefined;
   }
 
+  /**
+   * Surrogate and its layer's provenance for a raw value, in one pass over the layers (first match
+   * wins, mirroring redaction order). traceValues needs both; the same layer that holds the surrogate
+   * is the one whose provenance applies, so a single walk replaces two full layer scans.
+   */
+  private surrogateEntryFor(value: string): { surrogate: string; provenance: LayerProvenance } | undefined {
+    for (const layer of this.layers) {
+      const surrogate = layer.toSur.get(value);
+      if (surrogate !== undefined) return { surrogate, provenance: layer.provenance };
+    }
+    return undefined;
+  }
+
+  /** Raw value → surrogate/provenance mapping for trace-only audit sidecars. */
+  traceValues(values: Iterable<string>): VaultTraceValue[] {
+    const out: VaultTraceValue[] = [];
+    const seen = new Set<string>();
+    for (const value of values) {
+      if (!value || seen.has(value)) continue;
+      seen.add(value);
+      const entry: VaultTraceValue = { value };
+      const found = this.surrogateEntryFor(value);
+      if (found) {
+        entry.surrogate = found.surrogate;
+        entry.provenance = found.provenance;
+      }
+      out.push(entry);
+    }
+    return out;
+  }
+
   /** Redact known values in a raw string. */
   redactText(text: string, preservePaths = true): { text: string; count: number } {
     const result = this.redactTextDetailed(text, preservePaths);
@@ -222,7 +268,7 @@ export abstract class VaultView {
   private replaceKnown(text: string, found: Set<string>, preservePaths = true): string {
     let out = text;
     for (const v of this.orderedValues()) {
-      if (!out.includes(v)) continue;
+      if (!knownValueMayAppear(out, v)) continue;
       const surrogate = this.surrogateFor(v);
       if (surrogate === undefined) continue;
       const replaced = replaceKnownOutsidePaths(
@@ -240,8 +286,8 @@ export abstract class VaultView {
   }
 
   /** Restore surrogates → real values in a chunk of text. */
-  restoreText(text: string): string {
-    return this.restoreTextExcept(text, EMPTY_SKIP);
+  restoreText(text: string, opts: RestoreOptions = {}): string {
+    return this.restoreTextExcept(text, EMPTY_SKIP, opts);
   }
 
   /**
@@ -249,14 +295,14 @@ export abstract class VaultView {
    * per-event deep sweep uses this so a surrogate deliberately withheld from a tool-call argument is
    * not silently re-restored when the whole event object is mapped. See {@link createSseRestoreStream}.
    */
-  private restoreTextExcept(text: string, skip: ReadonlySet<string>): string {
+  private restoreTextExcept(text: string, skip: ReadonlySet<string>, opts: RestoreOptions = {}): string {
     if (!this.hasSurrogates || !text) return text;
     return text.replace(this.surrogate.pattern, (m) => {
       if (skip.has(m)) return m;
       const value = this.valueFor(m);
       if (value === undefined) return m;
       this.restored.add(value);
-      return value;
+      return markRestoredValue(value, opts.markers);
     });
   }
 
@@ -301,15 +347,19 @@ export abstract class VaultView {
    * detections but withholds registry secrets, and `all` restores everything. Without an adapter
    * (unknown wire) the blanket restore is kept — there is no shape knowledge to classify tool arguments.
    */
-  restoreJson(body: string, adapter: BufferedRestoreAdapter = NOOP_BUFFERED_RESTORE_ADAPTER): string {
+  restoreJson(
+    body: string,
+    adapter: BufferedRestoreAdapter = NOOP_BUFFERED_RESTORE_ADAPTER,
+    opts: RestoreOptions = {},
+  ): string {
     if (!this.hasSurrogates || !body) return body;
     let parsed: unknown;
     try {
       parsed = JSON.parse(body);
     } catch {
-      return this.restoreText(body);
+      return this.restoreText(body, opts);
     }
-    return this.restoreJsonText(body, this.collectWithheldToolTokens(adapter, parsed, this.toolPolicy()));
+    return this.restoreJsonText(body, this.collectWithheldToolTokens(adapter, parsed, this.toolPolicy()), opts);
   }
 
   /** The active restore-into-tools policy (read per call, mirroring the streaming path). */
@@ -350,14 +400,14 @@ export abstract class VaultView {
    * `skip` are left untouched — the buffered withhold path passes the tool-argument tokens here so
    * the body-wide restore cannot undo the withholding (mirror of {@link restoreTextExcept}).
    */
-  restoreJsonText(text: string, skip: ReadonlySet<string> = EMPTY_SKIP): string {
+  restoreJsonText(text: string, skip: ReadonlySet<string> = EMPTY_SKIP, opts: RestoreOptions = {}): string {
     if (!this.hasSurrogates || !text) return text;
     return text.replace(this.surrogate.pattern, (m) => {
       if (skip.has(m)) return m;
       const value = this.valueFor(m);
       if (value === undefined) return m;
       this.restored.add(value);
-      return jsonStringEscape(value);
+      return jsonStringEscape(markRestoredValue(value, opts.markers));
     });
   }
 
@@ -407,11 +457,18 @@ export abstract class VaultView {
     return leaked;
   }
 
+  /** True when text contains any known raw value, using the same matcher as redaction/leak gates. */
+  containsKnownValue(text: string, preservePaths = true): boolean {
+    if (!this.hasValues || !text) return false;
+    const spans = surrogateSpans(text, this.surrogate.pattern);
+    return this.orderedValues().some((value) => containsKnownOutsidePaths(text, value, spans, preservePaths));
+  }
+
   /**
    * A TransformStream that restores surrogates in a streamed response. Holds back a short tail
    * each chunk so a surrogate split across chunk boundaries is never emitted half-restored.
    */
-  restoreStream(): TransformStream<Uint8Array, Uint8Array> {
+  restoreStream(opts: RestoreOptions = {}): TransformStream<Uint8Array, Uint8Array> {
     const decoder = new TextDecoder();
     const encoder = new TextEncoder();
     const HOLD = this.surrogate.maxLength - 1; // max partial surrogate; a full token is maxLength chars
@@ -420,14 +477,14 @@ export abstract class VaultView {
     return new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
         // Restore complete surrogates in the full buffer; only a partial token can remain at the tail.
-        buf = self.restoreText(buf + decoder.decode(chunk, { stream: true }));
+        buf = self.restoreText(buf + decoder.decode(chunk, { stream: true }), opts);
         if (buf.length > HOLD) {
           controller.enqueue(encoder.encode(buf.slice(0, buf.length - HOLD)));
           buf = buf.slice(buf.length - HOLD);
         }
       },
       flush(controller) {
-        buf = self.restoreText(buf + decoder.decode());
+        buf = self.restoreText(buf + decoder.decode(), opts);
         if (buf) controller.enqueue(encoder.encode(buf));
       },
     });
@@ -442,6 +499,7 @@ export abstract class VaultView {
   restoreEventStream(
     adapter: SseRestoreAdapter,
     buffered: BufferedRestoreAdapter = NOOP_BUFFERED_RESTORE_ADAPTER,
+    opts: RestoreOptions = {},
   ): TransformStream<Uint8Array, Uint8Array> {
     // Restore-into-tools policy (default `detected`): surrogates the model placed inside a tool-call
     // argument are handled by provenance. A registry secret restored there would hand the real value
@@ -452,10 +510,10 @@ export abstract class VaultView {
     // extends the same policy to full-payload replay events (deltas already withheld must not be
     // restored when the provider re-sends the completed tool call).
     const policy = restoreIntoToolsPolicy(process.env.FICTA_RESTORE_INTO_TOOLS);
-    return createSseRestoreStream((text) => this.restoreText(text), adapter, this.surrogate, {
+    return createSseRestoreStream((text) => this.restoreText(text, opts), adapter, this.surrogate, {
       withhold: policy !== "all",
-      restoreExcept: (text, skip) => this.restoreTextExcept(text, skip),
-      restoreJsonExcept: (text, skip) => this.restoreJsonText(text, skip),
+      restoreExcept: (text, skip) => this.restoreTextExcept(text, skip, opts),
+      restoreJsonExcept: (text, skip) => this.restoreJsonText(text, skip, opts),
       collectWithheld: (data) => this.collectWithheldToolTokens(buffered, data, policy),
       restoreToolArg: (text, withheldSink) => this.restoreToolArgText(text, policy, withheldSink),
     });
@@ -831,12 +889,9 @@ function replaceKnownOutsidePaths(
   let out = "";
   let cursor = 0;
   let count = 0;
+  const matches = knownValueMatches(text, needle);
 
-  for (;;) {
-    const index = text.indexOf(needle, cursor);
-    if (index === -1) break;
-
-    const end = index + needle.length;
+  for (const { index, end } of matches) {
     if (overlapsSpan(excludedSpans, index, end) || isInsidePathLikeToken(text, index, end, needle, preservePaths)) {
       out += text.slice(cursor, end);
     } else {
@@ -878,6 +933,10 @@ function jsonStringEscape(value: string): string {
   return json.slice(1, -1);
 }
 
+function markRestoredValue(value: string, markers: RestoreMarkers | undefined): string {
+  return markers ? `${markers.start}${value}${markers.end}` : value;
+}
+
 function containsKnownOutsidePaths(
   text: string,
   needle: string,
@@ -885,15 +944,82 @@ function containsKnownOutsidePaths(
   preservePaths = true,
 ): boolean {
   if (!needle) return false;
-  let cursor = 0;
-  for (;;) {
-    const index = text.indexOf(needle, cursor);
-    if (index === -1) return false;
-    const end = index + needle.length;
+  for (const { index, end } of knownValueMatches(text, needle)) {
     if (!overlapsSpan(excludedSpans, index, end) && !isInsidePathLikeToken(text, index, end, needle, preservePaths))
       return true;
-    cursor = end;
   }
+  return false;
+}
+
+function knownValueMayAppear(text: string, value: string): boolean {
+  if (text.includes(value)) return true;
+  return hasWhitespace(value) && flexibleWhitespacePattern(value).test(text);
+}
+
+function knownValueMatches(text: string, value: string): Array<{ index: number; end: number }> {
+  if (!hasWhitespace(value)) {
+    const matches: Array<{ index: number; end: number }> = [];
+    let cursor = 0;
+    for (;;) {
+      const index = text.indexOf(value, cursor);
+      if (index === -1) return matches;
+      const end = index + value.length;
+      matches.push({ index, end });
+      cursor = end;
+    }
+  }
+
+  const matches: Array<{ index: number; end: number }> = [];
+  const re = flexibleWhitespacePattern(value);
+  for (let match = re.exec(text); match !== null; match = re.exec(text)) {
+    matches.push({ index: match.index, end: match.index + match[0].length });
+  }
+  return matches;
+}
+
+function hasWhitespace(value: string): boolean {
+  return /\s/.test(value);
+}
+
+// The same value's flexible pattern is compiled repeatedly in one redact pass (the knownValueMayAppear
+// guard, then knownValueMatches) and on every leak scan, so cache it per value. The regexes are global
+// (stateful lastIndex), so callers get it reset on lookup; a size cap bounds memory as new detected
+// values accumulate over the process lifetime.
+const FLEXIBLE_PATTERN_CACHE_LIMIT = 2048;
+const flexiblePatternCache = new Map<string, RegExp>();
+
+function flexibleWhitespacePattern(value: string): RegExp {
+  let pattern = flexiblePatternCache.get(value);
+  if (pattern === undefined) {
+    pattern = buildFlexibleWhitespacePattern(value);
+    if (flexiblePatternCache.size >= FLEXIBLE_PATTERN_CACHE_LIMIT) {
+      const oldest = flexiblePatternCache.keys().next().value; // Map preserves insertion order
+      if (oldest !== undefined) flexiblePatternCache.delete(oldest);
+    }
+    flexiblePatternCache.set(value, pattern);
+  }
+  pattern.lastIndex = 0; // shared global regex: reset state before each .test()/.exec()
+  return pattern;
+}
+
+function buildFlexibleWhitespacePattern(value: string): RegExp {
+  // Match a registered value across serialized whitespace differences (e.g. a document parser
+  // reflowing "Proxima Medical Supplies CC" into "Proxima Medical\nSupplies CC"). Each separator
+  // permits at most one line break — single-line wrap (incl. next-line indentation and \r\n) still
+  // matches, but a blank line / paragraph break does not, so unrelated adjacent tokens across a
+  // paragraph boundary are not collapsed into one value. A separator must still be present: this
+  // must not match "ProximaMedical" for a registered "Proxima Medical".
+  const source = value
+    .split(/(\s+)/)
+    .map((part) =>
+      hasWhitespace(part) ? "(?:[^\\S\\r\\n]+|[^\\S\\r\\n]*(?:\\r\\n|\\r|\\n)[^\\S\\r\\n]*)" : escapeRegExp(part),
+    )
+    .join("");
+  return new RegExp(source, "g");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function isInsidePathLikeToken(

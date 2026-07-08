@@ -199,6 +199,23 @@ async function maybeStartDocConverter(env) {
     return undefined;
   }
 
+  try {
+    return await startDocConverterContainer(env, url, parsed.port);
+  } catch (err) {
+    // Document parsing is on by default but optional. When it was explicitly requested
+    // (FICTA_DOC_CONVERTER_MANAGED=1) a failure is fatal; otherwise degrade gracefully — e.g. Docker
+    // isn't installed or the image won't build — so `pnpm dev` still brings up the proxy and web app.
+    if (explicit === true) throw err;
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(`[dev] document converter unavailable (${reason}); continuing without document parsing.`);
+    console.warn(
+      "[dev] pre-build it with `pnpm sidecars`, set FICTA_DOC_CONVERTER_MANAGED=0 to skip silently, or =1 to make this fatal.",
+    );
+    return undefined;
+  }
+}
+
+async function startDocConverterContainer(env, url, port) {
   const imageOverride = env.FICTA_DOC_CONVERTER_IMAGE?.trim();
   const image = imageOverride || DEFAULT_DOC_CONVERTER_IMAGE;
   const containerName = env.FICTA_DOC_CONVERTER_CONTAINER_NAME?.trim() || `ficta-doc-converter-${process.pid}`;
@@ -223,7 +240,7 @@ async function maybeStartDocConverter(env) {
       "--name",
       containerName,
       "-p",
-      `127.0.0.1:${parsed.port}:5003`,
+      `127.0.0.1:${port}:5003`,
       "-e",
       `CONVERTER_BACKEND=${backend}`,
       image,
@@ -235,7 +252,13 @@ async function maybeStartDocConverter(env) {
     },
   );
 
-  await waitForSidecarHealth(child, url, startupTimeoutMs, "document converter");
+  try {
+    await waitForSidecarHealth(child, url, startupTimeoutMs, "document converter");
+  } catch (err) {
+    // Don't leak a half-started container: it isn't in `sidecars` yet, so stopSidecars won't reap it.
+    if (!isChildDone(child) && !child.killed) child.kill("SIGTERM");
+    throw err;
+  }
   console.log(`[dev] document converter is healthy at ${url}`);
   return { name: "document converter", child };
 }

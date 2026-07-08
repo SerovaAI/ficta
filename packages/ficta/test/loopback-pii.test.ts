@@ -3,6 +3,11 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  FICTA_RESTORE_HIGHLIGHT_END,
+  FICTA_RESTORE_HIGHLIGHT_HEADER,
+  FICTA_RESTORE_HIGHLIGHT_START,
+} from "@serovaai/ficta-protocol";
 import { describe, expect, it, vi } from "vitest";
 import { piiPlugin } from "../src/plugins/index.js";
 
@@ -44,6 +49,7 @@ const MANAGED_ENV = [
   // regardless of any ambient FICTA_PII_RECOGNIZERS in the developer's/CI environment.
   "FICTA_PII_RECOGNIZERS",
   "FICTA_LOG_LEVEL",
+  "FICTA_TRACE_AUDIT",
   "FICTA_LOG_DIR",
 ] as const;
 
@@ -191,6 +197,67 @@ describe("loopback PII round-trip through the real proxy", () => {
       expect(received).toMatch(SURROGATE);
       expect(delta).toContain(EMAIL); // restored in the streamed delta
       expect(delta).not.toMatch(SURROGATE); // no placeholder leaked to the client
+    } finally {
+      proxy?.close();
+      await close(upstream);
+      restoreEnv(saved);
+    }
+  });
+
+  it("SSE stream: marks restored values for gateway trace demos only", async () => {
+    const saved = snapshotEnv();
+    let upstreamSawHighlightHeader: string | string[] | undefined;
+    const upstream = createServer((req, res) => {
+      upstreamSawHighlightHeader = req.headers[FICTA_RESTORE_HIGHLIGHT_HEADER];
+      let body = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        const token = body.match(SURROGATE)?.[0] ?? "";
+        const sse = `data: ${JSON.stringify({
+          choices: [{ delta: { content: `Your email is ${token}.` } }],
+        })}\n\ndata: [DONE]\n\n`;
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.end(sse);
+      });
+    });
+
+    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    try {
+      const upstreamPort = await listen(upstream);
+      process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
+      process.env.FICTA_PII_ENABLED = "1";
+      process.env.FICTA_PII_RECOGNIZERS = "regex";
+      process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-loopback-highlight-"));
+      process.env.FICTA_LOG_LEVEL = "trace";
+      process.env.FICTA_TRACE_AUDIT = "1";
+
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0, plugins: [piiPlugin] });
+
+      const res = await fetch(`http://127.0.0.1:${proxy.port}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", [FICTA_RESTORE_HIGHLIGHT_HEADER]: "1" },
+        body: JSON.stringify({ model: "gpt-4", messages: [{ role: "user", content: `Contact ${EMAIL}` }] }),
+      });
+      const clientText = await res.text();
+      const delta = [...clientText.matchAll(/^data: (.+)$/gm)]
+        .flatMap((m) => {
+          try {
+            return [JSON.parse(m[1] ?? "{}")];
+          } catch {
+            return [];
+          }
+        })
+        .map((event) => event?.choices?.[0]?.delta?.content ?? "")
+        .join("");
+
+      expect(res.status).toBe(200);
+      expect(upstreamSawHighlightHeader).toBeUndefined();
+      expect(delta).toContain(`${FICTA_RESTORE_HIGHLIGHT_START}${EMAIL}${FICTA_RESTORE_HIGHLIGHT_END}`);
+      expect(delta).not.toMatch(SURROGATE);
     } finally {
       proxy?.close();
       await close(upstream);

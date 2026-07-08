@@ -16,6 +16,7 @@ function cfg(overrides: Partial<Config> = {}): Config {
     logDir: "/tmp/ficta-logs",
     logLevel: "info",
     logBodies: false,
+    traceAudit: false,
     logMaxBytes: 256 * 1024,
     failClosed: true,
     ...overrides,
@@ -59,6 +60,7 @@ describe("configPosture", () => {
         allowCustomUpstream: false,
         logLevel: "info",
         logBodies: false,
+        traceAudit: false,
         logDir: "/tmp/ficta-logs",
       },
     });
@@ -66,7 +68,7 @@ describe("configPosture", () => {
 
   it("reflects flipped env flags and cfg overrides", () => {
     const posture = configPosture(
-      cfg({ failClosed: false, allowCustomUpstream: true, logLevel: "trace", logBodies: true }),
+      cfg({ failClosed: false, allowCustomUpstream: true, logLevel: "trace", logBodies: true, traceAudit: true }),
       {
         FICTA_REQUIRE_REGISTRY: "1",
         FICTA_REDACT_PATHS: "1",
@@ -100,6 +102,7 @@ describe("configPosture", () => {
     expect(posture.transport.allowCustomUpstream).toBe(true);
     expect(posture.transport.logLevel).toBe("trace");
     expect(posture.transport.logBodies).toBe(true);
+    expect(posture.transport.traceAudit).toBe(true);
   });
 
   it("gates agent detection on both enabled and agents flags", () => {

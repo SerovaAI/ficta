@@ -10,11 +10,15 @@ import type {
   RegistryPolicy,
 } from "./plugins/types.js";
 import {
+  type BodyRedactionContext,
   type BodyRedactionDetails,
   DetectorUnavailableError,
   type ProtectionHit,
+  type ProtectionTraceValue,
   type RedactionEngine,
   type RequestScope,
+  type RestoreOptions,
+  type RestoreTraceDetails,
   type TextRedactionContext,
   type TextRedactionDetails,
 } from "./redaction-engine.js";
@@ -190,7 +194,7 @@ export class ProtectionEngine implements RedactionEngine {
     return this.defaultRequestScope;
   }
 
-  redactBodyDetailed(body: string, ctx: Omit<DetectTextContext, "surface"> = {}): Promise<BodyRedactionDetails> {
+  redactBodyDetailed(body: string, ctx: BodyRedactionContext = {}): Promise<BodyRedactionDetails> {
     return this.defaultScope.redactBodyDetailed(body, ctx);
   }
 
@@ -203,20 +207,20 @@ export class ProtectionEngine implements RedactionEngine {
     return this.defaultScope.containsProtectedValue(text);
   }
 
-  restoreText(text: string): string {
-    return this.defaultScope.restoreText(text);
+  restoreText(text: string, opts?: RestoreOptions): string {
+    return this.defaultScope.restoreText(text, opts);
   }
 
-  restoreJson(body: string, wire?: Wire): string {
-    return this.defaultScope.restoreJson(body, wire);
+  restoreJson(body: string, wire?: Wire, opts?: RestoreOptions): string {
+    return this.defaultScope.restoreJson(body, wire, opts);
   }
 
-  restoreStream(): TransformStream<Uint8Array, Uint8Array> {
-    return this.defaultScope.restoreStream();
+  restoreStream(opts?: RestoreOptions): TransformStream<Uint8Array, Uint8Array> {
+    return this.defaultScope.restoreStream(opts);
   }
 
-  restoreEventStream(wire: Wire): TransformStream<Uint8Array, Uint8Array> {
-    return this.defaultScope.restoreEventStream(wire);
+  restoreEventStream(wire: Wire, opts?: RestoreOptions): TransformStream<Uint8Array, Uint8Array> {
+    return this.defaultScope.restoreEventStream(wire, opts);
   }
 }
 
@@ -238,7 +242,8 @@ class ProtectionRequestScope implements RequestScope {
     private readonly seenLeaves?: Set<string>,
   ) {}
 
-  async redactBodyDetailed(body: string, ctx: Omit<DetectTextContext, "surface"> = {}): Promise<BodyRedactionDetails> {
+  async redactBodyDetailed(body: string, ctx: BodyRedactionContext = {}): Promise<BodyRedactionDetails> {
+    const { traceValues, ...detectCtx } = ctx;
     // Detect over the redactable text surface (JSON string leaves), not the raw body, so a value is
     // detected iff redaction can rewrite it — number-only leaves are neither, avoiding a fail-closed
     // reject on PII we could not have removed anyway. See redactableBodyLeaves.
@@ -253,52 +258,62 @@ class ProtectionRequestScope implements RequestScope {
     const seen = this.seenLeaves;
     const hashes = seen ? leaves.map(leafHash) : [];
     const fresh = seen ? leaves.filter((_, i) => !seen.has(hashes[i] ?? "")) : leaves;
-    const complete = await this.registerDetectedValues(fresh.join("\n"), { ...ctx, surface: "body" });
+    const complete = await this.registerDetectedValues(fresh.join("\n"), { ...detectCtx, surface: "body" });
     if (seen && complete) for (const hash of hashes) seen.add(hash);
     // The body preserves path-like tokens (the default): agent tool calls (`cd`, `Read`, `Edit`) live
     // here, and a registered value inside a real path is far more likely a path segment than a secret,
     // so mangling the path would break the agent. Only headers opt out of preservation — see server.ts.
     const redacted = this.vault.redactBodyDetailed(body);
     const leakValues = this.vault.leakValues(redacted.body);
-    return {
+    const details: BodyRedactionDetails = {
       body: redacted.body,
       count: redacted.count,
       leaks: leakValues.length,
       hits: this.hitsFor(redacted.values),
       leakHits: this.hitsFor(leakValues),
     };
+    if (traceValues) {
+      if (redacted.values.length > 0) details.traceValues = this.traceValuesFor(redacted.values);
+      if (leakValues.length > 0) details.traceLeakValues = this.traceValuesFor(leakValues);
+    }
+    return details;
   }
 
   async redactTextDetailed(text: string, ctx: TextRedactionContext = {}): Promise<TextRedactionDetails> {
     // preservePaths defaults true (the query surface keeps real paths like redirect_uri intact); the
     // proxy passes false for headers so a secret inside a slash-path is redacted, not preserved.
-    const { surface = "header", preservePaths = true, ...rest } = ctx;
+    const { surface = "header", preservePaths = true, traceValues, ...rest } = ctx;
     await this.registerDetectedValues(text, { ...rest, surface });
     const redacted = this.vault.redactTextDetailed(text, preservePaths);
     const leakValues = this.vault.leakValues(redacted.text, preservePaths);
-    return {
+    const details: TextRedactionDetails = {
       text: redacted.text,
       count: redacted.count,
       leaks: leakValues.length,
       hits: this.hitsFor(redacted.values),
       leakHits: this.hitsFor(leakValues),
     };
+    if (traceValues) {
+      if (redacted.values.length > 0) details.traceValues = this.traceValuesFor(redacted.values);
+      if (leakValues.length > 0) details.traceLeakValues = this.traceValuesFor(leakValues);
+    }
+    return details;
   }
 
-  restoreText(text: string): string {
-    return this.vault.restoreText(text);
+  restoreText(text: string, opts?: RestoreOptions): string {
+    return this.vault.restoreText(text, opts);
   }
 
-  restoreJson(body: string, wire: Wire = "unknown"): string {
-    return this.vault.restoreJson(body, bufferedRestoreAdapterFor(wire));
+  restoreJson(body: string, wire: Wire = "unknown", opts?: RestoreOptions): string {
+    return this.vault.restoreJson(body, bufferedRestoreAdapterFor(wire), opts);
   }
 
-  restoreStream(): TransformStream<Uint8Array, Uint8Array> {
-    return this.vault.restoreStream();
+  restoreStream(opts?: RestoreOptions): TransformStream<Uint8Array, Uint8Array> {
+    return this.vault.restoreStream(opts);
   }
 
-  restoreEventStream(wire: Wire): TransformStream<Uint8Array, Uint8Array> {
-    return this.vault.restoreEventStream(sseRestoreAdapterFor(wire), bufferedRestoreAdapterFor(wire));
+  restoreEventStream(wire: Wire, opts?: RestoreOptions): TransformStream<Uint8Array, Uint8Array> {
+    return this.vault.restoreEventStream(sseRestoreAdapterFor(wire), bufferedRestoreAdapterFor(wire), opts);
   }
 
   get restoredCount(): number {
@@ -309,12 +324,16 @@ class ProtectionRequestScope implements RequestScope {
     return this.vault.withheldFromToolsCount;
   }
 
+  traceRestoreDetails(): RestoreTraceDetails {
+    return {
+      restored: this.traceValuesFor(this.vault.restored),
+      withheldFromTools: this.traceValuesFor(this.vault.withheldFromTools),
+    };
+  }
+
   /** Membership check over this scope's detected values and the permanent registry. */
   containsProtectedValue(text: string): boolean {
-    if (!text) return false;
-    for (const value of this.detectedMetadata.keys()) if (text.includes(value)) return true;
-    for (const value of this.permanentMetadata.keys()) if (text.includes(value)) return true;
-    return false;
+    return this.vault.containsKnownValue(text, false);
   }
 
   /** Returns true when every detector ran (nothing was skipped by a fail-open outage or crash). */
@@ -367,6 +386,21 @@ class ProtectionRequestScope implements RequestScope {
     return hits;
   }
 
+  private traceValuesFor(values: Iterable<string>): ProtectionTraceValue[] {
+    return this.vault.traceValues(values).map((entry) => {
+      const value = this.metadataFor(entry.value);
+      const hit = value === undefined ? unknownHit() : this.hitFromProtectedValue(value);
+      const trace: ProtectionTraceValue = {
+        ...hit,
+        value: entry.value,
+        valueSha256: valueHash(entry.value),
+      };
+      if (entry.surrogate !== undefined) trace.surrogate = entry.surrogate;
+      if (entry.provenance !== undefined) trace.provenance = entry.provenance;
+      return trace;
+    });
+  }
+
   private hitFromProtectedValue(value: ProtectedValue): ProtectionHit {
     const hit: ProtectionHit = {
       name: this.safeMetadataField(value.name, "<redacted-name>"),
@@ -388,6 +422,10 @@ class ProtectionRequestScope implements RequestScope {
 /** Content hash for the swept-leaf ledger; hashes are retained, never the leaf text itself. */
 function leafHash(leaf: string): string {
   return createHash("sha256").update(leaf).digest("hex");
+}
+
+function valueHash(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 /** Drop named candidates excluded by an enforced (trusted) registry-policy rule. */

@@ -7,23 +7,29 @@
 ### Added
 
 - Added a personal Gateway default reasoning setting for OpenAI models.
+- With both `FICTA_LOG_LEVEL=trace` and `FICTA_TRACE_AUDIT=1`, the proxy now writes `audit-XXXX.trace.json` sidecars with the raw protected values, surrogates, labels, and restored/withheld outcomes for that request, so demos and internal tests can prove exactly what was redacted and whether the answer restored it. These files use the same private permissions as raw body trace logs and are not emitted at lower log levels or without the explicit audit flag.
 - At trace (`FICTA_LOG_LEVEL=trace`), the proxy also writes the client-bound, post-restore response body to `res-XXXX.restored.txt` (0600, capped by `FICTA_LOG_MAX_BYTES`) alongside the existing pre-restore `res-XXXX.txt`, so an incident can be replayed to show exactly which surrogates were restored into the client's bytes versus withheld from tool arguments.
 - Added an `openmed` PII backend that calls the upstream OpenMed REST service (`/pii/extract`) directly as a sidecar container, selectable via `FICTA_PII_BACKENDS=presidio,openmed` and configured under `[pii.openmed]`; `ficta doctor` and the proxy status endpoint probe its `/health`.
 - Added PII sidecar lifecycle management: `docker-compose.sidecars.yml` with `pnpm sidecars` / `pnpm sidecars:down` runs Presidio and OpenMed health-gated outside the dev wrapper, and root `pnpm dev` now auto-manages the sidecars for all backends selected via `FICTA_PII_BACKENDS` (previously only the legacy single `FICTA_PII_BACKEND=presidio`), including an OpenMed manager (upstream `ghcr.io/maziyarpanahi/openmed` image) with model preload and a persistent HF cache volume.
-- Added source-checkout document-converter lifecycle management: root `pnpm dev` now builds/starts or reuses the local PDF/DOCX-to-Markdown sidecar by default (`FICTA_DOC_CONVERTER_MANAGED=0` opts out), and `pnpm sidecars` includes it alongside the PII sidecars.
+- Added source-checkout document-converter lifecycle management: root `pnpm dev` now builds/starts or reuses the local PDF/DOCX-to-Markdown sidecar by default (`FICTA_DOC_CONVERTER_MANAGED=0` opts out), and `pnpm sidecars` includes it alongside the PII sidecars. When Docker is unavailable the sidecar is skipped with a warning and `pnpm dev` still starts the proxy and web app, so contributors without Docker are not blocked; set `FICTA_DOC_CONVERTER_MANAGED=1` to make a converter failure fatal instead.
 - Moved chat model selection into the composer with reasoning settings nested under the model control for OpenAI models.
 - Added an admin-only Gateway redaction proof view backed by a values-free proxy stats endpoint.
+- Added an opt-in restore-highlight visualization for the redaction-proof demo: with `FICTA_TRACE_AUDIT=1` the proxy wraps the values it restores into a response in highlight markers, and the Gateway renders them as highlighted spans in the chat answer while stripping the markers everywhere else — message storage, model replay, and the collapsed reasoning panel. Highlighting is applied consistently across streamed text, JSON, and the sibling fields of tool-adjacent events, so restored values are never shown with raw marker text.
 - Split user settings and admin controls into separate popouts, with admin sections for general settings, proxy configuration, and redaction proof.
 
 ### Changed
 
 - Updated public website Gateway positioning to lead with the self-hosted Gateway offer and move OSS install/source links into a supporting proof section.
 - Replaced the public website hero wire demo with a balanced local-boundary artifact that shows protected values before send and tokenized model egress.
+- Clarified the Gateway admin surrogate-style control with the config key, environment override, token-shape examples, and unchanged restore behavior.
 - Removed individual-attribution wording from public website fallback, contact, and OSS proof copy.
 - Changed Gateway proxy configuration controls to autosave on edit instead of requiring a form-level save button.
 - Moved the Gateway admin entry into the signed-in user menu instead of showing it as a separate sidebar action.
 - Moved the Gateway tool-call withholding runtime count out of proxy configuration and into redaction proof.
+- Changed Gateway redaction proof to show aggregate protected keys and labels with counts instead of listing each request event.
 - `FICTA_RESTORE_INTO_TOOLS` is now tri-state — `all` (restore every surrogate into tool arguments), `none` (withhold every surrogate), or `detected` (the new default: restore only content-derived detections such as secret-shapes/PII while withholding registry/environment secrets). Legacy `1`/`true` map to `all` and `0`/`false` to `none`. Rationale: a compromised model can already exfiltrate local file content without placeholders, so withholding content-derived detections only corrupted the agent's own files; registry secrets — which the model only ever saw as placeholders — keep strict withhold.
+- Registered and detected multi-word values are now matched across serialized whitespace differences, so a value a document parser reflowed across a line break (e.g. `Proxima Medical\nSupplies CC`) is redacted instead of passing to the model. Matching stays token-exact: a whitespace separator must be present and may span at most one line break, so it never collapses concatenated tokens (`ProximaMedical`) or bridges a paragraph boundary.
+- Reduced per-request work on the redaction, restore, and proof hot paths: trace-value hashing now runs only when audit logging is enabled, restore-highlight stripping is skipped when a payload has no markers, compiled redaction patterns are cached, per-value surrogate/provenance lookups share a single pass, and the proof view reuses one number formatter.
 
 ### Removed
 

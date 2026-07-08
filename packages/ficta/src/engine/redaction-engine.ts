@@ -21,25 +21,25 @@ export interface RedactionEngine {
    * Redact a request body (JSON-aware) and report which values matched / leaked. Async because
    * detection may hit an out-of-process recognizer (e.g. a Presidio/NER sidecar).
    */
-  redactBodyDetailed(body: string, ctx?: Omit<DetectTextContext, "surface">): Promise<BodyRedactionDetails>;
+  redactBodyDetailed(body: string, ctx?: BodyRedactionContext): Promise<BodyRedactionDetails>;
 
   /** Redact a raw string (header value, query component) and report matches / leaks. Async: see above. */
   redactTextDetailed(text: string, ctx?: TextRedactionContext): Promise<TextRedactionDetails>;
 
   /** Restore surrogates → real values in a chunk of text. */
-  restoreText(text: string): string;
+  restoreText(text: string, opts?: RestoreOptions): string;
 
   /**
    * Restore surrogates in a JSON body, escaping each restored value for its string context. With a
    * known `wire`, tool-call arguments get the same restore-into-tools withholding as the SSE path.
    */
-  restoreJson(body: string, wire?: Wire): string;
+  restoreJson(body: string, wire?: Wire, opts?: RestoreOptions): string;
 
   /** Streaming restore for non-SSE response bodies (holds back partial surrogates at chunk edges). */
-  restoreStream(): TransformStream<Uint8Array, Uint8Array>;
+  restoreStream(opts?: RestoreOptions): TransformStream<Uint8Array, Uint8Array>;
 
   /** Streaming restore for a provider SSE stream, using the wire-specific reassembly adapter. */
-  restoreEventStream(wire: Wire): TransformStream<Uint8Array, Uint8Array>;
+  restoreEventStream(wire: Wire, opts?: RestoreOptions): TransformStream<Uint8Array, Uint8Array>;
 
   /** Conservative membership check used to keep derived metadata (paths, model names) safe to log. */
   containsProtectedValue(text: string): boolean;
@@ -73,25 +73,25 @@ export interface RedactionEngine {
  */
 export interface RequestScope {
   /** Redact a request body (JSON-aware); detected values enter this scope's ephemeral layer. */
-  redactBodyDetailed(body: string, ctx?: Omit<DetectTextContext, "surface">): Promise<BodyRedactionDetails>;
+  redactBodyDetailed(body: string, ctx?: BodyRedactionContext): Promise<BodyRedactionDetails>;
 
   /** Redact a raw string (header value, query component); detected values enter this scope. */
   redactTextDetailed(text: string, ctx?: TextRedactionContext): Promise<TextRedactionDetails>;
 
   /** Restore surrogates → real values in a chunk of text (scope-detected then permanent). */
-  restoreText(text: string): string;
+  restoreText(text: string, opts?: RestoreOptions): string;
 
   /**
    * Restore surrogates in a JSON body, escaping each restored value for its string context. With a
    * known `wire`, tool-call arguments get the same restore-into-tools withholding as the SSE path.
    */
-  restoreJson(body: string, wire?: Wire): string;
+  restoreJson(body: string, wire?: Wire, opts?: RestoreOptions): string;
 
   /** Streaming restore for non-SSE response bodies (holds back partial surrogates at chunk edges). */
-  restoreStream(): TransformStream<Uint8Array, Uint8Array>;
+  restoreStream(opts?: RestoreOptions): TransformStream<Uint8Array, Uint8Array>;
 
   /** Streaming restore for a provider SSE stream, using the wire-specific reassembly adapter. */
-  restoreEventStream(wire: Wire): TransformStream<Uint8Array, Uint8Array>;
+  restoreEventStream(wire: Wire, opts?: RestoreOptions): TransformStream<Uint8Array, Uint8Array>;
 
   /** Membership check over permanent + this scope's detected values, to keep derived metadata safe to log. */
   containsProtectedValue(text: string): boolean;
@@ -108,18 +108,36 @@ export interface RequestScope {
    * {@link restoredCount} to log the `🛡️ withheld N value(s) from tool-call arguments` line.
    */
   readonly withheldFromToolsCount: number;
+
+  /**
+   * Raw restore audit for explicit trace/debug runs. This includes protected values and must only be
+   * written when raw-value auditing is explicitly enabled (`FICTA_LOG_LEVEL=trace` and
+   * `FICTA_TRACE_AUDIT=1`), never surfaced in normal stats.
+   */
+  traceRestoreDetails(): RestoreTraceDetails;
 }
 
-/** Optional context for text redaction: which surface/header/path the text came from. */
-export type TextRedactionContext = Omit<DetectTextContext, "surface"> & {
-  surface?: DetectTextContext["surface"];
+interface TraceRedactionOptions {
   /**
-   * Keep registered/detected values that sit inside a filesystem-path-like token untouched. Default
-   * true (the query surface, where paths like `redirect_uri=/a/b` are legitimate). The proxy passes
-   * false for headers so a secret embedded in a slash-path there is redacted, not preserved.
+   * Include raw values and surrogates in the returned detail object. This is for explicitly enabled
+   * proxy audit sidecars; normal callers should leave it unset so detailed redaction stays values-free.
    */
-  preservePaths?: boolean;
-};
+  traceValues?: boolean;
+}
+
+export type BodyRedactionContext = Omit<DetectTextContext, "surface"> & TraceRedactionOptions;
+
+/** Optional context for text redaction: which surface/header/path the text came from. */
+export type TextRedactionContext = Omit<DetectTextContext, "surface"> &
+  TraceRedactionOptions & {
+    surface?: DetectTextContext["surface"];
+    /**
+     * Keep registered/detected values that sit inside a filesystem-path-like token untouched. Default
+     * true (the query surface, where paths like `redirect_uri=/a/b` are legitimate). The proxy passes
+     * false for headers so a secret embedded in a slash-path there is redacted, not preserved.
+     */
+    preservePaths?: boolean;
+  };
 
 /** Safe metadata about a protected value that matched. Never includes the protected literal. */
 export interface ProtectionHit {
@@ -128,6 +146,32 @@ export interface ProtectionHit {
   plugin?: string;
   kind?: ProtectedValue["kind"];
   confidence?: ProtectedValue["confidence"];
+}
+
+/** Trace-only protected value detail. Contains raw values; never include in default stats/logs. */
+export interface ProtectionTraceValue extends ProtectionHit {
+  value: string;
+  valueSha256: string;
+  surrogate?: string;
+  provenance?: "permanent" | "detected";
+}
+
+export interface RestoreTraceDetails {
+  restored: ProtectionTraceValue[];
+  withheldFromTools: ProtectionTraceValue[];
+}
+
+export interface RestoreMarkers {
+  start: string;
+  end: string;
+}
+
+export interface RestoreOptions {
+  /**
+   * Optional client-facing markers around restored human text. Used by the Gateway trace demo to
+   * render highlights; callers must strip or render these markers before resending transcripts.
+   */
+  markers?: RestoreMarkers;
 }
 
 export interface BodyRedactionResult {
@@ -145,11 +189,15 @@ export interface TextRedactionResult {
 export interface BodyRedactionDetails extends BodyRedactionResult {
   hits: ProtectionHit[];
   leakHits: ProtectionHit[];
+  traceValues?: ProtectionTraceValue[];
+  traceLeakValues?: ProtectionTraceValue[];
 }
 
 export interface TextRedactionDetails extends TextRedactionResult {
   hits: ProtectionHit[];
   leakHits: ProtectionHit[];
+  traceValues?: ProtectionTraceValue[];
+  traceLeakValues?: ProtectionTraceValue[];
 }
 
 /**

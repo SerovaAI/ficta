@@ -1,4 +1,5 @@
 import type { UIMessage } from "@tanstack/ai-react";
+import { stripRestoreHighlightMarkers } from "@/lib/restore-highlights";
 import type { StoredMessage } from "./types";
 
 /**
@@ -12,7 +13,7 @@ export function uiToStored(m: UIMessage): StoredMessage {
   return {
     id: m.id,
     role: m.role,
-    parts: m.parts,
+    parts: stripRestoreHighlightMarkers(m.parts),
     createdAt: m.createdAt?.toISOString(),
   };
 }

@@ -33,6 +33,33 @@ describe("vault", () => {
     expect(red).toMatch(/FICTA_[0-9a-f]{32}/);
   });
 
+  it("redacts registered multi-word values across serialized whitespace differences", () => {
+    const value = "Proxima Medical Supplies CC";
+    const vault = new Vault([{ value }]);
+    const body = JSON.stringify({ content: "counterparty: Proxima Medical\nSupplies CC" });
+    const { body: red, count } = vault.redactBody(body);
+
+    expect(count).toBe(1);
+    expect(red).not.toContain("Proxima Medical");
+    expect(red).toMatch(/FICTA_[0-9a-f]{32}/);
+    expect(vault.leakCount(body)).toBe(1);
+    expect(vault.leakCount(red)).toBe(0);
+    expect(vault.restoreText(red)).toContain(value);
+  });
+
+  it("does not collapse a registered value across a paragraph break", () => {
+    // Flexible whitespace matching handles single-line reflow but must not bridge a blank line:
+    // tokens separated by a paragraph break are likely unrelated, not a reflowed value.
+    const value = "Proxima Medical Supplies CC";
+    const vault = new Vault([{ value }]);
+    const body = JSON.stringify({ content: "counterparty: Proxima Medical\n\nSupplies CC arrived" });
+    const { body: red, count } = vault.redactBody(body);
+
+    expect(count).toBe(0);
+    expect(red).toContain("Proxima Medical");
+    expect(vault.leakCount(body)).toBe(0);
+  });
+
   it("round-trips: restore(redact(x)) recovers the value", () => {
     const { body: red } = v.redactBody(JSON.stringify({ x: AWS }));
     expect(v.restoreText(red)).toContain(AWS);
@@ -313,6 +340,49 @@ describe("vault", () => {
 
     expect(reasoning).toBe(secret);
     expect(out).not.toContain("FICTA_");
+  });
+
+  it("highlights restored sibling fields on the deep-sweep path even when a tool arg is withheld", async () => {
+    // The deep sweep uses restoreExcept once something is withheld; it must still apply the highlight
+    // markers, like the primary text/JSON restore, so highlighting is consistent across one response.
+    // The sibling carries a different secret than the withheld tool token (restoreExcept skips the
+    // withheld one), so it is genuinely restored and should come back wrapped in markers.
+    const toolSecret = "corova-control-plane";
+    const siblingSecret = "corova-billing-service";
+    const vault = new Vault([{ value: toolSecret }, { value: siblingSecret }]);
+    const toolSurrogate = vault.redactText(toolSecret).text;
+    const siblingSurrogate = vault.redactText(siblingSecret).text;
+    const markers = { start: "«", end: "»" };
+    const sse = [
+      `data: ${JSON.stringify({
+        choices: [
+          {
+            index: 0,
+            delta: {
+              reasoning_content: `see ${siblingSurrogate}`,
+              tool_calls: [{ index: 0, function: { arguments: `{"cmd":"${toolSurrogate}"}` } }],
+            },
+          },
+        ],
+      })}\n\n`,
+      "data: [DONE]\n\n",
+    ].join("");
+
+    const out = await transformText(
+      vault.restoreEventStream(sseRestoreAdapterFor("openai-chat"), undefined, { markers }),
+      [sse],
+    );
+    const events = streamedJsonData(out).flatMap((event) => event?.choices ?? []);
+    const reasoning = events.map((choice) => choice?.delta?.reasoning_content ?? "").join("");
+    const toolArgs = events
+      .flatMap((choice) => choice?.delta?.tool_calls ?? [])
+      .map((toolCall) => toolCall?.function?.arguments ?? "")
+      .join("");
+
+    expect(reasoning).toBe(`see ${markers.start}${siblingSecret}${markers.end}`); // restored AND highlighted
+    expect(toolArgs).toContain(toolSurrogate); // the withheld tool arg keeps its placeholder
+    expect(toolArgs).not.toContain(toolSecret);
+    expect(vault.withheldFromToolsCount).toBe(1);
   });
 
   it("NOOP-wire SSE restore restores whole surrogates and re-escapes JSON-special values", async () => {

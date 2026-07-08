@@ -2,6 +2,9 @@ export const FICTA_HEALTH_PATH = "/__ficta/health";
 export const FICTA_STATUS_PATH = "/__ficta/status";
 export const FICTA_CONFIG_PATH = "/__ficta/config";
 export const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
+export const FICTA_RESTORE_HIGHLIGHT_HEADER = "x-ficta-restore-highlights";
+export const FICTA_RESTORE_HIGHLIGHT_START = "\u001eFICTA_RESTORE_START\u001e";
+export const FICTA_RESTORE_HIGHLIGHT_END = "\u001eFICTA_RESTORE_END\u001e";
 
 export const PII_BACKEND_NAMES = ["regex", "presidio", "openmed"];
 const PII_BACKEND_NAME_SET = new Set(PII_BACKEND_NAMES);

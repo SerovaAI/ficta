@@ -36,6 +36,7 @@ export interface DoctorReport {
     failClosed: boolean;
     logLevel: LogLevel;
     logBodies: boolean;
+    traceAudit: boolean;
     redactPaths: boolean;
     requireRegistry: boolean;
     globallyDisabled: boolean;
@@ -134,6 +135,12 @@ export async function collectDoctorReport(opts: DoctorOptions = {}): Promise<Doc
       message: "FICTA_LOG_LEVEL=trace is set; raw model bodies may be written to disk",
     });
   }
+  if (cfg.traceAudit) {
+    issues.push({
+      severity: "warning",
+      message: "FICTA_TRACE_AUDIT=1 is set; raw protected values may be written to audit sidecars",
+    });
+  }
   const path = configPath();
   if (!process.env.FICTA_SURROGATE_KEY) {
     issues.push({
@@ -194,6 +201,7 @@ export async function collectDoctorReport(opts: DoctorOptions = {}): Promise<Doc
       failClosed: posture.protection.failClosed,
       logLevel: posture.transport.logLevel,
       logBodies: posture.transport.logBodies,
+      traceAudit: posture.transport.traceAudit,
       redactPaths: posture.protection.redactPaths,
       requireRegistry: posture.protection.requireRegistry,
       globallyDisabled,
@@ -237,6 +245,7 @@ export function renderDoctorReport(report: DoctorReport): string {
   lines.push(`  ${report.config.failClosed ? "✓" : "!"} fail-closed: ${report.config.failClosed ? "on" : "OFF"}`);
   lines.push(`  - log level: ${report.config.logLevel}`);
   lines.push(`  ${report.config.logBodies ? "!" : "✓"} raw body logs: ${report.config.logBodies ? "ON" : "off"}`);
+  lines.push(`  ${report.config.traceAudit ? "!" : "✓"} raw value audit: ${report.config.traceAudit ? "ON" : "off"}`);
   lines.push(
     `  ${report.config.redactPaths ? "!" : "-"} path-like tokens: ${
       report.config.redactPaths ? "redacted on all surfaces" : "redacted in headers, preserved in body/query"

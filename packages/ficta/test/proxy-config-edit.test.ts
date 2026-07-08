@@ -45,6 +45,7 @@ function cfg(overrides: Partial<Config> = {}): Config {
     logDir: "/tmp/ficta-logs",
     logLevel: "info",
     logBodies: false,
+    traceAudit: false,
     logMaxBytes: 256 * 1024,
     failClosed: true,
     ...overrides,

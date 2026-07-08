@@ -1,14 +1,16 @@
 import type { UIMessage } from "@tanstack/ai-react";
+import { stripRestoreHighlightMarkers } from "@/lib/restore-highlights";
 import { cn } from "@/lib/utils";
 import { MessageActions } from "./MessageActions";
 import { MessageParts } from "./MessageParts";
 import { StreamingIndicator } from "./StreamingIndicator";
 
 function textOf(message: UIMessage): string {
-  return message.parts
+  const text = message.parts
     .filter((p): p is Extract<typeof p, { type: "text" }> => p.type === "text")
     .map((p) => p.content)
     .join("");
+  return stripRestoreHighlightMarkers(text);
 }
 
 export function MessageBubble({

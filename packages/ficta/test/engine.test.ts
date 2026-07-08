@@ -30,6 +30,49 @@ describe("protection engine plugins", () => {
     expect(engine.restoreText(redacted.body)).toContain(SECRET);
   });
 
+  it("recognizes registered values across line-wrapped whitespace in safety checks", () => {
+    const value = "Proxima Medical Supplies CC";
+    const engine = new ProtectionEngine({ plugins: [], values: [{ value }] });
+
+    expect(engine.containsProtectedValue("counterparty: Proxima Medical\nSupplies CC")).toBe(true);
+    expect(engine.containsProtectedValue("counterparty: ProximaMedicalSupplies CC")).toBe(false);
+  });
+
+  it("exposes raw value trace details only when explicitly requested", async () => {
+    const plugin: RegistrySourcePlugin = {
+      kind: "registry-source",
+      name: "fixture-registry",
+      config: { bindings: [], sections: [], envDefaults: {} },
+      setup: { registrySources: () => [] },
+      discover: () => [],
+      loadValues: () => [
+        { name: "FIXTURE_SECRET", value: SECRET, source: "fixture", kind: "secret", confidence: "exact" },
+      ],
+    };
+    const engine = new ProtectionEngine({ plugins: [plugin] });
+    const body = JSON.stringify({ content: `secret=${SECRET}` });
+
+    const normal = await engine.redactBodyDetailed(body);
+    expect(normal.traceValues).toBeUndefined();
+
+    const scope = engine.beginRequest();
+    const redacted = await scope.redactBodyDetailed(body, { traceValues: true });
+    expect(redacted.traceValues).toHaveLength(1);
+    expect(redacted.traceValues?.[0]).toMatchObject({
+      name: "FIXTURE_SECRET",
+      source: "fixture",
+      kind: "secret",
+      confidence: "exact",
+      value: SECRET,
+      provenance: "permanent",
+    });
+    expect(redacted.traceValues?.[0]?.valueSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(redacted.traceValues?.[0]?.surrogate).toMatch(/^FICTA_[0-9a-f]{32}$/);
+
+    scope.restoreJson(redacted.body);
+    expect(scope.traceRestoreDetails().restored).toEqual(redacted.traceValues);
+  });
+
   it("isolates detector plugin exceptions", async () => {
     const engine = new ProtectionEngine({
       plugins: [

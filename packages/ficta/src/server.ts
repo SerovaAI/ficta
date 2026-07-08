@@ -7,6 +7,9 @@ import {
   FICTA_CONFIG_PATH,
   FICTA_HEALTH_PATH,
   FICTA_PROTECTION_STATS_PATH,
+  FICTA_RESTORE_HIGHLIGHT_END,
+  FICTA_RESTORE_HIGHLIGHT_HEADER,
+  FICTA_RESTORE_HIGHLIGHT_START,
   FICTA_STATUS_PATH,
 } from "@serovaai/ficta-protocol";
 import { type Context, Hono } from "hono";
@@ -19,12 +22,14 @@ import { ProtectionStats, type ProtectionStatsSnapshot, type ProtectionSurface }
 import {
   DetectorUnavailableError,
   type ProtectionHit,
+  type ProtectionTraceValue,
   type RedactionEngine,
   type RequestScope,
+  type RestoreTraceDetails,
 } from "./engine/redaction-engine.js";
 import { surrogateKeyWarning } from "./engine/vault.js";
 import { type Wire, wireOf } from "./engine/wire.js";
-import { logRequest, logResponse, restoredBodyTap, runDir, writeRestoredBody } from "./log.js";
+import { logRequest, logResponse, restoredBodyTap, runDir, writeRestoredBody, writeTraceAudit } from "./log.js";
 import { log } from "./logger.js";
 import {
   activeBackends,
@@ -127,6 +132,11 @@ export async function startProxy(
     // content; exact-match redaction is safe.
     const protect = engine.protecting;
     const wire = wireOf(url.pathname);
+    const restoreHighlightMarkers =
+      cfg.traceAudit && c.req.header(FICTA_RESTORE_HIGHLIGHT_HEADER) === "1"
+        ? { start: FICTA_RESTORE_HIGHLIGHT_START, end: FICTA_RESTORE_HIGHLIGHT_END }
+        : undefined;
+    const restoreHighlightOptions = restoreHighlightMarkers ? { markers: restoreHighlightMarkers } : undefined;
 
     // One scope per request: registered secrets (the permanent layer) are shared, while detected
     // PII is consulted only within the request's scope. Without a scope key the scope is dropped
@@ -134,14 +144,17 @@ export async function startProxy(
     // another request's response. A trusted caller may pin a persistent per-thread detected vault
     // via the internal scope header (see scopeKeyFrom); isolation then holds across keys instead.
     const scope = engine.beginRequest(scopeKeyFrom(c));
+    const traceRedactions: ProtectionTraceRedaction[] = [];
 
     let searchToSend = url.search;
     let queryRedaction: SurfaceRedaction | undefined;
     if (protect && searchToSend) {
-      const { search: redactedSearch, ...redaction } = await redactQueryString(scope, url);
+      const { search: redactedSearch, ...redaction } = await redactQueryString(scope, url, cfg.traceAudit);
       queryRedaction = redaction;
       if (redaction.leaks > 0 && cfg.failClosed) {
-        recordProtection(stats, scope, {
+        const n = logRequest({ method, path: url.pathname, body: "", target: "<blocked>", route: "blocked" });
+        recordProtection(stats, scope, traceRedactions, {
+          requestId: n,
           method,
           path: url.pathname,
           wire,
@@ -149,7 +162,8 @@ export async function startProxy(
           redaction,
           blocked: true,
         });
-        return blockedLeakResponse(c, "query string", redaction.leaks, undefined, redaction.leakHits);
+        writeProtectionTraceAudit(n, traceRedactions, scope, "blocked", cfg.traceAudit);
+        return blockedLeakResponse(c, "query string", redaction.leaks, n, redaction.leakHits);
       }
       if (redaction.count > 0) searchToSend = redactedSearch;
     }
@@ -157,8 +171,10 @@ export async function startProxy(
     const { url: target, note: route } = resolveTarget(cfg, url.pathname, searchToSend, c.req.raw.headers);
     const upstreamIssue = upstreamPolicyIssue(cfg, target);
     if (upstreamIssue) {
+      const n = logRequest({ method, path: url.pathname, body: "", target: "<blocked>", route });
       if (queryRedaction) {
-        recordProtection(stats, scope, {
+        recordProtection(stats, scope, traceRedactions, {
+          requestId: n,
           method,
           path: url.pathname,
           wire,
@@ -168,6 +184,7 @@ export async function startProxy(
           blocked: false,
         });
       }
+      writeProtectionTraceAudit(n, traceRedactions, scope, "blocked", cfg.traceAudit);
       return c.json({ error: { type: "ficta_upstream_policy", message: upstreamIssue } }, 403);
     }
 
@@ -176,6 +193,7 @@ export async function startProxy(
     headers.delete("content-length");
     headers.delete("accept-encoding");
     headers.delete(SCOPE_HEADER); // internal routing metadata — must never reach the upstream vendor
+    headers.delete(FICTA_RESTORE_HIGHLIGHT_HEADER); // trace-demo UI hint — must never reach the upstream vendor
 
     let bodyToSend: string | undefined;
     let n: number;
@@ -189,7 +207,7 @@ export async function startProxy(
       if (protect) {
         let redaction: Awaited<ReturnType<typeof scope.redactBodyDetailed>>;
         try {
-          redaction = await scope.redactBodyDetailed(bodyText, { path: url.pathname });
+          redaction = await scope.redactBodyDetailed(bodyText, { path: url.pathname, traceValues: cfg.traceAudit });
         } catch (err) {
           // A fail-closed detector (e.g. Presidio required but unreachable) refuses the request rather
           // than forwarding data it could not screen. The raw body has not left the process.
@@ -199,7 +217,7 @@ export async function startProxy(
         const redacted = redaction.body;
         requestModel = safeRequestModel(scope, originalModel, requestModelFromBody(redacted));
         if (queryRedaction) {
-          recordProtection(stats, scope, {
+          recordProtection(stats, scope, traceRedactions, {
             requestId: n,
             method,
             path: url.pathname,
@@ -212,7 +230,7 @@ export async function startProxy(
           });
         }
         if (redaction.leaks > 0 && cfg.failClosed) {
-          recordProtection(stats, scope, {
+          recordProtection(stats, scope, traceRedactions, {
             requestId: n,
             method,
             path: url.pathname,
@@ -223,10 +241,11 @@ export async function startProxy(
             redaction,
             blocked: true,
           });
+          writeProtectionTraceAudit(n, traceRedactions, scope, "blocked", cfg.traceAudit);
           return blockedLeakResponse(c, "body", redaction.leaks, n, redaction.leakHits);
         }
         if (redaction.count > 0 || redaction.leaks > 0) {
-          recordProtection(stats, scope, {
+          recordProtection(stats, scope, traceRedactions, {
             requestId: n,
             method,
             path: url.pathname,
@@ -254,7 +273,7 @@ export async function startProxy(
     } else {
       n = logRequest({ method, path: url.pathname, body: "", target, route });
       if (queryRedaction) {
-        recordProtection(stats, scope, {
+        recordProtection(stats, scope, traceRedactions, {
           requestId: n,
           method,
           path: url.pathname,
@@ -268,9 +287,9 @@ export async function startProxy(
     }
 
     if (protect) {
-      const redaction = await redactNonAuthHeaders(scope, headers);
+      const redaction = await redactNonAuthHeaders(scope, headers, cfg.traceAudit);
       if (redaction.leaks > 0 && cfg.failClosed) {
-        recordProtection(stats, scope, {
+        recordProtection(stats, scope, traceRedactions, {
           requestId: n,
           method,
           path: url.pathname,
@@ -281,10 +300,11 @@ export async function startProxy(
           redaction,
           blocked: true,
         });
+        writeProtectionTraceAudit(n, traceRedactions, scope, "blocked", cfg.traceAudit);
         return blockedLeakResponse(c, "headers", redaction.leaks, n, redaction.leakHits);
       }
       if (redaction.count > 0 || redaction.leaks > 0) {
-        recordProtection(stats, scope, {
+        recordProtection(stats, scope, traceRedactions, {
           requestId: n,
           method,
           path: url.pathname,
@@ -310,6 +330,7 @@ export async function startProxy(
       upstreamRes = await fetch(target, { method, headers, body: bodyToSend });
     } catch (err) {
       log.error({ reqId: n, err: (err as Error).message }, `✗ upstream fetch failed: ${(err as Error).message}`);
+      writeProtectionTraceAudit(n, traceRedactions, scope, "upstream-error", cfg.traceAudit);
       return c.json({ error: { type: "ficta_upstream_error", message: String(err) } }, 502);
     }
 
@@ -346,12 +367,14 @@ export async function startProxy(
       }
       // Persist both counts so withholds are visible beyond this log line (stats.json, /__ficta/status).
       stats.recordRestore({ restoredValues: restored, withheldFromToolsValues: withheld });
+      writeProtectionTraceAudit(n, traceRedactions, scope, "completed", cfg.traceAudit);
     };
 
     if (upstreamRes.body) {
       const [toClient, toLog] = upstreamRes.body.tee();
       void logResponse({ n, path: url.pathname, status: upstreamRes.status, contentType, stream: toLog });
       if (!restoreResponse) {
+        writeProtectionTraceAudit(n, traceRedactions, scope, "not-restored", cfg.traceAudit);
         return new Response(toClient, { status: upstreamRes.status, headers: resHeaders });
       }
       if (treatAsEventStream) {
@@ -360,7 +383,9 @@ export async function startProxy(
         // (see Vault.restoreSseRecord). Cross-event reassembly needs a known wire schema, so it is
         // intentionally not attempted here.
         return new Response(
-          toClient.pipeThrough(scope.restoreEventStream(wire)).pipeThrough(restoredBodyTap(n, logRestore)),
+          toClient
+            .pipeThrough(scope.restoreEventStream(wire, restoreHighlightOptions))
+            .pipeThrough(restoredBodyTap(n, logRestore)),
           {
             status: upstreamRes.status,
             headers: resHeaders,
@@ -391,6 +416,8 @@ export async function startProxy(
     if (restoreResponse) {
       logRestore();
       writeRestoredBody(n, restoredBody);
+    } else {
+      writeProtectionTraceAudit(n, traceRedactions, scope, "not-restored", cfg.traceAudit);
     }
     return new Response(restoredBody, { status: upstreamRes.status, headers: resHeaders });
   });
@@ -412,6 +439,7 @@ export async function startProxy(
           failClosed: cfg.failClosed,
           runDir,
           rawBodies: cfg.logBodies,
+          rawValueAudit: cfg.traceAudit,
         },
         engine.protecting
           ? `🔒 ficta listening on http://${bindHost}:${info.port} — ${engine.size} value(s), redacting up / restoring back`
@@ -583,6 +611,25 @@ interface SurfaceRedaction {
   leaks: number;
   hits: ProtectionHit[];
   leakHits: ProtectionHit[];
+  traceValues?: ProtectionTraceValue[];
+  traceLeakValues?: ProtectionTraceValue[];
+}
+
+interface ProtectionTraceRedaction {
+  surface: ProtectionSurface;
+  blocked: boolean;
+  redactedCount: number;
+  survivingCount: number;
+  redactedValues: ProtectionTraceValue[];
+  survivingValues: ProtectionTraceValue[];
+}
+
+interface ProtectionTraceAudit {
+  version: 1;
+  requestId: number;
+  outcome: "blocked" | "completed" | "not-restored" | "upstream-error";
+  redactions: ProtectionTraceRedaction[];
+  restore: RestoreTraceDetails;
 }
 
 interface QueryRedaction extends SurfaceRedaction {
@@ -643,9 +690,9 @@ function restoreBufferedBody(scope: RequestScope, wire: Wire, contentType: strin
  * every other parameter's wire bytes verbatim — re-encoding the whole query would normalize the
  * encoding of untouched, possibly signature-sensitive parameters.
  */
-async function redactQueryString(scope: RequestScope, url: URL): Promise<QueryRedaction> {
+async function redactQueryString(scope: RequestScope, url: URL, traceValues: boolean): Promise<QueryRedaction> {
   const raw = url.search.startsWith("?") ? url.search.slice(1) : url.search;
-  if (!raw) return { search: url.search, count: 0, leaks: 0, hits: [], leakHits: [] };
+  if (!raw) return { search: url.search, ...emptyRedaction() };
 
   const total = emptyRedaction();
   // Sequential (not Promise.all): parameters are few, and detection may hit a sidecar — keeping the
@@ -656,7 +703,10 @@ async function redactQueryString(scope: RequestScope, url: URL): Promise<QueryRe
     const rawKey = eq === -1 ? segment : segment.slice(0, eq);
     const rawValue = eq === -1 ? undefined : segment.slice(eq + 1);
 
-    const redactedKey = await scope.redactTextDetailed(decodeQueryComponent(rawKey), { path: url.pathname });
+    const redactedKey = await scope.redactTextDetailed(decodeQueryComponent(rawKey), {
+      path: url.pathname,
+      traceValues,
+    });
     addRedaction(total, redactedKey);
     const outKey = redactedKey.count > 0 ? encodeURIComponent(redactedKey.text) : rawKey;
 
@@ -665,7 +715,10 @@ async function redactQueryString(scope: RequestScope, url: URL): Promise<QueryRe
       continue;
     }
 
-    const redactedValue = await scope.redactTextDetailed(decodeQueryComponent(rawValue), { path: url.pathname });
+    const redactedValue = await scope.redactTextDetailed(decodeQueryComponent(rawValue), {
+      path: url.pathname,
+      traceValues,
+    });
     addRedaction(total, redactedValue);
     const outValue = redactedValue.count > 0 ? encodeURIComponent(redactedValue.text) : rawValue;
 
@@ -729,13 +782,22 @@ function contentTypeBase(contentType: string): string {
   return contentType.toLowerCase().split(";", 1)[0]?.trim() ?? "";
 }
 
-async function redactNonAuthHeaders(scope: RequestScope, headers: Headers): Promise<SurfaceRedaction> {
+async function redactNonAuthHeaders(
+  scope: RequestScope,
+  headers: Headers,
+  traceValues: boolean,
+): Promise<SurfaceRedaction> {
   const total = emptyRedaction();
   for (const [name, value] of [...headers]) {
     if (REQUIRED_AUTH_HEADER_NAMES.has(name.toLowerCase())) continue;
     // Headers do not preserve path-like tokens (unlike the query string): a registered secret inside a
     // slash-path in a header value is redacted, not left intact.
-    const redacted = await scope.redactTextDetailed(value, { header: name, surface: "header", preservePaths: false });
+    const redacted = await scope.redactTextDetailed(value, {
+      header: name,
+      surface: "header",
+      preservePaths: false,
+      traceValues,
+    });
     if (redacted.count > 0) headers.set(name, redacted.text);
     addRedaction(total, redacted);
   }
@@ -743,22 +805,34 @@ async function redactNonAuthHeaders(scope: RequestScope, headers: Headers): Prom
 }
 
 function emptyRedaction(): SurfaceRedaction {
-  return { count: 0, leaks: 0, hits: [], leakHits: [] };
+  return { count: 0, leaks: 0, hits: [], leakHits: [], traceValues: [], traceLeakValues: [] };
 }
 
 function addRedaction(
   total: SurfaceRedaction,
-  redaction: { count: number; leaks: number; hits: ProtectionHit[]; leakHits: ProtectionHit[] },
+  redaction: {
+    count: number;
+    leaks: number;
+    hits: ProtectionHit[];
+    leakHits: ProtectionHit[];
+    traceValues?: ProtectionTraceValue[];
+    traceLeakValues?: ProtectionTraceValue[];
+  },
 ): void {
   total.count += redaction.count;
   total.leaks += redaction.leaks;
   total.hits.push(...redaction.hits);
   total.leakHits.push(...redaction.leakHits);
+  total.traceValues ??= [];
+  total.traceValues.push(...(redaction.traceValues ?? []));
+  total.traceLeakValues ??= [];
+  total.traceLeakValues.push(...(redaction.traceLeakValues ?? []));
 }
 
 function recordProtection(
   stats: ProtectionStats,
   scope: RequestScope,
+  traceRedactions: ProtectionTraceRedaction[],
   args: {
     requestId?: number;
     method: string;
@@ -785,6 +859,39 @@ function recordProtection(
     redactedHits: args.redaction.hits,
     survivingHits: args.redaction.leakHits,
   });
+  const redactedValues = args.redaction.traceValues ?? [];
+  const survivingValues = args.redaction.traceLeakValues ?? [];
+  if (redactedValues.length === 0 && survivingValues.length === 0) return;
+  traceRedactions.push({
+    surface: args.surface,
+    blocked: args.blocked,
+    redactedCount: args.redaction.count,
+    survivingCount: args.redaction.leaks,
+    redactedValues,
+    survivingValues,
+  });
+}
+
+function writeProtectionTraceAudit(
+  requestId: number,
+  redactions: ProtectionTraceRedaction[],
+  scope: RequestScope,
+  outcome: ProtectionTraceAudit["outcome"],
+  traceAudit: boolean,
+): void {
+  // Skip before traceRestoreDetails() — it SHA-256-hashes every restored value, so on the default
+  // (traceAudit off) path this must not run per request. writeTraceAudit() no-ops when off too, but
+  // the gate has to be here to avoid the hashing, not just the write.
+  if (!traceAudit) return;
+  const restore = scope.traceRestoreDetails();
+  if (redactions.length === 0 && restore.restored.length === 0 && restore.withheldFromTools.length === 0) return;
+  writeTraceAudit(requestId, {
+    version: 1,
+    requestId,
+    outcome,
+    redactions,
+    restore,
+  } satisfies ProtectionTraceAudit);
 }
 
 function requestModelFromBody(body: string): string | undefined {

@@ -261,17 +261,20 @@ function ConfigEditor({
           ]}
         />
       </SettingRow>
-      <SettingRow label="Surrogate style" description="Shape of the placeholder tokens sent upstream.">
-        <SelectControl
-          value={draft.surrogateStyle}
-          disabled={isDisabled("surrogateStyle", edit, disabled)}
-          onChange={(value) => set("surrogateStyle", value as EditableProxyConfigValues["surrogateStyle"])}
-          locked={edit.locked.surrogateStyle}
-          options={[
-            ["opaque", "Opaque"],
-            ["typed", "Typed"],
-          ]}
-        />
+      <SettingRow label="Surrogate style" description="Placeholder token shape sent upstream.">
+        <div className="space-y-2">
+          <SelectControl
+            value={draft.surrogateStyle}
+            disabled={isDisabled("surrogateStyle", edit, disabled)}
+            onChange={(value) => set("surrogateStyle", value as EditableProxyConfigValues["surrogateStyle"])}
+            locked={edit.locked.surrogateStyle}
+            options={[
+              ["opaque", "Opaque - FICTA_<hex>"],
+              ["typed", "Typed - FICTA_<TYPE>_<hex>"],
+            ]}
+          />
+          <SurrogateStyleDetail />
+        </div>
       </SettingRow>
 
       <GroupHeading>Detection</GroupHeading>
@@ -405,6 +408,17 @@ function InlineStatus({ status, error }: { status: SaveStatus; error: string }) 
   return (
     <p className={cn("py-4 text-right text-xs", status === "error" ? "text-destructive" : "text-muted-foreground")}>
       {status === "saving" ? "Saving…" : error}
+    </p>
+  );
+}
+
+function SurrogateStyleDetail() {
+  return (
+    <p className="max-w-72 text-xs leading-relaxed text-muted-foreground sm:text-right">
+      Maps to <code className="font-mono">[surrogate] style</code> /{" "}
+      <code className="font-mono">FICTA_SURROGATE_STYLE</code>. Opaque hides the value type; typed keeps a grammar cue
+      like <code className="font-mono">FICTA_PERSON_...</code> or <code className="font-mono">FICTA_SSN_...</code>.
+      Restore behavior is unchanged.
     </p>
   );
 }

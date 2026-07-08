@@ -6,12 +6,16 @@ import { loadConfig, upstreamPolicyIssue } from "../src/config.js";
 import { configPath, readUserConfig, writeUserConfig } from "../src/user-config.js";
 
 const originalLogLevel = process.env.FICTA_LOG_LEVEL;
+const originalTraceAudit = process.env.FICTA_TRACE_AUDIT;
 const originalConfigFile = process.env.FICTA_CONFIG_FILE;
 const originalHost = process.env.FICTA_HOST;
 
 afterEach(() => {
   if (originalLogLevel === undefined) delete process.env.FICTA_LOG_LEVEL;
   else process.env.FICTA_LOG_LEVEL = originalLogLevel;
+
+  if (originalTraceAudit === undefined) delete process.env.FICTA_TRACE_AUDIT;
+  else process.env.FICTA_TRACE_AUDIT = originalTraceAudit;
 
   if (originalConfigFile === undefined) delete process.env.FICTA_CONFIG_FILE;
   else process.env.FICTA_CONFIG_FILE = originalConfigFile;
@@ -44,6 +48,20 @@ describe("config hardening", () => {
       process.env.FICTA_LOG_LEVEL = level;
       expect(loadConfig().logBodies).toBe(false);
     }
+  });
+
+  it("requires trace level and FICTA_TRACE_AUDIT=1 for raw value audit sidecars", () => {
+    process.env.FICTA_TRACE_AUDIT = "1";
+
+    process.env.FICTA_LOG_LEVEL = "trace";
+    expect(loadConfig().traceAudit).toBe(true);
+
+    process.env.FICTA_LOG_LEVEL = "debug";
+    expect(loadConfig().traceAudit).toBe(false);
+
+    delete process.env.FICTA_TRACE_AUDIT;
+    process.env.FICTA_LOG_LEVEL = "trace";
+    expect(loadConfig().traceAudit).toBe(false);
   });
 
   it("falls back to info for an unrecognized log level", () => {

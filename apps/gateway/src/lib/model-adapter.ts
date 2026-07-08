@@ -1,3 +1,4 @@
+import { FICTA_RESTORE_HIGHLIGHT_HEADER } from "@serovaai/ficta-protocol";
 import { anthropicText } from "@tanstack/ai-anthropic";
 import { openaiCompatibleText } from "@tanstack/ai-openai/compatible";
 
@@ -23,7 +24,14 @@ export interface ModelChoice {
 const FICTA_PROXY_URL = process.env.FICTA_PROXY_URL ?? "http://127.0.0.1:8787";
 
 export function createModelAdapter({ provider, model, fictaScope }: ModelChoice) {
-  const defaultHeaders = fictaScope ? { "x-ficta-scope": fictaScope } : undefined;
+  const defaultHeaders = {
+    // Advertises that this client can render restore-highlight markers — a static capability (the UI
+    // always knows how). It's an internal handshake header (the proxy strips it before upstream), so
+    // it's sent unconditionally: the single switch for highlights is the proxy's FICTA_TRACE_AUDIT,
+    // which is what actually decides whether markers are emitted. No separate gateway flag needed.
+    [FICTA_RESTORE_HIGHLIGHT_HEADER]: "1",
+    ...(fictaScope ? { "x-ficta-scope": fictaScope } : {}),
+  };
   if (provider === "anthropic") {
     // ficta routes `/v1/messages` → the Anthropic upstream; the Anthropic adapter emits that wire.
     // The adapter's model param is a known-Claude-id union; the UI supplies a validated id, so cast.

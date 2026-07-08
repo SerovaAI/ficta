@@ -2,8 +2,8 @@ import { chmodSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { dirname, join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import type { RegistrySourcePlugin } from "../src/plugins/index.js";
 
 const AWS = "AKIAIOSFODNN7EXAMPLE";
@@ -269,6 +269,156 @@ describe("proxy hardening", () => {
         if (v === undefined) delete process.env[k];
         else process.env[k] = v;
       }
+    }
+  });
+
+  it("writes raw value audit sidecars only when trace audit is explicitly enabled", async () => {
+    const originalEnv = {
+      FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,
+      FICTA_LOG_LEVEL: process.env.FICTA_LOG_LEVEL,
+      FICTA_TRACE_AUDIT: process.env.FICTA_TRACE_AUDIT,
+      FICTA_LOG_DIR: process.env.FICTA_LOG_DIR,
+      FICTA_SURROGATE_KEY: process.env.FICTA_SURROGATE_KEY,
+    };
+
+    const fixturePlugin: RegistrySourcePlugin = {
+      kind: "registry-source",
+      name: "audit-fixture",
+      config: { bindings: [], sections: [], envDefaults: {} },
+      setup: { registrySources: () => [] },
+      discover: () => [],
+      loadValues: () => [
+        { name: "PROOF_SECRET", value: PROOF_SECRET, source: "fixture", kind: "secret", confidence: "exact" },
+      ],
+    };
+
+    async function run(traceAudit: boolean): Promise<{ auditFiles: string[]; runDir: string }> {
+      let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+      const upstream = createServer((req, res) => {
+        let body = "";
+        req.setEncoding("utf8");
+        req.on("data", (chunk) => {
+          body += chunk;
+        });
+        req.on("end", () => {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(body);
+        });
+      });
+
+      try {
+        vi.resetModules();
+        const upstreamPort = await listen(upstream);
+        process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
+        process.env.FICTA_LOG_LEVEL = "trace";
+        process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-trace-audit-"));
+        process.env.FICTA_SURROGATE_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        if (traceAudit) process.env.FICTA_TRACE_AUDIT = "1";
+        else delete process.env.FICTA_TRACE_AUDIT;
+
+        const { startProxy } = await import("../src/server.js");
+        proxy = await startProxy({ port: 0, plugins: [fixturePlugin] });
+
+        const res = await fetch(`http://127.0.0.1:${proxy.port}/v1/messages`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ model: "claude-test", messages: [{ role: "user", content: PROOF_SECRET }] }),
+        });
+        const text = await res.text();
+        expect(res.status).toBe(200);
+        expect(text).toContain(PROOF_SECRET);
+
+        const runDir = dirname(proxy.protectionStats().path);
+        const auditFiles = readdirSync(runDir).filter((name) => name.endsWith(".trace.json"));
+        return { auditFiles, runDir };
+      } finally {
+        proxy?.close();
+        await close(upstream);
+      }
+    }
+
+    try {
+      const withoutFlag = await run(false);
+      expect(withoutFlag.auditFiles).toEqual([]);
+
+      const withFlag = await run(true);
+      expect(withFlag.auditFiles).toHaveLength(1);
+      const audit = JSON.parse(readFileSync(join(withFlag.runDir, withFlag.auditFiles[0] ?? ""), "utf8")) as {
+        outcome: string;
+        redactions: Array<{ surface: string; redactedValues: Array<{ value: string; surrogate?: string }> }>;
+        restore: { restored: Array<{ value: string; surrogate?: string }> };
+      };
+      expect(audit.outcome).toBe("completed");
+      expect(audit.redactions).toHaveLength(1);
+      expect(audit.redactions[0]?.surface).toBe("body");
+      expect(audit.redactions[0]?.redactedValues[0]).toMatchObject({ value: PROOF_SECRET });
+      expect(audit.redactions[0]?.redactedValues[0]?.surrogate).toMatch(/^FICTA_[0-9a-f]{32}$/);
+      expect(audit.restore.restored[0]).toMatchObject({ value: PROOF_SECRET });
+    } finally {
+      for (const [k, v] of Object.entries(originalEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      vi.resetModules();
+    }
+  });
+
+  it("writes trace audit for query redaction before an upstream-policy block", async () => {
+    const originalEnv = {
+      FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,
+      FICTA_ALLOW_CUSTOM_UPSTREAM: process.env.FICTA_ALLOW_CUSTOM_UPSTREAM,
+      FICTA_LOG_LEVEL: process.env.FICTA_LOG_LEVEL,
+      FICTA_TRACE_AUDIT: process.env.FICTA_TRACE_AUDIT,
+      FICTA_LOG_DIR: process.env.FICTA_LOG_DIR,
+      FICTA_SURROGATE_KEY: process.env.FICTA_SURROGATE_KEY,
+    };
+
+    const fixturePlugin: RegistrySourcePlugin = {
+      kind: "registry-source",
+      name: "audit-fixture",
+      config: { bindings: [], sections: [], envDefaults: {} },
+      setup: { registrySources: () => [] },
+      discover: () => [],
+      loadValues: () => [
+        { name: "PROOF_SECRET", value: PROOF_SECRET, source: "fixture", kind: "secret", confidence: "exact" },
+      ],
+    };
+
+    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    try {
+      vi.resetModules();
+      process.env.FICTA_UPSTREAM = "https://custom-upstream.example";
+      delete process.env.FICTA_ALLOW_CUSTOM_UPSTREAM;
+      process.env.FICTA_LOG_LEVEL = "trace";
+      process.env.FICTA_TRACE_AUDIT = "1";
+      process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-trace-audit-block-"));
+      process.env.FICTA_SURROGATE_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0, plugins: [fixturePlugin] });
+
+      const res = await fetch(`http://127.0.0.1:${proxy.port}/v1/messages?proof=${encodeURIComponent(PROOF_SECRET)}`, {
+        method: "GET",
+      });
+      expect(res.status).toBe(403);
+
+      const runDir = dirname(proxy.protectionStats().path);
+      const auditFiles = readdirSync(runDir).filter((name) => name.endsWith(".trace.json"));
+      expect(auditFiles).toHaveLength(1);
+      const audit = JSON.parse(readFileSync(join(runDir, auditFiles[0] ?? ""), "utf8")) as {
+        outcome: string;
+        redactions: Array<{ surface: string; redactedValues: Array<{ value: string }> }>;
+      };
+      expect(audit.outcome).toBe("blocked");
+      expect(audit.redactions[0]?.surface).toBe("query string");
+      expect(audit.redactions[0]?.redactedValues[0]).toMatchObject({ value: PROOF_SECRET });
+    } finally {
+      proxy?.close();
+      for (const [k, v] of Object.entries(originalEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      vi.resetModules();
     }
   });
 
@@ -1318,6 +1468,7 @@ describe("config posture endpoint", () => {
             allowCustomUpstream: true,
             logLevel: "silent",
             logBodies: false,
+            traceAudit: false,
           },
         },
         edit: {

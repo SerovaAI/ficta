@@ -51,6 +51,7 @@ export interface ConfigPosture {
     allowCustomUpstream: boolean;
     logLevel: LogLevel;
     logBodies: boolean;
+    traceAudit: boolean;
     logDir: string;
   };
 }
@@ -105,6 +106,7 @@ export function configPosture(
       allowCustomUpstream: cfg.allowCustomUpstream,
       logLevel: cfg.logLevel,
       logBodies: cfg.logBodies,
+      traceAudit: cfg.traceAudit,
       logDir: cfg.logDir,
     },
   };

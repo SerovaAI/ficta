@@ -213,6 +213,16 @@ export function writeRestoredBody(n: number, body: string): void {
 }
 
 /**
+ * Trace-only structured audit sidecar. Unlike stats.json, this may include raw protected values, so
+ * it is emitted only when FICTA_LOG_LEVEL=trace and FICTA_TRACE_AUDIT=1, using the same private-file
+ * permissions as raw body logs.
+ */
+export function writeTraceAudit(n: number, audit: unknown): void {
+  if (!cfg.traceAudit) return;
+  writePrivateFile(join(runDir, `audit-${pad(n)}.trace.json`), JSON.stringify(audit, null, 2));
+}
+
+/**
  * Pass-through tap that (at trace) accumulates the client-bound, post-restore stream into
  * res-XXXX.restored.txt, capped at logMaxBytes, then runs `onFlush` once the stream drains. Replaces
  * a bare flush tap on the streaming restore paths so the restored bytes are captured for forensics.

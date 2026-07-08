@@ -4,6 +4,7 @@ import { scopeFromAuth } from "../../lib/auth/guards.server";
 import { getActiveProvider } from "../../lib/auth/provider.server";
 import { createModelAdapter, MissingKeyError, type Provider } from "../../lib/model-adapter";
 import { DEFAULT_REASONING_EFFORT, isReasoningEffort, type ReasoningEffort } from "../../lib/models";
+import { stripRestoreHighlightMarkers } from "../../lib/restore-highlights";
 import { getStorage } from "../../lib/storage/storage.server";
 import { isModelAllowed } from "../../lib/storage/types";
 
@@ -42,7 +43,7 @@ export const Route = createFileRoute("/api/chat")({
           reasoningEffort = isReasoningEffort(body.forwardedProps?.reasoningEffort)
             ? body.forwardedProps.reasoningEffort
             : DEFAULT_REASONING_EFFORT;
-          messages = body.messages;
+          messages = stripRestoreHighlightMarkers(body.messages);
           threadId = typeof body.threadId === "string" ? body.threadId.slice(0, 128) : undefined;
           if (!PROVIDERS.includes(provider)) throw new Error(`unknown provider "${provider}"`);
           if (!model) throw new Error("no model selected");

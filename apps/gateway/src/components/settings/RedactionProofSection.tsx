@@ -1,6 +1,6 @@
 import type * as React from "react";
 import { useEffect, useState } from "react";
-import { fetchProtectionStats, type ProtectionHit, type ProtectionStats } from "@/lib/protection-stats";
+import { fetchProtectionStats, type ProtectionStats, type ProtectionStatsLabelBucket } from "@/lib/protection-stats";
 import { cn } from "@/lib/utils";
 
 export function RedactionProofSection() {
@@ -66,29 +66,10 @@ function ProofRows({ proof }: { proof: Extract<ProtectionStats, { ok: true }> })
       </div>
 
       <div className="border-t border-border">
-        {proof.stats.events.length === 0 ? (
+        {proof.stats.byLabel.length === 0 ? (
           <p className="py-4 text-sm text-muted-foreground">No redaction events have occurred in this proxy run yet.</p>
         ) : (
-          proof.stats.events.map((event) => (
-            <div key={event.index} className="border-b border-border py-3">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="text-sm font-medium">{event.model}</span>
-                <Meta>{event.surface}</Meta>
-                <Meta>#{event.requestId ?? event.index}</Meta>
-                <Meta>{formatTime(event.at)}</Meta>
-                {event.blocked ? <Badge tone="danger">Blocked</Badge> : null}
-              </div>
-              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                <span>{event.redactedValues} redacted</span>
-                <span className={event.survivingValues > 0 ? "font-medium text-amber-700 dark:text-amber-300" : ""}>
-                  {event.survivingValues} survived
-                </span>
-                <span>{event.method}</span>
-                <span className="break-all font-mono">{event.path}</span>
-              </div>
-              <HitList hits={[...event.redactedHits, ...event.survivingHits]} />
-            </div>
-          ))
+          <KeySummary buckets={proof.stats.byLabel} />
         )}
       </div>
     </>
@@ -115,26 +96,90 @@ function Metric({
   );
 }
 
-function HitList({ hits }: { hits: ProtectionHit[] }) {
-  const labels = uniqueHits(hits);
-  if (labels.length === 0) return null;
+function KeySummary({ buckets }: { buckets: ProtectionStatsLabelBucket[] }) {
   return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
-      {labels.map((hit) => (
-        <Badge key={hit}>{hit}</Badge>
-      ))}
+    <div className="py-3">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h4 className="text-sm font-medium">Protected keys and labels</h4>
+          <p className="pt-1 text-muted-foreground text-xs leading-relaxed">
+            Aggregated across this proxy run; individual request bodies are not listed.
+          </p>
+        </div>
+        <Meta>{buckets.length} total</Meta>
+      </div>
+      <div className="mt-3 overflow-x-auto rounded-lg border border-border">
+        <table className="w-full min-w-[44rem] text-left text-sm">
+          <thead className="border-b border-border bg-muted/50 text-muted-foreground text-xs">
+            <tr>
+              <th scope="col" className="px-3 py-2 font-medium">
+                Key or label
+              </th>
+              <th scope="col" className="px-3 py-2 font-medium">
+                Kept out
+              </th>
+              <th scope="col" className="px-3 py-2 font-medium">
+                Redacted
+              </th>
+              <th scope="col" className="px-3 py-2 font-medium">
+                Survived
+              </th>
+              <th scope="col" className="px-3 py-2 font-medium">
+                Requests
+              </th>
+              <th scope="col" className="px-3 py-2 font-medium">
+                Blocked
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {buckets.map((bucket) => (
+              <tr key={bucketKey(bucket)} className="border-b border-border last:border-b-0">
+                <td className="min-w-0 px-3 py-2 align-top">
+                  <div className="break-all font-mono text-xs text-foreground">{bucket.name}</div>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    <Badge>{bucket.source}</Badge>
+                    {bucket.kind ? <Badge>{bucket.kind}</Badge> : null}
+                    {bucket.confidence ? <Badge>{bucket.confidence}</Badge> : null}
+                  </div>
+                </td>
+                <CountCell value={bucket.keptOutOfModelValues} />
+                <CountCell value={bucket.redactedValues} />
+                <CountCell value={bucket.survivingValues} warn={bucket.survivingValues > 0} />
+                <CountCell value={bucket.requests} />
+                <CountCell value={bucket.blockedRequests} warn={bucket.blockedRequests > 0} />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
-function uniqueHits(hits: ProtectionHit[]): string[] {
-  const labels = hits.map(hitLabel);
-  return [...new Set(labels)].slice(0, 6);
+function CountCell({ value, warn }: { value: number; warn?: boolean }) {
+  return (
+    <td
+      className={cn(
+        "whitespace-nowrap px-3 py-2 align-top tabular-nums",
+        warn && "font-medium text-amber-700 dark:text-amber-300",
+      )}
+    >
+      {formatNumber(value)}
+    </td>
+  );
 }
 
-function hitLabel(hit: ProtectionHit): string {
-  const detail = [hit.kind, hit.confidence].filter(Boolean).join(" / ");
-  return detail ? `${hit.name} / ${hit.source} / ${detail}` : `${hit.name} / ${hit.source}`;
+function bucketKey(bucket: ProtectionStatsLabelBucket): string {
+  return [bucket.name, bucket.source, bucket.plugin ?? "", bucket.kind ?? "", bucket.confidence ?? ""].join("\0");
+}
+
+// One shared formatter — Intl.NumberFormat is relatively heavy to construct, and CountCell renders
+// many numeric cells per bucket row on every stats refresh.
+const numberFormatter = new Intl.NumberFormat();
+
+function formatNumber(value: number): string {
+  return numberFormatter.format(value);
 }
 
 function Meta({ children }: { children: React.ReactNode }) {
@@ -154,15 +199,4 @@ function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone
       {children}
     </span>
   );
-}
-
-function formatTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
 }
