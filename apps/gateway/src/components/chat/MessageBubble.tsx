@@ -1,5 +1,5 @@
 import type { UIMessage } from "@tanstack/ai-react";
-import { stripRestoreHighlightMarkers } from "@/lib/restore-highlights";
+import { type RestoreHighlightDisplayMode, stripRestoreHighlightMarkers } from "@/lib/restore-highlights";
 import { cn } from "@/lib/utils";
 import { MessageActions } from "./MessageActions";
 import { MessageParts } from "./MessageParts";
@@ -18,11 +18,13 @@ export function MessageBubble({
   streaming,
   onRegenerate,
   canRegenerate,
+  restoreDisplayMode,
 }: {
   message: UIMessage;
   streaming?: boolean;
   onRegenerate?: () => void;
   canRegenerate?: boolean;
+  restoreDisplayMode: RestoreHighlightDisplayMode;
 }) {
   const isUser = message.role === "user";
   const text = textOf(message);
@@ -41,7 +43,11 @@ export function MessageBubble({
   return (
     <div className="group flex flex-col gap-1">
       <div className={cn("min-w-0 text-foreground")}>
-        {streaming && !hasVisible ? <StreamingIndicator /> : <MessageParts parts={message.parts} />}
+        {streaming && !hasVisible ? (
+          <StreamingIndicator />
+        ) : (
+          <MessageParts parts={message.parts} restoreDisplayMode={restoreDisplayMode} />
+        )}
       </div>
       {!streaming && text.length > 0 ? (
         <MessageActions text={text} onRegenerate={onRegenerate} canRegenerate={canRegenerate} />

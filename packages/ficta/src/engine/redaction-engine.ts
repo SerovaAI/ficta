@@ -163,6 +163,7 @@ export interface RestoreTraceDetails {
 
 export interface RestoreMarkers {
   start: string;
+  metadata?: string;
   end: string;
 }
 

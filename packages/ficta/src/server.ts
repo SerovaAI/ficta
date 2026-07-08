@@ -9,6 +9,7 @@ import {
   FICTA_PROTECTION_STATS_PATH,
   FICTA_RESTORE_HIGHLIGHT_END,
   FICTA_RESTORE_HIGHLIGHT_HEADER,
+  FICTA_RESTORE_HIGHLIGHT_METADATA,
   FICTA_RESTORE_HIGHLIGHT_START,
   FICTA_STATUS_PATH,
 } from "@serovaai/ficta-protocol";
@@ -134,7 +135,11 @@ export async function startProxy(
     const wire = wireOf(url.pathname);
     const restoreHighlightMarkers =
       cfg.traceAudit && c.req.header(FICTA_RESTORE_HIGHLIGHT_HEADER) === "1"
-        ? { start: FICTA_RESTORE_HIGHLIGHT_START, end: FICTA_RESTORE_HIGHLIGHT_END }
+        ? {
+            start: FICTA_RESTORE_HIGHLIGHT_START,
+            metadata: FICTA_RESTORE_HIGHLIGHT_METADATA,
+            end: FICTA_RESTORE_HIGHLIGHT_END,
+          }
         : undefined;
     const restoreHighlightOptions = restoreHighlightMarkers ? { markers: restoreHighlightMarkers } : undefined;
 

@@ -27,6 +27,7 @@ import {
 } from "@/lib/file-attachments";
 import { DEFAULT_REASONING_EFFORT, MODELS, type ModelChoice, type ReasoningEffort } from "@/lib/models";
 import type { ProtectionStatus } from "@/lib/protection-status";
+import { hasRestoreHighlightMarkers, type RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
 import { uiToStored } from "@/lib/storage/messages";
 import { invalidateThreads, threadKeys } from "@/lib/storage/threadQueries";
 import { saveThread, startThread } from "@/lib/storage/threads";
@@ -89,6 +90,7 @@ export function ChatView({
   const [input, setInput] = useState("");
   const [model, setModel] = useState<ModelChoice>(() => initialModel(userSettings, instance));
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(() => initialReasoningEffort(userSettings));
+  const [restoreDisplayMode, setRestoreDisplayMode] = useState<RestoreHighlightDisplayMode>("values");
   const [attachments, setAttachments] = useState<TextAttachment[]>([]);
   const [uploadWarning, setUploadWarning] = useState<string[]>();
   const [isExtracting, setIsExtracting] = useState(false);
@@ -115,6 +117,7 @@ export function ChatView({
   messagesRef.current = messages;
   const urlSynced = useRef(false);
   const startingThread = useRef(false);
+  const restoreHighlightsAvailable = transcriptHasRestoreHighlightMarkers(messages);
 
   const syncNewThreadUrl = () => {
     if (threadId || urlSynced.current) return;
@@ -312,13 +315,23 @@ export function ChatView({
         />
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <TopBar sidebarOpen={sidebar.open} onToggleSidebar={sidebar.toggle} protectionStatus={protectionStatus} />
+          <TopBar
+            sidebarOpen={sidebar.open}
+            onToggleSidebar={sidebar.toggle}
+            protectionStatus={protectionStatus}
+            restoreDisplayMode={restoreDisplayMode}
+            restoreHighlightsAvailable={restoreHighlightsAvailable}
+            onToggleRestoreDisplay={() =>
+              setRestoreDisplayMode((mode) => (mode === "values" ? "surrogates" : "values"))
+            }
+          />
 
           <MessageList
             messages={messages}
             isLoading={isLoading}
             onRegenerate={reload}
             onPickSuggestion={pickSuggestion}
+            restoreDisplayMode={restoreDisplayMode}
           />
 
           {error ? (
@@ -403,6 +416,12 @@ function sendPosture(status: ProtectionStatus | undefined): SendPosture {
   }
   if (!status.protection.protecting) return { kind: "passthrough" };
   return { kind: "ok" };
+}
+
+function transcriptHasRestoreHighlightMarkers(messages: UIMessage[]): boolean {
+  return messages.some((message) =>
+    message.parts.some((part) => part.type === "text" && hasRestoreHighlightMarkers(part.content)),
+  );
 }
 
 function userMessage(content: string): UIMessage {

@@ -1,7 +1,7 @@
 import type { UIMessage } from "@tanstack/ai-react";
 import { ChevronRight } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
-import { stripRestoreHighlightMarkers } from "@/lib/restore-highlights";
+import { type RestoreHighlightDisplayMode, stripRestoreHighlightMarkers } from "@/lib/restore-highlights";
 
 const Markdown = lazy(() => import("./Markdown"));
 
@@ -9,7 +9,13 @@ type Part = UIMessage["parts"][number];
 
 /** Renders the parts of one assistant/user turn. Text streams through markdown; reasoning collapses;
  * tool calls get a minimal chip (they aren't exercised yet, but the union includes them). */
-export function MessageParts({ parts }: { parts: Part[] }) {
+export function MessageParts({
+  parts,
+  restoreDisplayMode,
+}: {
+  parts: Part[];
+  restoreDisplayMode: RestoreHighlightDisplayMode;
+}) {
   return (
     <>
       {parts.map((part, i) => {
@@ -18,7 +24,7 @@ export function MessageParts({ parts }: { parts: Part[] }) {
             return (
               // biome-ignore lint/suspicious/noArrayIndexKey: streamed parts are append-only, index is stable
               <Suspense key={i} fallback={<MarkdownFallback content={part.content} />}>
-                <Markdown content={part.content} />
+                <Markdown content={part.content} restoreDisplayMode={restoreDisplayMode} />
               </Suspense>
             );
           case "thinking":

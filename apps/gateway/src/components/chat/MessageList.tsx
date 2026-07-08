@@ -1,5 +1,6 @@
 import type { UIMessage } from "@tanstack/ai-react";
 import { useEffect, useRef, useState } from "react";
+import type { RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
 import { EmptyState } from "./EmptyState";
 import { MessageBubble } from "./MessageBubble";
 
@@ -8,11 +9,13 @@ export function MessageList({
   isLoading,
   onRegenerate,
   onPickSuggestion,
+  restoreDisplayMode,
 }: {
   messages: UIMessage[];
   isLoading: boolean;
   onRegenerate: () => void;
   onPickSuggestion: (prompt: string) => void;
+  restoreDisplayMode: RestoreHighlightDisplayMode;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -72,6 +75,7 @@ export function MessageList({
               streaming={streaming}
               onRegenerate={canRegen ? onRegenerate : undefined}
               canRegenerate={canRegen}
+              restoreDisplayMode={restoreDisplayMode}
             />
           );
         })}

@@ -4,6 +4,7 @@ export declare const FICTA_CONFIG_PATH = "/__ficta/config";
 export declare const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
 export declare const FICTA_RESTORE_HIGHLIGHT_HEADER = "x-ficta-restore-highlights";
 export declare const FICTA_RESTORE_HIGHLIGHT_START = "\u001eFICTA_RESTORE_START\u001e";
+export declare const FICTA_RESTORE_HIGHLIGHT_METADATA = "\u001eFICTA_RESTORE_SURROGATE\u001e";
 export declare const FICTA_RESTORE_HIGHLIGHT_END = "\u001eFICTA_RESTORE_END\u001e";
 
 export type DetectorFailureMode = "fail-open" | "fail-closed";

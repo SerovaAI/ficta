@@ -1,7 +1,8 @@
-import { Moon, PanelLeft, Sun } from "lucide-react";
+import { Eye, EyeOff, Moon, PanelLeft, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ProtectionStatus } from "@/lib/protection-status";
+import type { RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
 import { useTheme } from "@/lib/use-theme";
 import { ProtectionBadge } from "./ProtectionBadge";
 
@@ -9,13 +10,20 @@ export function TopBar({
   sidebarOpen,
   onToggleSidebar,
   protectionStatus,
+  restoreDisplayMode = "values",
+  restoreHighlightsAvailable = false,
+  onToggleRestoreDisplay,
 }: {
   /** Sidebar state + toggle. Optional so TopBar still renders without the history sidebar. */
   sidebarOpen?: boolean;
   onToggleSidebar?: () => void;
   protectionStatus?: ProtectionStatus;
+  restoreDisplayMode?: RestoreHighlightDisplayMode;
+  restoreHighlightsAvailable?: boolean;
+  onToggleRestoreDisplay?: () => void;
 }) {
   const { theme, toggle } = useTheme();
+  const restoreToggle = restorePrivacyToggleLabels(restoreDisplayMode);
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
       <div className="mx-auto flex h-14 w-full max-w-3xl items-center justify-between gap-3 px-4">
@@ -43,6 +51,26 @@ export function TopBar({
           <ProtectionBadge status={protectionStatus} labelClassName="hidden sm:inline" />
         </div>
         <div className="flex items-center gap-2">
+          {restoreHighlightsAvailable && onToggleRestoreDisplay ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={restoreDisplayMode === "surrogates" ? "secondary" : "ghost"}
+                  size="icon"
+                  onClick={onToggleRestoreDisplay}
+                  aria-label={restoreToggle.ariaLabel}
+                  aria-pressed={restoreDisplayMode === "surrogates"}
+                >
+                  {restoreDisplayMode === "surrogates" ? (
+                    <EyeOff className="size-4" aria-hidden />
+                  ) : (
+                    <Eye className="size-4" aria-hidden />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{restoreToggle.tooltip}</TooltipContent>
+            </Tooltip>
+          ) : null}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" onClick={toggle} aria-label="Toggle theme">
@@ -55,4 +83,13 @@ export function TopBar({
       </div>
     </header>
   );
+}
+
+export function restorePrivacyToggleLabels(mode: RestoreHighlightDisplayMode): {
+  ariaLabel: string;
+  tooltip: string;
+} {
+  return mode === "surrogates"
+    ? { ariaLabel: "Show restored values", tooltip: "Show restored values" }
+    : { ariaLabel: "Show surrogates", tooltip: "Show surrogates" };
 }
