@@ -21,6 +21,7 @@ import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
 
 export type ComposerHandle = {
   focus: () => void;
+  focusEnd: () => void;
 };
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
@@ -50,6 +51,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   useImperativeHandle(forwardedRef, () => ({
     focus: () => ref.current?.focus(),
+    focusEnd: () => {
+      const el = ref.current;
+      if (!el) return;
+      el.focus();
+      const end = el.value.length;
+      el.setSelectionRange(end, end);
+    },
   }));
 
   // Auto-grow: reset then match content, capped so it scrolls past a few lines. `value` isn't read in

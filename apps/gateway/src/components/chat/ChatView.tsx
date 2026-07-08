@@ -46,6 +46,7 @@ import { Composer, type ComposerHandle } from "./Composer";
 import { ErrorBanner } from "./ErrorBanner";
 import { MessageList } from "./MessageList";
 import { ProtectionNotice } from "./ProtectionNotice";
+import { draftWithSuggestion } from "./suggestionDraft";
 import { TopBar } from "./TopBar";
 
 /** Pick the model a new chat opens on: the user's default if the instance still allows it, else the first
@@ -205,8 +206,8 @@ export function ChatView({
   // Suggestions prime the composer instead of sending: the copy references a document the user still needs
   // to paste or attach, so firing a send here would dead-end on empty context.
   const pickSuggestion = (prompt: string) => {
-    setInput(prompt);
-    requestAnimationFrame(() => composerRef.current?.focus());
+    setInput((current) => draftWithSuggestion(current, prompt));
+    requestAnimationFrame(() => composerRef.current?.focusEnd());
   };
 
   const handleFilesSelected = async (files: File[]) => {
