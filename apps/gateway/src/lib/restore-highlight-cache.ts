@@ -3,10 +3,20 @@ import { hasRestoreHighlightMarkers, stripRestoreHighlightMarkers } from "@/lib/
 
 type TextPartKey = "content" | "text";
 
-export type RestoreHighlightCache = Map<string, Map<number, string>>;
+type PartCache = Map<number, string>;
+
+export interface RestoreHighlightCache {
+  byMessageId: Map<string, PartCache>;
+  byPosition: Map<number, PartCache>;
+}
 
 export function createRestoreHighlightCache(): RestoreHighlightCache {
-  return new Map();
+  return { byMessageId: new Map(), byPosition: new Map() };
+}
+
+export function clearRestoreHighlightCache(cache: RestoreHighlightCache): void {
+  cache.byMessageId.clear();
+  cache.byPosition.clear();
 }
 
 /**
@@ -16,34 +26,37 @@ export function createRestoreHighlightCache(): RestoreHighlightCache {
  */
 export function messagesWithCachedRestoreHighlights(messages: UIMessage[], cache: RestoreHighlightCache): UIMessage[] {
   let changed = false;
-  const liveKeys = new Map<string, Set<number>>();
+  const liveMessageParts = new Map<string, Set<number>>();
+  const livePositionParts = new Map<number, Set<number>>();
 
-  const mapped = messages.map((message) => {
+  const mapped = messages.map((message, messageIndex) => {
     let partsChanged = false;
     const nextParts = message.parts.map((part, partIndex) => {
       const text = textPart(part);
       if (!text) return part;
 
-      let messageCache = cache.get(message.id);
-      const livePartKeys = liveKeys.get(message.id) ?? new Set<number>();
-      livePartKeys.add(partIndex);
-      liveKeys.set(message.id, livePartKeys);
+      const messageParts = liveMessageParts.get(message.id) ?? new Set<number>();
+      messageParts.add(partIndex);
+      liveMessageParts.set(message.id, messageParts);
+      const positionParts = livePositionParts.get(messageIndex) ?? new Set<number>();
+      positionParts.add(partIndex);
+      livePositionParts.set(messageIndex, positionParts);
 
       if (hasRestoreHighlightMarkers(text.value)) {
-        messageCache ??= new Map();
-        messageCache.set(partIndex, text.value);
-        cache.set(message.id, messageCache);
+        setCachedPart(cache.byMessageId, message.id, partIndex, text.value);
+        setCachedPart(cache.byPosition, messageIndex, partIndex, text.value);
         return part;
       }
 
-      const cached = messageCache?.get(partIndex);
+      const cached =
+        cache.byMessageId.get(message.id)?.get(partIndex) ?? cache.byPosition.get(messageIndex)?.get(partIndex);
       if (cached && stripRestoreHighlightMarkers(cached) === text.value) {
         partsChanged = true;
         return { ...part, [text.key]: cached };
       }
 
-      messageCache?.delete(partIndex);
-      if (messageCache?.size === 0) cache.delete(message.id);
+      deleteCachedPart(cache.byMessageId, message.id, partIndex);
+      deleteCachedPart(cache.byPosition, messageIndex, partIndex);
       return part;
     });
 
@@ -52,7 +65,8 @@ export function messagesWithCachedRestoreHighlights(messages: UIMessage[], cache
     return { ...message, parts: nextParts as UIMessage["parts"] };
   });
 
-  pruneRestoreHighlightCache(cache, liveKeys);
+  pruneRestoreHighlightCache(cache.byMessageId, liveMessageParts);
+  pruneRestoreHighlightCache(cache.byPosition, livePositionParts);
   return changed ? mapped : messages;
 }
 
@@ -64,14 +78,26 @@ function textPart(part: UIMessage["parts"][number]): { key: TextPartKey; value: 
   return undefined;
 }
 
-function pruneRestoreHighlightCache(cache: RestoreHighlightCache, liveKeys: Map<string, Set<number>>): void {
-  for (const [messageId, parts] of cache) {
-    const liveParts = liveKeys.get(messageId);
+function setCachedPart<K>(cache: Map<K, PartCache>, key: K, partIndex: number, value: string): void {
+  const parts = cache.get(key) ?? new Map<number, string>();
+  parts.set(partIndex, value);
+  cache.set(key, parts);
+}
+
+function deleteCachedPart<K>(cache: Map<K, PartCache>, key: K, partIndex: number): void {
+  const parts = cache.get(key);
+  parts?.delete(partIndex);
+  if (parts?.size === 0) cache.delete(key);
+}
+
+function pruneRestoreHighlightCache<K>(cache: Map<K, PartCache>, liveKeys: Map<K, Set<number>>): void {
+  for (const [key, parts] of cache) {
+    const liveParts = liveKeys.get(key);
     if (!liveParts) {
-      cache.delete(messageId);
+      cache.delete(key);
       continue;
     }
     for (const partIndex of parts.keys()) if (!liveParts.has(partIndex)) parts.delete(partIndex);
-    if (parts.size === 0) cache.delete(messageId);
+    if (parts.size === 0) cache.delete(key);
   }
 }

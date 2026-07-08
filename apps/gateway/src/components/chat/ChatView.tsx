@@ -27,7 +27,11 @@ import {
 } from "@/lib/file-attachments";
 import { DEFAULT_REASONING_EFFORT, MODELS, type ModelChoice, type ReasoningEffort } from "@/lib/models";
 import type { ProtectionStatus } from "@/lib/protection-status";
-import { createRestoreHighlightCache, messagesWithCachedRestoreHighlights } from "@/lib/restore-highlight-cache";
+import {
+  clearRestoreHighlightCache,
+  createRestoreHighlightCache,
+  messagesWithCachedRestoreHighlights,
+} from "@/lib/restore-highlight-cache";
 import { hasRestoreHighlightMarkers, type RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
 import { uiToStored } from "@/lib/storage/messages";
 import { invalidateThreads, threadKeys } from "@/lib/storage/threadQueries";
@@ -301,7 +305,7 @@ export function ChatView({
       return;
     }
     clear();
-    restoreHighlightCache.current.clear();
+    clearRestoreHighlightCache(restoreHighlightCache.current);
     setInput("");
     setAttachments([]);
     setUploadWarning(undefined);
