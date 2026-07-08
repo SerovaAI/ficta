@@ -16,7 +16,8 @@ describe("restore highlight display cache", () => {
     const display = messagesWithCachedRestoreHighlights(messages, cache);
 
     expect(display).toBe(messages);
-    expect(cache.get("assistant-1")?.get(0)).toBe(`Email: ${marked}`);
+    expect(cache.byMessageId.get("assistant-1")?.get(0)).toBe(`Email: ${marked}`);
+    expect(cache.byPosition.get(0)?.get(0)).toBe(`Email: ${marked}`);
   });
 
   it("preserves marker-bearing text when the finished message is marker-stripped", () => {
@@ -32,6 +33,20 @@ describe("restore highlight display cache", () => {
     expect(textContent(finalMessages[0], 0)).toBe("Email: jane.doe@example.com");
   });
 
+  it("preserves marker-bearing text when the finished message has a new id", () => {
+    const cache = createRestoreHighlightCache();
+    const marked = markedValue("FICTA_EMAIL_1234567890abcdef1234567890abcdef", "jane.doe@example.com");
+    messagesWithCachedRestoreHighlights(
+      [assistantMessage([{ type: "text", content: `Email: ${marked}` }], "streaming-id")],
+      cache,
+    );
+
+    const finalMessages = [assistantMessage([{ type: "text", content: "Email: jane.doe@example.com" }], "final-id")];
+    const display = messagesWithCachedRestoreHighlights(finalMessages, cache);
+
+    expect(textContent(display[0], 0)).toBe(`Email: ${marked}`);
+  });
+
   it("does not reuse stale markers when final text differs", () => {
     const cache = createRestoreHighlightCache();
     const marked = markedValue("FICTA_EMAIL_1234567890abcdef1234567890abcdef", "jane.doe@example.com");
@@ -42,7 +57,8 @@ describe("restore highlight display cache", () => {
 
     expect(display).toBe(changedMessages);
     expect(textContent(display[0], 0)).toBe("Email: jane@example.test");
-    expect(cache.has("assistant-1")).toBe(false);
+    expect(cache.byMessageId.has("assistant-1")).toBe(false);
+    expect(cache.byPosition.has(0)).toBe(false);
   });
 
   it("handles multiple text parts independently", () => {
@@ -80,9 +96,9 @@ function markedValue(surrogate: string, value: string): string {
   return `${FICTA_RESTORE_HIGHLIGHT_START}${surrogate}${FICTA_RESTORE_HIGHLIGHT_METADATA}${value}${FICTA_RESTORE_HIGHLIGHT_END}`;
 }
 
-function assistantMessage(parts: Array<Record<string, unknown>>): UIMessage {
+function assistantMessage(parts: Array<Record<string, unknown>>, id = "assistant-1"): UIMessage {
   return {
-    id: "assistant-1",
+    id,
     role: "assistant",
     parts: parts as UIMessage["parts"],
   };
