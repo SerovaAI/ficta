@@ -14,6 +14,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { canSubmitComposerDraft } from "@/lib/composer-submit";
 import { ATTACHMENT_ACCEPT, formatBytes, type TextAttachment } from "@/lib/file-attachments";
 import { MODELS, type ModelChoice, REASONING_EFFORTS, type ReasoningEffort } from "@/lib/models";
 import { isModelAllowed, modelKey } from "@/lib/storage/types";
@@ -66,7 +67,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     if (autoFocus) ref.current?.focus();
   }, [autoFocus]);
 
-  const canSend = (value.trim().length > 0 || attachments.length > 0) && !isLoading && !isExtracting && !disabledReason;
+  const canSend = canSubmitComposerDraft({
+    value,
+    attachmentCount: attachments.length,
+    isLoading,
+    isExtracting,
+    disabledReason,
+  });
 
   return (
     <div className="border-t border-border bg-background">
