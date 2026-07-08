@@ -14,8 +14,14 @@ type PendingDeletion = {
 
 let pending: PendingDeletion | null = null;
 
+export const THREAD_DELETION_UNDO_DELAY_MS = 5000;
+
 /** Schedule `commit` to run after `delayMs`. Any earlier pending deletion is flushed immediately first. */
-export function scheduleThreadDeletion(id: string, commit: () => Promise<void> | void, delayMs = 5000): void {
+export function scheduleThreadDeletion(
+  id: string,
+  commit: () => Promise<void> | void,
+  delayMs = THREAD_DELETION_UNDO_DELAY_MS,
+): void {
   flushThreadDeletion();
   const timer = setTimeout(() => {
     pending = null;
