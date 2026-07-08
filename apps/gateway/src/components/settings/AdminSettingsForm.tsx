@@ -1,15 +1,26 @@
 import { useRouter } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { MODELS } from "@/lib/models";
 import { updateInstanceSettings } from "@/lib/storage/settings";
-import { type InstanceSettings, isModelAllowed, modelKey } from "@/lib/storage/types";
+import {
+  type InstanceSettings,
+  isModelAllowed,
+  modelKey,
+  normalizeSuggestedPrompts,
+  resolveSuggestedPrompts,
+  SUGGESTED_PROMPTS_MAX,
+} from "@/lib/storage/types";
 import { SettingRow } from "./SettingRow";
 
 type SaveStatus = "idle" | "saving" | "error";
+type PromptDraft = { id: string; value: string };
 
 const NAME_SAVE_DELAY_MS = 600;
+const PROMPTS_SAVE_DELAY_MS = 600;
 
 function checkedFromSettings(settings: InstanceSettings): Set<string> {
   return new Set(MODELS.filter((m) => isModelAllowed(settings, modelKey(m))).map(modelKey));
@@ -18,6 +29,18 @@ function checkedFromSettings(settings: InstanceSettings): Set<string> {
 function allowedModelsFromChecked(checked: Set<string>): string[] {
   // All checked ⇒ store [] (no restriction, future-proof). Otherwise store the checked subset.
   return checked.size === MODELS.length ? [] : [...checked];
+}
+
+function promptsKey(prompts: string[]): string {
+  return JSON.stringify(normalizeSuggestedPrompts(prompts));
+}
+
+function promptDraftsFromSettings(settings: InstanceSettings): PromptDraft[] {
+  return resolveSuggestedPrompts(settings).map((value, index) => ({ id: `saved-${index}-${value}`, value }));
+}
+
+function promptDraftValues(drafts: PromptDraft[]): string[] {
+  return drafts.map((draft) => draft.value);
 }
 
 function InlineStatus({ status, error }: { status: SaveStatus; error: string }) {
@@ -43,12 +66,19 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
   const router = useRouter();
   const [name, setName] = useState(settings.instanceName ?? "");
   const [checked, setChecked] = useState<Set<string>>(() => checkedFromSettings(settings));
+  const [promptDrafts, setPromptDrafts] = useState<PromptDraft[]>(() => promptDraftsFromSettings(settings));
   const [nameStatus, setNameStatus] = useState<SaveStatus>("idle");
   const [modelsStatus, setModelsStatus] = useState<SaveStatus>("idle");
+  const [promptsStatus, setPromptsStatus] = useState<SaveStatus>("idle");
   const [modelsError, setModelsError] = useState("Couldn't save model availability.");
+  const [promptsError, setPromptsError] = useState("Couldn't save suggested prompts.");
   const savedName = useRef(settings.instanceName ?? "");
+  const savedPromptsKey = useRef(promptsKey(resolveSuggestedPrompts(settings)));
+  const skipPromptDebounceKey = useRef<string | undefined>(undefined);
+  const nextPromptId = useRef(0);
   const nameSeq = useRef(0);
   const modelsSeq = useRef(0);
+  const promptsSeq = useRef(0);
 
   useEffect(() => {
     const next = settings.instanceName ?? "";
@@ -59,6 +89,33 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
   useEffect(() => {
     setChecked(checkedFromSettings(settings));
   }, [settings]);
+
+  useEffect(() => {
+    const next = promptDraftsFromSettings(settings);
+    savedPromptsKey.current = promptsKey(promptDraftValues(next));
+    skipPromptDebounceKey.current = undefined;
+    setPromptDrafts(next);
+  }, [settings]);
+
+  const savePrompts = useCallback(
+    async (next: string[], seq = promptsSeq.current + 1) => {
+      promptsSeq.current = seq;
+      setPromptsStatus("saving");
+      setPromptsError("Couldn't save suggested prompts.");
+      const normalized = normalizeSuggestedPrompts(next);
+
+      try {
+        await updateInstanceSettings({ data: { suggestedPrompts: normalized } });
+        savedPromptsKey.current = JSON.stringify(normalized);
+        skipPromptDebounceKey.current = undefined;
+        refreshRouteData(router);
+        if (promptsSeq.current === seq) setPromptsStatus("idle");
+      } catch {
+        if (promptsSeq.current === seq) setPromptsStatus("error");
+      }
+    },
+    [router],
+  );
 
   useEffect(() => {
     const nextName = name.trim();
@@ -85,6 +142,26 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
     return () => window.clearTimeout(timeout);
   }, [name, router]);
 
+  useEffect(() => {
+    const next = promptDraftValues(promptDrafts);
+    const nextKey = promptsKey(next);
+    if (nextKey === savedPromptsKey.current) {
+      setPromptsStatus("idle");
+      return;
+    }
+    if (nextKey === skipPromptDebounceKey.current) return;
+
+    const seq = promptsSeq.current + 1;
+    promptsSeq.current = seq;
+    setPromptsStatus("saving");
+
+    const timeout = window.setTimeout(async () => {
+      await savePrompts(next, seq);
+    }, PROMPTS_SAVE_DELAY_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [promptDrafts, savePrompts]);
+
   const saveModels = async (next: Set<string>, previous: Set<string>) => {
     const seq = modelsSeq.current + 1;
     modelsSeq.current = seq;
@@ -103,6 +180,12 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
     }
   };
 
+  const savePromptsImmediately = (next: string[]) => {
+    const seq = promptsSeq.current + 1;
+    skipPromptDebounceKey.current = promptsKey(next);
+    void savePrompts(next, seq);
+  };
+
   const toggle = (key: string, on: boolean) => {
     if (!on && checked.has(key) && checked.size <= 1) {
       setModelsError("Select at least one model.");
@@ -118,6 +201,22 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
     const previous = checked;
     setChecked(next);
     void saveModels(next, previous);
+  };
+
+  const editPrompt = (index: number, value: string) => {
+    setPromptDrafts((current) => current.map((prompt, i) => (i === index ? { ...prompt, value } : prompt)));
+  };
+
+  const addPrompt = () => {
+    if (promptDrafts.length >= SUGGESTED_PROMPTS_MAX) return;
+    setPromptDrafts((current) => [...current, { id: `new-${nextPromptId.current++}`, value: "" }]);
+  };
+
+  const deletePrompt = (index: number) => {
+    const nextDrafts = promptDrafts.filter((_, i) => i !== index);
+    const next = promptDraftValues(nextDrafts);
+    setPromptDrafts(nextDrafts);
+    savePromptsImmediately(next);
   };
 
   return (
@@ -153,6 +252,44 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
             );
           })}
           <InlineStatus status={modelsStatus} error={modelsError} />
+        </div>
+      </SettingRow>
+
+      <SettingRow label="Suggested prompts" description="Shown as quick-start buttons on a new empty chat.">
+        <div className="w-full max-w-md space-y-2">
+          {promptDrafts.map((prompt, index) => (
+            <div key={prompt.id} className="flex items-center gap-2">
+              <Input
+                value={prompt.value}
+                placeholder="Ask the assistant to..."
+                className="min-w-0"
+                onChange={(e) => editPrompt(index, e.target.value)}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground hover:text-destructive"
+                onClick={() => deletePrompt(index)}
+              >
+                <Trash2 className="size-4" aria-hidden />
+                <span className="sr-only">Delete suggested prompt</span>
+              </Button>
+            </div>
+          ))}
+          <div className="flex items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={promptDrafts.length >= SUGGESTED_PROMPTS_MAX}
+              onClick={addPrompt}
+            >
+              <Plus className="size-4" aria-hidden />
+              Add prompt
+            </Button>
+            <InlineStatus status={promptsStatus} error={promptsError} />
+          </div>
         </div>
       </SettingRow>
     </section>

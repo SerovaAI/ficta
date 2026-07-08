@@ -20,6 +20,31 @@ export interface InstanceSettings {
   instanceName?: string;
   /** Allow-list of `"provider/model"` keys. Undefined or empty = every model in MODELS is allowed. */
   allowedModels?: string[];
+  /** Empty-chat suggestion prompts. Undefined = defaults; empty array = hide prompt buttons. */
+  suggestedPrompts?: string[];
+}
+
+export const DEFAULT_SUGGESTED_PROMPTS = [
+  "Summarize this document and flag anything that needs attention.",
+  "Draft a polite reply to this email declining the request.",
+  "Pull out the key dates, names, and action items from this text.",
+  "Rewrite this in plain, clear language.",
+];
+
+export const SUGGESTED_PROMPT_MAX = 300;
+export const SUGGESTED_PROMPTS_MAX = 12;
+
+export function normalizeSuggestedPrompts(input: unknown): string[] {
+  if (!Array.isArray(input)) throw new Error("invalid suggestedPrompts");
+  return input
+    .filter((p): p is string => typeof p === "string")
+    .map((p) => p.trim().slice(0, SUGGESTED_PROMPT_MAX))
+    .filter(Boolean)
+    .slice(0, SUGGESTED_PROMPTS_MAX);
+}
+
+export function resolveSuggestedPrompts(instance: InstanceSettings): string[] {
+  return instance.suggestedPrompts === undefined ? DEFAULT_SUGGESTED_PROMPTS : instance.suggestedPrompts;
 }
 
 /** A thread as shown in a history list — no messages, cheap to list. */

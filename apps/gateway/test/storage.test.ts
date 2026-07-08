@@ -52,7 +52,12 @@ describe("instance settings", () => {
     expect(await store.getInstanceSettings(ORG)).toEqual({});
     await store.patchInstanceSettings(ORG, { instanceName: "Acme" });
     await store.patchInstanceSettings(ORG, { allowedModels: ["openai/gpt-5"] });
-    expect(await store.getInstanceSettings(ORG)).toEqual({ instanceName: "Acme", allowedModels: ["openai/gpt-5"] });
+    await store.patchInstanceSettings(ORG, { suggestedPrompts: ["Summarize this."] });
+    expect(await store.getInstanceSettings(ORG)).toEqual({
+      instanceName: "Acme",
+      allowedModels: ["openai/gpt-5"],
+      suggestedPrompts: ["Summarize this."],
+    });
   });
 
   it("isolates settings per workspace (org)", async () => {

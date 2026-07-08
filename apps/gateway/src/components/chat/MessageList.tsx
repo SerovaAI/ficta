@@ -1,6 +1,8 @@
 import type { UIMessage } from "@tanstack/ai-react";
 import { useEffect, useRef, useState } from "react";
 import type { RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
+import { resolveSuggestedPrompts } from "@/lib/storage/types";
+import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
 import { EmptyState } from "./EmptyState";
 import { MessageBubble } from "./MessageBubble";
 
@@ -20,6 +22,7 @@ export function MessageList({
   const scrollRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const lastIndex = messages.length - 1;
+  const suggestions = resolveSuggestedPrompts(useInstanceSettings());
 
   // Announce the assistant's reply once, on completion. The transcript itself is NOT an aria-live region:
   // streaming it live would spam screen readers with a re-announcement on every partial token.
@@ -52,7 +55,7 @@ export function MessageList({
     return (
       <div ref={scrollRef} className="flex flex-1 flex-col overflow-y-auto">
         <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4">
-          <EmptyState onPick={onPickSuggestion} />
+          <EmptyState suggestions={suggestions} onPick={onPickSuggestion} />
         </div>
       </div>
     );
