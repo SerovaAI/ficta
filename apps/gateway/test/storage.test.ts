@@ -7,7 +7,7 @@ process.env.DATABASE_URL = "";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Storage } from "@/lib/storage/storage.server";
 import { getStorage } from "@/lib/storage/storage.server";
-import type { StoredMessage } from "@/lib/storage/types";
+import type { EncryptedProviderKey, StoredMessage } from "@/lib/storage/types";
 
 let store: Storage;
 
@@ -65,6 +65,51 @@ describe("instance settings", () => {
     await store.patchInstanceSettings("org-y", { instanceName: "Y" });
     expect((await store.getInstanceSettings("org-x")).instanceName).toBe("X");
     expect((await store.getInstanceSettings("org-y")).instanceName).toBe("Y");
+  });
+});
+
+const encryptedKey = (provider: EncryptedProviderKey["provider"], value: string): EncryptedProviderKey => ({
+  provider,
+  ciphertext: `cipher-${value}`,
+  iv: `iv-${value}`,
+  tag: `tag-${value}`,
+  keyHint: "...test",
+});
+
+describe("provider keys", () => {
+  it("upserts encrypted provider keys and returns summary metadata only", async () => {
+    await store.upsertProviderKey(ORG, encryptedKey("openai", "one"));
+    await store.upsertProviderKey(ORG, encryptedKey("openai", "two"));
+
+    const saved = await store.getProviderKey(ORG, "openai");
+    expect(saved?.ciphertext).toBe("cipher-two");
+
+    const summaries = await store.listProviderKeySummaries(ORG);
+    expect(summaries).toEqual([
+      expect.objectContaining({
+        provider: "openai",
+        configured: true,
+        keyHint: "...test",
+      }),
+    ]);
+    expect(JSON.stringify(summaries)).not.toContain("cipher-two");
+    expect(JSON.stringify(summaries)).not.toContain("tag-two");
+  });
+
+  it("isolates provider keys per workspace", async () => {
+    await store.upsertProviderKey("org-key-a", encryptedKey("anthropic", "a"));
+    await store.upsertProviderKey("org-key-b", encryptedKey("anthropic", "b"));
+
+    expect((await store.getProviderKey("org-key-a", "anthropic"))?.ciphertext).toBe("cipher-a");
+    expect((await store.getProviderKey("org-key-b", "anthropic"))?.ciphertext).toBe("cipher-b");
+    expect(await store.getProviderKey("org-key-a", "openai")).toBeNull();
+  });
+
+  it("deletes a provider key within one workspace", async () => {
+    await store.upsertProviderKey("org-delete", encryptedKey("openai", "delete"));
+    await store.deleteProviderKey("org-delete", "openai");
+
+    expect(await store.getProviderKey("org-delete", "openai")).toBeNull();
   });
 });
 

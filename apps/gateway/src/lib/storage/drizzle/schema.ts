@@ -1,4 +1,4 @@
-import { index, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { index, integer, jsonb, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
 import type { InstanceSettings, UserSettings } from "../types";
 
 /**
@@ -28,6 +28,22 @@ export const instanceSettings = pgTable("instance_settings", {
   data: jsonb("data").$type<InstanceSettings>().notNull().default({}),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Workspace-scoped encrypted provider API keys. Plaintext keys never enter the database. */
+export const providerKeys = pgTable(
+  "provider_keys",
+  {
+    orgId: text("org_id").notNull(),
+    provider: text("provider").notNull(),
+    ciphertext: text("ciphertext").notNull(),
+    iv: text("iv").notNull(),
+    tag: text("tag").notNull(),
+    keyHint: text("key_hint").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.orgId, t.provider] })],
+);
 
 /** A chat conversation. Id is client-generated (crypto.randomUUID) so a new chat has a stable id pre-save.
  * Scoped by both `userId` (private to its author) and `orgId` (the workspace it was created in). */

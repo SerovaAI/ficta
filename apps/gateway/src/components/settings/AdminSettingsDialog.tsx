@@ -7,13 +7,15 @@ import { useAuthState } from "@/lib/auth/useAuthState";
 import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
 import { cn } from "@/lib/utils";
 import { AdminSettingsForm } from "./AdminSettingsForm";
+import { ProviderKeysSection } from "./ProviderKeysSection";
 import { ProxyConfigSection } from "./ProxyConfigSection";
 import { RedactionProofSection } from "./RedactionProofSection";
 
-type AdminSection = "general" | "proxy" | "proof";
+type AdminSection = "general" | "keys" | "proxy" | "proof";
 
 const SECTION_LABELS: Record<AdminSection, string> = {
   general: "General",
+  keys: "Provider keys",
   proxy: "Proxy configuration",
   proof: "Redaction proof",
 };
@@ -39,7 +41,7 @@ export function AdminSettingsDialog({ open, onOpenChange }: { open: boolean; onO
             <span className="sr-only">Close admin settings</span>
           </DialogClose>
           <nav className="space-y-1" aria-label="Admin sections">
-            {(["general", "proxy", "proof"] as const).map((key) => (
+            {(["general", "keys", "proxy", "proof"] as const).map((key) => (
               <AdminSectionButton key={key} active={section === key} onClick={() => setSection(key)}>
                 {SECTION_LABELS[key]}
               </AdminSectionButton>
@@ -57,6 +59,7 @@ export function AdminSettingsDialog({ open, onOpenChange }: { open: boolean; onO
 
           <div className="min-h-0 overflow-y-auto px-6 py-1">
             {section === "general" ? <AdminSettingsForm settings={instanceSettings} /> : null}
+            {section === "keys" ? <ProviderKeysSection /> : null}
             {section === "proxy" ? <ProxyConfigSection /> : null}
             {section === "proof" ? <RedactionProofSection /> : null}
           </div>
