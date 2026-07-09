@@ -29,6 +29,13 @@
       "when": 1783570862861,
       "tag": "0003_lethal_starbolt",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783571670535,
+      "tag": "0004_secret_shriek",
+      "breakpoints": true
     }
   ]
 }

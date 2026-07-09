@@ -1,16 +1,27 @@
 import type * as React from "react";
 import { useEffect, useState } from "react";
-import { fetchProtectionStats, type ProtectionStats, type ProtectionStatsLabelBucket } from "@/lib/protection-stats";
+import {
+  fetchProtectionStats,
+  fetchProtectionStatsHistory,
+  type ProtectionStats,
+  type ProtectionStatsDailySummary,
+  type ProtectionStatsLabelBucket,
+} from "@/lib/protection-stats";
 import { cn } from "@/lib/utils";
 
 export function RedactionProofSection() {
   const [proof, setProof] = useState<ProtectionStats>();
+  const [history, setHistory] = useState<ProtectionStatsDailySummary[]>();
 
   useEffect(() => {
     let alive = true;
     fetchProtectionStats()
       .then((next) => {
         if (alive) setProof(next);
+        return fetchProtectionStatsHistory().catch(() => []);
+      })
+      .then((nextHistory) => {
+        if (alive) setHistory(nextHistory);
       })
       .catch((err: unknown) => {
         if (!alive) return;
@@ -21,6 +32,7 @@ export function RedactionProofSection() {
           message: "Could not read ficta redaction proof.",
           detail: err instanceof Error ? err.message : String(err),
         });
+        setHistory([]);
       });
     return () => {
       alive = false;
@@ -41,13 +53,19 @@ export function RedactionProofSection() {
       ) : !proof.ok ? (
         <p className="py-4 text-sm text-muted-foreground">{proof.message}</p>
       ) : (
-        <ProofRows proof={proof} />
+        <ProofRows proof={proof} history={history} />
       )}
     </section>
   );
 }
 
-function ProofRows({ proof }: { proof: Extract<ProtectionStats, { ok: true }> }) {
+function ProofRows({
+  proof,
+  history,
+}: {
+  proof: Extract<ProtectionStats, { ok: true }>;
+  history: ProtectionStatsDailySummary[] | undefined;
+}) {
   const { totals } = proof.stats;
   return (
     <>
@@ -65,6 +83,8 @@ function ProofRows({ proof }: { proof: Extract<ProtectionStats, { ok: true }> })
         />
       </div>
 
+      <TrendSummary history={history} />
+
       <div className="border-t border-border">
         {proof.stats.byLabel.length === 0 ? (
           <p className="py-4 text-sm text-muted-foreground">No redaction events have occurred in this proxy run yet.</p>
@@ -73,6 +93,75 @@ function ProofRows({ proof }: { proof: Extract<ProtectionStats, { ok: true }> })
         )}
       </div>
     </>
+  );
+}
+
+function TrendSummary({ history }: { history: ProtectionStatsDailySummary[] | undefined }) {
+  const totals = history ? sumHistory(history) : undefined;
+  const rows = history ?? [];
+  const recent = rows.slice(-7).reverse();
+  return (
+    <div className="border-t border-border py-4">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h4 className="text-sm font-medium">Last 90 days</h4>
+          <p className="pt-1 text-muted-foreground text-xs leading-relaxed">
+            Aggregated daily trend data only; this is not a request-level audit history.
+          </p>
+        </div>
+        <Meta>UTC days</Meta>
+      </div>
+
+      {totals === undefined ? (
+        <p className="py-4 text-sm text-muted-foreground">Loading trend summary...</p>
+      ) : rows.length === 0 ? (
+        <p className="py-4 text-sm text-muted-foreground">No retained redaction trend data yet.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2 py-4 sm:grid-cols-5">
+            <Metric label="Kept out" value={totals.keptOutOfModelValues} />
+            <Metric label="Affected requests" value={totals.affectedRequests} />
+            <Metric label="Restored" value={totals.restoredValues} />
+            <Metric label="Survived" value={totals.survivingValues} warn={totals.survivingValues > 0} />
+            <Metric label="Blocked" value={totals.blockedRequests} warn={totals.blockedRequests > 0} />
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full min-w-[32rem] text-left text-sm">
+              <thead className="border-b border-border bg-muted/50 text-muted-foreground text-xs">
+                <tr>
+                  <th scope="col" className="px-3 py-2 font-medium">
+                    Day
+                  </th>
+                  <th scope="col" className="px-3 py-2 font-medium">
+                    Kept out
+                  </th>
+                  <th scope="col" className="px-3 py-2 font-medium">
+                    Requests
+                  </th>
+                  <th scope="col" className="px-3 py-2 font-medium">
+                    Survived
+                  </th>
+                  <th scope="col" className="px-3 py-2 font-medium">
+                    Blocked
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {recent.map((day) => (
+                  <tr key={day.day} className="border-b border-border last:border-b-0">
+                    <td className="whitespace-nowrap px-3 py-2 align-top font-mono text-xs">{day.day}</td>
+                    <CountCell value={day.keptOutOfModelValues} />
+                    <CountCell value={day.affectedRequests} />
+                    <CountCell value={day.survivingValues} warn={day.survivingValues > 0} />
+                    <CountCell value={day.blockedRequests} warn={day.blockedRequests > 0} />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -172,6 +261,31 @@ function CountCell({ value, warn }: { value: number; warn?: boolean }) {
 
 function bucketKey(bucket: ProtectionStatsLabelBucket): string {
   return [bucket.name, bucket.source, bucket.plugin ?? "", bucket.kind ?? "", bucket.confidence ?? ""].join("\0");
+}
+
+function sumHistory(history: ProtectionStatsDailySummary[]) {
+  return history.reduce(
+    (total, day) => ({
+      events: total.events + day.events,
+      affectedRequests: total.affectedRequests + day.affectedRequests,
+      redactedValues: total.redactedValues + day.redactedValues,
+      survivingValues: total.survivingValues + day.survivingValues,
+      blockedRequests: total.blockedRequests + day.blockedRequests,
+      keptOutOfModelValues: total.keptOutOfModelValues + day.keptOutOfModelValues,
+      restoredValues: total.restoredValues + day.restoredValues,
+      withheldFromToolsValues: total.withheldFromToolsValues + day.withheldFromToolsValues,
+    }),
+    {
+      events: 0,
+      affectedRequests: 0,
+      redactedValues: 0,
+      survivingValues: 0,
+      blockedRequests: 0,
+      keptOutOfModelValues: 0,
+      restoredValues: 0,
+      withheldFromToolsValues: 0,
+    },
+  );
 }
 
 // One shared formatter — Intl.NumberFormat is relatively heavy to construct, and CountCell renders

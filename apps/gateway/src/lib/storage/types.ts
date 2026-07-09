@@ -4,6 +4,8 @@
  * the `Storage` seam (storage.server.ts); everything crossing the server-function boundary is one of
  * these plain, JSON-serializable objects, which is also what keeps a future Convex backend a drop-in.
  */
+
+import type { ProtectionStatsSnapshot, ProtectionStatsTotals } from "@serovaai/ficta-protocol";
 import type { Provider, ReasoningEffort } from "@/lib/models";
 
 /** Per-user preferences. All fields optional; reads merge over code defaults so a fresh user is valid. */
@@ -29,6 +31,13 @@ export interface ProviderKeySummary {
   provider: Provider;
   configured: boolean;
   keyHint: string;
+  updatedAt: string;
+}
+
+export type { ProtectionStatsSnapshot, ProtectionStatsTotals };
+
+export interface ProtectionStatsDailySummary extends ProtectionStatsTotals {
+  day: string;
   updatedAt: string;
 }
 

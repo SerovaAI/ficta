@@ -3,12 +3,15 @@ import {
   isProtectionStatsOk,
   type ProtectionStats,
   type ProtectionStatsLabelBucket,
+  type ProtectionStatsSnapshot,
 } from "@serovaai/ficta-protocol";
 import { createServerFn } from "@tanstack/react-start";
-import { requireAdmin } from "@/lib/auth/guards.server";
+import { requireAdminScope } from "@/lib/auth/guards.server";
 import { proxyBaseUrl } from "@/lib/protection-status";
+import { getStorage } from "@/lib/storage/storage.server";
+import type { ProtectionStatsDailySummary } from "@/lib/storage/types";
 
-export type { ProtectionStats, ProtectionStatsLabelBucket };
+export type { ProtectionStats, ProtectionStatsDailySummary, ProtectionStatsLabelBucket };
 export { isProtectionStatsOk };
 
 const STATS_TIMEOUT_MS = 1500;
@@ -18,9 +21,27 @@ const STATS_TIMEOUT_MS = 1500;
  * endpoint intentionally returns counts and labels only; never protected literals or transcript text.
  */
 export const fetchProtectionStats = createServerFn({ method: "GET" }).handler(async (): Promise<ProtectionStats> => {
-  await requireAdmin();
-
+  const { orgId } = await requireAdminScope();
   const proxyUrl = proxyBaseUrl();
+  const proof = await readProtectionStatsFromProxy(proxyUrl);
+  if (isProtectionStatsOk(proof)) await ingestProtectionStats(orgId, proxyUrl, proof.stats);
+  return proof;
+});
+
+export const fetchProtectionStatsHistory = createServerFn({ method: "GET" }).handler(
+  async (): Promise<ProtectionStatsDailySummary[]> => {
+    const { orgId } = await requireAdminScope();
+    return (await getStorage()).listProtectionStatsDaily(orgId);
+  },
+);
+
+export async function recordProtectionStatsTrend(orgId: string): Promise<void> {
+  const proxyUrl = proxyBaseUrl();
+  const proof = await readProtectionStatsFromProxy(proxyUrl);
+  if (isProtectionStatsOk(proof)) await ingestProtectionStats(orgId, proxyUrl, proof.stats);
+}
+
+async function readProtectionStatsFromProxy(proxyUrl: string): Promise<ProtectionStats> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), STATS_TIMEOUT_MS);
 
@@ -59,7 +80,15 @@ export const fetchProtectionStats = createServerFn({ method: "GET" }).handler(as
   } finally {
     clearTimeout(timer);
   }
-});
+}
+
+async function ingestProtectionStats(
+  orgId: string,
+  proxyUrl: string,
+  snapshot: ProtectionStatsSnapshot,
+): Promise<void> {
+  await (await getStorage()).ingestProtectionStatsSnapshot(orgId, proxyUrl, snapshot);
+}
 
 function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";
