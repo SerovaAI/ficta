@@ -371,9 +371,21 @@ class ProtectionRequestScope implements RequestScope {
     return complete;
   }
 
-  /** Metadata for a raw value: this request's detected values take precedence over the permanent registry. */
+  /**
+   * Metadata for a raw value, used only to attribute a redaction in the audit trace / stats (name,
+   * source, kind, confidence). A registered secret is authoritative: when a value is BOTH in the
+   * permanent registry and detected this request, the registry's exact, operator-declared identity
+   * wins over the probabilistic detector's guess — so a value like a registered client name shows as
+   * `env-file / secret / exact`, not `person / pii / high`. Values only seen by a detector this
+   * request (not in the registry) fall back to the detected metadata.
+   *
+   * This governs reporting only; it does not touch span selection, the surrogate token, restore, or
+   * restore-into-tools provenance (see the vault's own layer walk). Span-level authority — making the
+   * registry win the redacted *span/boundary*, not just its label — is the correct-fix rework tracked
+   * in ficta-internal (span-based detection + conflict resolution).
+   */
   private metadataFor(raw: string): ProtectedValue | undefined {
-    return (this.detectedMetadata.get(raw) ?? this.permanentMetadata.get(raw))?.[0];
+    return (this.permanentMetadata.get(raw) ?? this.detectedMetadata.get(raw))?.[0];
   }
 
   private hitsFor(values: readonly string[]): ProtectionHit[] {

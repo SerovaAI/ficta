@@ -439,6 +439,54 @@ describe("vault", () => {
     expect(delta).not.toContain(`${markers.end}${markers.metadata}`);
   });
 
+  it("does not highlight surrogates echoed in request-metadata events (response.created instructions)", async () => {
+    // response.created / response.in_progress echo the request `instructions` back — surrogates the
+    // model never generated. They must be restored (no raw FICTA_ reaches the client) but NOT
+    // highlighted: the toggle UI never surfaces that field, so decorating it only litters metadata.
+    // A real assistant text delta in the same stream must still be highlighted.
+    const secret = "Amelia Naidoo";
+    const vault = new Vault([{ value: secret }]);
+    const surrogate = vault.redactText(secret).text;
+    const markers = {
+      start: FICTA_RESTORE_HIGHLIGHT_START,
+      metadata: FICTA_RESTORE_HIGHLIGHT_METADATA,
+      end: FICTA_RESTORE_HIGHLIGHT_END,
+    };
+    const sse = [
+      `event: response.created\ndata: ${JSON.stringify({
+        type: "response.created",
+        response: { instructions: `Protected identifiers in this input: ${surrogate}`, output: [] },
+      })}\n\n`,
+      `event: response.output_text.delta\ndata: ${JSON.stringify({
+        type: "response.output_text.delta",
+        output_index: 0,
+        content_index: 0,
+        delta: `The CFO is ${surrogate}.`,
+      })}\n\n`,
+    ].join("");
+
+    const out = await transformText(
+      vault.restoreEventStream(
+        sseRestoreAdapterFor("openai-responses"),
+        bufferedRestoreAdapterFor("openai-responses"),
+        {
+          markers,
+        },
+      ),
+      [sse],
+    );
+    const events = streamedJsonData(out);
+    const instructions = events.find((e) => e?.type === "response.created")?.response?.instructions ?? "";
+    const delta = events.map((e) => (e?.type === "response.output_text.delta" ? (e.delta ?? "") : "")).join("");
+
+    // Instructions echo: restored plainly, no markers, no raw surrogate left.
+    expect(instructions).toBe("Protected identifiers in this input: Amelia Naidoo");
+    expect(instructions).not.toContain(markers.start);
+    expect(instructions).not.toContain("FICTA_");
+    // Assistant text delta: restored AND highlighted so the toggle still works.
+    expect(delta).toBe(`The CFO is ${markers.start}${surrogate}${markers.metadata}${secret}${markers.end}.`);
+  });
+
   it("NOOP-wire SSE restore restores whole surrogates and re-escapes JSON-special values", async () => {
     const secret = 'tok"en\\value';
     const vault = new Vault([{ value: secret }]);

@@ -534,13 +534,33 @@ export abstract class VaultView {
     // extends the same policy to full-payload replay events (deltas already withheld must not be
     // restored when the provider re-sends the completed tool call).
     const policy = restoreIntoToolsPolicy(process.env.FICTA_RESTORE_INTO_TOOLS);
-    return createSseRestoreStream((text) => this.restoreText(text, opts), adapter, this.surrogate, {
-      withhold: policy !== "all",
-      restoreExcept: (text, skip) => this.restoreTextExcept(text, skip, opts),
-      restoreJsonExcept: (text, skip) => this.restoreJsonText(text, skip, opts),
-      collectWithheld: (data) => this.collectWithheldToolTokens(buffered, data, policy),
-      restoreToolArg: (text, withheldSink) => this.restoreToolArgText(text, policy, withheldSink),
-    });
+    // Highlight markers (the trace-demo UI hint that drives the gateway's show/hide toggle) belong on
+    // human-facing assistant output — the `kind: "text"` streamed fragments the UI renders and their
+    // sibling fields (e.g. `reasoning_content`) in the SAME event. They must NOT land on events that
+    // merely echo the request back: `response.created` / `response.in_progress` carry the request
+    // `instructions` (surrogates the model never generated), and highlighting those decorates a field
+    // the UI never surfaces. The split is by path in restoreSseRecord: the fragment path restores with
+    // markers (`displayText` + the marker-aware `restoreExcept`), the no-fragment metadata/replay path
+    // restores plainly (`plainText` + `restoreJsonExcept`). `[DONE]` and flushed tails use `plainText`.
+    const plainText = (text: string) => this.restoreText(text);
+    const displayText = opts.markers ? (text: string) => this.restoreText(text, opts) : plainText;
+    return createSseRestoreStream(
+      plainText,
+      adapter,
+      this.surrogate,
+      {
+        withhold: policy !== "all",
+        // Fragment-path deep sweep over sibling fields: marker-aware so it decorates a genuinely
+        // restored sibling and skips surrogates already wrapped by the fragment loop's markers.
+        restoreExcept: (text, skip) => this.restoreTextExcept(text, skip, opts),
+        // No-fragment metadata/replay path (the request-echo events): plain, so `instructions` and
+        // other non-output fields are restored without highlight decoration.
+        restoreJsonExcept: (text, skip) => this.restoreJsonText(text, skip),
+        collectWithheld: (data) => this.collectWithheldToolTokens(buffered, data, policy),
+        restoreToolArg: (text, withheldSink) => this.restoreToolArgText(text, policy, withheldSink),
+      },
+      displayText,
+    );
   }
 }
 
@@ -700,6 +720,9 @@ function createSseRestoreStream(
   adapter: SseRestoreAdapter,
   surrogate: SurrogateStrategy,
   tool: ToolRestorePolicy,
+  /** Restore used for human-facing `kind: "text"` fragments only. Defaults to the plain `restoreText`;
+   *  the highlight-marker variant is threaded here so decoration never lands on non-text fields. */
+  restoreDisplayText: (text: string) => string = restoreText,
 ): TransformStream<Uint8Array, Uint8Array> {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
@@ -718,12 +741,17 @@ function createSseRestoreStream(
         if (!boundary) break;
         const record = buf.slice(0, boundary.index + boundary.length);
         buf = buf.slice(boundary.index + boundary.length);
-        encode(restoreSseRecord(record, pending, restoreText, adapter, surrogate, tool), controller);
+        encode(
+          restoreSseRecord(record, pending, restoreText, adapter, surrogate, tool, restoreDisplayText),
+          controller,
+        );
       }
     },
     flush(controller) {
       buf += decoder.decode();
-      if (buf) encode(restoreSseRecord(buf, pending, restoreText, adapter, surrogate, tool), controller);
+      if (buf) {
+        encode(restoreSseRecord(buf, pending, restoreText, adapter, surrogate, tool, restoreDisplayText), controller);
+      }
       encode(flushPendingSseFragments(pending, restoreText), controller);
     },
   });
@@ -736,6 +764,7 @@ function restoreSseRecord(
   adapter: SseRestoreAdapter,
   surrogate: SurrogateStrategy,
   tool: ToolRestorePolicy,
+  restoreDisplayText: (text: string) => string,
 ): string {
   const parsed = parseSseRecord(record);
   if (parsed.data?.trim() === "[DONE]") {
@@ -780,7 +809,11 @@ function restoreSseRecord(
     // piece through unrestored and uncounted. Text fragments (and, under `all`, tool fragments)
     // use the blanket restore.
     const restore =
-      withheld && fragment.kind === "tool" ? (text: string) => tool.restoreToolArg(text, withheld) : restoreText;
+      withheld && fragment.kind === "tool"
+        ? (text: string) => tool.restoreToolArg(text, withheld)
+        : fragment.kind === "text"
+          ? restoreDisplayText
+          : restoreText;
     const combined = (pending.get(fragment.key)?.value ?? "") + fragment.value;
     const restored = restore(combined);
     const { emit, hold } = splitForPotentialSurrogate(restored, surrogate);
@@ -791,11 +824,13 @@ function restoreSseRecord(
 
   // Fragment fields now hold restored text (any partial-surrogate tail lives in `pending`), so a
   // deep restore over the parsed record only touches sibling fields the adapter does not name
-  // (e.g. an OpenAI delta's reasoning_content/refusal). JSON serialization re-escapes them. Tool
-  // fragments left a placeholder in place; the deep sweep skips those withheld tokens so it cannot
-  // undo the withholding.
+  // (e.g. an OpenAI delta's reasoning_content/refusal). Those siblings are still assistant output, so
+  // this fragment-path sweep restores WITH markers (`restoreExcept`/`displayText` are marker-aware:
+  // they decorate a genuinely restored sibling and skip surrogates already wrapped by the fragment
+  // loop above). JSON serialization re-escapes them. Tool fragments left a placeholder in place; the
+  // deep sweep skips those withheld tokens so it cannot undo the withholding.
   const deepRestore =
-    withheld && withheld.size > 0 ? (text: string) => tool.restoreExcept(text, withheld) : restoreText;
+    withheld && withheld.size > 0 ? (text: string) => tool.restoreExcept(text, withheld) : restoreDisplayText;
   return prefix + renderSseJsonRecord(parsed, mapStrings(data, deepRestore));
 }
 

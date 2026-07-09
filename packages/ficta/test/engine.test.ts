@@ -73,6 +73,60 @@ describe("protection engine plugins", () => {
     expect(scope.traceRestoreDetails().restored).toEqual(redacted.traceValues);
   });
 
+  it("attributes a value that is both registered and detected to the registry, not the detector", async () => {
+    // A registered secret is authoritative for audit *identity*: when a probabilistic detector also
+    // flags the exact same value, the trace/stats report the registry's declared identity
+    // (env-file/secret/exact) rather than the detector's guess (person/pii/high). See
+    // ProtectionRequestScope.metadataFor.
+    //
+    // `provenance` is deliberately NOT flipped here: it comes from the vault's layer walk and reflects
+    // what mechanically governed this redaction (the detected layer's surrogate and its
+    // restore-into-tools classification). It stays `detected` — claiming `permanent` while the value is
+    // still mechanically treated as detected would make the audit misreport tool behavior. Making the
+    // registry win the span itself (and thus provenance + restore-into-tools) is the span-resolver
+    // rework tracked in ficta-internal.
+    const NAME = "Amelia Naidoo";
+    const registry: RegistrySourcePlugin = {
+      kind: "registry-source",
+      name: "fixture-registry",
+      config: { bindings: [], sections: [], envDefaults: {} },
+      setup: { registrySources: () => [] },
+      discover: () => [],
+      loadValues: () => [{ name: "CLIENT_CFO", value: NAME, source: "env-file", kind: "secret", confidence: "exact" }],
+    };
+    const detector: DetectorPlugin = {
+      kind: "detector",
+      name: "fixture-pii-detector",
+      detectText: (text) =>
+        text.includes(NAME)
+          ? [{ name: "person", value: NAME, source: "fixture-detector", kind: "pii", confidence: "high" }]
+          : [],
+    };
+    const engine = new ProtectionEngine({ plugins: [registry, detector] });
+
+    const scope = engine.beginRequest();
+    const redacted = await scope.redactBodyDetailed(JSON.stringify({ content: `The CFO is ${NAME}.` }), {
+      traceValues: true,
+    });
+
+    expect(redacted.count).toBe(1);
+    // Identity attribution (redactedHits in the trace/stats) now names the registry secret.
+    expect(redacted.hits).toHaveLength(1);
+    expect(redacted.hits[0]).toMatchObject({
+      name: "CLIENT_CFO",
+      source: "env-file",
+      kind: "secret",
+      confidence: "exact",
+    });
+    expect(redacted.traceValues?.[0]).toMatchObject({
+      name: "CLIENT_CFO",
+      source: "env-file",
+      kind: "secret",
+      confidence: "exact",
+      provenance: "detected", // mechanical layer, unchanged by the identity fix; see comment above
+    });
+  });
+
   it("isolates detector plugin exceptions", async () => {
     const engine = new ProtectionEngine({
       plugins: [
