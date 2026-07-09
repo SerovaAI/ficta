@@ -1,14 +1,18 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { PanelLeft, PanelLeftClose, Plus, Settings, Shield, Trash2 } from "lucide-react";
-import { toast } from "sonner";
+import { AlertTriangle, PanelLeft, PanelLeftClose, Plus, RotateCcw, Settings, Shield, Trash2, X } from "lucide-react";
+import { useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { isAdmin } from "@/lib/auth/types";
 import { useAuthState } from "@/lib/auth/useAuthState";
 import {
   cancelThreadDeletion,
+  clearThreadDeletionNotice,
+  getThreadDeletionNotice,
   scheduleThreadDeletion,
+  showThreadDeletionError,
+  subscribeThreadDeletionNotice,
   THREAD_DELETION_UNDO_DELAY_MS,
 } from "@/lib/storage/threadDeletion";
 import { threadKeys, threadsQueryOptions } from "@/lib/storage/threadQueries";
@@ -17,8 +21,6 @@ import type { ThreadSummary } from "@/lib/storage/types";
 import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "./UserMenu";
-
-const CHAT_DELETE_UNDO_TOAST_ID = "chat-delete-undo";
 
 /**
  * Collapsible chat-history sidebar. On `md+` it's a persistent column that collapses to a 48px icon rail
@@ -57,6 +59,11 @@ export function ChatSidebar({
   const showAdmin = isAdmin(auth) && onOpenAdmin !== undefined;
   const threadsQuery = useQuery(threadsQueryOptions);
   const threads = threadsQuery.data ?? [];
+  const deletionNotice = useSyncExternalStore(
+    subscribeThreadDeletionNotice,
+    getThreadDeletionNotice,
+    getThreadDeletionNotice,
+  );
 
   // Selecting a thread should dismiss the overlay drawer on mobile, but leave the persistent desktop column
   // open. There's no matching desktop close-on-navigate, so this is viewport-gated rather than always-close.
@@ -91,35 +98,36 @@ export function ChatSidebar({
     const id = thread.id;
     const wasActive = id === activeThreadId;
     const previous = queryClient.getQueryData<ThreadSummary[]>(threadKeys.all);
+    const title = truncateTitle(thread.title);
 
     // Optimistically remove the row and, if it's the open conversation, leave its now-orphaned view.
     queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) => current?.filter((t) => t.id !== id) ?? []);
     if (wasActive) navigate({ to: "/" });
 
     // Defer the destructive server call so Undo can cancel it outright (see threadDeletion.ts).
-    scheduleThreadDeletion(id, async () => {
-      try {
-        await deleteThread({ data: { threadId: id } });
-        void queryClient.invalidateQueries({ queryKey: threadKeys.all });
-      } catch {
-        queryClient.setQueryData(threadKeys.all, previous);
-        toast.error("Couldn't delete that chat — it's back in your history.");
-      }
-    });
-
-    toast(`Deleted "${truncateTitle(thread.title)}"`, {
-      id: CHAT_DELETE_UNDO_TOAST_ID,
-      duration: THREAD_DELETION_UNDO_DELAY_MS,
-      action: {
-        label: "Undo",
-        onClick: () => {
-          if (!cancelThreadDeletion(id)) return;
+    scheduleThreadDeletion(
+      id,
+      async () => {
+        try {
+          await deleteThread({ data: { threadId: id } });
+          void queryClient.invalidateQueries({ queryKey: threadKeys.all });
+        } catch {
           queryClient.setQueryData(threadKeys.all, previous);
-          if (wasActive) navigate({ to: "/chat/$threadId", params: { threadId: id } });
-          toast.dismiss(CHAT_DELETE_UNDO_TOAST_ID);
-        },
+          showThreadDeletionError("Couldn't delete that chat. It's back in your history.");
+        }
       },
-    });
+      {
+        delayMs: THREAD_DELETION_UNDO_DELAY_MS,
+        notice: { title, previous, wasActive },
+      },
+    );
+  };
+
+  const undoDelete = () => {
+    if (deletionNotice?.kind !== "pending") return;
+    if (!cancelThreadDeletion(deletionNotice.id)) return;
+    queryClient.setQueryData(threadKeys.all, deletionNotice.previous);
+    if (deletionNotice.wasActive) navigate({ to: "/chat/$threadId", params: { threadId: deletionNotice.id } });
   };
 
   return (
@@ -210,6 +218,7 @@ export function ChatSidebar({
 
             {/* Account footer, pinned to the bottom by the flex-1 nav above. The menu opens upward. */}
             <div className="shrink-0 border-t border-border p-2">
+              <DeletionNotice notice={deletionNotice} onUndo={undoDelete} onDismiss={clearThreadDeletionNotice} />
               {user ? (
                 <UserMenu
                   user={user}
@@ -280,6 +289,7 @@ export function ChatSidebar({
             {/* Account/settings pinned to the bottom of the rail. The avatar carries its own dropdown, so
                 it isn't wrapped in a tooltip (that would fight the menu trigger for the same button). */}
             <div className="mt-auto flex flex-col items-center gap-2 pb-2">
+              <DeletionNoticeRail notice={deletionNotice} onUndo={undoDelete} onDismiss={clearThreadDeletionNotice} />
               {user ? (
                 <UserMenu
                   user={user}
@@ -308,6 +318,100 @@ export function ChatSidebar({
         )}
       </aside>
     </>
+  );
+}
+
+function DeletionNotice({
+  notice,
+  onUndo,
+  onDismiss,
+}: {
+  notice: ReturnType<typeof getThreadDeletionNotice>;
+  onUndo: () => void;
+  onDismiss: () => void;
+}) {
+  if (!notice) return null;
+
+  if (notice.kind === "error") {
+    return (
+      <div
+        role="alert"
+        className="mb-2 flex items-start gap-2 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100"
+      >
+        <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+        <p className="min-w-0 flex-1">{notice.message}</p>
+        <button
+          type="button"
+          className="rounded-md p-0.5 text-red-900/70 hover:bg-red-100 hover:text-red-950 focus-visible:ring-2 focus-visible:ring-ring [@media(pointer:coarse)]:p-2 dark:text-red-100/70 dark:hover:bg-red-900/40 dark:hover:text-red-50"
+          onClick={onDismiss}
+          aria-label="Dismiss delete error"
+        >
+          <X className="size-3.5" aria-hidden />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      role="status"
+      className="mb-2 rounded-xl border border-border bg-secondary px-3 py-2 text-sm text-secondary-foreground"
+    >
+      <p className="truncate">Deleted &quot;{notice.title}&quot;</p>
+      <Button type="button" variant="outline" size="sm" className="mt-2 h-8 w-full" onClick={onUndo}>
+        <RotateCcw className="size-3.5" aria-hidden />
+        Undo
+      </Button>
+    </div>
+  );
+}
+
+function DeletionNoticeRail({
+  notice,
+  onUndo,
+  onDismiss,
+}: {
+  notice: ReturnType<typeof getThreadDeletionNotice>;
+  onUndo: () => void;
+  onDismiss: () => void;
+}) {
+  if (!notice) return null;
+
+  if (notice.kind === "error") {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="text-destructive hover:text-destructive"
+            onClick={onDismiss}
+            aria-label="Dismiss delete error"
+          >
+            <AlertTriangle className="size-4" aria-hidden />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="right">{notice.message}</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="secondary"
+          size="icon"
+          onClick={onUndo}
+          aria-label={`Undo deleting ${notice.title}`}
+        >
+          <RotateCcw className="size-4" aria-hidden />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="right">Undo delete</TooltipContent>
+    </Tooltip>
   );
 }
 
