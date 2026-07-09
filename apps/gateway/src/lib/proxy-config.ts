@@ -14,7 +14,6 @@ import {
 } from "@serovaai/ficta-protocol";
 import { createServerFn } from "@tanstack/react-start";
 import { requireAdmin } from "@/lib/auth/guards.server";
-import { proxyBaseUrl } from "@/lib/protection-status";
 
 export type EditableProxyConfigPatch = Partial<EditableProxyConfigValues>;
 export type { EditableProxyConfigKey, EditableProxyConfigValues, PiiBackendName, ProxyConfig, ProxyConfigUpdate };
@@ -31,6 +30,7 @@ const EDITABLE_PROXY_CONFIG_KEY_SET = new Set<string>(EDITABLE_PROXY_CONFIG_KEYS
 export const fetchProxyConfig = createServerFn({ method: "GET" }).handler(async (): Promise<ProxyConfig> => {
   await requireAdmin();
 
+  const { proxyBaseUrl } = await import("@/lib/proxy-base.server");
   const proxyUrl = proxyBaseUrl();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CONFIG_TIMEOUT_MS);
@@ -77,6 +77,7 @@ export const updateProxyConfig = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<ProxyConfigUpdate> => {
     await requireAdmin();
 
+    const { proxyBaseUrl } = await import("@/lib/proxy-base.server");
     const proxyUrl = proxyBaseUrl();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), CONFIG_TIMEOUT_MS);

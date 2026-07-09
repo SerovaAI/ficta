@@ -9,7 +9,6 @@ import { createServerFn } from "@tanstack/react-start";
 export type { ProtectionStatus, ProtectionStatusOk };
 export { isProtectionStatusOk };
 
-const DEFAULT_PROXY_URL = "http://127.0.0.1:8787";
 const STATUS_TIMEOUT_MS = 1500;
 
 /**
@@ -17,6 +16,7 @@ const STATUS_TIMEOUT_MS = 1500;
  * proxy never needs browser CORS and the client receives only safe posture metadata — never values.
  */
 export const fetchProtectionStatus = createServerFn({ method: "GET" }).handler(async (): Promise<ProtectionStatus> => {
+  const { proxyBaseUrl } = await import("@/lib/proxy-base.server");
   const proxyUrl = proxyBaseUrl();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), STATUS_TIMEOUT_MS);
@@ -57,15 +57,6 @@ export const fetchProtectionStatus = createServerFn({ method: "GET" }).handler(a
     clearTimeout(timer);
   }
 });
-
-/** Base URL of the local ficta proxy (server-only). Shared with the admin config read. */
-export function proxyBaseUrl(): string {
-  return stripTrailingSlash(process.env.FICTA_PROXY_URL ?? DEFAULT_PROXY_URL);
-}
-
-function stripTrailingSlash(url: string): string {
-  return url.replace(/\/+$/, "");
-}
 
 function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";

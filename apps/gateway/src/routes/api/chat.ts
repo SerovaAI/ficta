@@ -10,7 +10,7 @@ import {
   type Provider,
   type ReasoningEffort,
 } from "../../lib/models";
-import { recordProtectionStatsTrend } from "../../lib/protection-stats";
+import { recordProtectionStatsTrend } from "../../lib/protection-stats.server";
 import { MissingKeyError, ProviderKeyDecryptionError, resolveProviderApiKey } from "../../lib/provider-keys.server";
 import { stripRestoreHighlightMarkers } from "../../lib/restore-highlights";
 import { getStorage } from "../../lib/storage/storage.server";
