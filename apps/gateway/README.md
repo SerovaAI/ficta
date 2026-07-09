@@ -132,7 +132,7 @@ surrogate style, tool-call restore policy, and custom-upstream allowance. These 
 the proxy's `config.toml`; restart the proxy before treating the saved settings as active. Fields set
 by explicit `FICTA_*` environment variables remain read-only in the UI.
 
-Gateway admins can also maintain the Protected Registry at `/admin/protected-registry`. Approved
+Gateway admins can also maintain the Protected Registry from **Admin > Protected Registry**. Approved
 registry entries can be exported to a managed registry JSON file; include that path in
 `FICTA_REGISTRY_MANAGED_FILE_PATHS` and restart the proxy to load the approved values as exact-match
 registry entries. Suggested and ignored rows are review workflow only and are not exported.

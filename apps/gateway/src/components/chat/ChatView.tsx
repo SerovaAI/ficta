@@ -377,7 +377,6 @@ export function ChatView({
           onClose={sidebar.close}
           onNewChat={resetChat}
           onOpenAdmin={() => setAdminOpen(true)}
-          onOpenRegistry={() => window.location.assign("/admin/protected-registry")}
           onOpenSettings={() => setSettingsOpen(true)}
           onCreateWorkspace={() => setCreateWorkspaceOpen(true)}
           activeThreadId={activeThreadId}

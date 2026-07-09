@@ -1,17 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import {
-  AlertTriangle,
-  Database,
-  PanelLeft,
-  PanelLeftClose,
-  Plus,
-  RotateCcw,
-  Settings,
-  Shield,
-  Trash2,
-  X,
-} from "lucide-react";
+import { AlertTriangle, PanelLeft, PanelLeftClose, Plus, RotateCcw, Settings, Shield, Trash2, X } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -49,7 +38,6 @@ export function ChatSidebar({
   onClose,
   onNewChat,
   onOpenAdmin,
-  onOpenRegistry,
   onOpenSettings,
   onCreateWorkspace,
   activeThreadId,
@@ -59,7 +47,6 @@ export function ChatSidebar({
   onClose: () => void;
   onNewChat: () => void;
   onOpenAdmin?: () => void;
-  onOpenRegistry?: () => void;
   onOpenSettings: () => void;
   onCreateWorkspace: () => void;
   activeThreadId?: string;
@@ -72,7 +59,6 @@ export function ChatSidebar({
   const hostedAuth = auth.requiresAuth;
   const admin = isAdmin(auth);
   const showAdminSettings = admin && onOpenAdmin !== undefined;
-  const showRegistry = admin && onOpenRegistry !== undefined;
   const threadsQuery = useQuery(threadsQueryOptions);
   const hiddenThreadDeletionIds = useSyncExternalStore(
     subscribeThreadDeletionNotice,
@@ -106,11 +92,6 @@ export function ChatSidebar({
   const openAdmin = () => {
     closeOnMobile();
     onOpenAdmin?.();
-  };
-
-  const openRegistry = () => {
-    closeOnMobile();
-    onOpenRegistry?.();
   };
 
   const createWorkspace = () => {
@@ -201,12 +182,6 @@ export function ChatSidebar({
                 <Plus className="size-4" aria-hidden />
                 New chat
               </Button>
-              {showRegistry && !user ? (
-                <Button variant="ghost" className="w-full justify-start gap-2" onClick={openRegistry}>
-                  <Database className="size-4" aria-hidden />
-                  Protected Registry
-                </Button>
-              ) : null}
               {showAdminSettings && !user ? (
                 <Button variant="ghost" className="w-full justify-start gap-2" onClick={openAdmin}>
                   <Shield className="size-4" aria-hidden />
@@ -260,7 +235,6 @@ export function ChatSidebar({
                   side="top"
                   align="start"
                   onOpenAdmin={showAdminSettings ? openAdmin : undefined}
-                  onOpenRegistry={showRegistry ? openRegistry : undefined}
                   onOpenSettings={openSettings}
                   onCreateWorkspace={createWorkspace}
                   showWorkspaces={hostedAuth}
@@ -308,16 +282,6 @@ export function ChatSidebar({
                 </TooltipTrigger>
                 <TooltipContent side="right">New chat</TooltipContent>
               </Tooltip>
-              {showRegistry && !user ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" onClick={openRegistry} aria-label="Protected Registry">
-                      <Database className="size-4" aria-hidden />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">Protected Registry</TooltipContent>
-                </Tooltip>
-              ) : null}
               {showAdminSettings && !user ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -342,7 +306,6 @@ export function ChatSidebar({
                   side="right"
                   align="end"
                   onOpenAdmin={showAdminSettings ? openAdmin : undefined}
-                  onOpenRegistry={showRegistry ? openRegistry : undefined}
                   onOpenSettings={openSettings}
                   onCreateWorkspace={createWorkspace}
                   showWorkspaces={hostedAuth}
