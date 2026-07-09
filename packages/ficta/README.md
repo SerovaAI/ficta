@@ -67,7 +67,7 @@ every option. The table below is just a quick tour of the most useful knobs:
 | `pii.presidio.url` | `FICTA_PII_PRESIDIO_URL` | local Presidio sidecar URL | Analyzer URL when the backend set includes `presidio`. |
 | `pii.openmed.url` | `FICTA_PII_OPENMED_URL` | local OpenMed service URL | Service URL when the backend set includes `openmed`. |
 | `surrogate.style` | `FICTA_SURROGATE_STYLE` | `opaque` | Token style: `opaque` (`FICTA_<hex>`) or `typed` (`FICTA_PERSON_…`, `FICTA_SSN_…`) for model fluency; reversibility unchanged. |
-| `logging.log_dir` | `FICTA_LOG_DIR` | `~/.ficta/logs` | Where per-run logs and `stats.json` are written. |
+| `logging.log_dir` | `FICTA_LOG_DIR` | `~/.ficta/logs` | Where `ficta.log`, `protection-stats.json`, and lazy `runs/run-*` request captures are written. |
 | `upstreams.anthropic` | `FICTA_ANTHROPIC_UPSTREAM` | Anthropic API | Override the Anthropic upstream (also `..._OPENAI_...` / `..._CHATGPT_...`). |
 
 **Registry sources** — managed registry files, env-file, process-env, and Doppler discovery — have

@@ -135,11 +135,13 @@ interface RunArtifacts {
 
 function collectBodies(logDir: string): { pre: string; egress: string; sentCount: number } {
   if (!existsSync(logDir)) return { pre: "", egress: "", sentCount: 0 };
+  const runsDir = join(logDir, "runs");
+  if (!existsSync(runsDir)) return { pre: "", egress: "", sentCount: 0 };
   const pre: string[] = [];
   const egress: string[] = [];
   let sentCount = 0;
-  for (const run of readdirSync(logDir).filter((n) => n.startsWith("run-"))) {
-    const runDir = join(logDir, run);
+  for (const run of readdirSync(runsDir).filter((n) => n.startsWith("run-"))) {
+    const runDir = join(runsDir, run);
     for (const file of readdirSync(runDir)) {
       const body = readFileSync(join(runDir, file), "utf8");
       if (file.endsWith(".sent.json")) {
