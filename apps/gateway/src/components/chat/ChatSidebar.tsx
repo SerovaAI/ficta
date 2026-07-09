@@ -20,6 +20,7 @@ import { useAuthState } from "@/lib/auth/useAuthState";
 import {
   cancelThreadDeletion,
   clearThreadDeletionNotice,
+  getHiddenThreadDeletionIds,
   getThreadDeletionNotice,
   scheduleThreadDeletion,
   showThreadDeletionError,
@@ -73,7 +74,13 @@ export function ChatSidebar({
   const showAdminSettings = admin && onOpenAdmin !== undefined;
   const showRegistry = admin && onOpenRegistry !== undefined;
   const threadsQuery = useQuery(threadsQueryOptions);
-  const threads = threadsQuery.data ?? [];
+  const hiddenThreadDeletionIds = useSyncExternalStore(
+    subscribeThreadDeletionNotice,
+    getHiddenThreadDeletionIds,
+    getHiddenThreadDeletionIds,
+  );
+  const hiddenThreadDeletionIdSet = new Set(hiddenThreadDeletionIds);
+  const threads = (threadsQuery.data ?? []).filter((thread) => !hiddenThreadDeletionIdSet.has(thread.id));
   const deletionNotice = useSyncExternalStore(
     subscribeThreadDeletionNotice,
     getThreadDeletionNotice,
@@ -130,7 +137,7 @@ export function ChatSidebar({
       async () => {
         try {
           await deleteThread({ data: { threadId: id } });
-          void queryClient.invalidateQueries({ queryKey: threadKeys.all });
+          await queryClient.invalidateQueries({ queryKey: threadKeys.all });
         } catch {
           queryClient.setQueryData(threadKeys.all, previous);
           showThreadDeletionError("Couldn't delete that chat. It's back in your history.");

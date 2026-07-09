@@ -43,12 +43,18 @@ type ScheduleThreadDeletionOptions =
 
 let pending: PendingDeletion | null = null;
 let notice: ThreadDeletionNotice | null = null;
+const hiddenThreadDeletionIds = new Set<string>();
+let hiddenThreadDeletionIdsSnapshot: readonly string[] = [];
 const listeners = new Set<() => void>();
 
 export const THREAD_DELETION_UNDO_DELAY_MS = 5000;
 
 export function getThreadDeletionNotice(): ThreadDeletionNotice | null {
   return notice;
+}
+
+export function getHiddenThreadDeletionIds(): readonly string[] {
+  return hiddenThreadDeletionIdsSnapshot;
 }
 
 export function subscribeThreadDeletionNotice(listener: () => void): () => void {
@@ -73,11 +79,12 @@ export function scheduleThreadDeletion(
   const delayMs = typeof options === "number" ? options : (options.delayMs ?? THREAD_DELETION_UNDO_DELAY_MS);
   const noticeInput = typeof options === "number" ? undefined : options.notice;
   flushThreadDeletion();
+  addHiddenThreadDeletionId(id);
   const expiresAt = Date.now() + delayMs;
   const timer = setTimeout(() => {
     pending = null;
     setNotice(null);
-    void commit();
+    runThreadDeletionCommit(id, commit);
   }, delayMs);
   pending = { id, timer, commit };
   setNotice(
@@ -100,6 +107,7 @@ export function cancelThreadDeletion(id: string): boolean {
   clearTimeout(pending.timer);
   pending = null;
   setNotice(null);
+  removeHiddenThreadDeletionId(id);
   return true;
 }
 
@@ -107,14 +115,45 @@ export function cancelThreadDeletion(id: string): boolean {
 export function flushThreadDeletion(): void {
   if (!pending) return;
   clearTimeout(pending.timer);
-  const { commit } = pending;
+  const { id, commit } = pending;
   pending = null;
   setNotice(null);
-  void commit();
+  runThreadDeletionCommit(id, commit);
 }
 
 function setNotice(next: ThreadDeletionNotice | null): void {
   notice = next;
+  notifyListeners();
+}
+
+function addHiddenThreadDeletionId(id: string): void {
+  if (hiddenThreadDeletionIds.has(id)) return;
+  hiddenThreadDeletionIds.add(id);
+  hiddenThreadDeletionIdsSnapshot = Array.from(hiddenThreadDeletionIds);
+  notifyListeners();
+}
+
+function removeHiddenThreadDeletionId(id: string): void {
+  if (!hiddenThreadDeletionIds.has(id)) return;
+  hiddenThreadDeletionIds.delete(id);
+  hiddenThreadDeletionIdsSnapshot = Array.from(hiddenThreadDeletionIds);
+  notifyListeners();
+}
+
+function runThreadDeletionCommit(id: string, commit: () => Promise<void> | void): void {
+  let result: Promise<void> | void;
+  try {
+    result = commit();
+  } catch {
+    removeHiddenThreadDeletionId(id);
+    return;
+  }
+  void Promise.resolve(result)
+    .catch(() => undefined)
+    .finally(() => removeHiddenThreadDeletionId(id));
+}
+
+function notifyListeners(): void {
   for (const listener of listeners) listener();
 }
 
