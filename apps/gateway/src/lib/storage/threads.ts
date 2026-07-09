@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
-import { requireAdminScope, requireScope } from "@/lib/auth/guards.server";
+import { requireAdminScope, requireAuthState, requireScope, scopeFromAuth } from "@/lib/auth/guards.server";
+import { isAdmin } from "@/lib/auth/types";
 import { getStorage } from "./storage.server";
 import type { StoredMessage, ThreadSummary } from "./types";
 
@@ -36,10 +37,11 @@ function toStoredMessage(input: unknown): StoredMessage {
   };
 }
 
-function validateStart(input: unknown): { threadId: string; message: StoredMessage } {
+function validateStart(input: unknown): { threadId: string; message: StoredMessage; traceEnabled: boolean } {
   const i = asObject(input);
   if (typeof i.threadId !== "string" || !i.threadId) throw new Error("invalid threadId");
-  return { threadId: i.threadId, message: toStoredMessage(i.message) };
+  if (i.traceEnabled !== undefined && typeof i.traceEnabled !== "boolean") throw new Error("invalid traceEnabled");
+  return { threadId: i.threadId, message: toStoredMessage(i.message), traceEnabled: i.traceEnabled === true };
 }
 
 function validateSnapshot(input: unknown): { threadId: string; messages: StoredMessage[] } {
@@ -71,8 +73,16 @@ export const fetchThread = createServerFn({ method: "GET" })
 export const startThread = createServerFn({ method: "POST" })
   .validator(validateStart)
   .handler(async ({ data }): Promise<void> => {
-    const { userId, orgId } = await requireScope();
-    await (await getStorage()).startThread(userId, orgId, data.threadId, data.message);
+    const auth = await requireAuthState();
+    const scope = scopeFromAuth(auth);
+    if (!scope) throw new Error("unauthorized");
+    await (await getStorage()).startThread(
+      scope.userId,
+      scope.orgId,
+      data.threadId,
+      data.message,
+      data.traceEnabled && isAdmin(auth),
+    );
   });
 
 export const saveThread = createServerFn({ method: "POST" })

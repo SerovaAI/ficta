@@ -2,6 +2,7 @@ import { chat, toServerSentEventsResponse } from "@tanstack/ai";
 import { createFileRoute } from "@tanstack/react-router";
 import { scopeFromAuth } from "../../lib/auth/guards.server";
 import { getActiveProvider } from "../../lib/auth/provider.server";
+import { isAdmin } from "../../lib/auth/types";
 import { createModelAdapter } from "../../lib/model-adapter";
 import {
   DEFAULT_REASONING_EFFORT,
@@ -42,6 +43,7 @@ export const Route = createFileRoute("/api/chat")({
         let reasoningEffort: ReasoningEffort;
         let messages: Parameters<typeof chat>[0]["messages"];
         let threadId: string | undefined;
+        let requestedTraceEnabled = false;
         try {
           const body = await request.json();
           provider = body.forwardedProps?.provider ?? "openai";
@@ -49,6 +51,7 @@ export const Route = createFileRoute("/api/chat")({
           reasoningEffort = isReasoningEffort(body.forwardedProps?.reasoningEffort)
             ? body.forwardedProps.reasoningEffort
             : DEFAULT_REASONING_EFFORT;
+          requestedTraceEnabled = body.forwardedProps?.traceEnabled === true;
           messages = stripRestoreHighlightMarkers(body.messages);
           threadId = typeof body.threadId === "string" ? body.threadId.slice(0, 128) : undefined;
           if (!PROVIDERS.includes(provider)) throw new Error(`unknown provider "${provider}"`);
@@ -81,13 +84,18 @@ export const Route = createFileRoute("/api/chat")({
           });
           const fictaScope = threadId ? `${orgId}:${threadId}` : undefined;
           const apiKey = await resolveProviderApiKey(orgId, provider);
+          const traceEnabled = resolveChatTraceEnabled({
+            storedTraceEnabled: storedThread?.thread.traceEnabled,
+            requestedTraceEnabled,
+            admin: isAdmin(auth),
+          });
           stream = chat({
             adapter: createModelAdapter({
               provider,
               model,
               apiKey,
               fictaScope,
-              traceEnabled: storedThread?.thread.traceEnabled,
+              traceEnabled,
             }),
             messages,
             modelOptions: provider === "openai" ? { reasoning: { effort: reasoningEffort } } : undefined,
@@ -117,4 +125,16 @@ function errorResponse(status: number, message: string): Response {
 function reason(err: unknown, fallback: string): string {
   const message = err instanceof Error ? err.message.trim() : "";
   return message || fallback;
+}
+
+export function resolveChatTraceEnabled({
+  storedTraceEnabled,
+  requestedTraceEnabled,
+  admin,
+}: {
+  storedTraceEnabled: boolean | undefined;
+  requestedTraceEnabled: boolean;
+  admin: boolean;
+}): boolean {
+  return storedTraceEnabled ?? (requestedTraceEnabled && admin);
 }
