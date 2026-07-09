@@ -2,6 +2,8 @@ import type { Provider } from "@/lib/models";
 import type {
   EncryptedProviderKey,
   InstanceSettings,
+  ProtectionStatsDailySummary,
+  ProtectionStatsSnapshot,
   ProviderKeySummary,
   StoredMessage,
   ThreadSummary,
@@ -36,6 +38,9 @@ export interface Storage {
   getProviderKey(orgId: string, provider: Provider): Promise<EncryptedProviderKey | null>;
   upsertProviderKey(orgId: string, key: EncryptedProviderKey): Promise<ProviderKeySummary>;
   deleteProviderKey(orgId: string, provider: Provider): Promise<void>;
+
+  ingestProtectionStatsSnapshot(orgId: string, proxyUrl: string, snapshot: ProtectionStatsSnapshot): Promise<void>;
+  listProtectionStatsDaily(orgId: string, days?: number): Promise<ProtectionStatsDailySummary[]>;
 
   listThreads(userId: string, orgId: string): Promise<ThreadSummary[]>;
   getThread(

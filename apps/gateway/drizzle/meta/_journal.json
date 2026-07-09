@@ -22,6 +22,13 @@
       "when": 1783567092500,
       "tag": "0002_robust_hemingway",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783570650204,
+      "tag": "0003_bitter_talos",
+      "breakpoints": true
     }
   ]
 }

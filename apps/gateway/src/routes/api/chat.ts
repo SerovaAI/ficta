@@ -10,6 +10,7 @@ import {
   type Provider,
   type ReasoningEffort,
 } from "../../lib/models";
+import { recordProtectionStatsTrend } from "../../lib/protection-stats";
 import { MissingKeyError, ProviderKeyDecryptionError, resolveProviderApiKey } from "../../lib/provider-keys.server";
 import { stripRestoreHighlightMarkers } from "../../lib/restore-highlights";
 import { getStorage } from "../../lib/storage/storage.server";
@@ -70,6 +71,9 @@ export const Route = createFileRoute("/api/chat")({
           // The org id comes from server-side auth (never the client), so one org's threads can
           // never address another's vault; the client-chosen threadId only partitions within it.
           const orgId = scope?.orgId ?? "local";
+          recordProtectionStatsTrend(orgId).catch((err: unknown) => {
+            console.warn("Failed to ingest redaction proof trend.", err);
+          });
           const fictaScope = threadId ? `${orgId}:${threadId}` : undefined;
           const apiKey = await resolveProviderApiKey(orgId, provider);
           stream = chat({

@@ -1,5 +1,5 @@
-import { index, integer, jsonb, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
-import type { InstanceSettings, UserSettings } from "../types";
+import { date, index, integer, jsonb, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
+import type { InstanceSettings, ProtectionStatsTotals, UserSettings } from "../types";
 
 /**
  * Postgres schema for the storage seam. One dialect only: PGlite (the zero-config default) and real
@@ -43,6 +43,43 @@ export const providerKeys = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.orgId, t.provider] })],
+);
+
+/** Org-scoped values-free protection trend totals. One UTC day per row; no request or label metadata. */
+export const protectionStatsDaily = pgTable(
+  "protection_stats_daily",
+  {
+    orgId: text("org_id").notNull(),
+    day: date("day", { mode: "string" }).notNull(),
+    events: integer("events").notNull().default(0),
+    affectedRequests: integer("affected_requests").notNull().default(0),
+    redactedValues: integer("redacted_values").notNull().default(0),
+    survivingValues: integer("surviving_values").notNull().default(0),
+    blockedRequests: integer("blocked_requests").notNull().default(0),
+    keptOutOfModelValues: integer("kept_out_of_model_values").notNull().default(0),
+    restoredValues: integer("restored_values").notNull().default(0),
+    withheldFromToolsValues: integer("withheld_from_tools_values").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.orgId, t.day] }), index("protection_stats_daily_org_day_idx").on(t.orgId, t.day)],
+);
+
+/** Last cumulative proxy-run totals seen by Gateway, used to turn proxy snapshots into daily deltas. */
+export const protectionStatsCheckpoints = pgTable(
+  "protection_stats_checkpoints",
+  {
+    orgId: text("org_id").notNull(),
+    proxyUrl: text("proxy_url").notNull(),
+    proxyStartedAt: timestamp("proxy_started_at", { withTimezone: true }).notNull(),
+    statsPath: text("stats_path").notNull(),
+    lastTotals: jsonb("last_totals").$type<ProtectionStatsTotals>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.proxyUrl, t.proxyStartedAt, t.statsPath] }),
+    index("protection_stats_checkpoints_updated_idx").on(t.orgId, t.updatedAt),
+  ],
 );
 
 /** A chat conversation. Id is client-generated (crypto.randomUUID) so a new chat has a stable id pre-save.

@@ -7,7 +7,12 @@ process.env.DATABASE_URL = "";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Storage } from "@/lib/storage/storage.server";
 import { getStorage } from "@/lib/storage/storage.server";
-import type { EncryptedProviderKey, StoredMessage } from "@/lib/storage/types";
+import type {
+  EncryptedProviderKey,
+  ProtectionStatsSnapshot,
+  ProtectionStatsTotals,
+  StoredMessage,
+} from "@/lib/storage/types";
 
 let store: Storage;
 
@@ -110,6 +115,189 @@ describe("provider keys", () => {
     await store.deleteProviderKey("org-delete", "openai");
 
     expect(await store.getProviderKey("org-delete", "openai")).toBeNull();
+  });
+});
+
+const zeroTotals = (): ProtectionStatsTotals => ({
+  events: 0,
+  affectedRequests: 0,
+  redactedValues: 0,
+  survivingValues: 0,
+  blockedRequests: 0,
+  keptOutOfModelValues: 0,
+  restoredValues: 0,
+  withheldFromToolsValues: 0,
+});
+
+const totals = (patch: Partial<ProtectionStatsTotals>): ProtectionStatsTotals => ({ ...zeroTotals(), ...patch });
+
+function protectionSnapshot(
+  startedAt: string,
+  updatedAt: string,
+  patch: Partial<ProtectionStatsTotals>,
+): ProtectionStatsSnapshot {
+  return {
+    version: 1,
+    path: "/tmp/ficta/run-a/stats.json",
+    startedAt,
+    updatedAt,
+    totals: totals(patch),
+    byModel: [],
+    bySurface: [],
+    byWire: [],
+    byLabel: [],
+    events: [],
+  };
+}
+
+describe("protection stats trends", () => {
+  it("stores cumulative proxy snapshots as daily deltas", async () => {
+    const orgId = "org-proof-delta";
+    const proxyUrl = "http://127.0.0.1:8787";
+    const now = new Date();
+    const startedAt = now.toISOString();
+    const updatedAt = new Date(now.getTime() + 1_000).toISOString();
+    const dayKey = updatedAt.slice(0, 10);
+
+    await store.ingestProtectionStatsSnapshot(
+      orgId,
+      proxyUrl,
+      protectionSnapshot(startedAt, updatedAt, {
+        events: 3,
+        affectedRequests: 1,
+        redactedValues: 3,
+        keptOutOfModelValues: 3,
+        restoredValues: 2,
+      }),
+    );
+
+    await store.ingestProtectionStatsSnapshot(
+      orgId,
+      proxyUrl,
+      protectionSnapshot(startedAt, new Date(now.getTime() + 2_000).toISOString(), {
+        events: 5,
+        affectedRequests: 2,
+        redactedValues: 6,
+        keptOutOfModelValues: 6,
+        restoredValues: 4,
+      }),
+    );
+
+    const [day] = await store.listProtectionStatsDaily(orgId);
+    expect(day).toMatchObject({
+      day: dayKey,
+      events: 5,
+      affectedRequests: 2,
+      redactedValues: 6,
+      keptOutOfModelValues: 6,
+      restoredValues: 4,
+    });
+  });
+
+  it("does not double-count repeated snapshots or subtract counter regressions", async () => {
+    const orgId = "org-proof-regression";
+    const proxyUrl = "http://127.0.0.1:8787";
+    const now = new Date();
+    const startedAt = now.toISOString();
+    const first = protectionSnapshot(startedAt, new Date(now.getTime() + 1_000).toISOString(), {
+      events: 4,
+      affectedRequests: 2,
+      redactedValues: 4,
+      keptOutOfModelValues: 4,
+    });
+
+    await store.ingestProtectionStatsSnapshot(orgId, proxyUrl, first);
+    await store.ingestProtectionStatsSnapshot(orgId, proxyUrl, first);
+    await store.ingestProtectionStatsSnapshot(
+      orgId,
+      proxyUrl,
+      protectionSnapshot(startedAt, new Date(now.getTime() + 2_000).toISOString(), {
+        events: 3,
+        affectedRequests: 1,
+        redactedValues: 3,
+        keptOutOfModelValues: 3,
+      }),
+    );
+
+    const [day] = await store.listProtectionStatsDaily(orgId);
+    expect(day).toMatchObject({
+      events: 4,
+      affectedRequests: 2,
+      redactedValues: 4,
+      keptOutOfModelValues: 4,
+    });
+  });
+
+  it("treats a proxy restart as a new baseline", async () => {
+    const orgId = "org-proof-restart";
+    const proxyUrl = "http://127.0.0.1:8787";
+    const now = new Date();
+    await store.ingestProtectionStatsSnapshot(
+      orgId,
+      proxyUrl,
+      protectionSnapshot(now.toISOString(), new Date(now.getTime() + 1_000).toISOString(), {
+        events: 2,
+        affectedRequests: 1,
+        redactedValues: 2,
+        keptOutOfModelValues: 2,
+      }),
+    );
+    await store.ingestProtectionStatsSnapshot(
+      orgId,
+      proxyUrl,
+      protectionSnapshot(new Date(now.getTime() + 2_000).toISOString(), new Date(now.getTime() + 3_000).toISOString(), {
+        events: 3,
+        affectedRequests: 1,
+        redactedValues: 3,
+        keptOutOfModelValues: 3,
+      }),
+    );
+
+    const [day] = await store.listProtectionStatsDaily(orgId);
+    expect(day).toMatchObject({ events: 5, affectedRequests: 2, redactedValues: 5, keptOutOfModelValues: 5 });
+  });
+
+  it("scopes daily trends by org and drops rows outside retention", async () => {
+    const proxyUrl = "http://127.0.0.1:8787";
+    const now = new Date();
+    const old = new Date(now.getTime() - 100 * 24 * 60 * 60 * 1000).toISOString();
+    const current = now.toISOString();
+
+    await store.ingestProtectionStatsSnapshot(
+      "org-proof-retention",
+      proxyUrl,
+      protectionSnapshot(new Date(now.getTime() + 1_000).toISOString(), old, {
+        events: 9,
+        affectedRequests: 9,
+        redactedValues: 9,
+        keptOutOfModelValues: 9,
+      }),
+    );
+    await store.ingestProtectionStatsSnapshot(
+      "org-proof-retention",
+      proxyUrl,
+      protectionSnapshot(new Date(now.getTime() + 2_000).toISOString(), current, {
+        events: 1,
+        affectedRequests: 1,
+        redactedValues: 1,
+        keptOutOfModelValues: 1,
+      }),
+    );
+    await store.ingestProtectionStatsSnapshot(
+      "org-proof-other",
+      proxyUrl,
+      protectionSnapshot(new Date(now.getTime() + 2_000).toISOString(), current, {
+        events: 7,
+        affectedRequests: 7,
+        redactedValues: 7,
+        keptOutOfModelValues: 7,
+      }),
+    );
+
+    const retained = await store.listProtectionStatsDaily("org-proof-retention");
+    expect(retained).toHaveLength(1);
+    expect(retained[0]).toMatchObject({ events: 1, affectedRequests: 1, redactedValues: 1 });
+    expect(await store.listProtectionStatsDaily("org-proof-missing")).toEqual([]);
   });
 });
 
