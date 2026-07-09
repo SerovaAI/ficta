@@ -26,6 +26,7 @@ function ThreadPage() {
   const { thread, userSettings } = Route.useLoaderData();
   return (
     <ChatView
+      key={threadId}
       threadId={threadId}
       initialMessages={thread.messages.map(storedToUi)}
       initialThreadTraceEnabled={thread.thread.traceEnabled}
