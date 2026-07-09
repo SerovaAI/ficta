@@ -2,6 +2,7 @@ import type * as React from "react";
 import { useEffect, useRef, useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   type EditableProxyConfigKey,
   type EditableProxyConfigPatch,
@@ -479,7 +480,7 @@ function BooleanControl({
   return (
     <div className="space-y-1">
       <label htmlFor={id} className="flex cursor-pointer items-center justify-end gap-2.5 text-sm">
-        <Checkbox id={id} checked={checked} disabled={disabled} onCheckedChange={(state) => onChange(state === true)} />
+        <Switch id={id} checked={checked} disabled={disabled} onCheckedChange={onChange} />
         <span className={checked ? "font-medium" : "text-muted-foreground"}>{onOff(checked)}</span>
       </label>
       <LockedText>{locked}</LockedText>
