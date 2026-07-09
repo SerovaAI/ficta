@@ -529,6 +529,12 @@ describe("threads + messages", () => {
     expect((await store.getThread("trace-owner", "org-trace", "trace-thread"))?.thread.traceEnabled).toBe(true);
   });
 
+  it("can create a new thread with trace capture already enabled", async () => {
+    await store.startThread("trace-owner", "org-trace", "first-traced", textMessage("m", "user", "trace"), true);
+
+    expect((await store.getThread("trace-owner", "org-trace", "first-traced"))?.thread.traceEnabled).toBe(true);
+  });
+
   it("renames and deletes", async () => {
     await store.saveThreadSnapshot("owner", ORG, "t3", [textMessage("z", "user", "original")]);
     await store.renameThread("owner", ORG, "t3", "Renamed");

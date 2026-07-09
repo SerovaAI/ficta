@@ -113,8 +113,8 @@ export function ChatView({
   // A new chat gets a stable id up front so its snapshot has a home before the first save.
   const tid = useMemo(() => threadId ?? crypto.randomUUID(), [threadId]);
   const forwardedProps = useMemo(
-    () => ({ provider: model.provider, model: model.model, reasoningEffort }),
-    [model.provider, model.model, reasoningEffort],
+    () => ({ provider: model.provider, model: model.model, reasoningEffort, traceEnabled: threadTraceEnabled }),
+    [model.provider, model.model, reasoningEffort, threadTraceEnabled],
   );
 
   const { messages, sendMessage, isLoading, error, stop, reload, clear } = useChat({
@@ -195,9 +195,11 @@ export function ChatView({
     // Show the new chat in the sidebar immediately, but don't touch URL/router or active-thread state while
     // the first stream is starting; those visible navigation updates can disturb TanStack AI's first response.
     queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) => upsertThreadSummary(current, tid, snapshot));
-    void startThread({ data: { threadId: tid, message: uiToStored(message) } }).catch((err) => {
-      console.warn("Failed to start chat thread", err);
-    });
+    void startThread({ data: { threadId: tid, message: uiToStored(message), traceEnabled: threadTraceEnabled } }).catch(
+      (err) => {
+        console.warn("Failed to start chat thread", err);
+      },
+    );
   };
 
   const persist = (finishedMessage?: UIMessage) => {
@@ -248,10 +250,11 @@ export function ChatView({
   };
 
   const toggleThreadTrace = () => {
+    if (!admin || !traceCapture.rawBodies) return;
     const persistedThreadId = activeThreadId;
-    if (!admin || !persistedThreadId || !traceCapture.rawBodies) return;
     const next = !threadTraceEnabled;
     setThreadTraceEnabledState(next);
+    if (!persistedThreadId) return;
     queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) =>
       current?.map((thread) => (thread.id === persistedThreadId ? { ...thread, traceEnabled: next } : thread)),
     );
@@ -389,7 +392,7 @@ export function ChatView({
             protectionStatus={protectionStatus}
             threadTraceEnabled={threadTraceEnabled}
             threadTraceControlVisible={admin}
-            threadTraceControlDisabled={!activeThreadId || !traceCapture.loaded || !traceCapture.rawBodies}
+            threadTraceControlDisabled={!traceCapture.loaded || !traceCapture.rawBodies}
             threadTraceAuditEnabled={traceCapture.traceAudit}
             onToggleThreadTrace={toggleThreadTrace}
             restoreDisplayMode={restoreDisplayMode}
