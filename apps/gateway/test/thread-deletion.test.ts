@@ -3,6 +3,7 @@ import {
   cancelThreadDeletion,
   clearThreadDeletionNotice,
   flushThreadDeletion,
+  getHiddenThreadDeletionIds,
   getThreadDeletionNotice,
   scheduleThreadDeletion,
   THREAD_DELETION_UNDO_DELAY_MS,
@@ -24,13 +25,14 @@ describe("thread deletion scheduler", () => {
     vi.useFakeTimers();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     flushThreadDeletion();
+    await settlePromises();
     clearThreadDeletionNotice();
     vi.useRealTimers();
   });
 
-  it("publishes a pending undo notice when metadata is provided", () => {
+  it("publishes a pending undo notice and hides the thread when metadata is provided", () => {
     const commit = vi.fn();
 
     scheduleThreadDeletion("thread-1", commit, {
@@ -46,9 +48,10 @@ describe("thread deletion scheduler", () => {
       wasActive: true,
     });
     expect(notice?.kind === "pending" ? notice.expiresAt : 0).toBeGreaterThan(Date.now());
+    expect(getHiddenThreadDeletionIds()).toEqual(["thread-1"]);
   });
 
-  it("commits a scheduled deletion after the undo window", () => {
+  it("commits a scheduled deletion after the undo window", async () => {
     const commit = vi.fn();
 
     scheduleThreadDeletion("thread-1", commit, {
@@ -62,6 +65,10 @@ describe("thread deletion scheduler", () => {
     vi.advanceTimersByTime(1);
     expect(commit).toHaveBeenCalledTimes(1);
     expect(getThreadDeletionNotice()).toBeNull();
+    expect(getHiddenThreadDeletionIds()).toEqual(["thread-1"]);
+
+    await settlePromises();
+    expect(getHiddenThreadDeletionIds()).toEqual([]);
   });
 
   it("cancels a pending deletion for the matching thread", () => {
@@ -73,15 +80,61 @@ describe("thread deletion scheduler", () => {
 
     expect(cancelThreadDeletion("thread-2")).toBe(false);
     expect(getThreadDeletionNotice()).toMatchObject({ kind: "pending", id: "thread-1" });
+    expect(getHiddenThreadDeletionIds()).toEqual(["thread-1"]);
     expect(cancelThreadDeletion("thread-1")).toBe(true);
     expect(getThreadDeletionNotice()).toBeNull();
+    expect(getHiddenThreadDeletionIds()).toEqual([]);
 
     vi.advanceTimersByTime(THREAD_DELETION_UNDO_DELAY_MS);
     expect(commit).not.toHaveBeenCalled();
   });
 
-  it("flushes the previous deletion when another deletion is scheduled", () => {
-    const firstCommit = vi.fn();
+  it("keeps an expired deletion hidden until its async commit settles", async () => {
+    let resolveCommit: () => void = () => undefined;
+    const commit = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveCommit = resolve;
+        }),
+    );
+
+    scheduleThreadDeletion("thread-1", commit, {
+      notice: { title: "Deleted chat", previous: previousThreads, wasActive: true },
+    });
+
+    vi.advanceTimersByTime(THREAD_DELETION_UNDO_DELAY_MS);
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(getThreadDeletionNotice()).toBeNull();
+    expect(getHiddenThreadDeletionIds()).toEqual(["thread-1"]);
+
+    resolveCommit();
+    await settlePromises();
+    expect(getHiddenThreadDeletionIds()).toEqual([]);
+  });
+
+  it("removes a hidden deletion id after a rejected commit settles", async () => {
+    const commit = vi.fn(() => Promise.reject(new Error("delete failed")));
+
+    scheduleThreadDeletion("thread-1", commit, {
+      notice: { title: "Deleted chat", previous: previousThreads, wasActive: true },
+    });
+
+    vi.advanceTimersByTime(THREAD_DELETION_UNDO_DELAY_MS);
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(getHiddenThreadDeletionIds()).toEqual(["thread-1"]);
+
+    await settlePromises();
+    expect(getHiddenThreadDeletionIds()).toEqual([]);
+  });
+
+  it("flushes the previous deletion when another deletion is scheduled", async () => {
+    let resolveFirstCommit: () => void = () => undefined;
+    const firstCommit = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveFirstCommit = resolve;
+        }),
+    );
     const secondCommit = vi.fn();
 
     scheduleThreadDeletion("thread-1", firstCommit, {
@@ -94,13 +147,19 @@ describe("thread deletion scheduler", () => {
     expect(firstCommit).toHaveBeenCalledTimes(1);
     expect(secondCommit).not.toHaveBeenCalled();
     expect(getThreadDeletionNotice()).toMatchObject({ kind: "pending", id: "thread-2", title: "Second chat" });
+    expect(getHiddenThreadDeletionIds()).toEqual(["thread-1", "thread-2"]);
+
+    resolveFirstCommit();
+    await settlePromises();
+    expect(getHiddenThreadDeletionIds()).toEqual(["thread-2"]);
 
     expect(cancelThreadDeletion("thread-2")).toBe(true);
+    expect(getHiddenThreadDeletionIds()).toEqual([]);
     vi.advanceTimersByTime(THREAD_DELETION_UNDO_DELAY_MS);
     expect(secondCommit).not.toHaveBeenCalled();
   });
 
-  it("flushes a pending deletion and clears its notice", () => {
+  it("flushes a pending deletion and clears its notice", async () => {
     const commit = vi.fn();
 
     scheduleThreadDeletion("thread-1", commit, {
@@ -111,5 +170,14 @@ describe("thread deletion scheduler", () => {
 
     expect(commit).toHaveBeenCalledTimes(1);
     expect(getThreadDeletionNotice()).toBeNull();
+    expect(getHiddenThreadDeletionIds()).toEqual(["thread-1"]);
+
+    await settlePromises();
+    expect(getHiddenThreadDeletionIds()).toEqual([]);
   });
 });
+
+async function settlePromises(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
