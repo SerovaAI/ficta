@@ -1,3 +1,7 @@
+export type Provider = "openai" | "anthropic";
+
+export const PROVIDERS: readonly Provider[] = ["openai", "anthropic"];
+
 /**
  * Any model / bring-your-own-key. The selected provider+model is forwarded to /api/chat, which builds
  * the matching TanStack AI adapter — every call still flows through the ficta proxy (see api/chat.ts).
@@ -8,7 +12,7 @@ export const MODELS = [
   { provider: "openai", model: "gpt-5", label: "OpenAI", sublabel: "gpt-5" },
   { provider: "openai", model: "gpt-5-nano", label: "OpenAI", sublabel: "gpt-5-nano" },
   { provider: "anthropic", model: "claude-sonnet-4-6", label: "Anthropic", sublabel: "claude-sonnet-4-6" },
-] as const;
+] as const satisfies readonly { provider: Provider; model: string; label: string; sublabel: string }[];
 
 export type ModelChoice = (typeof MODELS)[number];
 

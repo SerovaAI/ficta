@@ -2,13 +2,18 @@ import { chat, toServerSentEventsResponse } from "@tanstack/ai";
 import { createFileRoute } from "@tanstack/react-router";
 import { scopeFromAuth } from "../../lib/auth/guards.server";
 import { getActiveProvider } from "../../lib/auth/provider.server";
-import { createModelAdapter, MissingKeyError, type Provider } from "../../lib/model-adapter";
-import { DEFAULT_REASONING_EFFORT, isReasoningEffort, type ReasoningEffort } from "../../lib/models";
+import { createModelAdapter } from "../../lib/model-adapter";
+import {
+  DEFAULT_REASONING_EFFORT,
+  isReasoningEffort,
+  PROVIDERS,
+  type Provider,
+  type ReasoningEffort,
+} from "../../lib/models";
+import { MissingKeyError, ProviderKeyDecryptionError, resolveProviderApiKey } from "../../lib/provider-keys.server";
 import { stripRestoreHighlightMarkers } from "../../lib/restore-highlights";
 import { getStorage } from "../../lib/storage/storage.server";
 import { isModelAllowed } from "../../lib/storage/types";
-
-const PROVIDERS: readonly Provider[] = ["openai", "anthropic"];
 
 /**
  * Server route the browser's useChat() talks to. It builds the TanStack AI adapter for the requested
@@ -64,15 +69,18 @@ export const Route = createFileRoute("/api/chat")({
           // value detected on an earlier turn stays redacted when the restored transcript is resent.
           // The org id comes from server-side auth (never the client), so one org's threads can
           // never address another's vault; the client-chosen threadId only partitions within it.
-          const fictaScope = threadId ? `${scope?.orgId ?? "local"}:${threadId}` : undefined;
-          // Adapter creation reads the server-side API key and throws MissingKeyError if unset.
+          const orgId = scope?.orgId ?? "local";
+          const fictaScope = threadId ? `${orgId}:${threadId}` : undefined;
+          const apiKey = await resolveProviderApiKey(orgId, provider);
           stream = chat({
-            adapter: createModelAdapter({ provider, model, fictaScope }),
+            adapter: createModelAdapter({ provider, model, apiKey, fictaScope }),
             messages,
             modelOptions: provider === "openai" ? { reasoning: { effort: reasoningEffort } } : undefined,
           });
         } catch (err) {
-          if (err instanceof MissingKeyError) return errorResponse(503, err.message);
+          if (err instanceof MissingKeyError || err instanceof ProviderKeyDecryptionError) {
+            return errorResponse(503, err.message);
+          }
           return errorResponse(502, reason(err, "could not reach the model via ficta"));
         }
 

@@ -1,8 +1,9 @@
 import { and, desc, eq, notInArray } from "drizzle-orm";
+import type { Provider } from "@/lib/models";
 import type { Storage } from "../storage.server";
-import type { InstanceSettings, StoredMessage, ThreadSummary, UserSettings } from "../types";
+import type { InstanceSettings, ProviderKeySummary, StoredMessage, ThreadSummary, UserSettings } from "../types";
 import { getDb } from "./client.server";
-import { instanceSettings, messages, threads, userSettings } from "./schema";
+import { instanceSettings, messages, providerKeys, threads, userSettings } from "./schema";
 
 const TITLE_MAX = 80;
 
@@ -46,6 +47,62 @@ export function createStorage(): Storage {
         .values({ id: orgId, data: next })
         .onConflictDoUpdate({ target: instanceSettings.id, set: { data: next, updatedAt: new Date() } });
       return next;
+    },
+
+    async listProviderKeySummaries(orgId) {
+      const db = await getDb();
+      const rows = await db.select().from(providerKeys).where(eq(providerKeys.orgId, orgId));
+      return rows.map(toProviderKeySummary);
+    },
+
+    async getProviderKey(orgId, provider) {
+      const db = await getDb();
+      const [row] = await db
+        .select()
+        .from(providerKeys)
+        .where(and(eq(providerKeys.orgId, orgId), eq(providerKeys.provider, provider)));
+      if (!row) return null;
+      return {
+        provider: row.provider as Provider,
+        ciphertext: row.ciphertext,
+        iv: row.iv,
+        tag: row.tag,
+        keyHint: row.keyHint,
+      };
+    },
+
+    async upsertProviderKey(orgId, key) {
+      const db = await getDb();
+      const now = new Date();
+      const [row] = await db
+        .insert(providerKeys)
+        .values({
+          orgId,
+          provider: key.provider,
+          ciphertext: key.ciphertext,
+          iv: key.iv,
+          tag: key.tag,
+          keyHint: key.keyHint,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [providerKeys.orgId, providerKeys.provider],
+          set: {
+            ciphertext: key.ciphertext,
+            iv: key.iv,
+            tag: key.tag,
+            keyHint: key.keyHint,
+            updatedAt: now,
+          },
+        })
+        .returning();
+      if (!row) throw new Error("provider key was not saved");
+      return toProviderKeySummary(row);
+    },
+
+    async deleteProviderKey(orgId, provider) {
+      const db = await getDb();
+      await db.delete(providerKeys).where(and(eq(providerKeys.orgId, orgId), eq(providerKeys.provider, provider)));
     },
 
     async listThreads(userId, orgId) {
@@ -151,6 +208,15 @@ export function createStorage(): Storage {
         .delete(threads)
         .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)));
     },
+  };
+}
+
+function toProviderKeySummary(row: { provider: string; keyHint: string; updatedAt: Date }): ProviderKeySummary {
+  return {
+    provider: row.provider as Provider,
+    configured: true,
+    keyHint: row.keyHint,
+    updatedAt: row.updatedAt.toISOString(),
   };
 }
 

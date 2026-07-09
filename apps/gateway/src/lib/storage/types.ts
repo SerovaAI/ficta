@@ -4,7 +4,7 @@
  * the `Storage` seam (storage.server.ts); everything crossing the server-function boundary is one of
  * these plain, JSON-serializable objects, which is also what keeps a future Convex backend a drop-in.
  */
-import type { ReasoningEffort } from "@/lib/models";
+import type { Provider, ReasoningEffort } from "@/lib/models";
 
 /** Per-user preferences. All fields optional; reads merge over code defaults so a fresh user is valid. */
 export interface UserSettings {
@@ -22,6 +22,23 @@ export interface InstanceSettings {
   allowedModels?: string[];
   /** Empty-chat suggestion prompts. Undefined = defaults; empty array = hide prompt buttons. */
   suggestedPrompts?: string[];
+}
+
+/** Client-visible metadata for a workspace provider key. Never includes plaintext or ciphertext. */
+export interface ProviderKeySummary {
+  provider: Provider;
+  configured: boolean;
+  keyHint: string;
+  updatedAt: string;
+}
+
+/** Server-only encrypted provider key payload persisted by the storage backend. */
+export interface EncryptedProviderKey {
+  provider: Provider;
+  ciphertext: string;
+  iv: string;
+  tag: string;
+  keyHint: string;
 }
 
 export const DEFAULT_SUGGESTED_PROMPTS = [

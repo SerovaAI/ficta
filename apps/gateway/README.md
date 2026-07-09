@@ -35,7 +35,7 @@ The two protection layers have different strengths:
 
 Current app capabilities:
 
-- server-side BYO OpenAI/Anthropic keys;
+- server-side BYO OpenAI/Anthropic keys, including workspace admin-managed provider keys;
 - chat history and settings backed by embedded PGlite by default, or Postgres via `DATABASE_URL`;
 - model allow-list, default model, and instance-name settings;
 - protection badge/banner polling the proxy's safe `/__ficta/status` endpoint;
@@ -55,11 +55,19 @@ pnpm install
 cp apps/gateway/.env.example apps/gateway/.env
 ```
 
-Edit `apps/gateway/.env` and set at least one model provider key:
+Edit `apps/gateway/.env` and set at least one fallback model provider key:
 
 ```sh
 OPENAI_API_KEY=...
 ANTHROPIC_API_KEY=...
+```
+
+Gateway admins can also save workspace-scoped OpenAI/Anthropic keys in Admin settings. Saved workspace
+keys take precedence over these env keys for that workspace. Set `FICTA_GATEWAY_KEY_ENCRYPTION_SECRET`
+before saving admin-managed keys:
+
+```sh
+FICTA_GATEWAY_KEY_ENCRYPTION_SECRET="$(openssl rand -base64 32)"
 ```
 
 For a realistic sensitive-data demo, enable the proxy-side detectors too:
@@ -100,6 +108,8 @@ Minimum production-like posture:
   expose `AUTH_PROVIDER=none` beyond a local or isolated demo network.
 - Use `DATABASE_URL` with managed Postgres. Embedded PGlite is for local/single-process use; chat
   history stores the restored user-visible transcript and must be treated as sensitive data.
+- Protect `FICTA_GATEWAY_KEY_ENCRYPTION_SECRET` separately from the database. Postgres/PGlite backups
+  can contain encrypted workspace provider keys, and this secret is required to decrypt them.
 - Define retention, deletion, backup, and access-review policy for chat history.
 - Run Presidio as an explicit sidecar under your process/container supervisor. Do not rely on
   source-checkout managed sidecar behavior in production.
@@ -131,6 +141,7 @@ WORKOS_COOKIE_PASSWORD=...
 DATABASE_URL=postgres://...
 OPENAI_API_KEY=...
 ANTHROPIC_API_KEY=...
+FICTA_GATEWAY_KEY_ENCRYPTION_SECRET=...
 
 FICTA_PROXY_URL=http://127.0.0.1:8787
 FICTA_SECRET_SHAPES_ENABLED=1
@@ -173,8 +184,9 @@ Web app env:
 | Env var | Purpose | Default |
 | --- | --- | --- |
 | `FICTA_PROXY_URL` | ficta proxy base URL the model adapters point at | `http://127.0.0.1:8787` |
-| `OPENAI_API_KEY` | OpenAI-compatible model key; passed through ficta as an auth header | - |
-| `ANTHROPIC_API_KEY` | Anthropic model key; passed through ficta as an auth header | - |
+| `OPENAI_API_KEY` | OpenAI-compatible fallback key; used only when the workspace has no saved OpenAI key | - |
+| `ANTHROPIC_API_KEY` | Anthropic fallback key; used only when the workspace has no saved Anthropic key | - |
+| `FICTA_GATEWAY_KEY_ENCRYPTION_SECRET` | Secret used to encrypt/decrypt admin-saved workspace provider keys | - |
 | `AUTH_PROVIDER` | `none` for open local/self-hosted mode, or `workos` for AuthKit | `none` |
 | `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_REDIRECT_URI`, `WORKOS_COOKIE_PASSWORD` | WorkOS AuthKit + organization/workspace support | - |
 | `DATABASE_URL` | Postgres connection for shared/multi-process deployments | embedded PGlite when unset |

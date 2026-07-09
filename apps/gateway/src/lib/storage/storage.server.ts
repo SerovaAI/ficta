@@ -1,4 +1,12 @@
-import type { InstanceSettings, StoredMessage, ThreadSummary, UserSettings } from "./types";
+import type { Provider } from "@/lib/models";
+import type {
+  EncryptedProviderKey,
+  InstanceSettings,
+  ProviderKeySummary,
+  StoredMessage,
+  ThreadSummary,
+  UserSettings,
+} from "./types";
 
 /**
  * The persistence boundary seam. Everything that reads or writes durable state in apps/gateway — settings and
@@ -23,6 +31,11 @@ export interface Storage {
 
   getInstanceSettings(orgId: string): Promise<InstanceSettings>;
   patchInstanceSettings(orgId: string, patch: Partial<InstanceSettings>): Promise<InstanceSettings>;
+
+  listProviderKeySummaries(orgId: string): Promise<ProviderKeySummary[]>;
+  getProviderKey(orgId: string, provider: Provider): Promise<EncryptedProviderKey | null>;
+  upsertProviderKey(orgId: string, key: EncryptedProviderKey): Promise<ProviderKeySummary>;
+  deleteProviderKey(orgId: string, provider: Provider): Promise<void>;
 
   listThreads(userId: string, orgId: string): Promise<ThreadSummary[]>;
   getThread(
