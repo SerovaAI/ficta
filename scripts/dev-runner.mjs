@@ -375,11 +375,10 @@ function run(command, args, env, sidecars) {
     stdio: "inherit",
   });
 
+  // Let Turbo handle interrupt fan-out for workspace tasks. Managed Docker sidecars
+  // are stopped during cleanup with SIGTERM, which keeps uvicorn shutdown quiet.
   const forwardSignal = (signal) => {
     if (!child.killed) child.kill(signal);
-    for (const sidecar of sidecars) {
-      if (!isChildDone(sidecar.child) && !sidecar.child.killed) sidecar.child.kill(signal);
-    }
   };
 
   for (const signal of Object.keys(SIGNAL_EXIT_CODES)) process.on(signal, forwardSignal);

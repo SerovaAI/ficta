@@ -39,8 +39,12 @@ services:
       - "127.0.0.1:5002:3000"
     volumes:
       - ./packages/ficta/presidio/default_recognizers.za.yaml:/app/ficta-presidio-recognizers.yaml:ro
+      # NLP-engine config: un-ignores ORGANIZATION so spaCy ORG spans surface (see the file's header).
+      # The NLP engine is loaded separately from the recognizer registry, so ORG can only be enabled here.
+      - ./packages/ficta/presidio/nlp_engine.za.yaml:/app/ficta-nlp-engine.yaml:ro
     environment:
       RECOGNIZER_REGISTRY_CONF_FILE: /app/ficta-presidio-recognizers.yaml
+      NLP_CONF_FILE: /app/ficta-nlp-engine.yaml
     healthcheck:
       test:
         [

@@ -97,6 +97,13 @@ export interface RequestScope {
   containsProtectedValue(text: string): boolean;
 
   /**
+   * Distinct minted surrogate tokens present in `text` (permanent + this scope's detected layer). Used to
+   * build the model's preserve-literals allow-list from an already-redacted outbound body — the tokens
+   * are opaque surrogates, never raw protected values.
+   */
+  mintedSurrogatesIn(text: string): string[];
+
+  /**
    * Distinct values restored back into this request's response so far. Read after the response body
    * drains (streaming) or is built (buffered) to log the symmetric `♻️ restored N value(s)` line.
    */

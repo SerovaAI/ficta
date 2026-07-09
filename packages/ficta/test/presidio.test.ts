@@ -76,6 +76,24 @@ describe("presidio recognizer", () => {
     expect(byName["phone-number"]).toMatchObject({ value: "212-555-0187", confidence: "probabilistic" });
   });
 
+  it("maps an ORGANIZATION span to the organization category (unregistered-company detection)", async () => {
+    // With ORGANIZATION un-ignored in the NLP engine (nlp_engine.za.yaml), spaCy emits ORG spans; this
+    // locks in that ficta accepts them and labels them `organization` so an unregistered company name is
+    // tokenized like any other detected value. Guards against a future entity-allowlist silently dropping it.
+    const text = "The claim is brought against Northstar Biologics and its board.";
+    const { result } = await withStub(
+      { analyze: () => [span(text, "Northstar Biologics", "ORGANIZATION", 0.85)] },
+      () => presidioRecognizer.detect(text, BODY),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      name: "organization",
+      value: "Northstar Biologics",
+      source: "pii-presidio",
+      kind: "pii",
+    });
+  });
+
   it("sends {text, language, score_threshold} and omits entities unless configured", async () => {
     const text = "contact John Smith";
     const { requests } = await withStub({ analyze: () => [] }, () => presidioRecognizer.detect(text, BODY));

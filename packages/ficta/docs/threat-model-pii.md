@@ -36,6 +36,15 @@ the Presidio NER sidecar (names, locations, organizations, phones). NER is proba
 miss entities, especially unusual names, partial identifiers, and firm-specific shapes not registered
 or added as recognizers/deny-lists. Detection is only as good as the configured backend.
 
+**Organization detection is enabled but noisy.** `ORGANIZATION` NER is un-suppressed via
+`presidio/nlp_engine.za.yaml` (upstream ignores it — "Has many false positives"), so unregistered
+client/counterparty/company names get a best-effort catch from spaCy `en_core_web_lg`. Expect
+**over-redaction** (headings, common capitalized nouns tokenized as orgs) — the safe failure for a
+privacy tool, but a usability cost. For higher precision, layer a HuggingFace ORG recognizer in
+`presidio/default_recognizers.za.yaml` (real per-span confidence). For exact confidentiality of
+specific client/counterparty/matter entities, register them in the value registry so they get the
+strong exact-match promise rather than relying on probabilistic NER.
+
 ## Fail-closed does not rescue missed PII
 
 This is the load-bearing caveat and must not be blurred:

@@ -470,6 +470,25 @@ export abstract class VaultView {
   }
 
   /**
+   * Distinct minted surrogate tokens present in `text` that this view can map back to a value — i.e. the
+   * exact allow-list the model may reference. Filtered by {@link valueFor} so a stray FICTA_-shaped token
+   * that isn't a real surrogate is never advertised as one. Used to build the preserve-literals prompt.
+   */
+  surrogatesIn(text: string): string[] {
+    if (!this.hasSurrogates || !text) return [];
+    const out: string[] = [];
+    const seen = new Set<string>();
+    const re = new RegExp(this.surrogate.pattern.source, "g");
+    for (let m = re.exec(text); m !== null; m = re.exec(text)) {
+      const token = m[0];
+      if (seen.has(token)) continue;
+      seen.add(token);
+      if (this.valueFor(token) !== undefined) out.push(token);
+    }
+    return out;
+  }
+
+  /**
    * A TransformStream that restores surrogates in a streamed response. Holds back a short tail
    * each chunk so a surrogate split across chunk boundaries is never emitted half-restored.
    */

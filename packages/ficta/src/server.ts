@@ -23,6 +23,7 @@ import { configPosture } from "./config-posture.js";
 import { detectorFailClosed } from "./engine/detection-policy.js";
 import { setEngineWarnSink } from "./engine/diagnostics.js";
 import { ProtectionEngine } from "./engine/engine.js";
+import { withPreservationInstruction } from "./engine/preserve-literals.js";
 import { ProtectionStats, type ProtectionStatsSnapshot, type ProtectionSurface } from "./engine/protection-stats.js";
 import {
   DetectorUnavailableError,
@@ -275,8 +276,14 @@ export async function startProxy(
           }
         }
         bodyToSend = redacted;
+        // Tell the model to preserve the surrogate literals verbatim (opt-in). Runs after the fail-closed
+        // leak gate and only adds surrogate tokens the proxy already minted, so it introduces no new leak.
+        if (cfg.preserveLiterals) {
+          const surrogates = scope.mintedSurrogatesIn(redacted);
+          if (surrogates.length > 0) bodyToSend = withPreservationInstruction(redacted, wire, surrogates);
+        }
         if (cfg.logBodies)
-          writeFileSync(join(runDir, `req-${String(n).padStart(4, "0")}.sent.json`), redacted, { mode: 0o600 });
+          writeFileSync(join(runDir, `req-${String(n).padStart(4, "0")}.sent.json`), bodyToSend, { mode: 0o600 });
       } else {
         bodyToSend = bodyText;
       }

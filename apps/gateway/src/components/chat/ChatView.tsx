@@ -28,6 +28,7 @@ import {
 import { DEFAULT_REASONING_EFFORT, MODELS, type ModelChoice, type ReasoningEffort } from "@/lib/models";
 import type { ProtectionStatus } from "@/lib/protection-status";
 import type { RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
+import { reportRestoreValidation } from "@/lib/restore-validation";
 import { uiToStored } from "@/lib/storage/messages";
 import { invalidateThreads, threadKeys } from "@/lib/storage/threadQueries";
 import { saveThread, startThread } from "@/lib/storage/threads";
@@ -111,7 +112,10 @@ export function ChatView({
     id: tid,
     threadId: tid,
     initialMessages,
-    onFinish: (message) => persist(message),
+    onFinish: (message) => {
+      persist(message);
+      reportRestoreValidation(message); // gateway-only telemetry: flag any surrogate that reached the user un-restored
+    },
   });
 
   // Latest messages for the fire-and-forget save (onFinish fires outside React's render).

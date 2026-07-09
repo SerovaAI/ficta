@@ -1,0 +1,50 @@
+# Ficta's Presidio NLP-engine config. Mounted into the analyzer as NLP_CONF_FILE (see
+# docker-compose.sidecars.yml). It is a verbatim copy of the upstream image default
+# (presidio-analyzer/presidio_analyzer/conf/default.yaml) with ONE deliberate change:
+#
+#   ORGANIZATION is removed from ner_model_configuration.labels_to_ignore.
+#
+# Upstream ignores ORGANIZATION ("Has many false positives"), which silently drops every spaCy ORG
+# span AND excludes ORGANIZATION from the engine's supported-entities set — so client/counterparty/
+# company names that aren't pre-registered leak to the vendor. Un-ignoring it lets the (auto-injected)
+# SpacyRecognizer emit ORGANIZATION from the already-bundled en_core_web_lg model, at the default
+# score ~0.85. This is a probabilistic, noisy net (that is exactly why upstream disabled it); exact
+# confidentiality still comes from the registered-secrets registry. If ORG precision proves
+# unacceptable, layer a HuggingFace ORG recognizer in default_recognizers.za.yaml instead (see
+# docs/threat-model-pii.md). The NLP engine is loaded separately from the recognizer registry, so this
+# is the only place ORGANIZATION suppression can be reached.
+nlp_engine_name: spacy
+models:
+  -
+    lang_code: en
+    model_name: en_core_web_lg
+
+ner_model_configuration:
+  model_to_presidio_entity_mapping:
+    PER: PERSON
+    PERSON: PERSON
+    NORP: NRP
+    FAC: LOCATION
+    LOC: LOCATION
+    GPE: LOCATION
+    LOCATION: LOCATION
+    ORG: ORGANIZATION
+    ORGANIZATION: ORGANIZATION
+    DATE: DATE_TIME
+    TIME: DATE_TIME
+
+  low_confidence_score_multiplier: 0.4
+  low_score_entity_names:
+  -
+  labels_to_ignore:
+  # ORGANIZATION intentionally NOT ignored here (upstream ignores it) — see header.
+  - CARDINAL
+  - EVENT
+  - LANGUAGE
+  - LAW
+  - MONEY
+  - ORDINAL
+  - PERCENT
+  - PRODUCT
+  - QUANTITY
+  - WORK_OF_ART

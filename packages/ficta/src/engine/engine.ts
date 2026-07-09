@@ -336,6 +336,10 @@ class ProtectionRequestScope implements RequestScope {
     return this.vault.containsKnownValue(text, false);
   }
 
+  mintedSurrogatesIn(text: string): string[] {
+    return this.vault.surrogatesIn(text);
+  }
+
   /** Returns true when every detector ran (nothing was skipped by a fail-open outage or crash). */
   private async registerDetectedValues(text: string, ctx: DetectTextContext): Promise<boolean> {
     if (!text) return true;

@@ -29,6 +29,7 @@ export interface Config {
   traceAudit: boolean;
   logMaxBytes: number;
   failClosed: boolean;
+  preserveLiterals: boolean;
 }
 
 export function loadConfig(): Config {
@@ -61,6 +62,10 @@ export function loadConfig(): Config {
     // Privacy boundary: refuse to forward if a registered value survived redaction. Default ON.
     // FICTA_FAIL_CLOSED=0 to fall back to forwarding (lab/debug only).
     failClosed: process.env.FICTA_FAIL_CLOSED !== "0",
+    // Inject a system/developer instruction listing the exact surrogate tokens in the outbound request and
+    // telling the model to reproduce them verbatim. Improves restore reliability (models otherwise truncate
+    // or editorialise long opaque tokens). Opt-in — it modifies the prompt sent upstream. See preserve-literals.ts.
+    preserveLiterals: envFlag(process.env.FICTA_PRESERVE_LITERALS),
   };
 }
 
