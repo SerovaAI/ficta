@@ -1,0 +1,1 @@
+ALTER TABLE "threads" ADD COLUMN "trace_enabled" boolean DEFAULT false NOT NULL;

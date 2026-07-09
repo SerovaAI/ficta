@@ -1,7 +1,7 @@
 import { fetchServerSentEvents, type UIMessage, useChat } from "@tanstack/ai-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, X } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CreateWorkspaceDialog } from "@/components/onboarding/CreateWorkspaceDialog";
 import { AdminSettingsDialog } from "@/components/settings/AdminSettingsDialog";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
@@ -15,6 +15,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { isAdmin } from "@/lib/auth/types";
+import { useAuthState } from "@/lib/auth/useAuthState";
 import {
   extractDocumentAttachment,
   formatBytes,
@@ -27,11 +29,12 @@ import {
 } from "@/lib/file-attachments";
 import { DEFAULT_REASONING_EFFORT, MODELS, type ModelChoice, type ReasoningEffort } from "@/lib/models";
 import type { ProtectionStatus } from "@/lib/protection-status";
+import { fetchProxyConfig } from "@/lib/proxy-config";
 import type { RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
 import { reportRestoreValidation } from "@/lib/restore-validation";
 import { uiToStored } from "@/lib/storage/messages";
 import { invalidateThreads, threadKeys } from "@/lib/storage/threadQueries";
-import { saveThread, startThread } from "@/lib/storage/threads";
+import { saveThread, setThreadTraceEnabled, startThread } from "@/lib/storage/threads";
 import {
   type InstanceSettings,
   isModelAllowed,
@@ -75,12 +78,16 @@ export function ChatView({
   userSettings,
   threadId,
   initialMessages,
+  initialThreadTraceEnabled,
 }: {
   userSettings?: UserSettings;
   threadId?: string;
   initialMessages?: UIMessage[];
+  initialThreadTraceEnabled?: boolean;
 } = {}) {
   const queryClient = useQueryClient();
+  const auth = useAuthState();
+  const admin = isAdmin(auth);
   const instance = useInstanceSettings();
   const sidebar = useSidebar();
   const protectionStatus = useProtectionStatus();
@@ -99,6 +106,8 @@ export function ChatView({
   const [uploadWarning, setUploadWarning] = useState<string[]>();
   const [isExtracting, setIsExtracting] = useState(false);
   const [activeThreadId, setActiveThreadId] = useState(threadId);
+  const [threadTraceEnabled, setThreadTraceEnabledState] = useState(initialThreadTraceEnabled ?? false);
+  const [traceCapture, setTraceCapture] = useState({ loaded: false, rawBodies: false, traceAudit: false });
   const [saveWarning, setSaveWarning] = useState(false);
 
   // A new chat gets a stable id up front so its snapshot has a home before the first save.
@@ -126,6 +135,36 @@ export function ChatView({
   const urlSynced = useRef(false);
   const startingThread = useRef(false);
   const { displayMessages, restoreHighlightsAvailable } = useRestoreHighlightDisplay(tid, messages);
+
+  useEffect(() => {
+    setThreadTraceEnabledState(initialThreadTraceEnabled ?? false);
+  }, [initialThreadTraceEnabled]);
+
+  useEffect(() => {
+    let alive = true;
+    if (!admin) {
+      setTraceCapture({ loaded: true, rawBodies: false, traceAudit: false });
+      return () => {
+        alive = false;
+      };
+    }
+    setTraceCapture((current) => ({ ...current, loaded: false }));
+    fetchProxyConfig()
+      .then((config) => {
+        if (!alive) return;
+        setTraceCapture({
+          loaded: true,
+          rawBodies: config.ok ? config.config.transport.logBodies : false,
+          traceAudit: config.ok ? config.config.transport.traceAudit : false,
+        });
+      })
+      .catch(() => {
+        if (alive) setTraceCapture({ loaded: true, rawBodies: false, traceAudit: false });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [admin]);
 
   const syncNewThreadUrl = () => {
     if (threadId || urlSynced.current) return;
@@ -206,6 +245,25 @@ export function ChatView({
     setPassthroughAck(true);
     setConfirmSendOpen(false);
     dispatchSend(input);
+  };
+
+  const toggleThreadTrace = () => {
+    const persistedThreadId = activeThreadId;
+    if (!admin || !persistedThreadId || !traceCapture.rawBodies) return;
+    const next = !threadTraceEnabled;
+    setThreadTraceEnabledState(next);
+    queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) =>
+      current?.map((thread) => (thread.id === persistedThreadId ? { ...thread, traceEnabled: next } : thread)),
+    );
+    void setThreadTraceEnabled({ data: { threadId: persistedThreadId, traceEnabled: next } })
+      .then(() => invalidateThreads(queryClient))
+      .catch((err) => {
+        console.warn("Failed to update thread trace capture", err);
+        setThreadTraceEnabledState(!next);
+        queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) =>
+          current?.map((thread) => (thread.id === persistedThreadId ? { ...thread, traceEnabled: !next } : thread)),
+        );
+      });
   };
 
   // Suggestions prime the composer instead of sending: the copy references a document the user still needs
@@ -329,6 +387,11 @@ export function ChatView({
             sidebarOpen={sidebar.open}
             onToggleSidebar={sidebar.toggle}
             protectionStatus={protectionStatus}
+            threadTraceEnabled={threadTraceEnabled}
+            threadTraceControlVisible={admin}
+            threadTraceControlDisabled={!activeThreadId || !traceCapture.loaded || !traceCapture.rawBodies}
+            threadTraceAuditEnabled={traceCapture.traceAudit}
+            onToggleThreadTrace={toggleThreadTrace}
             restoreDisplayMode={restoreDisplayMode}
             restoreHighlightsAvailable={restoreHighlightsAvailable}
             onToggleRestoreDisplay={() =>
@@ -482,6 +545,7 @@ function upsertThreadSummary(
   const summary: ThreadSummary = {
     id: threadId,
     title: existing?.title ?? deriveTitle(messages),
+    traceEnabled: existing?.traceEnabled ?? false,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };

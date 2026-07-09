@@ -1,4 +1,4 @@
-import { index, integer, jsonb, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
 import type { InstanceSettings, UserSettings } from "../types";
 
 /**
@@ -54,6 +54,7 @@ export const threads = pgTable(
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull().default("local"),
     title: text("title").notNull().default("New chat"),
+    traceEnabled: boolean("trace_enabled").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

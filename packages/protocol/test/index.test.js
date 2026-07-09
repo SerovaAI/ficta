@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   FICTA_SCOPE_HEADER,
+  FICTA_TRACE_CAPTURE_HEADER,
   isProtectionStatsOk,
   isProxyConfigOk,
   normalizePiiBackends,
@@ -126,6 +127,10 @@ function bucket(name) {
 describe("protocol constants", () => {
   it("exports the shared scope header", () => {
     assert.equal(FICTA_SCOPE_HEADER, "x-ficta-scope");
+  });
+
+  it("exports the shared trace capture header", () => {
+    assert.equal(FICTA_TRACE_CAPTURE_HEADER, "x-ficta-trace-capture");
   });
 });
 

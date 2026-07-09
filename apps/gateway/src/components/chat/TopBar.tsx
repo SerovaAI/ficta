@@ -1,4 +1,4 @@
-import { Eye, EyeOff, Moon, PanelLeft, Sun } from "lucide-react";
+import { Activity, Eye, EyeOff, Moon, PanelLeft, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ProtectionStatus } from "@/lib/protection-status";
@@ -10,6 +10,11 @@ export function TopBar({
   sidebarOpen,
   onToggleSidebar,
   protectionStatus,
+  threadTraceEnabled = false,
+  threadTraceControlVisible = false,
+  threadTraceControlDisabled = true,
+  threadTraceAuditEnabled = false,
+  onToggleThreadTrace,
   restoreDisplayMode = "values",
   restoreHighlightsAvailable = false,
   onToggleRestoreDisplay,
@@ -18,12 +23,22 @@ export function TopBar({
   sidebarOpen?: boolean;
   onToggleSidebar?: () => void;
   protectionStatus?: ProtectionStatus;
+  threadTraceEnabled?: boolean;
+  threadTraceControlVisible?: boolean;
+  threadTraceControlDisabled?: boolean;
+  threadTraceAuditEnabled?: boolean;
+  onToggleThreadTrace?: () => void;
   restoreDisplayMode?: RestoreHighlightDisplayMode;
   restoreHighlightsAvailable?: boolean;
   onToggleRestoreDisplay?: () => void;
 }) {
   const { theme, toggle } = useTheme();
   const restoreToggle = restorePrivacyToggleLabels(restoreDisplayMode);
+  const traceToggle = threadTraceToggleLabels({
+    enabled: threadTraceEnabled,
+    disabled: threadTraceControlDisabled,
+    auditEnabled: threadTraceAuditEnabled,
+  });
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
       <div className="mx-auto flex h-14 w-full max-w-3xl items-center justify-between gap-3 px-4">
@@ -51,6 +66,23 @@ export function TopBar({
           <ProtectionBadge status={protectionStatus} labelClassName="hidden sm:inline" />
         </div>
         <div className="flex items-center gap-2">
+          {threadTraceControlVisible && onToggleThreadTrace ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={threadTraceEnabled ? "secondary" : "ghost"}
+                  size="icon"
+                  onClick={onToggleThreadTrace}
+                  disabled={threadTraceControlDisabled}
+                  aria-label={traceToggle.ariaLabel}
+                  aria-pressed={threadTraceEnabled}
+                >
+                  <Activity className="size-4" aria-hidden />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{traceToggle.tooltip}</TooltipContent>
+            </Tooltip>
+          ) : null}
           {restoreHighlightsAvailable && onToggleRestoreDisplay ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -83,6 +115,36 @@ export function TopBar({
       </div>
     </header>
   );
+}
+
+export function threadTraceToggleLabels({
+  enabled,
+  disabled,
+  auditEnabled,
+}: {
+  enabled: boolean;
+  disabled: boolean;
+  auditEnabled: boolean;
+}): {
+  ariaLabel: string;
+  tooltip: string;
+} {
+  if (disabled) {
+    return {
+      ariaLabel: "Thread trace capture unavailable",
+      tooltip: "Enable FICTA_LOG_LEVEL=trace on the proxy to trace selected threads",
+    };
+  }
+  if (enabled) {
+    return {
+      ariaLabel: "Disable thread trace capture",
+      tooltip: auditEnabled ? "Trace and audit capture is on for this thread" : "Raw body trace is on for this thread",
+    };
+  }
+  return {
+    ariaLabel: "Enable thread trace capture",
+    tooltip: auditEnabled ? "Trace and audit capture is off for this thread" : "Raw body trace is off for this thread",
+  };
 }
 
 export function restorePrivacyToggleLabels(mode: RestoreHighlightDisplayMode): {

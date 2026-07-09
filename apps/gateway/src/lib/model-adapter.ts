@@ -1,4 +1,8 @@
-import { FICTA_RESTORE_HIGHLIGHT_HEADER, FICTA_SCOPE_HEADER } from "@serovaai/ficta-protocol";
+import {
+  FICTA_RESTORE_HIGHLIGHT_HEADER,
+  FICTA_SCOPE_HEADER,
+  FICTA_TRACE_CAPTURE_HEADER,
+} from "@serovaai/ficta-protocol";
 import { anthropicText } from "@tanstack/ai-anthropic";
 import { openaiCompatibleText } from "@tanstack/ai-openai/compatible";
 import type { Provider } from "@/lib/models";
@@ -14,6 +18,8 @@ export interface ModelChoice {
    * proxy strips the header before forwarding upstream. Omit for one-off requests.
    */
   fictaScope?: string;
+  /** Server-derived per-thread trace/audit capture decision. Never sourced from browser forwarded props. */
+  traceEnabled?: boolean;
 }
 
 /**
@@ -23,13 +29,14 @@ export interface ModelChoice {
  */
 const FICTA_PROXY_URL = process.env.FICTA_PROXY_URL ?? "http://127.0.0.1:8787";
 
-export function createModelAdapter({ provider, model, apiKey, fictaScope }: ModelChoice) {
+export function createModelAdapter({ provider, model, apiKey, fictaScope, traceEnabled = false }: ModelChoice) {
   const defaultHeaders = {
     // Advertises that this client can render restore-highlight markers — a static capability (the UI
     // always knows how). It's an internal handshake header (the proxy strips it before upstream), so
-    // it's sent unconditionally: the single switch for highlights is the proxy's FICTA_TRACE_AUDIT,
-    // which is what actually decides whether markers are emitted. No separate gateway flag needed.
+    // it's sent unconditionally; the proxy only emits markers when global trace audit and this thread's
+    // trace capture are both enabled.
     [FICTA_RESTORE_HIGHLIGHT_HEADER]: "1",
+    [FICTA_TRACE_CAPTURE_HEADER]: traceEnabled ? "1" : "0",
     ...(fictaScope ? { [FICTA_SCOPE_HEADER]: fictaScope } : {}),
   };
   if (provider === "anthropic") {

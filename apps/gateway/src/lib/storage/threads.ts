@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { requireScope } from "@/lib/auth/guards.server";
+import { requireAdminScope, requireScope } from "@/lib/auth/guards.server";
 import { getStorage } from "./storage.server";
 import type { StoredMessage, ThreadSummary } from "./types";
 
@@ -49,6 +49,13 @@ function validateSnapshot(input: unknown): { threadId: string; messages: StoredM
   return { threadId: i.threadId, messages: i.messages.map(toStoredMessage) };
 }
 
+function validateTraceToggle(input: unknown): { threadId: string; traceEnabled: boolean } {
+  const i = asObject(input);
+  if (typeof i.threadId !== "string" || !i.threadId) throw new Error("invalid threadId");
+  if (typeof i.traceEnabled !== "boolean") throw new Error("invalid traceEnabled");
+  return { threadId: i.threadId, traceEnabled: i.traceEnabled };
+}
+
 export const fetchThreads = createServerFn({ method: "GET" }).handler(async (): Promise<ThreadSummary[]> => {
   const { userId, orgId } = await requireScope();
   return (await getStorage()).listThreads(userId, orgId);
@@ -73,6 +80,13 @@ export const saveThread = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<void> => {
     const { userId, orgId } = await requireScope();
     await (await getStorage()).saveThreadSnapshot(userId, orgId, data.threadId, data.messages);
+  });
+
+export const setThreadTraceEnabled = createServerFn({ method: "POST" })
+  .validator(validateTraceToggle)
+  .handler(async ({ data }): Promise<void> => {
+    const { userId, orgId } = await requireAdminScope();
+    await (await getStorage()).setThreadTraceEnabled(userId, orgId, data.threadId, data.traceEnabled);
   });
 
 export const deleteThread = createServerFn({ method: "POST" })

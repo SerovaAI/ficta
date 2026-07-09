@@ -3,6 +3,7 @@ export declare const FICTA_STATUS_PATH = "/__ficta/status";
 export declare const FICTA_CONFIG_PATH = "/__ficta/config";
 export declare const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
 export declare const FICTA_SCOPE_HEADER = "x-ficta-scope";
+export declare const FICTA_TRACE_CAPTURE_HEADER = "x-ficta-trace-capture";
 export declare const FICTA_RESTORE_HIGHLIGHT_HEADER = "x-ficta-restore-highlights";
 export declare const FICTA_RESTORE_HIGHLIGHT_START = "\u001eFICTA_RESTORE_START\u001e";
 export declare const FICTA_RESTORE_HIGHLIGHT_METADATA = "\u001eFICTA_RESTORE_SURROGATE\u001e";
