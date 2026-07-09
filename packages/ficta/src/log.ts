@@ -34,8 +34,10 @@ export function logRequest(args: {
   body: string;
   target: string;
   route?: string;
+  captureRawBodies?: boolean;
 }): number {
   const n = ++seq;
+  const captureRawBodies = args.captureRawBodies ?? cfg.logBodies;
   const wire = wireOf(args.path);
   // Unknown (non-model) traffic is the old FICTA_QUIET tier: summarize at debug, model turns at info.
   const level = wire === "unknown" ? "debug" : "info";
@@ -68,7 +70,7 @@ export function logRequest(args: {
     `→ ${args.method} ${args.path} → ${args.target}${route}`,
   );
   // Raw message/tool content only at trace (the raw-body tier).
-  if (cfg.logBodies && parseOk) logRequestBodyPreviews(wire, parsed, n);
+  if (captureRawBodies && parseOk) logRequestBodyPreviews(wire, parsed, n);
 
   writeMeta("req", n, {
     kind: "request",
@@ -79,13 +81,13 @@ export function logRequest(args: {
     route: args.route,
     wire,
     bodyBytes: byteLen(args.body),
-    bodyLogged: cfg.logBodies,
+    bodyLogged: captureRawBodies,
     registeredValues: registeredValueCount(),
     summary: parseOk ? requestMeta(wire, parsed) : undefined,
     inspection,
   });
 
-  if (args.body && cfg.logBodies) writePrivateFile(join(runDir, `req-${pad(n)}.json`), pretty(args.body));
+  if (args.body && captureRawBodies) writePrivateFile(join(runDir, `req-${pad(n)}.json`), pretty(args.body));
   return n;
 }
 
@@ -96,7 +98,9 @@ export async function logResponse(args: {
   contentType: string;
   stream?: ReadableStream<Uint8Array>;
   body?: string;
+  captureRawBodies?: boolean;
 }): Promise<void> {
+  const captureRawBodies = args.captureRawBodies ?? cfg.logBodies;
   let raw = args.body ?? "";
   let bodyTruncated = false;
   if (args.stream) {
@@ -174,7 +178,7 @@ export async function logResponse(args: {
     `← ${args.status} ${args.contentType} (${raw.length} bytes)`,
   );
   // Reassembled message/tool content only at trace (the raw-body tier).
-  if (cfg.logBodies) {
+  if (captureRawBodies) {
     if (isSse) {
       const s = summarizeSSE(wire, raw);
       if (s) log.trace({ reqId: args.n }, s);
@@ -191,14 +195,14 @@ export async function logResponse(args: {
     status: args.status,
     contentType: args.contentType,
     bodyBytes: byteLen(raw),
-    bodyLogged: cfg.logBodies,
+    bodyLogged: captureRawBodies,
     bodyTruncated,
     registeredValues: registeredValueCount(),
     summary: isSse ? { sse: sseMeta(raw) } : parseOk ? responseMeta(wire, parsed) : undefined,
     inspection,
   });
 
-  if (cfg.logBodies && raw) writePrivateFile(join(runDir, `res-${pad(args.n)}.txt`), raw);
+  if (captureRawBodies && raw) writePrivateFile(join(runDir, `res-${pad(args.n)}.txt`), raw);
 }
 
 /**
@@ -206,8 +210,8 @@ export async function logResponse(args: {
  * body to res-XXXX.restored.txt. Pairs with the pre-restore res-XXXX.txt so an operator can diff
  * exactly which surrogates reached the client vs which were withheld from tool arguments.
  */
-export function writeRestoredBody(n: number, body: string): void {
-  if (!cfg.logBodies || !body) return;
+export function writeRestoredBody(n: number, body: string, captureRawBodies = cfg.logBodies): void {
+  if (!captureRawBodies || !body) return;
   const raw = byteLen(body) > cfg.logMaxBytes ? body.slice(0, cfg.logMaxBytes) : body;
   writePrivateFile(join(runDir, `res-${pad(n)}.restored.txt`), raw);
 }
@@ -217,8 +221,8 @@ export function writeRestoredBody(n: number, body: string): void {
  * it is emitted only when FICTA_LOG_LEVEL=trace and FICTA_TRACE_AUDIT=1, using the same private-file
  * permissions as raw body logs.
  */
-export function writeTraceAudit(n: number, audit: unknown): void {
-  if (!cfg.traceAudit) return;
+export function writeTraceAudit(n: number, audit: unknown, captureTraceAudit = cfg.traceAudit): void {
+  if (!captureTraceAudit) return;
   writePrivateFile(join(runDir, `audit-${pad(n)}.trace.json`), JSON.stringify(audit, null, 2));
 }
 
@@ -227,8 +231,12 @@ export function writeTraceAudit(n: number, audit: unknown): void {
  * res-XXXX.restored.txt, capped at logMaxBytes, then runs `onFlush` once the stream drains. Replaces
  * a bare flush tap on the streaming restore paths so the restored bytes are captured for forensics.
  */
-export function restoredBodyTap(n: number, onFlush: () => void): TransformStream<Uint8Array, Uint8Array> {
-  const capture = cfg.logBodies;
+export function restoredBodyTap(
+  n: number,
+  onFlush: () => void,
+  captureRawBodies = cfg.logBodies,
+): TransformStream<Uint8Array, Uint8Array> {
+  const capture = captureRawBodies;
   const decoder = new TextDecoder();
   let raw = "";
   let bytes = 0;

@@ -13,6 +13,7 @@ const previousThreads: ThreadSummary[] = [
   {
     id: "thread-1",
     title: "Deleted chat",
+    traceEnabled: false,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   },

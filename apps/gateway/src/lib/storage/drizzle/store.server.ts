@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gte, lt, notInArray, sql } from "drizzle-orm";
 import type { Provider } from "@/lib/models";
+import { deriveThreadTitleFromText, THREAD_TITLE_MAX } from "@/lib/thread-title";
 import type { Storage } from "../storage.server";
 import type {
   InstanceSettings,
@@ -21,7 +22,6 @@ import {
   userSettings,
 } from "./schema";
 
-const TITLE_MAX = 80;
 const PROTECTION_STATS_RETENTION_DAYS = 90;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -303,8 +303,18 @@ export function createStorage(): Storage {
       const db = await getDb();
       await db
         .update(threads)
-        .set({ title: title.slice(0, TITLE_MAX) || "New chat", updatedAt: new Date() })
+        .set({ title: title.slice(0, THREAD_TITLE_MAX) || "New chat", updatedAt: new Date() })
         .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)));
+    },
+
+    async setThreadTraceEnabled(userId, orgId, threadId, traceEnabled) {
+      const db = await getDb();
+      const updated = await db
+        .update(threads)
+        .set({ traceEnabled, updatedAt: new Date() })
+        .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)))
+        .returning();
+      if (updated.length === 0) throw new Error("thread not found");
     },
 
     async deleteThread(userId, orgId, threadId) {
@@ -380,10 +390,17 @@ function toProviderKeySummary(row: { provider: string; keyHint: string; updatedA
   };
 }
 
-function toThreadSummary(row: { id: string; title: string; createdAt: Date; updatedAt: Date }): ThreadSummary {
+function toThreadSummary(row: {
+  id: string;
+  title: string;
+  traceEnabled: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}): ThreadSummary {
   return {
     id: row.id,
     title: row.title,
+    traceEnabled: row.traceEnabled,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -393,8 +410,7 @@ function toThreadSummary(row: { id: string; title: string; createdAt: Date; upda
 function deriveTitle(snapshot: StoredMessage[]): string {
   const firstUser = snapshot.find((m) => m.role === "user");
   const text = firstUser ? partsToText(firstUser.parts) : "";
-  const trimmed = text.replace(/\s+/g, " ").trim().slice(0, TITLE_MAX);
-  return trimmed || "New chat";
+  return deriveThreadTitleFromText(text);
 }
 
 /** Pull plain text out of the opaque UIMessage parts, ignoring other part types. The live SDK's text part
