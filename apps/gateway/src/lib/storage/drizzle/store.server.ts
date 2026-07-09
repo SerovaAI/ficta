@@ -1,11 +1,10 @@
 import { and, desc, eq, notInArray } from "drizzle-orm";
 import type { Provider } from "@/lib/models";
+import { deriveThreadTitleFromText, THREAD_TITLE_MAX } from "@/lib/thread-title";
 import type { Storage } from "../storage.server";
 import type { InstanceSettings, ProviderKeySummary, StoredMessage, ThreadSummary, UserSettings } from "../types";
 import { getDb } from "./client.server";
 import { instanceSettings, messages, providerKeys, threads, userSettings } from "./schema";
-
-const TITLE_MAX = 80;
 
 /**
  * The Drizzle-backed `Storage` implementation. Speaks the schema in schema.ts; the actual driver (PGlite
@@ -197,7 +196,7 @@ export function createStorage(): Storage {
       const db = await getDb();
       await db
         .update(threads)
-        .set({ title: title.slice(0, TITLE_MAX) || "New chat", updatedAt: new Date() })
+        .set({ title: title.slice(0, THREAD_TITLE_MAX) || "New chat", updatedAt: new Date() })
         .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)));
     },
 
@@ -233,8 +232,7 @@ function toThreadSummary(row: { id: string; title: string; createdAt: Date; upda
 function deriveTitle(snapshot: StoredMessage[]): string {
   const firstUser = snapshot.find((m) => m.role === "user");
   const text = firstUser ? partsToText(firstUser.parts) : "";
-  const trimmed = text.replace(/\s+/g, " ").trim().slice(0, TITLE_MAX);
-  return trimmed || "New chat";
+  return deriveThreadTitleFromText(text);
 }
 
 /** Pull plain text out of the opaque UIMessage parts, ignoring other part types. The live SDK's text part
