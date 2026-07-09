@@ -23,6 +23,7 @@ import type { AgentIntegration, AgentIntegrationPlugin } from "./agent-types.js"
 import { builtInAgentPlugin } from "./agents.js";
 import { dopplerPlugin, resetDopplerPluginCacheForTests } from "./doppler.js";
 import { knownEnvPlugin, resetKnownEnvPluginCacheForTests } from "./known-env.js";
+import { managedRegistryFilePlugin, resetManagedRegistryFilePluginCacheForTests } from "./managed-registry-file.js";
 
 // Public plugin facade + product-side composition.
 //
@@ -115,6 +116,7 @@ export {
   piModelsConfig,
 } from "./agents.js";
 export { dopplerPlugin } from "./doppler.js";
+export { managedRegistryFilePlugin } from "./managed-registry-file.js";
 
 /**
  * The redaction plugins ficta ships and enforces by default: exact-value registry sources
@@ -123,6 +125,7 @@ export { dopplerPlugin } from "./doppler.js";
 export const defaultRedactionPlugins: readonly RedactionPlugin[] = [
   dopplerPlugin,
   knownEnvPlugin,
+  managedRegistryFilePlugin,
   secretShapesPlugin,
   piiPlugin,
 ];
@@ -206,6 +209,7 @@ export function findAgentIntegration(
 export function resetPluginCachesForTests(): void {
   resetDopplerPluginCacheForTests();
   resetKnownEnvPluginCacheForTests();
+  resetManagedRegistryFilePluginCacheForTests();
   resetPiiRecognizerStateForTests();
 }
 
@@ -218,6 +222,7 @@ export function resetPluginCachesForTests(): void {
 export function discoverySourceKey(discovery: PluginDiscovery): string | undefined {
   if (discovery.id.endsWith("/process-env")) return "process-env";
   if (discovery.id.endsWith("/env-file")) return "env-file";
+  if (discovery.plugin === "managed-registry-file") return "managed-registry-file";
   if (discovery.plugin === "doppler-cli") return "doppler";
   return undefined;
 }

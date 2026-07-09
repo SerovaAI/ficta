@@ -7,7 +7,8 @@ enterprise DLP product, compliance control, or malware/exfiltration prevention s
 
 For values that ficta has loaded into its registry after configured filters (for example
 `registry.min_len`) and trusted policy exclusions (provider-declared plus the user's own
-`registry.exclude_names`), such as exact values from `.env` files or Doppler, ficta attempts to:
+`registry.exclude_names`), such as exact values from managed registry files, `.env` files, or
+Doppler, ficta attempts to:
 
 1. replace those exact values with local surrogates before sending covered request bodies, query strings, and non-auth headers to the model provider;
 2. block the request if an expected exact value would still be forwarded verbatim in a surface ficta is supposed to redact; and
@@ -72,7 +73,7 @@ honest there too.
 
 When publishing or explaining ficta:
 
-- Lead with registered secret values from `.env`, process env, and Doppler.
+- Lead with registered exact values from managed registry files, `.env`, process env, and Doppler.
 - Do not present ficta as full DLP, compliance tooling, or a substitute for enterprise controls.
 - Do not lead with PII; detector plugins are best-effort additions, not the core promise.
 - Do not claim "never leaks" or "secure" without the covered-surface exact-match scope above.

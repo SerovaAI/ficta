@@ -160,7 +160,8 @@ $(pnpm bin -g)/ficta install --force
 
 Shims preserve the important privacy properties:
 
-- the registry is discovered from the current working directory (`.env`, `.env.local`) and configured sources in `~/.ficta/config.toml`
+- the registry is discovered from configured sources in `~/.ficta/config.toml`, including managed
+  registry files and current-working-directory env files (`.env`, `.env.local`)
 - Doppler CLI secrets are loaded before the agent starts; `doppler run -- claude` / `doppler run -- pi` can also be covered by enabling process-env loading
 - secrets live only for the agent session
 - multiple projects do not share one long-lived vault
@@ -194,6 +195,10 @@ To get protection in that project, add/point at registry sources with `ficta set
 [registry.env_file]
 enabled = true
 paths = [".env", ".env.production"]
+
+[registry.managed_file]
+enabled = true
+paths = ["/absolute/path/to/protected-registry.json"]
 
 [registry.process_env]
 enabled = true

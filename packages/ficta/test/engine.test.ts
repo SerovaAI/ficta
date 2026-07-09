@@ -134,6 +134,7 @@ describe("protection engine plugins", () => {
       "FICTA_REGISTRY_DOPPLER_ENABLED",
       "FICTA_REGISTRY_PROCESS_ENV_ENABLED",
       "FICTA_REGISTRY_ENV_FILE_ENABLED",
+      "FICTA_REGISTRY_MANAGED_FILE_ENABLED",
     ] as const;
     let saved: Partial<Record<(typeof POLICY_ENV)[number], string>>;
 
@@ -151,6 +152,7 @@ describe("protection engine plugins", () => {
       process.env.FICTA_REGISTRY_DOPPLER_ENABLED = "0";
       process.env.FICTA_REGISTRY_PROCESS_ENV_ENABLED = "0";
       process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+      process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "0";
 
       const detector: DetectorPlugin = {
         kind: "detector",
@@ -209,6 +211,7 @@ describe("protection engine plugins", () => {
       process.env.FICTA_REGISTRY_DOPPLER_ENABLED = "0";
       process.env.FICTA_REGISTRY_PROCESS_ENV_ENABLED = "0";
       process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+      process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "0";
       const savedExclude = process.env.FICTA_REGISTRY_EXCLUDE_NAMES;
       process.env.FICTA_REGISTRY_EXCLUDE_NAMES = "BUILD_ID";
       try {

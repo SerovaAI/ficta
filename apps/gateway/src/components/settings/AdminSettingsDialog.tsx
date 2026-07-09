@@ -53,7 +53,7 @@ export function AdminSettingsDialog({ open, onOpenChange }: { open: boolean; onO
           <header className="shrink-0 border-b border-border px-6 py-4">
             <DialogTitle className="text-xl">Admin</DialogTitle>
             <DialogDescription className="sr-only">
-              Manage workspace settings, proxy configuration, and redaction proof.
+              Manage workspace settings, provider keys, proxy configuration, and redaction proof.
             </DialogDescription>
           </header>
 

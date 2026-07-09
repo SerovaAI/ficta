@@ -157,6 +157,7 @@ function envFileSourceSummaryItems(details: readonly string[]): SourceSummaryIte
 }
 
 function shortSourceLabel(label: string): string {
+  if (label === "managed registry files") return "managed registry";
   return label.replace(/\s+CLI$/i, "");
 }
 

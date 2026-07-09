@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gte, lt, notInArray, sql } from "drizzle-orm";
 import type { Provider } from "@/lib/models";
 import { deriveThreadTitleFromText, THREAD_TITLE_MAX } from "@/lib/thread-title";
 import type { Storage } from "../storage.server";
 import type {
   InstanceSettings,
+  ProtectedRegistryEntry,
   ProtectionStatsDailySummary,
   ProtectionStatsTotals,
   ProviderKeySummary,
@@ -15,6 +17,7 @@ import { getDb } from "./client.server";
 import {
   instanceSettings,
   messages,
+  protectedRegistryEntries,
   protectionStatsCheckpoints,
   protectionStatsDaily,
   providerKeys,
@@ -211,6 +214,110 @@ export function createStorage(): Storage {
       return rows.map(toProtectionStatsDailySummary);
     },
 
+    async listProtectedRegistryEntries(orgId) {
+      const db = await getDb();
+      const rows = await db
+        .select()
+        .from(protectedRegistryEntries)
+        .where(eq(protectedRegistryEntries.orgId, orgId))
+        .orderBy(
+          asc(protectedRegistryEntries.matterId),
+          asc(protectedRegistryEntries.type),
+          asc(protectedRegistryEntries.value),
+        );
+      return rows.map(toProtectedRegistryEntry);
+    },
+
+    async upsertProtectedRegistryEntry(orgId, userId, entry) {
+      const db = await getDb();
+      const now = new Date();
+      const id = entry.id || randomUUID();
+      const current = entry.id
+        ? (
+            await db
+              .select()
+              .from(protectedRegistryEntries)
+              .where(and(eq(protectedRegistryEntries.orgId, orgId), eq(protectedRegistryEntries.id, entry.id)))
+          )[0]
+        : undefined;
+      if (entry.id && !current) throw new Error("protected registry entry not found");
+      const status = entry.status ?? "approved";
+      const approvedAt = status === "approved" ? (current?.approvedAt ?? now) : null;
+      const approvedBy = status === "approved" ? (current?.approvedBy ?? userId) : null;
+      const [row] = await db
+        .insert(protectedRegistryEntries)
+        .values({
+          id,
+          orgId,
+          matterId: entry.matterId,
+          type: entry.type,
+          value: entry.value,
+          aliases: entry.aliases ?? [],
+          source: entry.source ?? "manual",
+          status,
+          createdBy: current?.createdBy ?? userId,
+          approvedBy,
+          approvedAt,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: protectedRegistryEntries.id,
+          set: {
+            matterId: entry.matterId,
+            type: entry.type,
+            value: entry.value,
+            aliases: entry.aliases ?? [],
+            source: entry.source ?? "manual",
+            status,
+            approvedBy,
+            approvedAt,
+            updatedAt: now,
+          },
+        })
+        .returning();
+      if (!row || row.orgId !== orgId) throw new Error("protected registry entry was not saved");
+      return toProtectedRegistryEntry(row);
+    },
+
+    async importProtectedRegistryEntries(orgId, userId, entries) {
+      const db = await getDb();
+      const now = new Date();
+      const saved: ProtectedRegistryEntry[] = [];
+      await db.transaction(async (tx) => {
+        for (const entry of entries) {
+          const status = entry.status ?? "approved";
+          const approved = status === "approved";
+          const [row] = await tx
+            .insert(protectedRegistryEntries)
+            .values({
+              id: randomUUID(),
+              orgId,
+              matterId: entry.matterId,
+              type: entry.type,
+              value: entry.value,
+              aliases: entry.aliases ?? [],
+              source: entry.source ?? "csv",
+              status,
+              createdBy: userId,
+              approvedBy: approved ? userId : null,
+              approvedAt: approved ? now : null,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .returning();
+          if (row) saved.push(toProtectedRegistryEntry(row));
+        }
+      });
+      return saved;
+    },
+
+    async deleteProtectedRegistryEntry(orgId, id) {
+      const db = await getDb();
+      await db
+        .delete(protectedRegistryEntries)
+        .where(and(eq(protectedRegistryEntries.orgId, orgId), eq(protectedRegistryEntries.id, id)));
+    },
+
     async listThreads(userId, orgId) {
       const db = await getDb();
       const rows = await db
@@ -386,6 +493,36 @@ function toProviderKeySummary(row: { provider: string; keyHint: string; updatedA
     provider: row.provider as Provider,
     configured: true,
     keyHint: row.keyHint,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toProtectedRegistryEntry(row: {
+  id: string;
+  matterId: string;
+  type: ProtectedRegistryEntry["type"];
+  value: string;
+  aliases: string[];
+  source: string;
+  status: ProtectedRegistryEntry["status"];
+  createdBy: string;
+  approvedBy: string | null;
+  approvedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): ProtectedRegistryEntry {
+  return {
+    id: row.id,
+    matterId: row.matterId,
+    type: row.type,
+    value: row.value,
+    aliases: Array.isArray(row.aliases) ? row.aliases : [],
+    source: row.source === "csv" || row.source === "suggested" ? row.source : "manual",
+    status: row.status,
+    createdBy: row.createdBy,
+    approvedBy: row.approvedBy ?? undefined,
+    approvedAt: row.approvedAt?.toISOString(),
+    createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }

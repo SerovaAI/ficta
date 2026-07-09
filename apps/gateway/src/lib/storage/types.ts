@@ -50,6 +50,55 @@ export interface EncryptedProviderKey {
   keyHint: string;
 }
 
+export const PROTECTED_REGISTRY_ENTRY_TYPES = [
+  "client",
+  "counterparty",
+  "person",
+  "matter",
+  "case",
+  "contract",
+  "account",
+  "project",
+  "vendor",
+  "custodian",
+  "other",
+] as const;
+
+export type ProtectedRegistryEntryType = (typeof PROTECTED_REGISTRY_ENTRY_TYPES)[number];
+
+export const PROTECTED_REGISTRY_ENTRY_STATUSES = ["approved", "suggested", "ignored"] as const;
+
+export type ProtectedRegistryEntryStatus = (typeof PROTECTED_REGISTRY_ENTRY_STATUSES)[number];
+
+export const PROTECTED_REGISTRY_ENTRY_SOURCES = ["manual", "csv", "suggested"] as const;
+
+export type ProtectedRegistryEntrySource = (typeof PROTECTED_REGISTRY_ENTRY_SOURCES)[number];
+
+export interface ProtectedRegistryEntry {
+  id: string;
+  matterId: string;
+  type: ProtectedRegistryEntryType;
+  value: string;
+  aliases: string[];
+  source: ProtectedRegistryEntrySource;
+  status: ProtectedRegistryEntryStatus;
+  createdBy: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProtectedRegistryEntryInput {
+  id?: string;
+  matterId: string;
+  type: ProtectedRegistryEntryType;
+  value: string;
+  aliases?: string[];
+  source?: ProtectedRegistryEntrySource;
+  status?: ProtectedRegistryEntryStatus;
+}
+
 export const DEFAULT_SUGGESTED_PROMPTS = [
   "Summarize this document and flag anything that needs attention.",
   "Draft a polite reply to this email declining the request.",

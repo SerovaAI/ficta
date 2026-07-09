@@ -2,6 +2,8 @@ import type { Provider } from "@/lib/models";
 import type {
   EncryptedProviderKey,
   InstanceSettings,
+  ProtectedRegistryEntry,
+  ProtectedRegistryEntryInput,
   ProtectionStatsDailySummary,
   ProtectionStatsSnapshot,
   ProviderKeySummary,
@@ -41,6 +43,19 @@ export interface Storage {
 
   ingestProtectionStatsSnapshot(orgId: string, proxyUrl: string, snapshot: ProtectionStatsSnapshot): Promise<void>;
   listProtectionStatsDaily(orgId: string, days?: number): Promise<ProtectionStatsDailySummary[]>;
+
+  listProtectedRegistryEntries(orgId: string): Promise<ProtectedRegistryEntry[]>;
+  upsertProtectedRegistryEntry(
+    orgId: string,
+    userId: string,
+    entry: ProtectedRegistryEntryInput,
+  ): Promise<ProtectedRegistryEntry>;
+  importProtectedRegistryEntries(
+    orgId: string,
+    userId: string,
+    entries: ProtectedRegistryEntryInput[],
+  ): Promise<ProtectedRegistryEntry[]>;
+  deleteProtectedRegistryEntry(orgId: string, id: string): Promise<void>;
 
   listThreads(userId: string, orgId: string): Promise<ThreadSummary[]>;
   getThread(

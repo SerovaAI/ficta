@@ -116,6 +116,8 @@ describe("config hardening", () => {
         {
           FICTA_REGISTRY_ENV_FILE_ENABLED: "1",
           FICTA_REGISTRY_ENV_FILE_PATHS: ".env:.env.local:.env.production",
+          FICTA_REGISTRY_MANAGED_FILE_ENABLED: "1",
+          FICTA_REGISTRY_MANAGED_FILE_PATHS: "/tmp/protected-registry.json",
           FICTA_REGISTRY_DOPPLER_ENABLED: "1",
           FICTA_REGISTRY_DOPPLER_CONFIGS: "dev,prod",
           FICTA_REGISTRY_MIN_LEN: "12",
@@ -128,9 +130,13 @@ describe("config hardening", () => {
 
       expect(readFileSync(path, "utf8")).toContain("[registry.env_file]");
       expect(readFileSync(path, "utf8")).toContain('paths = [".env", ".env.local", ".env.production"]');
+      expect(readFileSync(path, "utf8")).toContain("[registry.managed_file]");
+      expect(readFileSync(path, "utf8")).toContain('paths = ["/tmp/protected-registry.json"]');
       expect(readUserConfig(path)).toMatchObject({
         FICTA_REGISTRY_ENV_FILE_ENABLED: "1",
         FICTA_REGISTRY_ENV_FILE_PATHS: ".env:.env.local:.env.production",
+        FICTA_REGISTRY_MANAGED_FILE_ENABLED: "1",
+        FICTA_REGISTRY_MANAGED_FILE_PATHS: "/tmp/protected-registry.json",
         FICTA_REGISTRY_DOPPLER_ENABLED: "1",
         FICTA_REGISTRY_DOPPLER_CONFIGS: "dev,prod",
         FICTA_REGISTRY_MIN_LEN: "12",

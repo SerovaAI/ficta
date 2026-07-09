@@ -24,6 +24,8 @@ const ENV_KEYS = [
   "FICTA_CONFIG_FILE",
   "FICTA_REGISTRY_ENV_FILE_ENABLED",
   "FICTA_REGISTRY_ENV_FILE_PATHS",
+  "FICTA_REGISTRY_MANAGED_FILE_ENABLED",
+  "FICTA_REGISTRY_MANAGED_FILE_PATHS",
   "FICTA_REGISTRY_MIN_LEN",
   "FICTA_REGISTRY_EXCLUDE_NAMES",
   "FICTA_REGISTRY_PROCESS_ENV_ENABLED",
@@ -57,6 +59,7 @@ beforeEach(() => {
   process.env.FICTA_CONFIG_FILE = "0";
   process.env.FICTA_REGISTRY_DOPPLER_ENABLED = "0";
   process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "1";
+  process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "0";
   process.env.FICTA_REGISTRY_PROCESS_ENV_ENABLED = "0";
   resetPluginCachesForTests();
 });
@@ -203,6 +206,60 @@ describe("registry plugin discovery", () => {
     const snapshot = loadPluginRegistry();
 
     expect(snapshot.values.find((v) => v.name === "PRIVATE_KEY")?.value).toBe("line1\nline2");
+  });
+
+  it("loads managed registry JSON files as a separate business-value source", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ficta-managed-registry-"));
+    const file = join(dir, "protected-registry.json");
+    const value = "Northstar Biologics (Pty) Ltd";
+    writeFileSync(
+      file,
+      JSON.stringify({
+        schema: "ficta.managed-registry.v1",
+        entries: [
+          {
+            id: "entry-1",
+            name: "gateway:client:nsb-2026-0147:entry-1",
+            type: "client",
+            scope: "NSB-2026-0147",
+            value,
+            aliases: ["Northstar", "NBL"],
+            kind: "custom",
+          },
+        ],
+      }),
+      { mode: 0o600 },
+    );
+
+    process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+    process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "1";
+    process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = file;
+    process.env.FICTA_REGISTRY_MIN_LEN = "4";
+
+    const snapshot = loadPluginRegistry();
+    const managed = snapshot.discoveries.find((d) => d.id === "managed-registry-file/json-files");
+
+    expect(snapshot.values).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "gateway:client:nsb-2026-0147:entry-1",
+          value,
+          source: "managed-registry-file",
+          plugin: "managed-registry-file",
+          kind: "custom",
+          confidence: "exact",
+        }),
+        expect.objectContaining({
+          name: "gateway:client:nsb-2026-0147:entry-1:alias-1",
+          value: "Northstar",
+          source: "managed-registry-file",
+        }),
+      ]),
+    );
+    expect(snapshot.values.some((v) => v.value === "NBL")).toBe(false);
+    expect(managed?.status).toBe("loaded");
+    expect(managed?.valueCount).toBe(2);
+    expect(JSON.stringify(snapshot.discoveries)).not.toContain(value);
   });
 
   it("refuses Doppler commands resolved inside the current working tree", () => {

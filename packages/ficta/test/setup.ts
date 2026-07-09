@@ -14,5 +14,6 @@ process.env.FICTA_REGISTRY_DOPPLER_ENABLED = "0";
 process.env.FICTA_REGISTRY_DOPPLER_CONFIGS = "current";
 process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "1";
 process.env.FICTA_REGISTRY_ENV_FILE_PATHS = ".env:.env.local";
+process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "0";
 process.env.FICTA_REGISTRY_PROCESS_ENV_ENABLED = "0";
 process.env.FICTA_REGISTRY_PROCESS_ENV_MODE = "secret-ish";

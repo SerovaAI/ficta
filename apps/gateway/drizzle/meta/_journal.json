@@ -36,6 +36,13 @@
       "when": 1783571670535,
       "tag": "0004_secret_shriek",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783587361165,
+      "tag": "0005_flashy_vivisector",
+      "breakpoints": true
     }
   ]
 }

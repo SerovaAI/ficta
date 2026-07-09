@@ -1,5 +1,11 @@
 import { boolean, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
-import type { InstanceSettings, ProtectionStatsTotals, UserSettings } from "../types";
+import type {
+  InstanceSettings,
+  ProtectedRegistryEntryStatus,
+  ProtectedRegistryEntryType,
+  ProtectionStatsTotals,
+  UserSettings,
+} from "../types";
 
 /**
  * Postgres schema for the storage seam. One dialect only: PGlite (the zero-config default) and real
@@ -79,6 +85,31 @@ export const protectionStatsCheckpoints = pgTable(
   (t) => [
     primaryKey({ columns: [t.orgId, t.proxyUrl, t.proxyStartedAt, t.statsPath] }),
     index("protection_stats_checkpoints_updated_idx").on(t.orgId, t.updatedAt),
+  ],
+);
+
+/** Workspace-scoped confidential entity protected registry. Approved rows are exported as exact-match registry
+ * values for the proxy; suggested/ignored rows stay in the admin workflow until reviewed. */
+export const protectedRegistryEntries = pgTable(
+  "protected_registry_entries",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    matterId: text("matter_id").notNull().default(""),
+    type: text("type").$type<ProtectedRegistryEntryType>().notNull(),
+    value: text("value").notNull(),
+    aliases: jsonb("aliases").$type<string[]>().notNull().default([]),
+    source: text("source").notNull().default("manual"),
+    status: text("status").$type<ProtectedRegistryEntryStatus>().notNull().default("approved"),
+    createdBy: text("created_by").notNull(),
+    approvedBy: text("approved_by"),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("protected_registry_entries_scope_status_idx").on(t.orgId, t.status, t.updatedAt.desc()),
+    index("protected_registry_entries_scope_matter_idx").on(t.orgId, t.matterId, t.type),
   ],
 );
 

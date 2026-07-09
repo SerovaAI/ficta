@@ -6,6 +6,7 @@
 process.env.FICTA_CONFIG_FILE = "0";
 process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
 process.env.FICTA_REGISTRY_DOPPLER_ENABLED = "0";
+process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "0";
 process.env.FICTA_REGISTRY_MIN_LEN = "6";
 process.env.FICTA_REDACT_PATHS = "0"; // default: path-skip active (so preservePaths actually matters)
 

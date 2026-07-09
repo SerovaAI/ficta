@@ -15,8 +15,9 @@ code bypass the redaction boundary.
 - **Plugin** — the umbrella term for a narrow extension point inside ficta. A plugin must explicitly
   declare a capability boundary; registry hooks are valid only on `kind: "registry-source"` plugins
   that also own their source-specific metadata.
-- **Registry-source plugin** — loads exact protected values at launch, such as `.env`, process env,
-  Doppler, or a future secret-manager source. This is the strongest exact-match layer.
+- **Registry-source plugin** — loads exact protected values at launch, such as managed registry
+  files, `.env`, process env, Doppler, or a future secret-manager source. This is the strongest
+  exact-match layer.
 - **Detector plugin** — inspects request text at runtime and reports values to protect. A PII
   integration should be described as a **PII detector plugin**. Detector coverage is best effort and
   secondary to registry-source exact matching.
@@ -94,7 +95,7 @@ the compact output is:
 ```txt
 🔒 ficta ready — 47 protected values (48 loaded before dedupe)
    pi → http://127.0.0.1:59717
-   sources: Doppler 34, .env.local 4, process env 10
+   sources: Doppler 34, managed registry 12, .env.local 4, process env 10
    secret shapes: off
    pii: off
 ```
@@ -108,6 +109,8 @@ controlled only by `FICTA_LOG_LEVEL`: wrapped agents default it to `silent`, whi
 source details:
   ✓ Doppler CLI (34 values) — loaded current config via `doppler secrets download --no-file --format json`; skipped 4 shorter than 8 chars
       current: 34 loaded
+  ✓ managed registry files (12 values) — read 1 file(s)
+      .data/protected-registry.json: 12 loaded
   ✓ env files (4 values) — read 1 file(s)
       .env: not found
       .env.local: 4 loaded
@@ -135,6 +138,10 @@ require = false
 [registry.env_file]
 enabled = true
 paths = [".env", ".env.local"]
+
+[registry.managed_file]
+enabled = true
+paths = [".data/protected-registry.json"]
 
 [registry.process_env]
 enabled = true
@@ -169,8 +176,9 @@ prefixes, JWTs, PEM private keys, credential URLs with userinfo, AWS access key 
 assignments such as `API_TOKEN=...`.
 
 This layer is **best effort**. It complements, but does not replace, registry exact matching: a value
-loaded from `.env`, process env, or Doppler gets the stronger exact-match/fail-closed invariant,
-while a newly pasted value is protected only if it matches one of the known shapes.
+loaded from a managed registry file, `.env`, process env, or Doppler gets the stronger
+exact-match/fail-closed invariant, while a newly pasted value is protected only if it matches one of
+the known shapes.
 
 Like PII, it has separate web/standalone and agent-launch posture:
 
@@ -438,6 +446,56 @@ the process-env source will not surrogate local routing/config labels. The exclu
 negative override on top of the secret-ish heuristic — those names still match the heuristic, they
 are just dropped afterward. Credential variables such as `DOPPLER_TOKEN` are not on the exclusion
 list and remain protected by the normal `TOKEN` heuristic.
+
+## Built-in registry source: `managed-registry-file`
+
+This plugin loads exact admin-approved business values from JSON files. It is separate from
+`known-env-values`: env sources protect runtime/config material such as API keys and database URLs,
+while managed registry files protect domain values such as client names, matter IDs, patient IDs,
+account numbers, project names, and aliases. Both sources feed the same `ProtectedValue[]` contract
+and therefore use the same vault, exact-match redaction, fail-closed leak checks, and restore path.
+
+Default TOML:
+
+```toml
+[registry.managed_file]
+enabled = true
+paths = [".data/protected-registry.json"]
+```
+
+Add extra files, point at Gateway's exported file, or disable the source:
+
+```toml
+[registry.managed_file]
+enabled = true
+paths = ["/absolute/path/from/gateway/protected-registry.json"]
+
+# or:
+# enabled = false
+```
+
+Canonical file shape:
+
+```json
+{
+  "schema": "ficta.managed-registry.v1",
+  "entries": [
+    {
+      "id": "entry-1",
+      "name": "gateway:client:nsb-2026-0147:entry-1",
+      "type": "client",
+      "scope": "NSB-2026-0147",
+      "value": "Northstar Biologics (Pty) Ltd",
+      "aliases": ["Northstar"],
+      "kind": "custom"
+    }
+  ]
+}
+```
+
+`name` is a safe label for logs and discovery metadata; it must not contain the protected value.
+`value` and `aliases` are filtered by `registry.min_len`, deduped, loaded into memory, and never
+printed. Discovery output reports only file paths, statuses, and counts.
 
 ## Built-in registry source: `known-env-values`
 

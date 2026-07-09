@@ -52,6 +52,7 @@ every option. The table below is just a quick tour of the most useful knobs:
 | `registry.min_len` | `FICTA_REGISTRY_MIN_LEN` | `8` | Ignore registered values shorter than this. |
 | `registry.require` | `FICTA_REQUIRE_REGISTRY` | `false` | Refuse to launch if no protected values load. |
 | `registry.env_file.paths` | `FICTA_REGISTRY_ENV_FILE_PATHS` | `.env,.env.local` | Env files to load values from. |
+| `registry.managed_file.paths` | `FICTA_REGISTRY_MANAGED_FILE_PATHS` | `.data/protected-registry.json` | Managed registry JSON files for admin-approved business values. |
 | `registry.process_env.mode` | `FICTA_REGISTRY_PROCESS_ENV_MODE` | `secret-ish` | `secret-ish` name-matching or `all` process env. |
 | `redaction.fail_closed` | `FICTA_FAIL_CLOSED` | `true` | Block a request if a protected value survives redaction. |
 | `redaction.redact_paths` | `FICTA_REDACT_PATHS` | `false` | Also redact path-like tokens in the query string and body (headers always redact them). |
@@ -69,9 +70,10 @@ every option. The table below is just a quick tour of the most useful knobs:
 | `logging.log_dir` | `FICTA_LOG_DIR` | `~/.ficta/logs` | Where per-run logs and `stats.json` are written. |
 | `upstreams.anthropic` | `FICTA_ANTHROPIC_UPSTREAM` | Anthropic API | Override the Anthropic upstream (also `..._OPENAI_...` / `..._CHATGPT_...`). |
 
-**Registry sources** — env-file, process-env, and Doppler discovery — have their own config under
-`[registry.*]`; see [`docs/plugins.md`](./docs/plugins.md#configuring-built-in-plugins) for the
-per-source options (Doppler `configs` / `project` / `timeout_ms`, etc.).
+**Registry sources** — managed registry files, env-file, process-env, and Doppler discovery — have
+their own config under `[registry.*]`; see
+[`docs/plugins.md`](./docs/plugins.md#configuring-built-in-plugins) for the per-source options
+(Doppler `configs` / `project` / `timeout_ms`, etc.).
 
 **Request-time detectors** are intentionally per-surface. The standalone/web proxy follows
 `secret_shapes.enabled` and `pii.enabled`. A launched coding agent gets those detectors only when both the

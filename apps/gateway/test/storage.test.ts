@@ -9,6 +9,7 @@ import type { Storage } from "@/lib/storage/storage.server";
 import { getStorage } from "@/lib/storage/storage.server";
 import type {
   EncryptedProviderKey,
+  ProtectedRegistryEntryInput,
   ProtectionStatsSnapshot,
   ProtectionStatsTotals,
   StoredMessage,
@@ -298,6 +299,91 @@ describe("protection stats trends", () => {
     expect(retained).toHaveLength(1);
     expect(retained[0]).toMatchObject({ events: 1, affectedRequests: 1, redactedValues: 1 });
     expect(await store.listProtectionStatsDaily("org-proof-missing")).toEqual([]);
+  });
+});
+
+const protectedRegistryInput = (
+  value: string,
+  patch: Partial<ProtectedRegistryEntryInput> = {},
+): ProtectedRegistryEntryInput => ({
+  matterId: "NSB-2026-0147",
+  type: "client",
+  value,
+  aliases: [],
+  status: "approved",
+  source: "manual",
+  ...patch,
+});
+
+describe("confidential protected registry", () => {
+  it("imports, updates, and deletes workspace protected registry entries", async () => {
+    const imported = await store.importProtectedRegistryEntries("org-protected-registry", "admin-1", [
+      protectedRegistryInput("Northstar Biologics (Pty) Ltd", { aliases: ["Northstar", "NBL"], source: "csv" }),
+      protectedRegistryInput("Proxima Medical Supplies CC", {
+        type: "counterparty",
+        status: "suggested",
+        source: "csv",
+      }),
+    ]);
+
+    expect(imported).toHaveLength(2);
+    expect(imported[0]).toMatchObject({
+      matterId: "NSB-2026-0147",
+      type: "client",
+      value: "Northstar Biologics (Pty) Ltd",
+      aliases: ["Northstar", "NBL"],
+      status: "approved",
+      source: "csv",
+      createdBy: "admin-1",
+      approvedBy: "admin-1",
+    });
+    expect(imported[0]?.approvedAt).toBeTruthy();
+    expect(imported[1]?.approvedAt).toBeUndefined();
+
+    const updated = await store.upsertProtectedRegistryEntry("org-protected-registry", "admin-2", {
+      ...protectedRegistryInput("Proxima Medical Supplies CC", {
+        id: imported[1]?.id,
+        type: "counterparty",
+        aliases: ["Proxima"],
+      }),
+      status: "approved",
+    });
+    expect(updated.status).toBe("approved");
+    expect(updated.approvedBy).toBe("admin-2");
+
+    const listed = await store.listProtectedRegistryEntries("org-protected-registry");
+    expect(listed.map((entry) => entry.value)).toEqual([
+      "Northstar Biologics (Pty) Ltd",
+      "Proxima Medical Supplies CC",
+    ]);
+
+    await store.deleteProtectedRegistryEntry("org-protected-registry", imported[0]?.id ?? "");
+    expect((await store.listProtectedRegistryEntries("org-protected-registry")).map((entry) => entry.value)).toEqual([
+      "Proxima Medical Supplies CC",
+    ]);
+  });
+
+  it("isolates protected registry entries per workspace", async () => {
+    await store.importProtectedRegistryEntries("org-protected-registry-a", "admin", [
+      protectedRegistryInput("A Client"),
+    ]);
+    await store.importProtectedRegistryEntries("org-protected-registry-b", "admin", [
+      protectedRegistryInput("B Client"),
+    ]);
+
+    expect((await store.listProtectedRegistryEntries("org-protected-registry-a")).map((entry) => entry.value)).toEqual([
+      "A Client",
+    ]);
+    expect((await store.listProtectedRegistryEntries("org-protected-registry-b")).map((entry) => entry.value)).toEqual([
+      "B Client",
+    ]);
+
+    const [entry] = await store.listProtectedRegistryEntries("org-protected-registry-a");
+    await expect(
+      store.upsertProtectedRegistryEntry("org-protected-registry-b", "admin", {
+        ...protectedRegistryInput("Hijack", { id: entry?.id }),
+      }),
+    ).rejects.toThrow("protected registry entry not found");
   });
 });
 

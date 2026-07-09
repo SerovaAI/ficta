@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { LogOut, Plus, RefreshCw, Settings, Shield } from "lucide-react";
+import { Database, LogOut, Plus, RefreshCw, Settings, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -25,8 +25,8 @@ type MenuAlign = React.ComponentProps<typeof DropdownMenuContent>["align"];
  * When the user belongs to WorkOS organizations, a "Workspace" radio group lets them switch the active
  * one and create more. The list is warmed as soon as the account control mounts, so opening the menu
  * usually reads from cache instead of waiting on the first WorkOS membership round trip.
- * Admin settings are included when the caller provides an admin opener, keeping workspace-level controls
- * in the account popover instead of the chat navigation.
+ * Admin settings and registry tools are included when the caller provides admin openers, keeping
+ * workspace-level controls in the account popover instead of the chat navigation.
  *
  * `variant` picks the trigger: `row` is the full-width label used in the expanded sidebar footer; `icon`
  * is the avatar-only button used in the collapsed rail. `side`/`align` position the menu relative to the
@@ -39,6 +39,7 @@ export function UserMenu({
   side = "top",
   align = "start",
   onOpenAdmin,
+  onOpenRegistry,
   onOpenSettings,
   onCreateWorkspace,
   showWorkspaces = true,
@@ -50,6 +51,7 @@ export function UserMenu({
   side?: MenuSide;
   align?: MenuAlign;
   onOpenAdmin?: () => void;
+  onOpenRegistry?: () => void;
   onOpenSettings: () => void;
   onCreateWorkspace: () => void;
   showWorkspaces?: boolean;
@@ -154,6 +156,12 @@ export function UserMenu({
           <DropdownMenuItem onSelect={onOpenAdmin}>
             <Shield className="size-4" aria-hidden />
             Admin
+          </DropdownMenuItem>
+        ) : null}
+        {onOpenRegistry ? (
+          <DropdownMenuItem onSelect={onOpenRegistry}>
+            <Database className="size-4" aria-hidden />
+            Protected Registry
           </DropdownMenuItem>
         ) : null}
         <DropdownMenuItem onSelect={onOpenSettings}>

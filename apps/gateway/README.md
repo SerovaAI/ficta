@@ -38,6 +38,8 @@ Current app capabilities:
 - server-side BYO OpenAI/Anthropic keys, including workspace admin-managed provider keys;
 - chat history and settings backed by embedded PGlite by default, or Postgres via `DATABASE_URL`;
 - model allow-list, default model, and instance-name settings;
+- admin-managed Protected Registry for known sensitive values, with CSV paste/import and managed-registry JSON
+  export for proxy loading;
 - protection badge/banner polling the proxy's safe `/__ficta/status` endpoint;
 - text-file attachments inlined into chat requests so ficta can redact them;
 - PDF/DOCX conversion through a document-converter sidecar before inlining/redaction;
@@ -115,8 +117,9 @@ Minimum production-like posture:
   source-checkout managed sidecar behavior in production.
 - Set `FICTA_PII_FAIL_CLOSED=1` so a detector outage blocks requests instead of silently forwarding
   unscreened text.
-- Load a firm-specific exact-match registry for client/matter rosters, patient IDs, matter IDs, or
-  other high-value identifiers. Lead demos with this strong layer, not only best-effort NER.
+- Load a firm-specific exact-match registry for client names, matter IDs, patient IDs, account numbers,
+  project names, or other high-value identifiers. Lead demos with this strong layer, not only best-effort
+  NER.
 - Keep `FICTA_LOG_LEVEL` below `trace`; trace writes raw request/response bodies to disk.
 - Decide which provider/deployment is approved for the data class. For medical workflows, redaction
   does not remove the need for the right HIPAA/BAA posture if ePHI can reach a vendor.
@@ -128,6 +131,11 @@ registered-secret fail-closed behavior, PII/secret-shape detection, PII backend 
 surrogate style, tool-call restore policy, and custom-upstream allowance. These edits are written to
 the proxy's `config.toml`; restart the proxy before treating the saved settings as active. Fields set
 by explicit `FICTA_*` environment variables remain read-only in the UI.
+
+Gateway admins can also maintain the Protected Registry at `/admin/protected-registry`. Approved
+registry entries can be exported to a managed registry JSON file; include that path in
+`FICTA_REGISTRY_MANAGED_FILE_PATHS` and restart the proxy to load the approved values as exact-match
+registry entries. Suggested and ignored rows are review workflow only and are not exported.
 
 Example production-like env shape:
 

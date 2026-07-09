@@ -12,6 +12,10 @@ exclude_names = []
 enabled = true
 paths = [".env", ".env.local"]
 
+[registry.managed_file]
+enabled = true
+paths = [".data/protected-registry.json"]
+
 [registry.process_env]
 enabled = true
 mode = "secret-ish" # or "all"
