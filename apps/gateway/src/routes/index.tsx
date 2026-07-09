@@ -10,5 +10,5 @@ export const Route = createFileRoute("/")({
 
 function IndexPage() {
   const settings = Route.useLoaderData();
-  return <ChatView userSettings={settings} />;
+  return <ChatView key="new-chat" userSettings={settings} />;
 }
