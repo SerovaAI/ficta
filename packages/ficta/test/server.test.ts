@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { FICTA_RESTORE_HIGHLIGHT_HEADER, FICTA_TRACE_CAPTURE_HEADER } from "@serovaai/ficta-protocol";
 import { describe, expect, it, vi } from "vitest";
 import type { RegistrySourcePlugin } from "../src/plugins/index.js";
 
@@ -21,6 +22,15 @@ function close(server: ReturnType<typeof createServer>): Promise<void> {
   return new Promise((resolve, reject) => {
     server.close((err) => (err ? reject(err) : resolve()));
   });
+}
+
+async function waitForFiles(dir: string, predicate: (names: string[]) => boolean): Promise<string[]> {
+  for (let i = 0; i < 50; i++) {
+    const names = readdirSync(dir);
+    if (predicate(names)) return names;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return readdirSync(dir);
 }
 
 function anthropicInputDelta(index: number, partial_json: string): string {
@@ -355,6 +365,110 @@ describe("proxy hardening", () => {
       expect(audit.redactions[0]?.redactedValues[0]?.surrogate).toMatch(/^FICTA_[0-9a-f]{32}$/);
       expect(audit.restore.restored[0]).toMatchObject({ value: PROOF_SECRET });
     } finally {
+      for (const [k, v] of Object.entries(originalEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      vi.resetModules();
+    }
+  });
+
+  it("honors per-request trace capture while preserving legacy trace behavior", async () => {
+    const originalEnv = {
+      FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,
+      FICTA_LOG_LEVEL: process.env.FICTA_LOG_LEVEL,
+      FICTA_TRACE_AUDIT: process.env.FICTA_TRACE_AUDIT,
+      FICTA_LOG_DIR: process.env.FICTA_LOG_DIR,
+      FICTA_SURROGATE_KEY: process.env.FICTA_SURROGATE_KEY,
+    };
+
+    const fixturePlugin: RegistrySourcePlugin = {
+      kind: "registry-source",
+      name: "trace-capture-fixture",
+      config: { bindings: [], sections: [], envDefaults: {} },
+      setup: { registrySources: () => [] },
+      discover: () => [],
+      loadValues: () => [
+        { name: "PROOF_SECRET", value: PROOF_SECRET, source: "fixture", kind: "secret", confidence: "exact" },
+      ],
+    };
+
+    const upstreamTraceHeaders: Array<string | undefined> = [];
+    const upstreamRestoreHeaders: Array<string | undefined> = [];
+    const upstream = createServer((req, res) => {
+      let body = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        upstreamTraceHeaders.push(req.headers[FICTA_TRACE_CAPTURE_HEADER] as string | undefined);
+        upstreamRestoreHeaders.push(req.headers[FICTA_RESTORE_HIGHLIGHT_HEADER] as string | undefined);
+        const token = body.match(/FICTA_[0-9a-f]{32}/)?.[0] ?? "none";
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: token } }] }));
+      });
+    });
+
+    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    try {
+      vi.resetModules();
+      const upstreamPort = await listen(upstream);
+      process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
+      process.env.FICTA_LOG_LEVEL = "trace";
+      process.env.FICTA_TRACE_AUDIT = "1";
+      process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-trace-capture-"));
+      process.env.FICTA_SURROGATE_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0, plugins: [fixturePlugin] });
+      const url = `http://127.0.0.1:${proxy.port}/v1/chat/completions`;
+
+      async function send(traceCapture?: "0" | "1"): Promise<string> {
+        const headers: Record<string, string> = {
+          "content-type": "application/json",
+          [FICTA_RESTORE_HIGHLIGHT_HEADER]: "1",
+        };
+        if (traceCapture !== undefined) headers[FICTA_TRACE_CAPTURE_HEADER] = traceCapture;
+        const res = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ model: "gpt-5-mini", messages: [{ role: "user", content: PROOF_SECRET }] }),
+        });
+        expect(res.status).toBe(200);
+        return res.text();
+      }
+
+      const legacy = await send();
+      const suppressed = await send("0");
+      const explicit = await send("1");
+      expect(legacy).toContain("FICTA_RESTORE_START");
+      expect(suppressed).toContain(PROOF_SECRET);
+      expect(suppressed).not.toContain("FICTA_RESTORE_START");
+      expect(explicit).toContain("FICTA_RESTORE_START");
+      expect(upstreamTraceHeaders).toEqual([undefined, undefined, undefined]);
+      expect(upstreamRestoreHeaders).toEqual([undefined, undefined, undefined]);
+
+      const runDir = dirname(proxy.protectionStats().path);
+      const files = await waitForFiles(runDir, (names) => names.includes("audit-0003.trace.json"));
+      expect(files).toContain("req-0001.json");
+      expect(files).toContain("req-0001.sent.json");
+      expect(files).toContain("res-0001.txt");
+      expect(files).toContain("res-0001.restored.txt");
+      expect(files).toContain("audit-0001.trace.json");
+      expect(files).not.toContain("req-0002.json");
+      expect(files).not.toContain("req-0002.sent.json");
+      expect(files).not.toContain("res-0002.txt");
+      expect(files).not.toContain("res-0002.restored.txt");
+      expect(files).not.toContain("audit-0002.trace.json");
+      expect(files).toContain("req-0003.json");
+      expect(files).toContain("req-0003.sent.json");
+      expect(files).toContain("res-0003.txt");
+      expect(files).toContain("res-0003.restored.txt");
+      expect(files).toContain("audit-0003.trace.json");
+    } finally {
+      proxy?.close();
+      await close(upstream);
       for (const [k, v] of Object.entries(originalEnv)) {
         if (v === undefined) delete process.env[k];
         else process.env[k] = v;

@@ -200,6 +200,16 @@ export function createStorage(): Storage {
         .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)));
     },
 
+    async setThreadTraceEnabled(userId, orgId, threadId, traceEnabled) {
+      const db = await getDb();
+      const updated = await db
+        .update(threads)
+        .set({ traceEnabled, updatedAt: new Date() })
+        .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)))
+        .returning();
+      if (updated.length === 0) throw new Error("thread not found");
+    },
+
     async deleteThread(userId, orgId, threadId) {
       const db = await getDb();
       // messages cascade via the FK.
@@ -219,10 +229,17 @@ function toProviderKeySummary(row: { provider: string; keyHint: string; updatedA
   };
 }
 
-function toThreadSummary(row: { id: string; title: string; createdAt: Date; updatedAt: Date }): ThreadSummary {
+function toThreadSummary(row: {
+  id: string;
+  title: string;
+  traceEnabled: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}): ThreadSummary {
   return {
     id: row.id,
     title: row.title,
+    traceEnabled: row.traceEnabled,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

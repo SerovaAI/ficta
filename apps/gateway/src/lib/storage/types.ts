@@ -68,6 +68,8 @@ export function resolveSuggestedPrompts(instance: InstanceSettings): string[] {
 export interface ThreadSummary {
   id: string;
   title: string;
+  /** Admin-controlled raw trace/audit capture for future requests in this thread. */
+  traceEnabled: boolean;
   createdAt: string;
   updatedAt: string;
 }

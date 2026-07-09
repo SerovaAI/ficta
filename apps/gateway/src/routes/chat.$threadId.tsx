@@ -24,5 +24,12 @@ export const Route = createFileRoute("/chat/$threadId")({
 function ThreadPage() {
   const { threadId } = Route.useParams();
   const { thread, userSettings } = Route.useLoaderData();
-  return <ChatView threadId={threadId} initialMessages={thread.messages.map(storedToUi)} userSettings={userSettings} />;
+  return (
+    <ChatView
+      threadId={threadId}
+      initialMessages={thread.messages.map(storedToUi)}
+      initialThreadTraceEnabled={thread.thread.traceEnabled}
+      userSettings={userSettings}
+    />
+  );
 }

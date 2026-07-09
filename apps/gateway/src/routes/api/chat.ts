@@ -58,7 +58,13 @@ export const Route = createFileRoute("/api/chat")({
 
         // Enforce the instance allow-list server-side — the picker filters for UX, but this is the gate
         // that actually spends keys, so a forged request for a disabled model is rejected here.
-        const instance = await (await getStorage()).getInstanceSettings(scope?.orgId ?? "local");
+        const storage = await getStorage();
+        const userId = scope?.userId ?? "local";
+        const orgId = scope?.orgId ?? "local";
+        const [instance, storedThread] = await Promise.all([
+          storage.getInstanceSettings(orgId),
+          threadId ? storage.getThread(userId, orgId, threadId) : Promise.resolve(null),
+        ]);
         if (!isModelAllowed(instance, `${provider}/${model}`)) {
           return errorResponse(403, "model not enabled on this instance");
         }
@@ -69,11 +75,16 @@ export const Route = createFileRoute("/api/chat")({
           // value detected on an earlier turn stays redacted when the restored transcript is resent.
           // The org id comes from server-side auth (never the client), so one org's threads can
           // never address another's vault; the client-chosen threadId only partitions within it.
-          const orgId = scope?.orgId ?? "local";
           const fictaScope = threadId ? `${orgId}:${threadId}` : undefined;
           const apiKey = await resolveProviderApiKey(orgId, provider);
           stream = chat({
-            adapter: createModelAdapter({ provider, model, apiKey, fictaScope }),
+            adapter: createModelAdapter({
+              provider,
+              model,
+              apiKey,
+              fictaScope,
+              traceEnabled: storedThread?.thread.traceEnabled,
+            }),
             messages,
             modelOptions: provider === "openai" ? { reasoning: { effort: reasoningEffort } } : undefined,
           });

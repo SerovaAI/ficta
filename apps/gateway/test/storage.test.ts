@@ -123,6 +123,7 @@ describe("threads + messages", () => {
 
     const loaded = await store.getThread("owner", ORG, "t1");
     expect(loaded?.thread.title).toBe("How do I redact secrets?");
+    expect(loaded?.thread.traceEnabled).toBe(false);
     expect(loaded?.messages.map((m) => m.id)).toEqual(["m1", "m2"]);
     expect(loaded?.messages[0]?.parts).toEqual([{ type: "text", text: "How do I redact secrets?" }]);
   });
@@ -239,6 +240,19 @@ describe("threads + messages", () => {
     await expect(
       store.saveThreadSnapshot("multi", "org-b", "ta", [textMessage("x", "user", "hijack")]),
     ).rejects.toThrow();
+  });
+
+  it("persists per-thread trace capture and isolates it by user/workspace", async () => {
+    await store.saveThreadSnapshot("trace-owner", "org-trace", "trace-thread", [textMessage("m", "user", "trace")]);
+
+    expect((await store.getThread("trace-owner", "org-trace", "trace-thread"))?.thread.traceEnabled).toBe(false);
+    await store.setThreadTraceEnabled("trace-owner", "org-trace", "trace-thread", true);
+    expect((await store.getThread("trace-owner", "org-trace", "trace-thread"))?.thread.traceEnabled).toBe(true);
+    expect((await store.listThreads("trace-owner", "org-trace"))[0]?.traceEnabled).toBe(true);
+
+    await expect(store.setThreadTraceEnabled("mallory", "org-trace", "trace-thread", false)).rejects.toThrow();
+    await expect(store.setThreadTraceEnabled("trace-owner", "other-org", "trace-thread", false)).rejects.toThrow();
+    expect((await store.getThread("trace-owner", "org-trace", "trace-thread"))?.thread.traceEnabled).toBe(true);
   });
 
   it("renames and deletes", async () => {
