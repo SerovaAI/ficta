@@ -7,15 +7,17 @@ import { useAuthState } from "@/lib/auth/useAuthState";
 import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
 import { cn } from "@/lib/utils";
 import { AdminSettingsForm } from "./AdminSettingsForm";
+import { ProtectedRegistrySection } from "./ProtectedRegistrySection";
 import { ProviderKeysSection } from "./ProviderKeysSection";
 import { ProxyConfigSection } from "./ProxyConfigSection";
 import { RedactionProofSection } from "./RedactionProofSection";
 
-type AdminSection = "general" | "keys" | "proxy" | "proof";
+type AdminSection = "general" | "keys" | "registry" | "proxy" | "proof";
 
 const SECTION_LABELS: Record<AdminSection, string> = {
   general: "General",
   keys: "Provider keys",
+  registry: "Protected Registry",
   proxy: "Proxy configuration",
   proof: "Redaction proof",
 };
@@ -33,7 +35,7 @@ export function AdminSettingsDialog({ open, onOpenChange }: { open: boolean; onO
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="grid h-[min(640px,calc(100dvh-2rem))] max-w-[800px] grid-cols-[210px_minmax(0,1fr)] gap-0 overflow-hidden p-0 max-sm:h-[calc(100dvh-2rem)] max-sm:grid-cols-1"
+        className="grid h-[min(760px,calc(100dvh-2rem))] max-w-[1180px] grid-cols-[220px_minmax(0,1fr)] gap-0 overflow-hidden p-0 max-sm:h-[calc(100dvh-2rem)] max-sm:grid-cols-1"
       >
         <aside className="flex min-h-0 flex-col border-r border-border bg-muted/30 p-3 max-sm:border-r-0 max-sm:border-b">
           <DialogClose className="mb-3 flex size-9 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring [@media(pointer:coarse)]:size-11">
@@ -41,7 +43,7 @@ export function AdminSettingsDialog({ open, onOpenChange }: { open: boolean; onO
             <span className="sr-only">Close admin settings</span>
           </DialogClose>
           <nav className="space-y-1" aria-label="Admin sections">
-            {(["general", "keys", "proxy", "proof"] as const).map((key) => (
+            {(["general", "keys", "registry", "proxy", "proof"] as const).map((key) => (
               <AdminSectionButton key={key} active={section === key} onClick={() => setSection(key)}>
                 {SECTION_LABELS[key]}
               </AdminSectionButton>
@@ -60,6 +62,7 @@ export function AdminSettingsDialog({ open, onOpenChange }: { open: boolean; onO
           <div className="min-h-0 overflow-y-auto px-6 py-1">
             {section === "general" ? <AdminSettingsForm settings={instanceSettings} /> : null}
             {section === "keys" ? <ProviderKeysSection /> : null}
+            {section === "registry" ? <ProtectedRegistrySection /> : null}
             {section === "proxy" ? <ProxyConfigSection /> : null}
             {section === "proof" ? <RedactionProofSection /> : null}
           </div>
