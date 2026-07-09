@@ -40,6 +40,7 @@ import {
   type UserSettings,
 } from "@/lib/storage/types";
 import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
+import { deriveThreadTitleFromText } from "@/lib/thread-title";
 import { useProtectionStatus } from "@/lib/use-protection-status";
 import { clearRestoreHighlightDisplay, useRestoreHighlightDisplay } from "@/lib/use-restore-highlight-display";
 import { useSidebar } from "@/lib/use-sidebar";
@@ -493,7 +494,7 @@ function deriveTitle(messages: UIMessage[]): string {
     .filter((part) => part.type === "text")
     .map((part) => part.content)
     .join(" ");
-  return text?.replace(/\s+/g, " ").trim().slice(0, 80) || "New chat";
+  return deriveThreadTitleFromText(text);
 }
 
 function messageWithAttachments(text: string, attachments: TextAttachment[]): string {
