@@ -3,7 +3,6 @@ import { createRootRouteWithContext, HeadContent, Link, Outlet, redirect, Script
 import "@fontsource-variable/hanken-grotesk";
 import "@fontsource/fragment-mono";
 import { Button } from "@/components/ui/button";
-import { Toaster } from "@/components/ui/sonner";
 import { fetchAuthState } from "@/lib/auth/auth";
 import { organizationsQueryOptions } from "@/lib/auth/organizationQueries";
 import { fetchInstanceSettings } from "@/lib/storage/settings";
@@ -67,7 +66,6 @@ function RootDocument() {
       </head>
       <body>
         <Outlet />
-        <Toaster />
         <Scripts />
       </body>
     </html>

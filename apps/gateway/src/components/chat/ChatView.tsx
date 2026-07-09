@@ -1,7 +1,7 @@
 import { fetchServerSentEvents, type UIMessage, useChat } from "@tanstack/ai-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 import { CreateWorkspaceDialog } from "@/components/onboarding/CreateWorkspaceDialog";
 import { AdminSettingsDialog } from "@/components/settings/AdminSettingsDialog";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
@@ -101,6 +101,7 @@ export function ChatView({
   const [uploadWarning, setUploadWarning] = useState<string[]>();
   const [isExtracting, setIsExtracting] = useState(false);
   const [activeThreadId, setActiveThreadId] = useState(threadId);
+  const [saveWarning, setSaveWarning] = useState(false);
 
   // A new chat gets a stable id up front so its snapshot has a home before the first save.
   const tid = useMemo(() => threadId ?? crypto.randomUUID(), [threadId]);
@@ -142,14 +143,12 @@ export function ChatView({
     try {
       await saveThread({ data: { threadId: tid, messages: snapshot.map(uiToStored) } });
       void invalidateThreads(queryClient);
+      setSaveWarning(false);
     } catch (err) {
       console.warn("Failed to save chat thread", err);
       // Persistence is best-effort — a failed save must never break the live chat — but it shouldn't be
-      // silent either: a user whose history quietly stops saving deserves to know. Stable id dedupes so
-      // repeated save failures update one toast instead of stacking.
-      toast.error("This chat isn't being saved to your history right now. Your conversation is still here.", {
-        id: "thread-save-failed",
-      });
+      // silent either: a user whose history quietly stops saving deserves to know.
+      setSaveWarning(true);
     }
   };
 
@@ -352,6 +351,8 @@ export function ChatView({
             </div>
           ) : null}
 
+          {saveWarning ? <SaveWarningNotice onDismiss={() => setSaveWarning(false)} /> : null}
+
           <ProtectionNotice status={protectionStatus} />
 
           <Composer
@@ -401,6 +402,32 @@ export function ChatView({
         </Dialog>
       </div>
     </TooltipProvider>
+  );
+}
+
+function SaveWarningNotice({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <div className="pb-2">
+      <div className="mx-auto w-full max-w-3xl px-4">
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100"
+        >
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <p className="min-w-0 flex-1">
+            This chat isn&apos;t being saved to your history right now. Your conversation is still here.
+          </p>
+          <button
+            type="button"
+            className="rounded-md p-0.5 text-amber-900/70 hover:bg-amber-100 hover:text-amber-950 focus-visible:ring-2 focus-visible:ring-ring [@media(pointer:coarse)]:p-2 dark:text-amber-100/70 dark:hover:bg-amber-900/40 dark:hover:text-amber-50"
+            onClick={onDismiss}
+            aria-label="Dismiss save warning"
+          >
+            <X className="size-3.5" aria-hidden />
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
