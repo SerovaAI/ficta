@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { defaultLogDir } from "./defaults.js";
 import { envFlag } from "./engine/env-flags.js";
 import { type LogLevel, levelEnabled, parseLogLevel } from "./log-level.js";
-import { loadUserConfig } from "./user-config.js";
+import { loadUserConfig, wasLoadedFromUserConfig } from "./user-config.js";
 
 loadUserConfig();
 
@@ -48,7 +48,7 @@ export function loadConfig(): Config {
     // Override routing entirely (handy for testing with loopback upstreams).
     forcedUpstream: process.env.FICTA_UPSTREAM,
     allowCustomUpstream: envFlag(process.env.FICTA_ALLOW_CUSTOM_UPSTREAM),
-    logDir: expandHome(process.env.FICTA_LOG_DIR ?? defaultLogDir()),
+    logDir: resolveLogDir(),
     // Single verbosity knob. Standalone default is "info"; the wrapper sets "silent" so proxy
     // output never garbles the agent TUI (cli.ts). "debug" adds unknown-wire (non-model) traffic.
     logLevel,
@@ -135,6 +135,41 @@ export function configuredUpstreamPolicyIssues(cfg: Config): string[] {
 
 function expandHome(path: string): string {
   return path === "~" ? homedir() : path.startsWith("~/") ? join(homedir(), path.slice(2)) : path;
+}
+
+/**
+ * Compose the per-instance capture-log directory as ROOT + ROLE so concurrent proxies never share
+ * one tree. `defaultLogDir()` is the root (~/.ficta/logs). The standalone/gateway server uses the
+ * default role "gateway"; each `ficta <agent>` shim sets FICTA_LOG_ROLE to agents/<agent>/<instance>
+ * before config loads (cli.ts). An explicit FICTA_LOG_DIR is a full override of the whole path —
+ * EXCEPT a "neutral legacy" value: an older `ficta setup` persisted `[logging].log_dir = <root>`
+ * into config.toml, which would now pin every role to the flat root. When FICTA_LOG_DIR came from
+ * the config file (not the shell) and still equals the default root, ignore it so the split applies.
+ * Pure (all inputs passed in) so every branch is unit-testable.
+ */
+export function composeLogDir(opts: {
+  explicit?: string;
+  explicitFromConfig: boolean;
+  root?: string;
+  role?: string;
+}): string {
+  // Treat empty-string env vars as unset (e.g. `FICTA_LOG_ROOT= ficta …`) so we never emit a
+  // relative path or a role-less root.
+  const explicit = opts.explicit?.trim() || undefined;
+  const root = opts.root?.trim() || undefined;
+  const role = opts.role?.trim() || undefined;
+  const neutralLegacy = Boolean(explicit) && opts.explicitFromConfig && expandHome(explicit ?? "") === defaultLogDir();
+  if (explicit && !neutralLegacy) return expandHome(explicit);
+  return join(expandHome(root ?? defaultLogDir()), role ?? "gateway");
+}
+
+function resolveLogDir(): string {
+  return composeLogDir({
+    explicit: process.env.FICTA_LOG_DIR,
+    explicitFromConfig: wasLoadedFromUserConfig("FICTA_LOG_DIR"),
+    root: process.env.FICTA_LOG_ROOT,
+    role: process.env.FICTA_LOG_ROLE,
+  });
 }
 
 function boundedInt(value: string | undefined, fallback: number, min: number, max: number): number {

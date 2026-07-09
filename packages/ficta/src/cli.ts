@@ -182,6 +182,13 @@ if (agent.shouldBypass?.(rest)) {
   process.exit(await runChild(spawn(agentPath, rest, { stdio: "inherit", env: sanitizeAgentEnv(process.env) })));
 }
 
+// Route this shim's capture logs to a per-agent, per-instance subtree so concurrent agent launches
+// (and the gateway's own proxy) never share a run dir or race protection-stats.json. Must run before
+// config/log load (the dynamic import("./server.js") below); FICTA_LOG_DIR still overrides the whole
+// path — see resolveLogDir in config.ts.
+const logInstanceId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`;
+process.env.FICTA_LOG_ROLE ??= `agents/${agent.command}/${logInstanceId}`;
+
 // Sensible defaults BEFORE the proxy starts. logger.ts initializes lazily, so this level is captured
 // before any request-time proxy logs are emitted.
 applyRuntimeEnvDefaults(process.env);

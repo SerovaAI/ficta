@@ -29,5 +29,7 @@ export function defaultLogDir(): string {
 
 export function applyRuntimeEnvDefaults(env: NodeJS.ProcessEnv = process.env): void {
   for (const [key, value] of Object.entries(FICTA_DEFAULTS)) env[key] ??= value;
-  env.FICTA_LOG_DIR ??= defaultLogDir();
+  // FICTA_LOG_DIR is intentionally NOT defaulted here: the per-instance path is composed from
+  // FICTA_LOG_ROOT + FICTA_LOG_ROLE in config.ts (resolveLogDir). Pinning it here would set an
+  // explicit value on every process and defeat the gateway/shim log split.
 }

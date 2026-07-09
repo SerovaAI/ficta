@@ -2,13 +2,22 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadConfig, upstreamPolicyIssue } from "../src/config.js";
+import { composeLogDir, loadConfig, upstreamPolicyIssue } from "../src/config.js";
+import { defaultLogDir } from "../src/defaults.js";
 import { configPath, readUserConfig, writeUserConfig } from "../src/user-config.js";
 
 const originalLogLevel = process.env.FICTA_LOG_LEVEL;
 const originalTraceAudit = process.env.FICTA_TRACE_AUDIT;
 const originalConfigFile = process.env.FICTA_CONFIG_FILE;
 const originalHost = process.env.FICTA_HOST;
+const originalLogDir = process.env.FICTA_LOG_DIR;
+const originalLogRoot = process.env.FICTA_LOG_ROOT;
+const originalLogRole = process.env.FICTA_LOG_ROLE;
+
+function restore(key: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
 
 afterEach(() => {
   if (originalLogLevel === undefined) delete process.env.FICTA_LOG_LEVEL;
@@ -22,6 +31,10 @@ afterEach(() => {
 
   if (originalHost === undefined) delete process.env.FICTA_HOST;
   else process.env.FICTA_HOST = originalHost;
+
+  restore("FICTA_LOG_DIR", originalLogDir);
+  restore("FICTA_LOG_ROOT", originalLogRoot);
+  restore("FICTA_LOG_ROLE", originalLogRole);
 });
 
 describe("config hardening", () => {
@@ -192,5 +205,69 @@ describe("config hardening", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("log dir: root + role split", () => {
+  const root = defaultLogDir();
+
+  it("defaults the server/standalone proxy to the gateway subtree", () => {
+    expect(composeLogDir({ explicitFromConfig: false })).toBe(join(root, "gateway"));
+  });
+
+  it("routes an agent shim to its per-instance subtree via FICTA_LOG_ROLE", () => {
+    expect(composeLogDir({ explicitFromConfig: false, role: "agents/claude/2026-07-09T14-46-49-847Z-63580" })).toBe(
+      join(root, "agents/claude/2026-07-09T14-46-49-847Z-63580"),
+    );
+  });
+
+  it("composes a custom FICTA_LOG_ROOT with the role", () => {
+    expect(composeLogDir({ explicitFromConfig: false, root: "/var/log/ficta", role: "gateway" })).toBe(
+      "/var/log/ficta/gateway",
+    );
+  });
+
+  it("lets an explicit (shell-set) FICTA_LOG_DIR override the whole path", () => {
+    expect(composeLogDir({ explicit: "/tmp/ficta-x", explicitFromConfig: false, role: "agents/claude/inst" })).toBe(
+      "/tmp/ficta-x",
+    );
+    // ~ expansion still applies to the override.
+    expect(composeLogDir({ explicit: "~/logs-here", explicitFromConfig: false })).toBe(join(homedir(), "logs-here"));
+  });
+
+  it("ignores a neutral legacy config log_dir (== root) so the split still applies", () => {
+    // Older `ficta setup` persisted log_dir = <root> into config.toml; treat as neutral.
+    expect(composeLogDir({ explicit: root, explicitFromConfig: true, role: "agents/claude/inst" })).toBe(
+      join(root, "agents/claude/inst"),
+    );
+    // But a config-sourced *custom* path is still honored as a full override.
+    expect(composeLogDir({ explicit: "/data/ficta", explicitFromConfig: true, role: "agents/claude/inst" })).toBe(
+      "/data/ficta",
+    );
+  });
+
+  it("treats empty-string root/role/explicit as unset (never a relative path)", () => {
+    expect(composeLogDir({ explicit: "", explicitFromConfig: false, root: "", role: "" })).toBe(join(root, "gateway"));
+    expect(composeLogDir({ explicitFromConfig: false, root: "  ", role: "agents/claude/inst" })).toBe(
+      join(root, "agents/claude/inst"),
+    );
+  });
+
+  it("resolves loadConfig().logDir from FICTA_LOG_ROLE end to end", () => {
+    delete process.env.FICTA_LOG_DIR;
+    delete process.env.FICTA_LOG_ROOT;
+    process.env.FICTA_LOG_ROLE = "agents/codex/inst-1";
+    expect(loadConfig().logDir).toBe(join(root, "agents/codex/inst-1"));
+
+    delete process.env.FICTA_LOG_ROLE;
+    expect(loadConfig().logDir).toBe(join(root, "gateway"));
+  });
+
+  it("keeps concurrent same-agent shims on distinct subtrees", () => {
+    const a = composeLogDir({ explicitFromConfig: false, role: "agents/claude/2026-07-09T14-46-39-213Z-63290" });
+    const b = composeLogDir({ explicitFromConfig: false, role: "agents/claude/2026-07-09T14-46-49-847Z-63580" });
+    expect(a).not.toBe(b);
+    expect(a.startsWith(join(root, "agents/claude/"))).toBe(true);
+    expect(b.startsWith(join(root, "agents/claude/"))).toBe(true);
   });
 });

@@ -141,7 +141,6 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
     // Persist the PII toggle + backend as [pii] so redaction is proxy policy, not a per-run flag.
     ...piiValues,
     ...secretShapeValues,
-    FICTA_LOG_DIR: defaultLogDir(),
   };
 
   const path = setupConfigPath();
@@ -150,6 +149,10 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
   // survives via the merge above. Persist the review's exclusion choices: "" clears the key.
   if (excludeNames === "") delete nextConfig.FICTA_REGISTRY_EXCLUDE_NAMES;
   else if (excludeNames !== undefined) nextConfig.FICTA_REGISTRY_EXCLUDE_NAMES = excludeNames;
+  // Older setups persisted FICTA_LOG_DIR = <root>, which now pins every role and defeats the
+  // per-role log split (gateway/ vs agents/<agent>/<instance>/). Drop it when it still equals the
+  // default root so the split applies; a genuinely custom log dir is preserved.
+  if (nextConfig.FICTA_LOG_DIR === defaultLogDir()) delete nextConfig.FICTA_LOG_DIR;
   writeUserConfig(nextConfig, path);
   note(path, "Wrote config");
 
