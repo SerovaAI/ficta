@@ -1,6 +1,8 @@
+import { chmodSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import pino from "pino";
 import pretty from "pino-pretty";
-import { parseLogLevel } from "./log-level.js";
+import { loadConfig } from "./config.js";
 
 // The proxy's runtime logger. One pino instance, level driven by FICTA_LOG_LEVEL (pino's standard
 // levels are a superset of ours — see log-level.ts). Everything writes to stderr (fd 2): stdout
@@ -15,13 +17,19 @@ import { parseLogLevel } from "./log-level.js";
 // request-time warnings. Eager construction here would capture the environment before cli.ts sets
 // `FICTA_LOG_LEVEL=silent`, causing request-time logs to garble the TUI.
 function buildLogger() {
-  const level = parseLogLevel(process.env.FICTA_LOG_LEVEL);
+  const cfg = loadConfig();
+  const level = cfg.logLevel;
   // TTY → colorized pino-pretty on fd 2. Piped/redirected → JSON lines straight to the process.stderr
   // stream (fd 2). We pass the stream object (not pino.destination(fd:2)) so writes go through
   // process.stderr.write — Node flushes it on exit, and it stays observable to tests.
-  const stream = process.stderr.isTTY
+  const stderrStream = process.stderr.isTTY
     ? pretty({ sync: true, destination: 2, colorize: true, ignore: "pid,hostname", translateTime: "HH:MM:ss" })
     : process.stderr;
+  if (level === "silent") return pino({ level, base: undefined }, stderrStream);
+
+  ensurePrivateDir(cfg.logDir);
+  const fileStream = pino.destination({ dest: join(cfg.logDir, "ficta.log"), sync: true });
+  const stream = pino.multistream([{ stream: stderrStream }, { stream: fileStream }]);
   return pino({ level, base: undefined }, stream);
 }
 
@@ -41,3 +49,12 @@ export const log = new Proxy({} as PinoLogger, {
     return typeof value === "function" ? value.bind(instance) : value;
   },
 });
+
+function ensurePrivateDir(path: string): void {
+  mkdirSync(path, { recursive: true, mode: 0o700 });
+  try {
+    chmodSync(path, 0o700);
+  } catch {
+    // Best-effort on filesystems that do not support POSIX modes.
+  }
+}

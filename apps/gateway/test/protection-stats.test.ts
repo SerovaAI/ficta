@@ -7,7 +7,7 @@ function validPayload() {
     service: "ficta",
     stats: {
       version: 1,
-      path: "/tmp/ficta/stats.json",
+      path: "/tmp/ficta/protection-stats.json",
       startedAt: "2026-07-05T10:00:00.000Z",
       updatedAt: "2026-07-05T10:01:00.000Z",
       totals: {

@@ -6,10 +6,12 @@ import { inspectionLines, inspectJson, inspectSse, inspectText, registeredValueC
 import { log } from "./logger.js";
 
 const cfg = loadConfig();
-// Per-run dir so sessions never mix (seq resets on restart; old files would otherwise bleed in).
-export const runDir = join(cfg.logDir, "run-" + new Date().toISOString().replace(/[:.]/g, "-"));
+export const logDir = cfg.logDir;
+export const protectionStatsPath = join(cfg.logDir, "protection-stats.json");
+const runsDir = join(cfg.logDir, "runs");
+// Per-run capture dir so request sidecars never mix (seq resets on restart; old files would otherwise bleed in).
+let runDir: string | undefined;
 ensurePrivateDir(cfg.logDir);
-ensurePrivateDir(runDir);
 
 let seq = 0;
 
@@ -87,7 +89,7 @@ export function logRequest(args: {
     inspection,
   });
 
-  if (args.body && captureRawBodies) writePrivateFile(join(runDir, `req-${pad(n)}.json`), pretty(args.body));
+  if (args.body && captureRawBodies) writeCaptureFile(`req-${pad(n)}.json`, pretty(args.body));
   return n;
 }
 
@@ -202,7 +204,7 @@ export async function logResponse(args: {
     inspection,
   });
 
-  if (captureRawBodies && raw) writePrivateFile(join(runDir, `res-${pad(args.n)}.txt`), raw);
+  if (captureRawBodies && raw) writeCaptureFile(`res-${pad(args.n)}.txt`, raw);
 }
 
 /**
@@ -213,17 +215,17 @@ export async function logResponse(args: {
 export function writeRestoredBody(n: number, body: string, captureRawBodies = cfg.logBodies): void {
   if (!captureRawBodies || !body) return;
   const raw = byteLen(body) > cfg.logMaxBytes ? body.slice(0, cfg.logMaxBytes) : body;
-  writePrivateFile(join(runDir, `res-${pad(n)}.restored.txt`), raw);
+  writeCaptureFile(`res-${pad(n)}.restored.txt`, raw);
 }
 
 /**
- * Trace-only structured audit sidecar. Unlike stats.json, this may include raw protected values, so
- * it is emitted only when FICTA_LOG_LEVEL=trace and FICTA_TRACE_AUDIT=1, using the same private-file
- * permissions as raw body logs.
+ * Trace-only structured audit sidecar. Unlike protection-stats.json, this may include raw protected
+ * values, so it is emitted only when FICTA_LOG_LEVEL=trace and FICTA_TRACE_AUDIT=1, using the same
+ * private-file permissions as raw body logs.
  */
 export function writeTraceAudit(n: number, audit: unknown, captureTraceAudit = cfg.traceAudit): void {
   if (!captureTraceAudit) return;
-  writePrivateFile(join(runDir, `audit-${pad(n)}.trace.json`), JSON.stringify(audit, null, 2));
+  writeCaptureFile(`audit-${pad(n)}.trace.json`, JSON.stringify(audit, null, 2));
 }
 
 /**
@@ -262,11 +264,23 @@ export function restoredBodyTap(
     flush() {
       if (capture) {
         if (!truncated) raw += decoder.decode();
-        if (raw) writePrivateFile(join(runDir, `res-${pad(n)}.restored.txt`), raw);
+        if (raw) writeCaptureFile(`res-${pad(n)}.restored.txt`, raw);
       }
       onFlush();
     },
   });
+}
+
+export function currentRunDir(): string | undefined {
+  return runDir;
+}
+
+export function capturePath(name: string): string {
+  return join(ensureRunDir(), name);
+}
+
+export function writeCaptureFile(name: string, data: string): void {
+  writePrivateFile(capturePath(name), data);
 }
 
 // ---------------------------------------------------------------- safe metadata sidecars
@@ -276,7 +290,7 @@ function byteLen(s: string): number {
 }
 
 function writeMeta(kind: "req" | "res", n: number, meta: unknown): void {
-  writePrivateFile(join(runDir, `${kind}-${pad(n)}.meta.json`), JSON.stringify(meta, null, 2));
+  writeCaptureFile(`${kind}-${pad(n)}.meta.json`, JSON.stringify(meta, null, 2));
 }
 
 function ensurePrivateDir(path: string): void {
@@ -290,6 +304,15 @@ function ensurePrivateDir(path: string): void {
 
 function writePrivateFile(path: string, data: string): void {
   writeFileSync(path, data, { mode: 0o600 });
+}
+
+function ensureRunDir(): string {
+  if (!runDir) {
+    ensurePrivateDir(runsDir);
+    runDir = join(runsDir, "run-" + new Date().toISOString().replace(/[:.]/g, "-"));
+    ensurePrivateDir(runDir);
+  }
+  return runDir;
 }
 
 function requestMeta(wire: Wire, j: any): Record<string, unknown> {

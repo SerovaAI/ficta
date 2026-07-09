@@ -96,10 +96,11 @@ export class ProtectionStats {
   private restoredValuesTotal = 0;
   private withheldFromToolsValuesTotal = 0;
   readonly path: string;
+  private readonly captureDir?: () => string | undefined;
 
-  constructor(runDir: string) {
-    this.path = join(runDir, "stats.json");
-    this.write();
+  constructor(path: string, opts: { captureDir?: () => string | undefined } = {}) {
+    this.path = path;
+    this.captureDir = opts.captureDir;
   }
 
   /** Cumulative distinct values restored into responses this run. */
@@ -164,7 +165,10 @@ export class ProtectionStats {
   }
 
   write(): void {
-    writeFileSync(this.path, `${JSON.stringify(this.snapshot(), null, 2)}\n`, { mode: 0o600 });
+    const data = `${JSON.stringify(this.snapshot(), null, 2)}\n`;
+    writeFileSync(this.path, data, { mode: 0o600 });
+    const captureDir = this.captureDir?.();
+    if (captureDir) writeFileSync(join(captureDir, "stats.json"), data, { mode: 0o600 });
   }
 
   renderSummary(): string {

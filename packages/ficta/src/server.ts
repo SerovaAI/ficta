@@ -1,5 +1,3 @@
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { argv } from "node:process";
 import { fileURLToPath } from "node:url";
 import { type HttpBindings, serve } from "@hono/node-server";
@@ -36,7 +34,17 @@ import {
 } from "./engine/redaction-engine.js";
 import { surrogateKeyWarning } from "./engine/vault.js";
 import { type Wire, wireOf } from "./engine/wire.js";
-import { logRequest, logResponse, restoredBodyTap, runDir, writeRestoredBody, writeTraceAudit } from "./log.js";
+import {
+  currentRunDir,
+  logDir,
+  logRequest,
+  logResponse,
+  protectionStatsPath,
+  restoredBodyTap,
+  writeCaptureFile,
+  writeRestoredBody,
+  writeTraceAudit,
+} from "./log.js";
 import { log } from "./logger.js";
 import {
   activeBackends,
@@ -84,7 +92,7 @@ export async function startProxy(
   const cfg = loadConfig();
   const configEditLocks = proxyConfigLockedFields();
   const engine: RedactionEngine = new ProtectionEngine({ plugins: opts.plugins ?? defaultRedactionPlugins });
-  const stats = new ProtectionStats(runDir);
+  const stats = new ProtectionStats(protectionStatsPath, { captureDir: currentRunDir });
   const app = new Hono<{ Bindings: HttpBindings }>();
 
   app.all("*", async (c) => {
@@ -296,8 +304,7 @@ export async function startProxy(
           const surrogates = scope.mintedSurrogatesIn(redacted);
           if (surrogates.length > 0) bodyToSend = withPreservationInstruction(redacted, wire, surrogates);
         }
-        if (captureRawBodies)
-          writeFileSync(join(runDir, `req-${String(n).padStart(4, "0")}.sent.json`), bodyToSend, { mode: 0o600 });
+        if (captureRawBodies) writeCaptureFile(`req-${String(n).padStart(4, "0")}.sent.json`, bodyToSend);
       } else {
         bodyToSend = bodyText;
       }
@@ -396,7 +403,7 @@ export async function startProxy(
       if (withheld > 0) {
         log.warn({ reqId: n, withheld }, `🛡️ withheld ${withheld} value(s) from tool-call arguments`);
       }
-      // Persist both counts so withholds are visible beyond this log line (stats.json, /__ficta/status).
+      // Persist both counts so withholds are visible beyond this log line (protection-stats.json, /__ficta/status).
       stats.recordRestore({ restoredValues: restored, withheldFromToolsValues: withheld });
       writeProtectionTraceAudit(n, traceRedactions, scope, "completed", captureTraceAudit);
     };
@@ -480,7 +487,8 @@ export async function startProxy(
           upstreams: cfg.upstreams,
           vault: engine.size,
           failClosed: cfg.failClosed,
-          runDir,
+          logDir,
+          runDir: currentRunDir(),
           rawBodies: cfg.logBodies,
           rawValueAudit: cfg.traceAudit,
         },

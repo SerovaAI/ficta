@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -31,6 +31,13 @@ async function waitForFiles(dir: string, predicate: (names: string[]) => boolean
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   return readdirSync(dir);
+}
+
+function onlyCaptureRunDir(statsPath: string): string {
+  const runsDir = join(dirname(statsPath), "runs");
+  const runs = readdirSync(runsDir).filter((name) => name.startsWith("run-"));
+  expect(runs).toHaveLength(1);
+  return join(runsDir, runs[0] ?? "");
 }
 
 function anthropicInputDelta(index: number, partial_json: string): string {
@@ -79,6 +86,7 @@ describe("proxy hardening", () => {
 
       const { startProxy } = await import("../src/server.js");
       proxy = await startProxy({ port: 0 });
+      expect(existsSync(join(logDir, "runs"))).toBe(false);
 
       const unknownRes = await fetch(`http://127.0.0.1:${proxy.port}/new-provider/unknown`, {
         method: "POST",
@@ -96,18 +104,24 @@ describe("proxy hardening", () => {
       expect(knownRes.status).toBe(200);
       await knownRes.text();
 
-      const run = readdirSync(logDir).find((name) => name.startsWith("run-"));
+      const statsPath = proxy.protectionStats().path;
+      const effectiveLogDir = dirname(statsPath);
+      expect(statsPath.endsWith("protection-stats.json")).toBe(true);
+
+      const run = readdirSync(join(effectiveLogDir, "runs")).find((name) => name.startsWith("run-"));
       expect(run).toBeTruthy();
-      const meta = readdirSync(join(logDir, run ?? ""))
+      const runDir = join(effectiveLogDir, "runs", run ?? "");
+      const meta = readdirSync(runDir)
         .filter((name) => name.endsWith(".meta.json"))
-        .map((name) => readFileSync(join(logDir, run ?? "", name), "utf8"))
+        .map((name) => readFileSync(join(runDir, name), "utf8"))
         .join("\n");
 
       expect(meta).not.toContain(AWS);
       expect(meta).toContain('"keyCount"');
       expect(meta).toContain('"modelSet"');
 
-      const statsText = readFileSync(join(logDir, run ?? "", "stats.json"), "utf8");
+      const statsText = readFileSync(statsPath, "utf8");
+      expect(readFileSync(join(runDir, "stats.json"), "utf8")).toBe(statsText);
       const stats = JSON.parse(statsText) as {
         totals: {
           affectedRequests: number;
@@ -132,7 +146,7 @@ describe("proxy hardening", () => {
         expect.objectContaining({ name: "AWS_KEY", source: "env-file", redactedValues: 2 }),
       );
       expect(proxy.protectionStats().totals.keptOutOfModelValues).toBe(2);
-      expect(proxy.statsSummary()).toContain("stats.json");
+      expect(proxy.statsSummary()).toContain("protection-stats.json");
     } finally {
       proxy?.close();
       await close(upstream);
@@ -338,7 +352,7 @@ describe("proxy hardening", () => {
         expect(res.status).toBe(200);
         expect(text).toContain(PROOF_SECRET);
 
-        const runDir = dirname(proxy.protectionStats().path);
+        const runDir = onlyCaptureRunDir(proxy.protectionStats().path);
         const auditFiles = readdirSync(runDir).filter((name) => name.endsWith(".trace.json"));
         return { auditFiles, runDir };
       } finally {
@@ -449,7 +463,7 @@ describe("proxy hardening", () => {
       expect(upstreamTraceHeaders).toEqual([undefined, undefined, undefined]);
       expect(upstreamRestoreHeaders).toEqual([undefined, undefined, undefined]);
 
-      const runDir = dirname(proxy.protectionStats().path);
+      const runDir = onlyCaptureRunDir(proxy.protectionStats().path);
       const files = await waitForFiles(runDir, (names) => names.includes("audit-0003.trace.json"));
       expect(files).toContain("req-0001.json");
       expect(files).toContain("req-0001.sent.json");
@@ -516,7 +530,7 @@ describe("proxy hardening", () => {
       });
       expect(res.status).toBe(403);
 
-      const runDir = dirname(proxy.protectionStats().path);
+      const runDir = onlyCaptureRunDir(proxy.protectionStats().path);
       const auditFiles = readdirSync(runDir).filter((name) => name.endsWith(".trace.json"));
       expect(auditFiles).toHaveLength(1);
       const audit = JSON.parse(readFileSync(join(runDir, auditFiles[0] ?? ""), "utf8")) as {
@@ -1744,13 +1758,13 @@ describe("buffered tool-call withholding", () => {
       expect(text).not.toContain(secret);
       expect(text).toContain(upstreamSurrogate);
 
-      // The withhold is observable: /__ficta/status activity and stats.json totals.
+      // The withhold is observable: /__ficta/status activity and protection-stats.json totals.
       const status = (await (await fetch(`http://127.0.0.1:${proxy.port}/__ficta/status`)).json()) as {
         activity?: { restoredValues: number; withheldFromTools: number };
       };
       expect(status.activity?.withheldFromTools).toBeGreaterThanOrEqual(1);
 
-      // runDir is module-level (first import wins), so read the path from the snapshot rather than
+      // log paths are module-level (first import wins), so read the path from the snapshot rather than
       // assuming this test's FICTA_LOG_DIR was the one the proxy bound to.
       const snapshot = proxy.protectionStats();
       expect(snapshot.totals.withheldFromToolsValues).toBeGreaterThanOrEqual(1);
