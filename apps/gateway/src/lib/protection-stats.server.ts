@@ -1,14 +1,17 @@
 import {
   FICTA_PROTECTION_STATS_PATH,
   isProtectionStatsOk,
-  type ProtectionStats,
+  type ProtectionStatsOk,
   type ProtectionStatsSnapshot,
 } from "@serovaai/ficta-protocol";
 import { proxyBaseUrl } from "@/lib/proxy-base.server";
+import type { ProxyCallResult } from "@/lib/proxy-result";
 import { getStorage } from "@/lib/storage/storage.server";
 import type { ProtectionStatsDailySummary } from "@/lib/storage/types";
 
 const STATS_TIMEOUT_MS = 1500;
+
+export type ProtectionStats = ProxyCallResult<ProtectionStatsOk>;
 
 export async function readCurrentProtectionStats(orgId: string): Promise<ProtectionStats> {
   const proxyUrl = proxyBaseUrl();

@@ -2,9 +2,12 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import {
+  FICTA_MANAGED_REGISTRY_SCHEMA,
   FICTA_REGISTRY_RELOAD_PATH,
   FICTA_REGISTRY_REVISION_HEADER,
   isRegistryReloadOk,
+  type ManagedRegistryEntry,
+  type ManagedRegistryFile,
 } from "@serovaai/ficta-protocol";
 import { createServerFn } from "@tanstack/react-start";
 import { requireAdminScope, requireScope } from "@/lib/auth/guards.server";
@@ -23,7 +26,6 @@ const ENTRY_IMPORT_MAX = 500;
 const FIELD_MAX = 500;
 const ALIASES_PER_ENTRY_MAX = 20;
 const DEFAULT_MANAGED_REGISTRY_FILE = ".data/protected-registry.json";
-const MANAGED_REGISTRY_SCHEMA = "ficta.managed-registry.v1";
 
 export interface ProtectedRegistryExport {
   path: string;
@@ -324,15 +326,7 @@ function renderManagedRegistryFile(entries: ProtectedRegistryEntry[]): {
   skippedAliases: number;
 } {
   const revision = randomUUID();
-  const registryEntries: Array<{
-    id: string;
-    name: string;
-    type: ProtectedRegistryEntry["type"];
-    scope?: string;
-    value: string;
-    aliases: string[];
-    kind: "custom";
-  }> = [];
+  const registryEntries: ManagedRegistryEntry[] = [];
   let values = 0;
   let skippedAliases = 0;
   entries.forEach((entry) => {
@@ -353,18 +347,15 @@ function renderManagedRegistryFile(entries: ProtectedRegistryEntry[]): {
     values++;
     values += aliases.length;
   });
+  const file: ManagedRegistryFile = {
+    schema: FICTA_MANAGED_REGISTRY_SCHEMA,
+    revision,
+    generatedBy: "ficta-gateway",
+    generatedAt: new Date().toISOString(),
+    entries: registryEntries,
+  };
   return {
-    body: `${JSON.stringify(
-      {
-        schema: MANAGED_REGISTRY_SCHEMA,
-        revision,
-        generatedBy: "ficta-gateway",
-        generatedAt: new Date().toISOString(),
-        entries: registryEntries,
-      },
-      null,
-      2,
-    )}\n`,
+    body: `${JSON.stringify(file, null, 2)}\n`,
     revision,
     values,
     skippedAliases,

@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { isManagedRegistryFile } from "@serovaai/ficta-protocol";
 import { envEnabled } from "../engine/env-flags.js";
 import type {
   PluginDiscovery,
@@ -39,7 +40,7 @@ interface ParsedManagedEntry {
 
 interface ParsedManagedRegistry {
   entries: ParsedManagedEntry[];
-  revision?: string;
+  revision: string;
 }
 
 const PLUGIN_NAME = "managed-registry-file";
@@ -313,74 +314,15 @@ function parseManagedRegistryJson(
     return { ok: false, error: "invalid json" };
   }
 
-  const rawEntries = Array.isArray(json) ? json : isRecord(json) && Array.isArray(json.entries) ? json.entries : null;
-  if (!rawEntries) return { ok: false, error: "unsupported json" };
+  if (!isManagedRegistryFile(json)) return { ok: false, error: "unsupported json" };
 
-  const entries: ParsedManagedEntry[] = [];
-  rawEntries.forEach((raw, index) => {
-    if (!isRecord(raw)) return;
-    const value = readString(raw.value);
-    if (!value) return;
-    const type = readString(raw.type) || "entry";
-    const scope = readString(raw.scope) || readString(raw.scopeId) || readString(raw.matterId);
-    const id = readString(raw.id) || String(index + 1);
-    entries.push({
-      name: readString(raw.name) || managedEntryName(type, scope, id),
-      value,
-      aliases: readStringArray(raw.aliases),
-      kind: readKind(raw.kind),
-    });
-  });
-  const revision = isRecord(json) ? readRevision(json.revision) : undefined;
-  return { ok: true, registry: { entries, ...(revision ? { revision } : {}) } };
-}
-
-/** Non-sensitive publication generation id. Gateway emits a UUID; keep the parser format-tolerant. */
-function readRevision(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const revision = value.trim();
-  return /^[A-Za-z0-9._:-]{1,128}$/.test(revision) ? revision : undefined;
-}
-
-function managedEntryName(type: string, scope: string, id: string): string {
-  return ["managed", type, scope || "global", id].map(safeNamePart).join(":");
-}
-
-function safeNamePart(value: string): string {
-  return (
-    value
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9._-]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 80) || "entry"
-  );
-}
-
-function readKind(value: unknown): ProtectedValueKind {
-  return value === "secret" || value === "pii" || value === "custom" ? value : "custom";
-}
-
-function readString(value: unknown): string {
-  return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
-}
-
-function readStringArray(value: unknown): string[] {
-  const raw = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[;|]/) : [];
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const item of raw) {
-    const text = readString(item);
-    const key = text.toLocaleLowerCase();
-    if (!text || seen.has(key)) continue;
-    seen.add(key);
-    out.push(text);
-  }
-  return out;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return {
+    ok: true,
+    registry: {
+      revision: json.revision,
+      entries: json.entries.map(({ name, value, aliases, kind }) => ({ name, value, aliases, kind })),
+    },
+  };
 }
 
 function emptyStats(): ManagedRegistryStats {

@@ -9,14 +9,17 @@ import {
   normalizeRestoreIntoToolsPolicy,
   PII_BACKEND_NAMES,
   type PiiBackendName,
-  type ProxyConfig,
-  type ProxyConfigUpdate,
+  type ProxyConfigOk,
+  type ProxyConfigUpdateOk,
 } from "@serovaai/ficta-protocol";
 import { createServerFn } from "@tanstack/react-start";
 import { requireAdmin } from "@/lib/auth/guards.server";
+import type { ProxyCallResult } from "@/lib/proxy-result";
 
 export type EditableProxyConfigPatch = Partial<EditableProxyConfigValues>;
-export type { EditableProxyConfigKey, EditableProxyConfigValues, PiiBackendName, ProxyConfig, ProxyConfigUpdate };
+export type ProxyConfig = ProxyCallResult<ProxyConfigOk>;
+export type ProxyConfigUpdate = ProxyCallResult<ProxyConfigUpdateOk>;
+export type { EditableProxyConfigKey, EditableProxyConfigValues, PiiBackendName };
 export { isProxyConfigOk, isProxyConfigUpdateOk, PII_BACKEND_NAMES };
 
 const CONFIG_TIMEOUT_MS = 1500;

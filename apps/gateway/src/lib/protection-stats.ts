@@ -1,5 +1,6 @@
-import { isProtectionStatsOk, type ProtectionStats, type ProtectionStatsLabelBucket } from "@serovaai/ficta-protocol";
+import { isProtectionStatsOk, type ProtectionStatsLabelBucket } from "@serovaai/ficta-protocol";
 import { createServerFn } from "@tanstack/react-start";
+import type { ProtectionStats } from "@/lib/protection-stats.server";
 import type { ProtectionStatsDailySummary } from "@/lib/storage/types";
 
 export type { ProtectionStats, ProtectionStatsDailySummary, ProtectionStatsLabelBucket };

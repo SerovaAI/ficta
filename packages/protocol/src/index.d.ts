@@ -12,6 +12,7 @@ export declare const FICTA_RESTORE_HIGHLIGHT_HEADER = "x-ficta-restore-highlight
 export declare const FICTA_RESTORE_HIGHLIGHT_START = "\u001eFICTA_RESTORE_START\u001e";
 export declare const FICTA_RESTORE_HIGHLIGHT_METADATA = "\u001eFICTA_RESTORE_SURROGATE\u001e";
 export declare const FICTA_RESTORE_HIGHLIGHT_END = "\u001eFICTA_RESTORE_END\u001e";
+export declare const FICTA_MANAGED_REGISTRY_SCHEMA = "ficta.managed-registry.v1";
 
 export type DetectorFailureMode = "fail-open" | "fail-closed";
 export type PiiStatusState = "off" | "ok" | "degraded" | "blocking";
@@ -65,16 +66,6 @@ export interface ProtectionStatusOk {
   };
 }
 
-export interface ProtectionStatusError {
-  ok: false;
-  proxyUrl: string;
-  status: "unreachable" | "bad_response";
-  message: string;
-  detail?: string;
-}
-
-export type ProtectionStatus = ProtectionStatusOk | ProtectionStatusError;
-
 export type ProtectionPreviewOrigin = "registry" | "detected" | "user";
 
 /** UTF-16 coordinates into the exact preview text supplied by the caller. */
@@ -110,7 +101,6 @@ export interface ProtectionPreviewError {
 }
 
 export type ProtectionPreview = ProtectionPreviewOk | ProtectionPreviewError;
-
 export type ProtectionStatsSurface = "body" | "query string" | "non-auth headers";
 
 export interface ProtectionHit {
@@ -185,16 +175,6 @@ export interface ProtectionStatsOk {
   service: "ficta";
   stats: ProtectionStatsSnapshot;
 }
-
-export interface ProtectionStatsError {
-  ok: false;
-  proxyUrl: string;
-  status: "unreachable" | "bad_response";
-  message: string;
-  detail?: string;
-}
-
-export type ProtectionStats = ProtectionStatsOk | ProtectionStatsError;
 
 export interface ProxyConfigPosture {
   protection: {
@@ -273,36 +253,16 @@ export interface ProxyConfigOk {
   edit: ProxyConfigEditState;
 }
 
-export interface ProxyConfigError {
-  ok: false;
-  proxyUrl: string;
-  status: "unreachable" | "bad_response";
-  message: string;
-  detail?: string;
-}
-
-export type ProxyConfig = ProxyConfigOk | ProxyConfigError;
-
 export interface ProxyConfigUpdateOk {
   ok: true;
   service: "ficta";
   edit: ProxyConfigEditState;
 }
 
-export interface ProxyConfigUpdateError {
-  ok: false;
-  proxyUrl: string;
-  status: "unreachable" | "bad_response";
-  message: string;
-  detail?: string;
-}
-
-export type ProxyConfigUpdate = ProxyConfigUpdateOk | ProxyConfigUpdateError;
-
 export interface ProxyConfigPatchError {
   ok: false;
   service: "ficta";
-  status: "disabled" | "invalid_patch" | "locked";
+  status: "disabled" | "forbidden" | "invalid_patch" | "locked";
   message: string;
   field?: EditableProxyConfigKey;
 }
@@ -334,13 +294,30 @@ export interface RegistryReloadOk {
 
 export interface RegistryReloadError {
   ok: false;
-  proxyUrl: string;
-  status: "unreachable" | "bad_response" | "forbidden";
+  service: "ficta";
+  status: "forbidden" | "unsupported";
   message: string;
-  detail?: string;
 }
 
-export type RegistryReload = RegistryReloadOk | RegistryReloadError;
+export type RegistryReloadResponse = RegistryReloadOk | RegistryReloadError;
+
+export interface ManagedRegistryEntry {
+  id: string;
+  name: string;
+  type: string;
+  scope?: string;
+  value: string;
+  aliases: string[];
+  kind: "secret" | "pii" | "custom";
+}
+
+export interface ManagedRegistryFile {
+  schema: typeof FICTA_MANAGED_REGISTRY_SCHEMA;
+  revision: string;
+  generatedBy: string;
+  generatedAt: string;
+  entries: ManagedRegistryEntry[];
+}
 
 export declare function isProtectionStatusOk(value: unknown): value is ProtectionStatusOk;
 export declare function isProtectionPreviewOk(value: unknown): value is ProtectionPreviewOk;
@@ -348,6 +325,8 @@ export declare function isProtectionStatsOk(value: unknown): value is Protection
 export declare function isProxyConfigOk(value: unknown): value is ProxyConfigOk;
 export declare function isProxyConfigUpdateOk(value: unknown): value is ProxyConfigUpdateOk;
 export declare function isRegistryReloadOk(value: unknown): value is RegistryReloadOk;
+export declare function isRegistryReloadError(value: unknown): value is RegistryReloadError;
+export declare function isManagedRegistryFile(value: unknown): value is ManagedRegistryFile;
 export declare function isProxyConfigEditState(value: unknown): value is ProxyConfigEditState;
 export declare function isEditableProxyConfigValues(value: unknown): value is EditableProxyConfigValues;
 export declare function isPiiBackendName(value: unknown): value is PiiBackendName;

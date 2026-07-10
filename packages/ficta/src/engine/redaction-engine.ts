@@ -1,5 +1,4 @@
-import type { PluginRegistrySnapshot } from "./plugins/registry.js";
-import type { DetectTextContext, ProtectedValue } from "./plugins/types.js";
+import type { DetectTextContext, PluginDiscovery, ProtectedValue, RegistryPolicy } from "./plugins/types.js";
 import type { Wire } from "./wire.js";
 
 /**
@@ -61,8 +60,8 @@ export interface RedactionEngine {
   /** Number of protected values currently loaded. */
   readonly size: number;
 
-  /** Safe launch-time snapshot of registry-source discovery (counts, names — never values). */
-  readonly registry: PluginRegistrySnapshot;
+  /** Safe registry-source diagnostics and policy metadata. Never includes protected values. */
+  readonly registryStatus: EngineRegistryStatus;
 
   /**
    * Re-run the registry-source plugins and register any new values live (additions only — deletions
@@ -70,6 +69,14 @@ export interface RedactionEngine {
    * reload endpoint reports the capability as unavailable.
    */
   reloadRegistryValues?(): { added: number; total: number };
+}
+
+/** Values-free engine diagnostics consumed by the proxy status, banner, and returned handle. */
+export interface EngineRegistryStatus {
+  readonly discoveries: readonly PluginDiscovery[];
+  readonly registryPolicy: RegistryPolicy;
+  readonly policyExcluded: number;
+  readonly policyExcludedBySource: Readonly<Record<string, number>>;
 }
 
 /**

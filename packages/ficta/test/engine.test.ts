@@ -20,6 +20,8 @@ describe("protection engine plugins", () => {
     const engine = new ProtectionEngine({ plugins: [plugin] });
 
     expect(engine.registrySize).toBe(1);
+    expect(engine.registryStatus.policyExcluded).toBe(0);
+    expect(engine.registryStatus).not.toHaveProperty("values");
     expect(engine.enabled).toBe(true);
 
     const redacted = await engine.redactBodyDetailed(JSON.stringify({ content: `secret=${SECRET}` }));

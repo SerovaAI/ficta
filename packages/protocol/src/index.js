@@ -12,6 +12,7 @@ export const FICTA_RESTORE_HIGHLIGHT_HEADER = "x-ficta-restore-highlights";
 export const FICTA_RESTORE_HIGHLIGHT_START = "\u001eFICTA_RESTORE_START\u001e";
 export const FICTA_RESTORE_HIGHLIGHT_METADATA = "\u001eFICTA_RESTORE_SURROGATE\u001e";
 export const FICTA_RESTORE_HIGHLIGHT_END = "\u001eFICTA_RESTORE_END\u001e";
+export const FICTA_MANAGED_REGISTRY_SCHEMA = "ficta.managed-registry.v1";
 
 export const PII_BACKEND_NAMES = ["regex", "presidio", "openmed"];
 const PII_BACKEND_NAME_SET = new Set(PII_BACKEND_NAMES);
@@ -93,6 +94,50 @@ export function isRegistryReloadOk(value) {
     (value.registry.filesMissing === undefined || isNonNegativeInteger(value.registry.filesMissing)) &&
     (value.registry.filesErrored === undefined || isNonNegativeInteger(value.registry.filesErrored)) &&
     (value.registry.revision === undefined || typeof value.registry.revision === "string")
+  );
+}
+
+/** @param {unknown} value */
+export function isRegistryReloadError(value) {
+  return (
+    isRecord(value) &&
+    value.ok === false &&
+    value.service === "ficta" &&
+    (value.status === "forbidden" || value.status === "unsupported") &&
+    typeof value.message === "string"
+  );
+}
+
+/** @param {unknown} value */
+export function isManagedRegistryFile(value) {
+  return (
+    isRecord(value) &&
+    value.schema === FICTA_MANAGED_REGISTRY_SCHEMA &&
+    isRegistryRevision(value.revision) &&
+    typeof value.generatedBy === "string" &&
+    value.generatedBy.length > 0 &&
+    typeof value.generatedAt === "string" &&
+    value.generatedAt.length > 0 &&
+    Array.isArray(value.entries) &&
+    value.entries.every(isManagedRegistryEntry)
+  );
+}
+
+/** @param {unknown} value */
+function isManagedRegistryEntry(value) {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    value.id.length > 0 &&
+    typeof value.name === "string" &&
+    value.name.length > 0 &&
+    typeof value.type === "string" &&
+    value.type.length > 0 &&
+    (value.scope === undefined || typeof value.scope === "string") &&
+    typeof value.value === "string" &&
+    value.value.length > 0 &&
+    isStringArray(value.aliases) &&
+    (value.kind === "secret" || value.kind === "pii" || value.kind === "custom")
   );
 }
 
@@ -369,4 +414,9 @@ function isRecord(value) {
 /** @param {unknown} value */
 function isNonNegativeInteger(value) {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+/** @param {unknown} value */
+function isRegistryRevision(value) {
+  return typeof value === "string" && /^[A-Za-z0-9._:-]{1,128}$/.test(value);
 }

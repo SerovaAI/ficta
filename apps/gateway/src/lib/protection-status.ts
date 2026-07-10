@@ -1,12 +1,9 @@
-import {
-  FICTA_STATUS_PATH,
-  isProtectionStatusOk,
-  type ProtectionStatus,
-  type ProtectionStatusOk,
-} from "@serovaai/ficta-protocol";
+import { FICTA_STATUS_PATH, isProtectionStatusOk, type ProtectionStatusOk } from "@serovaai/ficta-protocol";
 import { createServerFn } from "@tanstack/react-start";
+import type { ProxyCallResult } from "@/lib/proxy-result";
 
-export type { ProtectionStatus, ProtectionStatusOk };
+export type ProtectionStatus = ProxyCallResult<ProtectionStatusOk>;
+export type { ProtectionStatusOk };
 export { isProtectionStatusOk };
 
 const STATUS_TIMEOUT_MS = 1500;

@@ -22,6 +22,7 @@ import {
   type BodyRedactionContext,
   type BodyRedactionDetails,
   DetectorUnavailableError,
+  type EngineRegistryStatus,
   type ProtectionHit,
   type ProtectionTraceOccurrence,
   type ProtectionTraceValue,
@@ -120,9 +121,14 @@ export class ProtectionEngine implements RedactionEngine {
   /** Current registry-source snapshot; replaced by {@link reloadRegistryValues}. */
   private registrySnapshot: PluginRegistrySnapshot;
 
-  /** Safe snapshot of registry-source discovery (refreshed by {@link reloadRegistryValues}). */
-  get registry(): PluginRegistrySnapshot {
-    return this.registrySnapshot;
+  /** Safe registry-source diagnostics (refreshed by {@link reloadRegistryValues}); never raw values. */
+  get registryStatus(): EngineRegistryStatus {
+    return {
+      discoveries: this.registrySnapshot.discoveries,
+      registryPolicy: this.registrySnapshot.registryPolicy,
+      policyExcluded: this.registrySnapshot.policyExcluded,
+      policyExcludedBySource: this.registrySnapshot.policyExcludedBySource,
+    };
   }
 
   /** Number of values loaded at construction time from exact-registry plugins ("as of launch" — see
@@ -189,9 +195,9 @@ export class ProtectionEngine implements RedactionEngine {
     const inactive = new Set(["disabled", "not_found", "error"]);
     for (const plugin of this.plugins) {
       if (!plugin.detectText) continue;
-      const discoveries = this.registry.discoveries.filter((d) => d.plugin === plugin.name);
+      const discoveries = this.registrySnapshot.discoveries.filter((discovery) => discovery.plugin === plugin.name);
       // A detector counts as active unless its own discovery explicitly reports it inactive.
-      if (discoveries.length === 0 || discoveries.some((d) => !inactive.has(d.status))) return true;
+      if (discoveries.length === 0 || discoveries.some((discovery) => !inactive.has(discovery.status))) return true;
     }
     return false;
   }
