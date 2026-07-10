@@ -479,6 +479,7 @@ Canonical file shape:
 ```json
 {
   "schema": "ficta.managed-registry.v1",
+  "revision": "8fe0f1e0-4e6c-4627-afcb-4628993ad0af",
   "entries": [
     {
       "id": "entry-1",
@@ -495,7 +496,10 @@ Canonical file shape:
 
 `name` is a safe label for logs and discovery metadata; it must not contain the protected value.
 `value` and `aliases` are filtered by `registry.min_len`, deduped, loaded into memory, and never
-printed. Discovery output reports only file paths, statuses, and counts.
+printed. `revision` is an optional non-sensitive generation identifier: Gateway changes it on every
+atomic publication and sends it to `POST /__ficta/registry/reload`, allowing the proxy to acknowledge
+that exact file generation rather than treating an ambiguous `added: 0` as success. Discovery output
+reports only file paths, statuses, and counts.
 
 ## Built-in registry source: `known-env-values`
 

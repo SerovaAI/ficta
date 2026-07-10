@@ -14,6 +14,7 @@ import {
 import { switchOrganization } from "@/lib/auth/auth";
 import { organizationsQueryOptions } from "@/lib/auth/organizationQueries";
 import type { AuthUser } from "@/lib/auth/types";
+import { useAuthState } from "@/lib/auth/useAuthState";
 
 type MenuSide = React.ComponentProps<typeof DropdownMenuContent>["side"];
 type MenuAlign = React.ComponentProps<typeof DropdownMenuContent>["align"];
@@ -55,6 +56,8 @@ export function UserMenu({
   showWorkspaces?: boolean;
   showSignOut?: boolean;
 }) {
+  const auth = useAuthState();
+  const canManageWorkspaces = showWorkspaces && auth.organizationMode !== "single";
   const label = user.name ?? user.email;
   const secondaryLabel = description ?? user.email;
   const initial = label.trim().charAt(0).toUpperCase() || "?";
@@ -114,12 +117,12 @@ export function UserMenu({
           ) : null}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {showWorkspaces && organizationsQuery.isPending ? (
+        {canManageWorkspaces && organizationsQuery.isPending ? (
           <>
             <DropdownMenuItem disabled>Loading workspaces…</DropdownMenuItem>
             <DropdownMenuSeparator />
           </>
-        ) : showWorkspaces && organizationsQuery.isError ? (
+        ) : canManageWorkspaces && organizationsQuery.isError ? (
           <>
             <DropdownMenuItem disabled>Could not load workspaces</DropdownMenuItem>
             <DropdownMenuItem
@@ -133,7 +136,7 @@ export function UserMenu({
             </DropdownMenuItem>
             <DropdownMenuSeparator />
           </>
-        ) : showWorkspaces && orgs.length > 0 ? (
+        ) : canManageWorkspaces && orgs.length > 0 ? (
           <>
             <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Workspace</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={user.organizationId} onValueChange={handleSwitch}>

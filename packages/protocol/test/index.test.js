@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  FICTA_REGISTRY_REVISION_HEADER,
   FICTA_SCOPE_HEADER,
   FICTA_TRACE_CAPTURE_HEADER,
   isProtectionStatsOk,
   isProxyConfigOk,
+  isRegistryReloadOk,
   normalizePiiBackends,
   normalizeRestoreIntoToolsPolicy,
 } from "../src/index.js";
@@ -132,6 +134,10 @@ describe("protocol constants", () => {
   it("exports the shared trace capture header", () => {
     assert.equal(FICTA_TRACE_CAPTURE_HEADER, "x-ficta-trace-capture");
   });
+
+  it("exports the registry revision acknowledgement header", () => {
+    assert.equal(FICTA_REGISTRY_REVISION_HEADER, "x-ficta-registry-revision");
+  });
 });
 
 describe("normalizers", () => {
@@ -159,5 +165,30 @@ describe("runtime guards", () => {
     const badStats = statsPayload();
     badStats.stats.events[0].surface = "headers";
     assert.equal(isProtectionStatsOk(badStats), false);
+  });
+
+  it("validates revision-aware registry reload payloads", () => {
+    assert.equal(
+      isRegistryReloadOk({
+        ok: true,
+        service: "ficta",
+        registry: {
+          added: 1,
+          total: 12,
+          loaded: 10,
+          skippedTooShort: 2,
+          filesRead: 1,
+          filesMissing: 0,
+          filesErrored: 0,
+          revision: "8fe0f1e0-4e6c-4627-afcb-4628993ad0af",
+        },
+      }),
+      true,
+    );
+    assert.equal(isRegistryReloadOk({ ok: true, service: "ficta", registry: { added: -1, total: 12 } }), false);
+    assert.equal(
+      isRegistryReloadOk({ ok: true, service: "ficta", registry: { added: 0, total: 12, filesErrored: 0.5 } }),
+      false,
+    );
   });
 });

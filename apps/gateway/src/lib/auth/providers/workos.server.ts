@@ -6,6 +6,7 @@ import {
   switchToOrganization as workosSwitchToOrganization,
 } from "@workos/authkit-tanstack-react-start";
 import { WorkOS } from "@workos-inc/node";
+import { deploymentOrganizationId } from "../deployment-organization.server";
 import { type AuthProvider, redirectResponse } from "../provider.server";
 import type { AuthState, AuthUser, OrgSummary } from "../types";
 
@@ -66,12 +67,20 @@ function toAuthUser(auth: WorkosAuth): AuthUser | null {
 }
 
 export function createProvider(): AuthProvider {
+  const deploymentOrgId = deploymentOrganizationId();
   return {
     name: "workos",
     requiresAuth: true,
     async getAuthState(): Promise<AuthState> {
       const auth = (await getAuth()) as WorkosAuth;
-      return { provider: "workos", requiresAuth: true, user: toAuthUser(auth) };
+      const user = toAuthUser(auth);
+      return {
+        provider: "workos",
+        requiresAuth: true,
+        user,
+        organizationMode: "single",
+        organizationAllowed: user?.organizationId === deploymentOrgId,
+      };
     },
     async getSignInUrl(returnPathname?: string): Promise<string> {
       return workosGetSignInUrl(returnPathname ? { data: { returnPathname } } : undefined);
@@ -102,23 +111,16 @@ export function createProvider(): AuthProvider {
         statuses: ["active"],
         limit: 100,
       });
-      return memberships.data.map((m) => ({ id: m.organizationId, name: m.organizationName }));
+      return memberships.data
+        .filter((membership) => membership.organizationId === deploymentOrgId)
+        .map((membership) => ({ id: membership.organizationId, name: membership.organizationName }));
     },
     async createOrganization(name: string): Promise<OrgSummary> {
-      const auth = (await getAuth()) as WorkosAuth;
-      if (!auth.user) throw new Error("unauthorized");
-
-      const client = getApiClient();
-      const org = await client.organizations.createOrganization({ name });
-      await client.userManagement.createOrganizationMembership({
-        organizationId: org.id,
-        userId: auth.user.id,
-        roleSlug: "admin",
-      });
-      await workosSwitchToOrganization({ data: { organizationId: org.id } });
-      return { id: org.id, name: org.name };
+      void name;
+      throw new Error("This Gateway is assigned to one organization; create organizations in WorkOS administration.");
     },
     async switchOrganization(organizationId: string): Promise<void> {
+      if (organizationId !== deploymentOrgId) throw new Error("forbidden");
       // Refreshes the session cookie with the target org's role/permission claims. The updated claims are
       // read back on the next request via getAuth().
       await workosSwitchToOrganization({ data: { organizationId } });

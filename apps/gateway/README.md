@@ -133,14 +133,21 @@ the proxy's `config.toml`; restart the proxy before treating the saved settings 
 by explicit `FICTA_*` environment variables remain read-only in the UI.
 
 Gateway admins can also maintain the Protected Registry from **Admin > Protected Registry**. Approved
-registry entries can be exported to a managed registry JSON file; include that path in
-`FICTA_REGISTRY_MANAGED_FILE_PATHS` and restart the proxy to load the approved values as exact-match
-registry entries. Suggested and ignored rows are review workflow only and are not exported.
+registry entries can be published to a private managed-registry JSON file and loaded by the running
+proxy without a restart. Gateway writes the file atomically and confirms that the proxy parsed that
+exact revision; a path, shared-volume, or source error is reported as partial success rather than active
+protection. Configure the same absolute path with `FICTA_GATEWAY_MANAGED_REGISTRY_PATH` in Gateway and
+`FICTA_REGISTRY_MANAGED_FILE_PATHS` in the proxy. Suggested and ignored rows are review workflow only.
+
+One Gateway + proxy deployment serves one organization: the proxy's permanent registry is
+process-global. With `AUTH_PROVIDER=workos`, set `FICTA_GATEWAY_ORG_ID` to the deployment's WorkOS
+organization ID. Run separate deployments for separate organizations.
 
 Example production-like env shape:
 
 ```sh
 AUTH_PROVIDER=workos
+FICTA_GATEWAY_ORG_ID=org_...
 WORKOS_CLIENT_ID=...
 WORKOS_API_KEY=...
 WORKOS_REDIRECT_URI=https://gateway.example.com/api/auth/callback
@@ -196,9 +203,11 @@ Web app env:
 | `ANTHROPIC_API_KEY` | Anthropic fallback key; used only when the workspace has no saved Anthropic key | - |
 | `FICTA_GATEWAY_KEY_ENCRYPTION_SECRET` | Secret used to encrypt/decrypt admin-saved workspace provider keys | - |
 | `AUTH_PROVIDER` | `none` for open local/self-hosted mode, or `workos` for AuthKit | `none` |
+| `FICTA_GATEWAY_ORG_ID` | WorkOS organization assigned to this single-organization Gateway/proxy deployment; required with `AUTH_PROVIDER=workos` | - |
 | `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_REDIRECT_URI`, `WORKOS_COOKIE_PASSWORD` | WorkOS AuthKit + organization/workspace support | - |
 | `DATABASE_URL` | Postgres connection for shared/multi-process deployments | embedded PGlite when unset |
 | `FICTA_GATEWAY_DATA_DIR` | PGlite data directory when `DATABASE_URL` is unset | `.data/pglite` |
+| `FICTA_GATEWAY_MANAGED_REGISTRY_PATH` | Private managed-registry file shared with the proxy; use the same absolute path as `FICTA_REGISTRY_MANAGED_FILE_PATHS` | `.data/protected-registry.json` |
 | `FICTA_DOC_CONVERTER_URL` | Document-converter sidecar URL for PDF/DOCX extraction | `http://127.0.0.1:5003` |
 | `FICTA_DOC_CONVERTER_MANAGED` | Source-checkout `pnpm dev` lifecycle toggle for the converter sidecar | `1` |
 | `FICTA_DOC_CONVERTER_BACKEND` | Converter backend label/env passed to the managed sidecar: `markitdown` or `docling` | `markitdown` |

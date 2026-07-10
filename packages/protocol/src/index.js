@@ -2,6 +2,7 @@ export const FICTA_HEALTH_PATH = "/__ficta/health";
 export const FICTA_STATUS_PATH = "/__ficta/status";
 export const FICTA_CONFIG_PATH = "/__ficta/config";
 export const FICTA_REGISTRY_RELOAD_PATH = "/__ficta/registry/reload";
+export const FICTA_REGISTRY_REVISION_HEADER = "x-ficta-registry-revision";
 export const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
 export const FICTA_SCOPE_HEADER = "x-ficta-scope";
 export const FICTA_TRACE_CAPTURE_HEADER = "x-ficta-trace-capture";
@@ -82,9 +83,14 @@ export function isRegistryReloadOk(value) {
   if (value.ok !== true || value.service !== "ficta") return false;
   if (!isRecord(value.registry)) return false;
   return (
-    typeof value.registry.added === "number" &&
-    typeof value.registry.total === "number" &&
-    (value.registry.skippedTooShort === undefined || typeof value.registry.skippedTooShort === "number")
+    isNonNegativeInteger(value.registry.added) &&
+    isNonNegativeInteger(value.registry.total) &&
+    (value.registry.loaded === undefined || isNonNegativeInteger(value.registry.loaded)) &&
+    (value.registry.skippedTooShort === undefined || isNonNegativeInteger(value.registry.skippedTooShort)) &&
+    (value.registry.filesRead === undefined || isNonNegativeInteger(value.registry.filesRead)) &&
+    (value.registry.filesMissing === undefined || isNonNegativeInteger(value.registry.filesMissing)) &&
+    (value.registry.filesErrored === undefined || isNonNegativeInteger(value.registry.filesErrored)) &&
+    (value.registry.revision === undefined || typeof value.registry.revision === "string")
   );
 }
 
@@ -321,4 +327,9 @@ function isStringArray(value) {
 /** @param {unknown} value */
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** @param {unknown} value */
+function isNonNegativeInteger(value) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }

@@ -24,12 +24,13 @@ export interface Scope {
  *
  * - `none` mode → a single implicit user in a single workspace: both are the `"local"` sentinel.
  * - WorkOS with an active organization → `{ user.id, user.organizationId }`.
- * - WorkOS with no active organization → a defensive personal fallback during onboarding: `orgId` is
- *   `"user:<userId>"`.
+ * - WorkOS outside the deployment's configured organization → `null`; onboarding may offer a switch
+ *   into the assigned organization, but storage remains inaccessible until that switch completes.
  * - unauthenticated under a real provider → `null`.
  */
 export function scopeFromAuth(auth: AuthState): Scope | null {
   if (auth.provider === "none") return { userId: "local", orgId: "local" };
+  if (auth.organizationAllowed === false) return null;
   if (auth.user) return { userId: auth.user.id, orgId: auth.user.organizationId ?? `user:${auth.user.id}` };
   return null;
 }

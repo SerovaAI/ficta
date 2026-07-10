@@ -5,6 +5,7 @@ import { CreateWorkspaceForm } from "@/components/onboarding/CreateWorkspaceForm
 import { Button } from "@/components/ui/button";
 import { fetchOrganizations, switchOrganization } from "@/lib/auth/auth";
 import type { OrgSummary } from "@/lib/auth/types";
+import { useAuthState } from "@/lib/auth/useAuthState";
 
 export const Route = createFileRoute("/onboarding")({
   loader: () => fetchOrganizations(),
@@ -13,6 +14,8 @@ export const Route = createFileRoute("/onboarding")({
 
 function OnboardingPage() {
   const orgs = Route.useLoaderData();
+  const auth = useAuthState();
+  const singleOrganization = auth.organizationMode === "single";
   const [showCreate, setShowCreate] = useState(orgs.length === 0);
   const [switchingOrgId, setSwitchingOrgId] = useState<string | null>(null);
   const [error, setError] = useState<string>();
@@ -38,9 +41,13 @@ function OnboardingPage() {
           <ShieldCheck className="size-6 text-emerald-600 dark:text-emerald-400" aria-hidden />
         </div>
         <div className="mb-6 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">Create your workspace</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {singleOrganization ? "Open your organization" : "Create your workspace"}
+          </h1>
           <p className="mt-2 text-muted-foreground text-sm">
-            Workspaces keep chats and settings scoped to the organization you are working in.
+            {singleOrganization
+              ? "This Gateway and its redaction proxy are assigned to one organization."
+              : "Workspaces keep chats and settings scoped to the organization you are working in."}
           </p>
         </div>
 
@@ -71,15 +78,33 @@ function OnboardingPage() {
               </p>
             ) : null}
 
-            {showCreate ? (
+            {!singleOrganization && showCreate ? (
               <div className="border-border border-t pt-4">
                 <CreateWorkspaceForm onCancel={() => setShowCreate(false)} />
               </div>
-            ) : (
+            ) : !singleOrganization ? (
               <Button type="button" variant="ghost" className="w-full" onClick={() => setShowCreate(true)}>
                 Create a new workspace
               </Button>
-            )}
+            ) : null}
+          </div>
+        ) : singleOrganization ? (
+          <div className="space-y-3">
+            <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm" role="status">
+              <p className="font-medium">Organization access required</p>
+              <p className="mt-1 text-muted-foreground leading-relaxed">
+                Ask your WorkOS administrator to add this account to the organization assigned to this Gateway, then
+                sign in again.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={() => window.location.assign("/api/auth/sign-out")}
+            >
+              Sign out
+            </Button>
           </div>
         ) : (
           <CreateWorkspaceForm />

@@ -12,6 +12,7 @@ interface ManagedRegistryFileStat {
   file: string;
   exists: boolean;
   loaded: number;
+  revision?: string;
   error?: "read error" | "invalid json" | "unsupported json";
 }
 
@@ -25,6 +26,7 @@ interface ManagedRegistryStats {
   filesRead: number;
   filesMissing: number;
   filesErrored: number;
+  revisions: string[];
   files: ManagedRegistryFileStat[];
 }
 
@@ -33,6 +35,11 @@ interface ParsedManagedEntry {
   value: string;
   aliases: string[];
   kind: ProtectedValueKind;
+}
+
+interface ParsedManagedRegistry {
+  entries: ParsedManagedEntry[];
+  revision?: string;
 }
 
 const PLUGIN_NAME = "managed-registry-file";
@@ -134,7 +141,12 @@ function loadManagedRegistryValues(): ProtectedValue[] {
       continue;
     }
 
-    parsed.entries.forEach((entry) => {
+    if (parsed.registry.revision) {
+      stat.revision = parsed.registry.revision;
+      if (!stats.revisions.includes(parsed.registry.revision)) stats.revisions.push(parsed.registry.revision);
+    }
+
+    parsed.registry.entries.forEach((entry) => {
       if (add(entry, entry.value)) stat.loaded++;
       entry.aliases.forEach((alias, index) => {
         if (add(entry, alias, `alias-${index + 1}`)) stat.loaded++;
@@ -162,9 +174,23 @@ function loadManagedRegistryStats(): ManagedRegistryStats {
  * operator published that were silently dropped by the `FICTA_REGISTRY_MIN_LEN` filter would otherwise
  * read as a successful no-op. Never contains values or file contents.
  */
-export function managedRegistryLoadCounts(): { loaded: number; skippedTooShort: number } {
+export function managedRegistryLoadCounts(): {
+  loaded: number;
+  skippedTooShort: number;
+  filesRead: number;
+  filesMissing: number;
+  filesErrored: number;
+  revisions: string[];
+} {
   const stats = loadManagedRegistryStats();
-  return { loaded: stats.loaded, skippedTooShort: stats.skippedTooShort };
+  return {
+    loaded: stats.loaded,
+    skippedTooShort: stats.skippedTooShort,
+    filesRead: stats.filesRead,
+    filesMissing: stats.filesMissing,
+    filesErrored: stats.filesErrored,
+    revisions: [...stats.revisions],
+  };
 }
 
 /**
@@ -279,7 +305,7 @@ function managedRegistryDiscovery(stats: ManagedRegistryStats): PluginDiscovery 
 
 function parseManagedRegistryJson(
   text: string,
-): { ok: true; entries: ParsedManagedEntry[] } | { ok: false; error: "invalid json" | "unsupported json" } {
+): { ok: true; registry: ParsedManagedRegistry } | { ok: false; error: "invalid json" | "unsupported json" } {
   let json: unknown;
   try {
     json = JSON.parse(text);
@@ -305,7 +331,15 @@ function parseManagedRegistryJson(
       kind: readKind(raw.kind),
     });
   });
-  return { ok: true, entries };
+  const revision = isRecord(json) ? readRevision(json.revision) : undefined;
+  return { ok: true, registry: { entries, ...(revision ? { revision } : {}) } };
+}
+
+/** Non-sensitive publication generation id. Gateway emits a UUID; keep the parser format-tolerant. */
+function readRevision(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const revision = value.trim();
+  return /^[A-Za-z0-9._:-]{1,128}$/.test(revision) ? revision : undefined;
 }
 
 function managedEntryName(type: string, scope: string, id: string): string {
@@ -360,6 +394,7 @@ function emptyStats(): ManagedRegistryStats {
     filesRead: 0,
     filesMissing: 0,
     filesErrored: 0,
+    revisions: [],
     files: [],
   };
 }

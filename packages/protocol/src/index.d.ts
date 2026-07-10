@@ -2,6 +2,7 @@ export declare const FICTA_HEALTH_PATH = "/__ficta/health";
 export declare const FICTA_STATUS_PATH = "/__ficta/status";
 export declare const FICTA_CONFIG_PATH = "/__ficta/config";
 export declare const FICTA_REGISTRY_RELOAD_PATH = "/__ficta/registry/reload";
+export declare const FICTA_REGISTRY_REVISION_HEADER = "x-ficta-registry-revision";
 export declare const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
 export declare const FICTA_SCOPE_HEADER = "x-ficta-scope";
 export declare const FICTA_TRACE_CAPTURE_HEADER = "x-ficta-trace-capture";
@@ -277,9 +278,17 @@ export interface RegistryReloadOk {
     added: number;
     /** Live count of registered values in the running proxy after the reload. */
     total: number;
+    /** Values accepted from the currently configured managed-registry files. */
+    loaded?: number;
     /** Managed-file values dropped by the proxy's FICTA_REGISTRY_MIN_LEN filter — a published value
      *  shorter than the minimum would otherwise read as a silent no-op. Optional for older proxies. */
     skippedTooShort?: number;
+    /** Managed-registry source health. Optional for compatibility with older proxies. */
+    filesRead?: number;
+    filesMissing?: number;
+    filesErrored?: number;
+    /** The caller's expected file revision, only when that exact revision was parsed by the proxy. */
+    revision?: string;
   };
 }
 

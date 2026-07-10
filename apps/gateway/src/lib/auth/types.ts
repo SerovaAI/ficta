@@ -26,6 +26,10 @@ export interface AuthState {
   /** When false (self-hosted `none` mode) the app is fully open and behaves exactly as before auth. */
   requiresAuth: boolean;
   user: AuthUser | null;
+  /** Hosted deployments bind one Gateway/proxy pair to one WorkOS organization. */
+  organizationMode?: "single";
+  /** False when the session is active in a different organization and must switch before using the app. */
+  organizationAllowed?: boolean;
 }
 
 /** The implicit account used by self-hosted `none` mode. */

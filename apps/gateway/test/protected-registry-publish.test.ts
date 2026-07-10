@@ -1,5 +1,6 @@
 import { isRegistryReloadOk } from "@serovaai/ficta-protocol";
 import { describe, expect, it } from "vitest";
+import { verifyRegistryReload } from "@/lib/storage/protected-registry";
 
 // The publish flow's contract seam with the proxy: the gateway treats any payload this guard rejects
 // as `bad_response` (partial success — the registry file is still written, the UI shows restart
@@ -16,6 +17,66 @@ describe("isRegistryReloadOk", () => {
     expect(
       isRegistryReloadOk({ ok: true, service: "ficta", registry: { added: 1, total: 2, skippedTooShort: "3" } }),
     ).toBe(false);
+  });
+
+  it("only confirms publication when the exact revision was loaded without source errors", () => {
+    const expected = "revision-123";
+    const payload = {
+      ok: true,
+      service: "ficta",
+      registry: {
+        added: 0,
+        total: 12,
+        loaded: 10,
+        skippedTooShort: 2,
+        filesRead: 1,
+        filesMissing: 0,
+        filesErrored: 0,
+        revision: expected,
+      },
+    };
+    expect(verifyRegistryReload(payload, expected)).toMatchObject({ ok: true, revision: expected, total: 12 });
+    expect(
+      verifyRegistryReload({ ...payload, registry: { ...payload.registry, revision: undefined } }, expected),
+    ).toMatchObject({
+      ok: false,
+      status: "not_applied",
+    });
+    expect(
+      verifyRegistryReload({ ...payload, registry: { ...payload.registry, filesErrored: 1 } }, expected),
+    ).toMatchObject({
+      ok: false,
+      status: "source_error",
+    });
+  });
+
+  it("downgrades a missing secondary file to a warning when the published revision verified", () => {
+    // The revision only matches a parsed file, so a missing path is never this publish's own file.
+    const expected = "revision-123";
+    const result = verifyRegistryReload(
+      {
+        ok: true,
+        service: "ficta",
+        registry: {
+          added: 3,
+          total: 12,
+          loaded: 10,
+          skippedTooShort: 0,
+          filesRead: 1,
+          filesMissing: 1,
+          filesErrored: 0,
+          revision: expected,
+        },
+      },
+      expected,
+    );
+    expect(result).toMatchObject({ ok: true, revision: expected, filesMissing: 1 });
+  });
+
+  it("treats an older counts-only proxy response as unverified partial success", () => {
+    expect(
+      verifyRegistryReload({ ok: true, service: "ficta", registry: { added: 1, total: 2 } }, "revision-123"),
+    ).toMatchObject({ ok: false, status: "bad_response" });
   });
 
   it("rejects error payloads and foreign services", () => {

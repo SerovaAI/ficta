@@ -596,17 +596,22 @@ export class Vault extends VaultView {
    * discarded when the scope is dropped, so they neither grow the permanent vault nor leak across
    * requests. Restore/leak/redact in the scope consult detected-then-permanent.
    *
-   * Pass `detected` to stack an existing (persistent, e.g. per-thread) detected layer instead of a
-   * fresh one: the view itself stays per-request (its `restored` accounting is fresh) while the
-   * value↔surrogate dictionary is shared across the scope key's requests.
+   * Pass `detected` and `registryDerived` to stack existing persistent (e.g. per-thread) layers
+   * instead of fresh ones: the view itself stays per-request (its `restored` accounting is fresh)
+   * while both value↔surrogate dictionaries are shared across the scope key's requests.
    */
-  beginScope(detected?: SurrogateTable): ScopedVault {
-    return new ScopedVault(this.permanent, detected);
+  beginScope(detected?: SurrogateTable, registryDerived?: SurrogateTable): ScopedVault {
+    return new ScopedVault(this.permanent, detected, registryDerived);
   }
 
   /** A detached detected-PII layer sharing this vault's strategy, for persistent keyed scopes. */
   newDetectedLayer(): SurrogateTable {
     return new SurrogateTable(this.permanent.surrogate, "detected");
+  }
+
+  /** A detached registry-derived layer for persistent keyed scopes, with permanent provenance. */
+  newRegistryDerivedLayer(): SurrogateTable {
+    return new SurrogateTable(this.permanent.surrogate, "permanent");
   }
 }
 
@@ -624,14 +629,13 @@ export class ScopedVault extends VaultView {
   constructor(
     permanent: SurrogateTable,
     detected: SurrogateTable = new SurrogateTable(permanent.surrogate, "detected"),
+    registryDerived: SurrogateTable = new SurrogateTable(permanent.surrogate, "permanent"),
   ) {
-    // Registry-derived variants (e.g. the caps twin of a registered secret found in this request's
-    // body) are ephemeral like detected values, but they ARE the registry secret in another casing —
-    // so their layer carries `permanent` provenance: the `detected` restore-into-tools policy withholds
-    // them from tool-call arguments exactly like the canonical form, and the audit reports them as
-    // registry-owned. Ordered before `detected` so a string that is both a registry variant and a
-    // detector hit resolves to registry authority (first match wins).
-    const registryDerived = new SurrogateTable(permanent.surrogate, "permanent");
+    // Registry-derived variants (e.g. the caps twin of a registered secret found in a request body)
+    // live in a separate layer because they ARE the registry secret in another casing. The layer is
+    // request-owned by default and may be shared by a keyed scope; either way its `permanent`
+    // provenance makes the `detected` restore-into-tools policy withhold variants exactly like the
+    // canonical form. Ordered before `detected` so registry authority wins a duplicate (first match).
     super([registryDerived, detected, permanent]); // all share the permanent strategy → same surrogates
     this.detected = detected;
     this.registryDerived = registryDerived;
@@ -644,8 +648,9 @@ export class ScopedVault extends VaultView {
 
   /**
    * Register request-found variants OF registered values (case twins — see the engine's
-   * `registerRegistryCaseVariants`). Ephemeral like `register`, but with `permanent` provenance so
-   * tool-withholding and provenance reporting treat the variant as the registry secret it is.
+   * `registerRegistryCaseVariants`). The layer is ephemeral for ordinary requests and persistent for
+   * keyed scopes, always with `permanent` provenance so tool-withholding and reporting treat the
+   * variant as the registry secret it is.
    */
   registerRegistryDerived(values: ReadonlyArray<VaultValue>): number {
     return this.registryDerived.register(values);
@@ -1144,7 +1149,11 @@ function buildFlexibleWhitespacePattern(value: string): RegExp {
  * casing that also appears in another (e.g. a title-case name that recurs ALL-CAPS in a heading), which
  * the case-sensitive matcher would otherwise leak.
  */
-export function flexibleOccurrences(text: string, value: string, opts: { caseInsensitive?: boolean } = {}): string[] {
+export function flexibleOccurrences(
+  text: string,
+  value: string,
+  opts: { caseInsensitive?: boolean; wordBounded?: boolean } = {},
+): string[] {
   if (!text || !value) return [];
   // Reuse the exact redaction pattern so any form returned is guaranteed to match on redaction; add `i`
   // only for the case-insensitive sweep. A fresh RegExp keeps this off the shared lastIndex-stateful cache.
@@ -1153,13 +1162,42 @@ export function flexibleOccurrences(text: string, value: string, opts: { caseIns
   const seen = new Set<string>();
   for (let match = re.exec(text); match !== null; match = re.exec(text)) {
     const form = match[0];
-    if (form && !seen.has(form)) {
+    const bounded = !opts.wordBounded || hasTokenBoundaries(text, match.index, match.index + form.length, value);
+    if (form && bounded && !seen.has(form)) {
       seen.add(form);
       out.push(form);
     }
     if (match.index === re.lastIndex) re.lastIndex += 1; // defensive: never spin on a zero-width match
   }
   return out;
+}
+
+/** Reject a word-like match embedded in a larger Unicode word, while leaving punctuation edges alone. */
+function hasTokenBoundaries(text: string, start: number, end: number, value: string): boolean {
+  const first = codePointAfter(value, 0);
+  const last = codePointBefore(value, value.length);
+  if (isWordCodePoint(first) && isWordCodePoint(codePointBefore(text, start))) return false;
+  if (isWordCodePoint(last) && isWordCodePoint(codePointAfter(text, end))) return false;
+  return true;
+}
+
+function isWordCodePoint(value: string): boolean {
+  return value !== "" && /[\p{L}\p{M}\p{N}_]/u.test(value);
+}
+
+function codePointBefore(text: string, index: number): string {
+  if (index <= 0) return "";
+  const low = text.charCodeAt(index - 1);
+  const high = index > 1 ? text.charCodeAt(index - 2) : 0;
+  const paired = low >= 0xdc00 && low <= 0xdfff && high >= 0xd800 && high <= 0xdbff;
+  const start = paired ? index - 2 : index - 1;
+  return text.slice(start, index);
+}
+
+function codePointAfter(text: string, index: number): string {
+  if (index >= text.length) return "";
+  const codePoint = text.codePointAt(index);
+  return codePoint === undefined ? "" : String.fromCodePoint(codePoint);
 }
 
 function escapeRegExp(value: string): string {

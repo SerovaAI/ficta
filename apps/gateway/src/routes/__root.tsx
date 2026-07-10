@@ -25,13 +25,14 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       const returnPathname = encodeURIComponent(location.pathname + location.searchStr);
       throw redirect({ href: `/api/auth/sign-in?returnPathname=${returnPathname}` });
     }
-    if (auth.requiresAuth && auth.user && !auth.user.organizationId && location.pathname !== "/onboarding") {
+    const organizationReady = Boolean(auth.user?.organizationId) && auth.organizationAllowed !== false;
+    if (auth.requiresAuth && auth.user && !organizationReady && location.pathname !== "/onboarding") {
       throw redirect({ to: "/onboarding" });
     }
-    if (auth.requiresAuth && auth.user?.organizationId && location.pathname === "/onboarding") {
+    if (auth.requiresAuth && organizationReady && location.pathname === "/onboarding") {
       throw redirect({ to: "/" });
     }
-    if (auth.requiresAuth && auth.user?.organizationId) {
+    if (auth.requiresAuth && organizationReady) {
       void context.queryClient.prefetchQuery(organizationsQueryOptions);
     }
     const instance = await fetchInstanceSettings();

@@ -6,6 +6,7 @@ import {
   FICTA_HEALTH_PATH,
   FICTA_PROTECTION_STATS_PATH,
   FICTA_REGISTRY_RELOAD_PATH,
+  FICTA_REGISTRY_REVISION_HEADER,
   FICTA_RESTORE_HIGHLIGHT_END,
   FICTA_RESTORE_HIGHLIGHT_HEADER,
   FICTA_RESTORE_HIGHLIGHT_METADATA,
@@ -179,14 +180,20 @@ export async function startProxy(
       const reloaded = engine.reloadRegistryValues();
       // Surface min-len drops (counts only): a published value shorter than FICTA_REGISTRY_MIN_LEN is
       // filtered at load, and without this it would read back to the gateway as a successful no-op.
-      const { skippedTooShort } = managedRegistryLoadCounts();
+      const expectedRevision = c.req.header(FICTA_REGISTRY_REVISION_HEADER)?.trim();
+      const { revisions, ...managed } = managedRegistryLoadCounts();
+      const revision = expectedRevision && revisions.includes(expectedRevision) ? expectedRevision : undefined;
       log.info(
-        { added: reloaded.added, total: reloaded.total, skippedTooShort },
+        { added: reloaded.added, total: reloaded.total, ...managed, revisionConfirmed: revision !== undefined },
         `🔄 registry reload: +${reloaded.added} value(s), ${reloaded.total} total${
-          skippedTooShort > 0 ? `, ${skippedTooShort} below min length` : ""
+          managed.skippedTooShort > 0 ? `, ${managed.skippedTooShort} below min length` : ""
         }`,
       );
-      const response: RegistryReloadOk = { ok: true, service: "ficta", registry: { ...reloaded, skippedTooShort } };
+      const response: RegistryReloadOk = {
+        ok: true,
+        service: "ficta",
+        registry: { ...reloaded, ...managed, ...(revision ? { revision } : {}) },
+      };
       return c.json(response);
     }
 

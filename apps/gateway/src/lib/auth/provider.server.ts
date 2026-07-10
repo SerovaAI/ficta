@@ -29,7 +29,7 @@ export interface AuthProvider {
   getAccessToken(): Promise<string | null>;
   /** Organizations (tenants) the current user belongs to. Empty for `none` and org-less users with no memberships. */
   listOrganizations(): Promise<OrgSummary[]>;
-  /** Create an organization, make the current user its admin, switch the session into it, and return it. */
+  /** Create and enter an organization when the deployment mode supports organization creation. */
   createOrganization(name: string): Promise<OrgSummary>;
   /** Refresh the session onto `organizationId` (new role/permission claims). No-op for `none`. */
   switchOrganization(organizationId: string): Promise<void>;

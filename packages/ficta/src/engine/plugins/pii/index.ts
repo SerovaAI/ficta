@@ -228,13 +228,22 @@ function expandCaseVariants(values: readonly ProtectedValue[], text: string): Pr
   const out = [...values];
   const present = new Set(out.map((value) => value.value));
   for (const value of values) {
-    for (const form of flexibleOccurrences(text, value.value, { caseInsensitive: true })) {
+    for (const form of flexibleOccurrences(text, value.value, { caseInsensitive: true, wordBounded: true })) {
       if (present.has(form) || form.trim().length < MIN_PII_VALUE_LENGTH) continue;
+      // A title-cased single-token name such as "Will" must not turn the ordinary word "will" into
+      // PII throughout the prompt. Multi-token names retain lowercase coverage; an explicit registry
+      // value has a separate, operator-controlled expansion path in engine.ts.
+      if (isLowercaseSingleWord(form) && !isLowercaseSingleWord(value.value)) continue;
       present.add(form);
       out.push({ ...value, value: form });
     }
   }
   return out;
+}
+
+function isLowercaseSingleWord(value: string): boolean {
+  const trimmed = value.trim();
+  return !/\s/u.test(trimmed) && /\p{L}/u.test(trimmed) && trimmed === trimmed.toLowerCase();
 }
 
 function discoverPii(): PluginDiscovery {

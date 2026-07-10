@@ -223,11 +223,10 @@ export function ProtectedRegistrySection({ showHeader = true }: { showHeader?: b
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h4 className="text-sm font-medium">Publish approved values to the proxy</h4>
-            <p className="pt-1 text-muted-foreground text-xs leading-relaxed">
-              Writes the managed registry JSON file and reloads the running proxy — new approved values are protected
-              immediately, no restart needed. The file path must be in the proxy&apos;s{" "}
-              <code className="font-mono">FICTA_REGISTRY_MANAGED_FILE_PATHS</code>. Removed values keep redacting until
-              the proxy restarts.
+            <p className="max-w-3xl pt-1 text-muted-foreground text-xs leading-relaxed">
+              Publishes one private file and verifies that the running proxy loaded that exact revision. New values and
+              aliases apply immediately. Removed values and metadata-only changes keep their previous behavior until the
+              proxy restarts.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -236,39 +235,55 @@ export function ProtectedRegistrySection({ showHeader = true }: { showHeader?: b
               variant="ghost"
               size="sm"
               onClick={exportRegistry}
-              disabled={exportStatus === "saving" || publishStatus === "saving" || approvedEntries.length === 0}
+              disabled={entries === undefined || exportStatus === "saving" || publishStatus === "saving"}
             >
               <Download className="size-4" aria-hidden />
-              Export file only
+              {exportStatus === "saving"
+                ? "Exporting…"
+                : approvedEntries.length === 0
+                  ? "Export empty file"
+                  : "Export file only"}
             </Button>
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={publishRegistry}
-              disabled={publishStatus === "saving" || exportStatus === "saving" || approvedEntries.length === 0}
+              disabled={entries === undefined || publishStatus === "saving" || exportStatus === "saving"}
             >
               <UploadCloud className="size-4" aria-hidden />
-              Publish to proxy
+              {publishStatus === "saving"
+                ? "Publishing…"
+                : approvedEntries.length === 0
+                  ? "Publish empty registry"
+                  : "Publish to proxy"}
             </Button>
           </div>
         </div>
         {exportResult ? (
-          <p className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2 font-mono text-xs leading-relaxed">
-            {exportResult.values} value{exportResult.values === 1 ? "" : "s"} written to {exportResult.path}
+          <p
+            className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs leading-relaxed"
+            role="status"
+          >
+            {exportResult.values} value{exportResult.values === 1 ? "" : "s"} written to{" "}
+            <code className="break-all font-mono">{exportResult.path}</code>
             {exportResult.skippedAliases > 0 ? `; ${exportResult.skippedAliases} short alias(es) skipped` : ""}
           </p>
         ) : null}
         {publishResult ? (
-          <div className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2 font-mono text-xs leading-relaxed">
+          <div
+            className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs leading-relaxed"
+            role="status"
+          >
             <p>
-              {publishResult.values} value{publishResult.values === 1 ? "" : "s"} written to {publishResult.path}
+              {publishResult.values} value{publishResult.values === 1 ? "" : "s"} written to{" "}
+              <code className="break-all font-mono">{publishResult.path}</code>
               {publishResult.skippedAliases > 0 ? `; ${publishResult.skippedAliases} short alias(es) skipped` : ""}
             </p>
             {publishResult.reload.ok ? (
               <>
                 <p className="pt-1 text-emerald-600 dark:text-emerald-400">
-                  Proxy reloaded: now protecting {publishResult.reload.total} value
+                  Verified on proxy: now protecting {publishResult.reload.total} value
                   {publishResult.reload.total === 1 ? "" : "s"} (+{publishResult.reload.added} new).
                 </p>
                 {publishResult.reload.skippedTooShort > 0 ? (
@@ -278,10 +293,17 @@ export function ProtectedRegistrySection({ showHeader = true }: { showHeader?: b
                     length and NOT protected (FICTA_REGISTRY_MIN_LEN).
                   </p>
                 ) : null}
+                {publishResult.reload.filesMissing > 0 ? (
+                  <p className="pt-1 text-amber-600 dark:text-amber-400">
+                    This publish is verified, but {publishResult.reload.filesMissing} other configured registry file
+                    {publishResult.reload.filesMissing === 1 ? " is" : "s are"} missing on the proxy
+                    (FICTA_REGISTRY_MANAGED_FILE_PATHS).
+                  </p>
+                ) : null}
               </>
             ) : (
               <p className="pt-1 text-amber-600 dark:text-amber-400">
-                Proxy reload failed: {publishResult.reload.message}
+                File written, but not verified on proxy: {publishResult.reload.message}
               </p>
             )}
           </div>

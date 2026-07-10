@@ -57,6 +57,14 @@ describe("flexibleOccurrences", () => {
   it("does not bridge a paragraph break (mirrors the redaction matcher)", () => {
     expect(flexibleOccurrences("Viven\n\nBhowani", "Viven Bhowani", { caseInsensitive: true })).toEqual([]);
   });
+
+  it("can require token boundaries for word-like values", () => {
+    const forms = flexibleOccurrences("Ann signed; ANN approved; ANNOUNCEMENT follows.", "Ann", {
+      caseInsensitive: true,
+      wordBounded: true,
+    });
+    expect(forms).toEqual(["Ann", "ANN"]);
+  });
 });
 
 describe("piiPlugin.detectText — markdown + case coverage", () => {
@@ -104,6 +112,27 @@ describe("piiPlugin.detectText — markdown + case coverage", () => {
       expect(values).toContain("VIVEN BHOWANI");
       // The ALL-CAPS form carries the same category as the detection it was expanded from.
       expect(detected.find((v) => v.value === "VIVEN BHOWANI")).toMatchObject({ name: "person", kind: "pii" });
+    } finally {
+      await close(server);
+    }
+  });
+
+  it("does not expand a title-cased single-token name into an ordinary lowercase word", async () => {
+    const body = "Will Smith signed. We will proceed. WILL SMITH approved.";
+    const { server, port } = await startAnalyzeStub((req) => {
+      const start = req.text.indexOf("Will");
+      return start === -1 ? [] : [{ entity_type: "PERSON", start, end: start + "Will".length, score: 0.95 }];
+    });
+
+    process.env.FICTA_PII_ENABLED = "1";
+    process.env.FICTA_PII_BACKEND = "presidio";
+    process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
+    try {
+      const detected = (await piiPlugin.detectText?.(body, BODY)) as ProtectedValue[];
+      const values = detected.map((value) => value.value);
+      expect(values).toContain("Will");
+      expect(values).toContain("WILL");
+      expect(values).not.toContain("will");
     } finally {
       await close(server);
     }

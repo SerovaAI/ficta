@@ -50,6 +50,7 @@ const KEYED_SCOPE_MAX = 256;
  */
 interface KeyedScopeState {
   detected: SurrogateTable;
+  registryDerived: SurrogateTable;
   metadata: Map<string, ProtectedValue[]>;
   seenLeaves: Set<string>;
   lastUsedAt: number;
@@ -181,7 +182,7 @@ export class ProtectionEngine implements RedactionEngine {
       this.plugins,
       this.policy,
       this.metadataByValue,
-      this.vault.beginScope(state.detected),
+      this.vault.beginScope(state.detected, state.registryDerived),
       state.metadata,
       state.seenLeaves,
     );
@@ -193,6 +194,7 @@ export class ProtectionEngine implements RedactionEngine {
     if (existing) this.keyedScopes.delete(key); // re-insert below so map order stays least-recently-used-first
     const state = existing ?? {
       detected: this.vault.newDetectedLayer(),
+      registryDerived: this.vault.newRegistryDerivedLayer(),
       metadata: new Map<string, ProtectedValue[]>(),
       seenLeaves: new Set<string>(),
       lastUsedAt: now,
@@ -433,7 +435,7 @@ class ProtectionRequestScope implements RequestScope {
     for (const [value, metas] of this.permanentMetadata) {
       const meta = metas[0];
       if (!meta || !isCaseExpandable(value)) continue;
-      for (const form of flexibleOccurrences(text, value, { caseInsensitive: true })) {
+      for (const form of flexibleOccurrences(text, value, { caseInsensitive: true, wordBounded: true })) {
         if (form !== value) variants.push({ ...meta, value: form });
       }
     }

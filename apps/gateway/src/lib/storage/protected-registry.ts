@@ -1,8 +1,14 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import { FICTA_REGISTRY_RELOAD_PATH, isRegistryReloadOk } from "@serovaai/ficta-protocol";
+import {
+  FICTA_REGISTRY_RELOAD_PATH,
+  FICTA_REGISTRY_REVISION_HEADER,
+  isRegistryReloadOk,
+} from "@serovaai/ficta-protocol";
 import { createServerFn } from "@tanstack/react-start";
 import { requireAdminScope } from "@/lib/auth/guards.server";
+import { SerialTaskQueue, writePrivateFileAtomic } from "./private-file.server";
 import { getStorage } from "./storage.server";
 import {
   PROTECTED_REGISTRY_ENTRY_SOURCES,
@@ -21,6 +27,7 @@ const MANAGED_REGISTRY_SCHEMA = "ficta.managed-registry.v1";
 
 export interface ProtectedRegistryExport {
   path: string;
+  revision: string;
   entries: number;
   values: number;
   skippedAliases: number;
@@ -28,12 +35,29 @@ export interface ProtectedRegistryExport {
 
 /** Result of the proxy-reload half of a publish. Failure is partial success: the file is written. */
 export type ProtectedRegistryReloadResult =
-  | { ok: true; added: number; total: number; skippedTooShort: number }
-  | { ok: false; status: "unreachable" | "bad_response" | "forbidden"; message: string };
+  | {
+      ok: true;
+      revision: string;
+      added: number;
+      total: number;
+      loaded: number;
+      skippedTooShort: number;
+      filesRead: number;
+      /** Other configured registry files the proxy could not find — a proxy-config warning, not a
+       *  publication failure (this publish's own file is revision-verified). */
+      filesMissing: number;
+    }
+  | {
+      ok: false;
+      status: "unreachable" | "bad_response" | "forbidden" | "not_applied" | "source_error";
+      message: string;
+    };
 
 export interface ProtectedRegistryPublish extends ProtectedRegistryExport {
   reload: ProtectedRegistryReloadResult;
 }
+
+const registryMutationQueue = new SerialTaskQueue();
 
 export const fetchProtectedRegistryEntries = createServerFn({ method: "GET" }).handler(
   async (): Promise<ProtectedRegistryEntry[]> => {
@@ -66,7 +90,7 @@ export const deleteProtectedRegistryEntry = createServerFn({ method: "POST" })
 export const exportProtectedRegistryFile = createServerFn({ method: "POST" }).handler(
   async (): Promise<ProtectedRegistryExport> => {
     const { orgId } = await requireAdminScope();
-    return writeManagedRegistryFile(orgId);
+    return registryMutationQueue.run(() => writeManagedRegistryFile(orgId));
   },
 );
 
@@ -79,8 +103,10 @@ export const exportProtectedRegistryFile = createServerFn({ method: "POST" }).ha
 export const publishProtectedRegistry = createServerFn({ method: "POST" }).handler(
   async (): Promise<ProtectedRegistryPublish> => {
     const { orgId } = await requireAdminScope();
-    const written = await writeManagedRegistryFile(orgId); // await completes before reload — no write/reload race
-    return { ...written, reload: await requestProxyRegistryReload() };
+    return registryMutationQueue.run(async () => {
+      const written = await writeManagedRegistryFile(orgId);
+      return { ...written, reload: await requestProxyRegistryReload(written.revision) };
+    });
   },
 );
 
@@ -91,9 +117,10 @@ async function writeManagedRegistryFile(orgId: string): Promise<ProtectedRegistr
   const result = renderManagedRegistryFile(approved);
   const path = managedRegistryPath();
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, result.body, { mode: 0o600 });
+  await writePrivateFileAtomic(path, result.body);
   return {
     path,
+    revision: result.revision,
     entries: approved.length,
     values: result.values,
     skippedAliases: result.skippedAliases,
@@ -102,7 +129,7 @@ async function writeManagedRegistryFile(orgId: string): Promise<ProtectedRegistr
 
 const RELOAD_TIMEOUT_MS = 1500;
 
-async function requestProxyRegistryReload(): Promise<ProtectedRegistryReloadResult> {
+async function requestProxyRegistryReload(expectedRevision: string): Promise<ProtectedRegistryReloadResult> {
   const { proxyBaseUrl } = await import("@/lib/proxy-base.server");
   const proxyUrl = proxyBaseUrl();
   const controller = new AbortController();
@@ -110,7 +137,7 @@ async function requestProxyRegistryReload(): Promise<ProtectedRegistryReloadResu
   try {
     const res = await fetch(`${proxyUrl}${FICTA_REGISTRY_RELOAD_PATH}`, {
       method: "POST",
-      headers: { accept: "application/json" },
+      headers: { accept: "application/json", [FICTA_REGISTRY_REVISION_HEADER]: expectedRevision },
       signal: controller.signal,
     });
     if (res.status === 403) {
@@ -128,19 +155,7 @@ async function requestProxyRegistryReload(): Promise<ProtectedRegistryReloadResu
       };
     }
     const json = (await res.json()) as unknown;
-    if (!isRegistryReloadOk(json)) {
-      return {
-        ok: false,
-        status: "bad_response",
-        message: "ficta proxy reload response was not understood; the proxy and web app versions may be out of sync.",
-      };
-    }
-    return {
-      ok: true,
-      added: json.registry.added,
-      total: json.registry.total,
-      skippedTooShort: json.registry.skippedTooShort ?? 0,
-    };
+    return verifyRegistryReload(json, expectedRevision);
   } catch {
     return {
       ok: false,
@@ -150,6 +165,60 @@ async function requestProxyRegistryReload(): Promise<ProtectedRegistryReloadResu
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Confirm that the proxy parsed this exact file generation. HTTP reachability and `added: 0` alone
+ * cannot distinguish an unchanged registry from a path mismatch or an unreadable source.
+ */
+export function verifyRegistryReload(json: unknown, expectedRevision: string): ProtectedRegistryReloadResult {
+  if (!isRegistryReloadOk(json)) {
+    return {
+      ok: false,
+      status: "bad_response",
+      message: "The proxy reload response was not understood; the proxy and Gateway versions may be out of sync.",
+    };
+  }
+  const { registry } = json;
+  if (
+    registry.loaded === undefined ||
+    registry.filesRead === undefined ||
+    registry.filesMissing === undefined ||
+    registry.filesErrored === undefined
+  ) {
+    return {
+      ok: false,
+      status: "bad_response",
+      message: "The proxy does not support verified registry publication yet; restart it to load the written file.",
+    };
+  }
+  if (registry.filesErrored > 0) {
+    return {
+      ok: false,
+      status: "source_error",
+      message: `The proxy could not parse ${registry.filesErrored} configured registry file(s) (invalid or unreadable).`,
+    };
+  }
+  if (registry.revision !== expectedRevision) {
+    return {
+      ok: false,
+      status: "not_applied",
+      message:
+        "The proxy reloaded a different registry file. Align FICTA_GATEWAY_MANAGED_REGISTRY_PATH with FICTA_REGISTRY_MANAGED_FILE_PATHS, then publish again.",
+    };
+  }
+  // A missing file cannot be this publish's own — the revision above only matches a parsed file — so
+  // extra configured paths that are absent downgrade to a warning instead of failing the publish.
+  return {
+    ok: true,
+    revision: expectedRevision,
+    added: registry.added,
+    total: registry.total,
+    loaded: registry.loaded,
+    skippedTooShort: registry.skippedTooShort ?? 0,
+    filesRead: registry.filesRead,
+    filesMissing: registry.filesMissing,
+  };
 }
 
 function validateProtectedRegistryEntry(input: unknown): ProtectedRegistryEntryInput {
@@ -206,9 +275,11 @@ function normalizeAliases(value: unknown): string[] {
 
 function renderManagedRegistryFile(entries: ProtectedRegistryEntry[]): {
   body: string;
+  revision: string;
   values: number;
   skippedAliases: number;
 } {
+  const revision = randomUUID();
   const registryEntries: Array<{
     id: string;
     name: string;
@@ -242,6 +313,7 @@ function renderManagedRegistryFile(entries: ProtectedRegistryEntry[]): {
     body: `${JSON.stringify(
       {
         schema: MANAGED_REGISTRY_SCHEMA,
+        revision,
         generatedBy: "ficta-gateway",
         generatedAt: new Date().toISOString(),
         entries: registryEntries,
@@ -249,6 +321,7 @@ function renderManagedRegistryFile(entries: ProtectedRegistryEntry[]): {
       null,
       2,
     )}\n`,
+    revision,
     values,
     skippedAliases,
   };

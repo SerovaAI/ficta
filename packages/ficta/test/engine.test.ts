@@ -159,6 +159,25 @@ describe("protection engine plugins", () => {
     expect(restored).toContain("mauritius");
   });
 
+  it("persists registry case-variant mappings across requests in the same keyed scope", async () => {
+    const engine = new ProtectionEngine({
+      plugins: [],
+      values: [{ name: "JURISDICTION", value: "Mauritius", source: "env-file", kind: "secret" }],
+    });
+    const key = "org-1:thread-1";
+    const first = engine.beginRequest(key);
+    const redacted = await first.redactBodyDetailed(JSON.stringify({ content: "Heading: MAURITIUS" }));
+    expect(redacted.body).not.toContain("MAURITIUS");
+
+    // A later stateful turn may receive a surrogate minted in an earlier turn without the raw value
+    // appearing again in its request. Keyed scopes must retain the permanent-provenance mapping.
+    const second = engine.beginRequest(key);
+    expect(second.restoreText(redacted.body)).toContain("MAURITIUS");
+
+    // The mapping remains isolated from other scope keys.
+    expect(engine.beginRequest("org-2:thread-1").restoreText(redacted.body)).toBe(redacted.body);
+  });
+
   it("withholds a registry secret's case-variant from tool-call arguments like the canonical form", async () => {
     // A caps twin of a registered secret is still that secret. It is registered into the scope's
     // registry-derived layer (permanent provenance), so the default restore-into-tools policy

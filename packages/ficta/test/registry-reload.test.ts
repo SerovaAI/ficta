@@ -3,7 +3,12 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FICTA_REGISTRY_RELOAD_PATH, FICTA_STATUS_PATH, isRegistryReloadOk } from "@serovaai/ficta-protocol";
+import {
+  FICTA_REGISTRY_RELOAD_PATH,
+  FICTA_REGISTRY_REVISION_HEADER,
+  FICTA_STATUS_PATH,
+  isRegistryReloadOk,
+} from "@serovaai/ficta-protocol";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ProtectionEngine } from "../src/engine/engine.js";
 import { managedRegistryFilePlugin, resetPluginCachesForTests } from "../src/plugins/index.js";
@@ -47,11 +52,12 @@ afterEach(() => {
   resetPluginCachesForTests();
 });
 
-function writeManagedFile(file: string, values: string[]): void {
+function writeManagedFile(file: string, values: string[], revision = `revision-${values.length}`): void {
   writeFileSync(
     file,
     JSON.stringify({
       schema: "ficta.managed-registry.v1",
+      revision,
       entries: values.map((value, i) => ({
         id: `entry-${i}`,
         name: `gateway:client:global:entry-${i}`,
@@ -156,15 +162,38 @@ describe("proxy registry reload endpoint", () => {
 
       // Publish: the gateway rewrites the file, then POSTs reload. "ZA" is below FICTA_REGISTRY_MIN_LEN
       // (4 in this suite) — it must be surfaced as skippedTooShort, not read as a silent success.
-      writeManagedFile(file, ["Northstar Biologics", "Copper Kite Litigation", "ZA"]);
-      const res = await fetch(`${base}${FICTA_REGISTRY_RELOAD_PATH}`, { method: "POST" });
+      const revision = "gateway-revision-3";
+      writeManagedFile(file, ["Northstar Biologics", "Copper Kite Litigation", "ZA"], revision);
+      const res = await fetch(`${base}${FICTA_REGISTRY_RELOAD_PATH}`, {
+        method: "POST",
+        headers: { [FICTA_REGISTRY_REVISION_HEADER]: revision },
+      });
       expect(res.status).toBe(200);
       const raw = await res.text();
       expect(raw).not.toContain("Northstar"); // counts only — never values
       expect(raw).not.toContain("Copper Kite");
       const json: unknown = JSON.parse(raw);
       expect(isRegistryReloadOk(json)).toBe(true);
-      if (isRegistryReloadOk(json)) expect(json.registry).toEqual({ added: 1, total: 2, skippedTooShort: 1 });
+      if (isRegistryReloadOk(json)) {
+        expect(json.registry).toEqual({
+          added: 1,
+          total: 2,
+          loaded: 2,
+          skippedTooShort: 1,
+          filesRead: 1,
+          filesMissing: 0,
+          filesErrored: 0,
+          revision,
+        });
+      }
+
+      // A caller only gets a revision acknowledgement when that exact generation was parsed.
+      const mismatch = await fetch(`${base}${FICTA_REGISTRY_RELOAD_PATH}`, {
+        method: "POST",
+        headers: { [FICTA_REGISTRY_REVISION_HEADER]: "other-revision" },
+      });
+      const mismatchJson = (await mismatch.json()) as { registry?: { revision?: string } };
+      expect(mismatchJson.registry?.revision).toBeUndefined();
 
       // No restart: the very next proxied request keeps the new value out of the upstream body.
       const chat = await fetch(`${base}/v1/messages`, {
