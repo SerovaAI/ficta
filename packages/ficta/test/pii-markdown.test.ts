@@ -111,7 +111,9 @@ describe("piiPlugin.detectText — markdown + case coverage", () => {
       expect(values).toContain("Viven Bhowani");
       expect(values).toContain("VIVEN BHOWANI");
       // The ALL-CAPS form carries the same category as the detection it was expanded from.
-      expect(detected.find((v) => v.value === "VIVEN BHOWANI")).toMatchObject({ name: "person", kind: "pii" });
+      const expanded = detected.find((v) => v.value === "VIVEN BHOWANI");
+      expect(expanded).toMatchObject({ name: "person", kind: "pii" });
+      expect(expanded).not.toHaveProperty("spans");
     } finally {
       await close(server);
     }

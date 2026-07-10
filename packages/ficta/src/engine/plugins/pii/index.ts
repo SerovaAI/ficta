@@ -1,8 +1,8 @@
 import { detectorFailClosed } from "../../detection-policy.js";
 import { engineWarn } from "../../diagnostics.js";
 import { envFlag, parseBoolean } from "../../env-flags.js";
+import { expandEntities } from "../../expander.js";
 import { DetectorUnavailableError } from "../../redaction-engine.js";
-import { flexibleOccurrences } from "../../vault.js";
 import type { DetectorPlugin, PluginDiscovery, ProtectedValue } from "../types.js";
 import { normalizeMarkdownForDetection } from "./markdown.js";
 import { OpenmedUnavailableError, openmedConfig } from "./openmed-recognizer.js";
@@ -232,26 +232,23 @@ export const piiPlugin: DetectorPlugin = {
 function expandCaseVariants(values: readonly ProtectedValue[], text: string): ProtectedValue[] {
   const out = [...values];
   const present = new Set(out.map((value) => value.value));
-  for (const value of values) {
-    for (const form of flexibleOccurrences(text, value.value, { caseInsensitive: true, wordBounded: true })) {
-      if (present.has(form) || form.trim().length < MIN_PII_VALUE_LENGTH) continue;
-      // A title-cased single-token name such as "Will" must not turn the ordinary word "will" into
-      // PII throughout the prompt. Multi-token names retain lowercase coverage; an explicit registry
-      // value has a separate, operator-controlled expansion path in engine.ts.
-      if (isLowercaseSingleWord(form) && !isLowercaseSingleWord(value.value)) continue;
-      present.add(form);
-      // These are newly discovered surfaces, not the surface reported by the recognizer. Phase 3
-      // will re-anchor expanders explicitly; inheriting the canonical offsets would be incorrect.
-      const { spans: _spans, ...metadata } = value;
-      out.push({ ...metadata, value: form });
-    }
+  const entities = values.map((value, index) => ({
+    id: `detected:${index}`,
+    canonical: value.value,
+    forms: [value.value],
+    authority: "detected" as const,
+    meta: value,
+  }));
+  for (const occurrence of expandEntities([text], entities)) {
+    const form = occurrence.surface;
+    if (present.has(form) || form.trim().length < MIN_PII_VALUE_LENGTH) continue;
+    present.add(form);
+    // The adapter still returns string values until Phase 4 consumes occurrences directly. Never
+    // copy the canonical detector offsets onto a distinct expanded surface.
+    const { spans: _spans, ...metadata } = occurrence.entity.meta;
+    out.push({ ...metadata, value: form });
   }
   return out;
-}
-
-function isLowercaseSingleWord(value: string): boolean {
-  const trimmed = value.trim();
-  return !/\s/u.test(trimmed) && /\p{L}/u.test(trimmed) && trimmed === trimmed.toLowerCase();
 }
 
 function discoverPii(): PluginDiscovery {

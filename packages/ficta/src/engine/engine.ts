@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { detectorFailClosed } from "./detection-policy.js";
+import { expandEntities } from "./expander.js";
 import { protectedValueExcludedBy } from "./plugins/policy.js";
 import { defaultDetectors, loadPluginRegistry, type PluginRegistrySnapshot } from "./plugins/registry.js";
 import type {
@@ -22,7 +23,7 @@ import {
   type TextRedactionContext,
   type TextRedactionDetails,
 } from "./redaction-engine.js";
-import { flexibleOccurrences, redactableBodyLeaves, type ScopedVault, type SurrogateTable, Vault } from "./vault.js";
+import { redactableBodyLeaves, type ScopedVault, type SurrogateTable, Vault } from "./vault.js";
 import type { Wire } from "./wire.js";
 import { bufferedRestoreAdapterFor, sseRestoreAdapterFor } from "./wire-restore.js";
 
@@ -418,9 +419,9 @@ class ProtectionRequestScope implements RequestScope {
    * would otherwise miss. Each variant attributes to its registry entry's metadata (so the audit still
    * names it) but lives in the per-request detected layer, since the shared permanent vault is immutable.
    *
-   * Scoped to word/name-like values via {@link isCaseExpandable}: folding the casing of an opaque secret,
-   * key, ID, account number, or amount is meaningless and risks matching unrelated text — those all carry
-   * digits and are skipped. A registered common word (no digits) would fold too; that is a bounded,
+   * Scoped by the expander to word/name-like values: folding the casing of an opaque secret, key, ID,
+   * account number, or amount is meaningless and risks matching unrelated text — those all carry digits
+   * and are skipped. A registered common word (no digits) would fold too; that is a bounded,
    * privacy-favouring over-redaction the operator opted into by registering it.
    *
    * Variants go through {@link ScopedVault.registerRegistryDerived}, NOT the detected layer: a caps twin
@@ -431,13 +432,20 @@ class ProtectionRequestScope implements RequestScope {
    */
   private registerRegistryCaseVariants(text: string): void {
     if (!text || this.permanentMetadata.size === 0) return;
-    const variants: ProtectedValue[] = [];
-    for (const [value, metas] of this.permanentMetadata) {
+    const entities = [...this.permanentMetadata].flatMap(([value, metas], index) => {
       const meta = metas[0];
-      if (!meta || !isCaseExpandable(value)) continue;
-      for (const form of flexibleOccurrences(text, value, { caseInsensitive: true, wordBounded: true })) {
-        if (form !== value) variants.push({ ...meta, value: form });
-      }
+      return meta
+        ? [{ id: `registry:${index}`, canonical: value, forms: [value], authority: "registry" as const, meta }]
+        : [];
+    });
+    const variants: ProtectedValue[] = [];
+    const present = new Set<string>();
+    for (const occurrence of expandEntities([text], entities)) {
+      if (occurrence.surface === occurrence.entity.canonical) continue;
+      const key = `${occurrence.entity.id}\0${occurrence.surface}`;
+      if (present.has(key)) continue;
+      present.add(key);
+      variants.push({ ...occurrence.entity.meta, value: occurrence.surface });
     }
     if (variants.length === 0) return;
     const admitted = admit(variants, this.policy);
@@ -521,24 +529,6 @@ function valueHash(value: string): string {
 /** Drop named candidates excluded by an enforced (trusted) registry-policy rule. */
 function admit(values: readonly ProtectedValue[], policy: RegistryPolicy): ProtectedValue[] {
   return values.filter((value) => !protectedValueExcludedBy(value, policy));
-}
-
-/**
- * Whether a registered value is word/name-like and therefore safe to case-fold (see
- * {@link ProtectionRequestScope.registerRegistryCaseVariants}). Opaque secrets, API keys, ID/account
- * numbers, and amounts carry digits — their casing is meaningless and folding them risks matching
- * unrelated text — so a value containing any digit is excluded. Require ≥2 letters so a bare token
- * (e.g. "--") is not treated as a name.
- */
-function isCaseExpandable(value: string): boolean {
-  if (/\d/.test(value)) return false;
-  let letters = 0;
-  for (const ch of value) {
-    if (ch >= "a" && ch <= "z") letters++;
-    else if (ch >= "A" && ch <= "Z") letters++;
-    if (letters >= 2) return true;
-  }
-  return false;
 }
 
 function remember(metadata: Map<string, ProtectedValue[]>, value: ProtectedValue): void {

@@ -1,4 +1,5 @@
 import { envFlag, type RestoreIntoToolsPolicy, restoreIntoToolsPolicy } from "./env-flags.js";
+import { expansionSpans, flexiblePatternSource } from "./expander.js";
 import type { ProtectedValueKind } from "./plugins/types.js";
 import { type SurrogateStrategy, surrogateStrategy } from "./surrogate.js";
 
@@ -1143,7 +1144,7 @@ const flexiblePatternCache = new Map<string, RegExp>();
 function flexibleWhitespacePattern(value: string): RegExp {
   let pattern = flexiblePatternCache.get(value);
   if (pattern === undefined) {
-    pattern = buildFlexibleWhitespacePattern(value);
+    pattern = new RegExp(flexiblePatternSource(value), "g");
     if (flexiblePatternCache.size >= FLEXIBLE_PATTERN_CACHE_LIMIT) {
       const oldest = flexiblePatternCache.keys().next().value; // Map preserves insertion order
       if (oldest !== undefined) flexiblePatternCache.delete(oldest);
@@ -1154,25 +1155,9 @@ function flexibleWhitespacePattern(value: string): RegExp {
   return pattern;
 }
 
-function buildFlexibleWhitespacePattern(value: string): RegExp {
-  // Match a registered value across serialized whitespace differences (e.g. a document parser
-  // reflowing "Proxima Medical Supplies CC" into "Proxima Medical\nSupplies CC"). Each separator
-  // permits at most one line break — single-line wrap (incl. next-line indentation and \r\n) still
-  // matches, but a blank line / paragraph break does not, so unrelated adjacent tokens across a
-  // paragraph boundary are not collapsed into one value. A separator must still be present: this
-  // must not match "ProximaMedical" for a registered "Proxima Medical".
-  const source = value
-    .split(/(\s+)/)
-    .map((part) =>
-      hasWhitespace(part) ? "(?:[^\\S\\r\\n]+|[^\\S\\r\\n]*(?:\\r\\n|\\r|\\n)[^\\S\\r\\n]*)" : escapeRegExp(part),
-    )
-    .join("");
-  return new RegExp(source, "g");
-}
-
 /**
  * Distinct surface substrings of `text` that match `value` under the same whitespace-flexible rules the
- * vault uses for redaction (see {@link buildFlexibleWhitespacePattern}), optionally case-insensitively.
+ * vault uses for redaction, optionally case-insensitively.
  * Returned forms are the literal text as it appears — so a caller can register each casing it finds and
  * have redaction match and round-trip it. Used by the PII plugin to cover an entity detected in one
  * casing that also appears in another (e.g. a title-case name that recurs ALL-CAPS in a heading), which
@@ -1183,54 +1168,15 @@ export function flexibleOccurrences(
   value: string,
   opts: { caseInsensitive?: boolean; wordBounded?: boolean } = {},
 ): string[] {
-  if (!text || !value) return [];
-  // Reuse the exact redaction pattern so any form returned is guaranteed to match on redaction; add `i`
-  // only for the case-insensitive sweep. A fresh RegExp keeps this off the shared lastIndex-stateful cache.
-  const re = new RegExp(buildFlexibleWhitespacePattern(value).source, opts.caseInsensitive ? "gi" : "g");
   const out: string[] = [];
   const seen = new Set<string>();
-  for (let match = re.exec(text); match !== null; match = re.exec(text)) {
-    const form = match[0];
-    const bounded = !opts.wordBounded || hasTokenBoundaries(text, match.index, match.index + form.length, value);
-    if (form && bounded && !seen.has(form)) {
-      seen.add(form);
-      out.push(form);
+  for (const span of expansionSpans(text, value, opts)) {
+    if (!seen.has(span.surface)) {
+      seen.add(span.surface);
+      out.push(span.surface);
     }
-    if (match.index === re.lastIndex) re.lastIndex += 1; // defensive: never spin on a zero-width match
   }
   return out;
-}
-
-/** Reject a word-like match embedded in a larger Unicode word, while leaving punctuation edges alone. */
-function hasTokenBoundaries(text: string, start: number, end: number, value: string): boolean {
-  const first = codePointAfter(value, 0);
-  const last = codePointBefore(value, value.length);
-  if (isWordCodePoint(first) && isWordCodePoint(codePointBefore(text, start))) return false;
-  if (isWordCodePoint(last) && isWordCodePoint(codePointAfter(text, end))) return false;
-  return true;
-}
-
-function isWordCodePoint(value: string): boolean {
-  return value !== "" && /[\p{L}\p{M}\p{N}_]/u.test(value);
-}
-
-function codePointBefore(text: string, index: number): string {
-  if (index <= 0) return "";
-  const low = text.charCodeAt(index - 1);
-  const high = index > 1 ? text.charCodeAt(index - 2) : 0;
-  const paired = low >= 0xdc00 && low <= 0xdfff && high >= 0xd800 && high <= 0xdbff;
-  const start = paired ? index - 2 : index - 1;
-  return text.slice(start, index);
-}
-
-function codePointAfter(text: string, index: number): string {
-  if (index >= text.length) return "";
-  const codePoint = text.codePointAt(index);
-  return codePoint === undefined ? "" : String.fromCodePoint(codePoint);
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function isInsidePathLikeToken(
