@@ -23,6 +23,7 @@ import {
   type BodyRedactionDetails,
   DetectorUnavailableError,
   type ProtectionHit,
+  type ProtectionTraceOccurrence,
   type ProtectionTraceValue,
   type RedactionEngine,
   RedactionInvariantError,
@@ -315,14 +316,33 @@ class ProtectionRequestScope implements RequestScope {
     private readonly seenLeaves?: Set<string>,
     /** Resolver-clipped surfaces retain restore metadata but never become future entity candidates. */
     private readonly tokenOnly = new Set<string>(),
+    /** Explicit caller selections are re-seeded per request, never retained by a keyed scope. */
+    private readonly userProtectedMetadata: Map<string, ProtectedValue[]> = new Map(),
   ) {}
+
+  registerProtectedValues(values: readonly ProtectedValue[]): void {
+    for (const candidate of values) {
+      const value = candidate.value.trim();
+      if (!value) continue;
+      const protectedValue: ProtectedValue = {
+        name: candidate.name || "USER_SELECTED",
+        value,
+        source: candidate.source || "gateway-user",
+        plugin: candidate.plugin,
+        kind: candidate.kind ?? "custom",
+        confidence: candidate.confidence ?? "exact",
+      };
+      remember(this.userProtectedMetadata, protectedValue);
+      this.vault.registerUserProtectedSurface(protectedValue, true);
+    }
+  }
 
   async redactBodyDetailed(body: string, ctx: BodyRedactionContext = {}): Promise<BodyRedactionDetails> {
     return this.redactBodyOccurrences(body, ctx);
   }
 
   private async redactBodyOccurrences(body: string, ctx: BodyRedactionContext): Promise<BodyRedactionDetails> {
-    const { traceValues, ...detectCtx } = ctx;
+    const { traceValues, traceOccurrences, ...detectCtx } = ctx;
     const document = bodyDocument(body);
     const seen = this.seenLeaves;
     const hashes = seen ? document.leaves.map((leaf) => leafHash(leaf.text)) : [];
@@ -334,7 +354,10 @@ class ProtectionRequestScope implements RequestScope {
     });
     if (seen && detection.complete) for (const hash of hashes) seen.add(hash);
 
-    const registryEntities = entitiesFromMetadata(this.permanentMetadata, "registry");
+    const registryEntities = [
+      ...entitiesFromMetadata(this.permanentMetadata, "registry"),
+      ...entitiesFromMetadata(this.userProtectedMetadata, "registry"),
+    ];
     const detectedByValue = new Map<string, ProtectedValue>();
     for (const [value, metas] of this.detectedMetadata) {
       if (this.tokenOnly.has(value)) continue;
@@ -402,6 +425,7 @@ class ProtectionRequestScope implements RequestScope {
     const replacements = new Map<number, string>();
     const owners = new Map<string, Entity>();
     const found = new Set<string>();
+    const resolvedTrace: ProtectionTraceOccurrence[] = [];
     const matchSurfaces = new Set(
       resolved.filter((occurrence) => !occurrence.clipped).map((occurrence) => occurrence.surface),
     );
@@ -409,17 +433,33 @@ class ProtectionRequestScope implements RequestScope {
       const leaf = document.leaves[leafIndex];
       if (!leaf) continue;
       const rewritten = spliceResolvedOccurrences(leaf.text, claims, (occurrence) => {
-        const token = this.vault.registerResolvedSurface(
-          { ...occurrence.entity.meta, value: occurrence.surface },
-          occurrence.entity.authority,
-          matchSurfaces.has(occurrence.surface),
-        );
+        const surface = { ...occurrence.entity.meta, value: occurrence.surface };
+        const userProtected = this.userProtectedMetadata.has(occurrence.entity.canonical);
+        const token = userProtected
+          ? this.vault.registerUserProtectedSurface(surface, matchSurfaces.has(occurrence.surface))
+          : this.vault.registerResolvedSurface(
+              surface,
+              occurrence.entity.authority,
+              matchSurfaces.has(occurrence.surface),
+            );
+        if (traceOccurrences) {
+          resolvedTrace.push({
+            ...this.hitFromProtectedValue(occurrence.entity.meta),
+            leaf: occurrence.leaf,
+            start: occurrence.start,
+            end: occurrence.end,
+            surrogate: token,
+            origin: userProtected ? "user" : occurrence.entity.authority === "registry" ? "registry" : "detected",
+          });
+        }
         found.add(occurrence.surface);
         const owner = owners.get(occurrence.surface);
         if (!owner || occurrence.entity.authority === "registry") owners.set(occurrence.surface, occurrence.entity);
-        remember(this.detectedMetadata, { ...occurrence.entity.meta, value: occurrence.surface });
-        if (matchSurfaces.has(occurrence.surface)) this.tokenOnly.delete(occurrence.surface);
-        else this.tokenOnly.add(occurrence.surface);
+        if (!userProtected) {
+          remember(this.detectedMetadata, { ...occurrence.entity.meta, value: occurrence.surface });
+          if (matchSurfaces.has(occurrence.surface)) this.tokenOnly.delete(occurrence.surface);
+          else this.tokenOnly.add(occurrence.surface);
+        }
         return token;
       });
       if (rewritten !== leaf.text) replacements.set(leafIndex, rewritten);
@@ -449,6 +489,9 @@ class ProtectionRequestScope implements RequestScope {
     if (traceValues) {
       if (found.size > 0) details.traceValues = this.traceValuesForOwnedValues(found, owners);
       if (leakValues.length > 0) details.traceLeakValues = this.traceValuesForOwnedValues(leakValues, leakOwners);
+    }
+    if (traceOccurrences && resolvedTrace.length > 0) {
+      details.traceOccurrences = resolvedTrace.sort((a, b) => a.leaf - b.leaf || a.start - b.start || b.end - a.end);
     }
     return details;
   }
@@ -585,7 +628,9 @@ class ProtectionRequestScope implements RequestScope {
 
   /** Stored metadata fallback for header/query redaction and later response restore traces. */
   private storedMetadataFor(raw: string): ProtectedValue | undefined {
-    return (this.permanentMetadata.get(raw) ?? this.detectedMetadata.get(raw))?.[0];
+    return (this.permanentMetadata.get(raw) ??
+      this.userProtectedMetadata.get(raw) ??
+      this.detectedMetadata.get(raw))?.[0];
   }
 
   private hitsForEntities(entities: readonly Entity[]): ProtectionHit[] {

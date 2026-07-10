@@ -1,4 +1,5 @@
 import {
+  FICTA_PROTECTION_TICKET_HEADER,
   FICTA_RESTORE_HIGHLIGHT_HEADER,
   FICTA_SCOPE_HEADER,
   FICTA_TRACE_CAPTURE_HEADER,
@@ -20,6 +21,8 @@ export interface ModelChoice {
   fictaScope?: string;
   /** Server-derived per-thread trace/audit capture decision. Never sourced from browser forwarded props. */
   traceEnabled?: boolean;
+  /** Opaque capability returned by the proxy's loopback-only pre-send protection preview. */
+  protectionTicket?: string;
 }
 
 /**
@@ -29,7 +32,14 @@ export interface ModelChoice {
  */
 const FICTA_PROXY_URL = process.env.FICTA_PROXY_URL ?? "http://127.0.0.1:8787";
 
-export function createModelAdapter({ provider, model, apiKey, fictaScope, traceEnabled = false }: ModelChoice) {
+export function createModelAdapter({
+  provider,
+  model,
+  apiKey,
+  fictaScope,
+  traceEnabled = false,
+  protectionTicket,
+}: ModelChoice) {
   const defaultHeaders = {
     // Advertises that this client can render restore-highlight markers — a static capability (the UI
     // always knows how). It's an internal handshake header (the proxy strips it before upstream), so
@@ -37,6 +47,7 @@ export function createModelAdapter({ provider, model, apiKey, fictaScope, traceE
     // trace capture are both enabled.
     [FICTA_RESTORE_HIGHLIGHT_HEADER]: "1",
     [FICTA_TRACE_CAPTURE_HEADER]: traceEnabled ? "1" : "0",
+    ...(protectionTicket ? { [FICTA_PROTECTION_TICKET_HEADER]: protectionTicket } : {}),
     ...(fictaScope ? { [FICTA_SCOPE_HEADER]: fictaScope } : {}),
   };
   if (provider === "anthropic") {

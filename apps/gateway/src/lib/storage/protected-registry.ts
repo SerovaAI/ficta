@@ -7,7 +7,7 @@ import {
   isRegistryReloadOk,
 } from "@serovaai/ficta-protocol";
 import { createServerFn } from "@tanstack/react-start";
-import { requireAdminScope } from "@/lib/auth/guards.server";
+import { requireAdminScope, requireScope } from "@/lib/auth/guards.server";
 import { SerialTaskQueue, writePrivateFileAtomic } from "./private-file.server";
 import { getStorage } from "./storage.server";
 import {
@@ -78,6 +78,33 @@ export const importProtectedRegistryEntries = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<ProtectedRegistryEntry[]> => {
     const { userId, orgId } = await requireAdminScope();
     return (await getStorage()).importProtectedRegistryEntries(orgId, userId, data);
+  });
+
+/** Ordinary workspace users may propose chat-protected values, but cannot approve or publish them. */
+export const suggestProtectedRegistryEntries = createServerFn({ method: "POST" })
+  .validator(validateProtectedRegistrySuggestions)
+  .handler(async ({ data }): Promise<ProtectedRegistryEntry[]> => {
+    const { userId, orgId } = await requireScope();
+    const storage = await getStorage();
+    const existing = await storage.listProtectedRegistryEntries(orgId);
+    const known = new Set(existing.map((entry) => entry.value.toLocaleLowerCase()));
+    const saved: ProtectedRegistryEntry[] = [];
+    for (const value of data) {
+      const key = value.toLocaleLowerCase();
+      if (known.has(key)) continue;
+      saved.push(
+        await storage.upsertProtectedRegistryEntry(orgId, userId, {
+          matterId: "",
+          type: "other",
+          value,
+          aliases: [],
+          source: "suggested",
+          status: "suggested",
+        }),
+      );
+      known.add(key);
+    }
+    return saved;
   });
 
 export const deleteProtectedRegistryEntry = createServerFn({ method: "POST" })
@@ -229,6 +256,23 @@ function validateProtectedRegistryImport(input: unknown): ProtectedRegistryEntry
   if (!Array.isArray(input)) throw new Error("invalid registry import");
   if (input.length > ENTRY_IMPORT_MAX) throw new Error(`import at most ${ENTRY_IMPORT_MAX} registry entries at a time`);
   return input.map((item) => normalizeProtectedRegistryEntry(asRecord(item), "csv"));
+}
+
+function validateProtectedRegistrySuggestions(input: unknown): string[] {
+  if (!Array.isArray(input) || input.length > 20) throw new Error("suggest at most 20 protected values at a time");
+  const seen = new Set<string>();
+  const values: string[] = [];
+  for (const item of input) {
+    if (typeof item !== "string") throw new Error("suggested values must be text");
+    const value = cleanString(item);
+    if (!value) continue;
+    const key = value.toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    values.push(value);
+  }
+  if (values.length === 0) throw new Error("select a value to suggest");
+  return values;
 }
 
 function validateProtectedRegistryDelete(input: unknown): { id: string } {

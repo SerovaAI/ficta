@@ -70,6 +70,8 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
   const [nameStatus, setNameStatus] = useState<SaveStatus>("idle");
   const [modelsStatus, setModelsStatus] = useState<SaveStatus>("idle");
   const [promptsStatus, setPromptsStatus] = useState<SaveStatus>("idle");
+  const [reviewStatus, setReviewStatus] = useState<SaveStatus>("idle");
+  const [reviewRequired, setReviewRequiredState] = useState(settings.protectionReviewRequired === true);
   const [modelsError, setModelsError] = useState("Couldn't save model availability.");
   const [promptsError, setPromptsError] = useState("Couldn't save suggested prompts.");
   const savedName = useRef(settings.instanceName ?? "");
@@ -89,6 +91,10 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
   useEffect(() => {
     setChecked(checkedFromSettings(settings));
   }, [settings]);
+
+  useEffect(() => {
+    setReviewRequiredState(settings.protectionReviewRequired === true);
+  }, [settings.protectionReviewRequired]);
 
   useEffect(() => {
     const next = promptDraftsFromSettings(settings);
@@ -180,6 +186,20 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
     }
   };
 
+  const setReviewRequired = async (required: boolean) => {
+    const previous = reviewRequired;
+    setReviewRequiredState(required);
+    setReviewStatus("saving");
+    try {
+      await updateInstanceSettings({ data: { protectionReviewRequired: required } });
+      refreshRouteData(router);
+      setReviewStatus("idle");
+    } catch {
+      setReviewRequiredState(previous);
+      setReviewStatus("error");
+    }
+  };
+
   const savePromptsImmediately = (next: string[]) => {
     const seq = promptsSeq.current + 1;
     skipPromptDebounceKey.current = promptsKey(next);
@@ -252,6 +272,26 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
             );
           })}
           <InlineStatus status={modelsStatus} error={modelsError} />
+        </div>
+      </SettingRow>
+
+      <SettingRow
+        label="Protection review"
+        description="Review starts on for each chat. Require it to prevent users from turning it off."
+      >
+        <div className="space-y-1">
+          <label
+            htmlFor="protection-review-required"
+            className="flex cursor-pointer items-center gap-2.5 text-sm [@media(pointer:coarse)]:min-h-11"
+          >
+            <Checkbox
+              id="protection-review-required"
+              checked={reviewRequired}
+              onCheckedChange={(state) => void setReviewRequired(state === true)}
+            />
+            <span className="font-medium">Require review before every send</span>
+          </label>
+          <InlineStatus status={reviewStatus} error="Couldn't save protection review settings." />
         </div>
       </SettingRow>
 

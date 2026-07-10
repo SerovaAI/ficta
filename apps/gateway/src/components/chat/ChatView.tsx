@@ -28,11 +28,14 @@ import {
   textAttachmentFromFile,
 } from "@/lib/file-attachments";
 import { DEFAULT_REASONING_EFFORT, MODELS, type ModelChoice, type ReasoningEffort } from "@/lib/models";
+import { withOneShotProtectionTicket } from "@/lib/protection-connection";
+import { type GatewayProtectionPreview, previewProtection } from "@/lib/protection-preview";
 import type { ProtectionStatus } from "@/lib/protection-status";
 import { fetchProxyConfig } from "@/lib/proxy-config";
 import type { RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
 import { reportRestoreValidation } from "@/lib/restore-validation";
 import { uiToStored } from "@/lib/storage/messages";
+import { suggestProtectedRegistryEntries } from "@/lib/storage/protected-registry";
 import { invalidateThreads, threadKeys } from "@/lib/storage/threadQueries";
 import { saveThread, setThreadTraceEnabled, startThread } from "@/lib/storage/threads";
 import {
@@ -52,6 +55,7 @@ import { Composer, type ComposerHandle } from "./Composer";
 import { ErrorBanner } from "./ErrorBanner";
 import { MessageList } from "./MessageList";
 import { ProtectionNotice } from "./ProtectionNotice";
+import { ProtectionReview, ProtectionReviewLoading } from "./ProtectionReview";
 import { draftWithSuggestion } from "./suggestionDraft";
 import { TopBar } from "./TopBar";
 
@@ -107,18 +111,40 @@ export function ChatView({
   const [isExtracting, setIsExtracting] = useState(false);
   const [activeThreadId, setActiveThreadId] = useState(threadId);
   const [threadTraceEnabled, setThreadTraceEnabledState] = useState(initialThreadTraceEnabled ?? false);
+  const [threadTraceError, setThreadTraceError] = useState(false);
+  const [reviewBeforeSend, setReviewBeforeSend] = useState(true);
   const [traceCapture, setTraceCapture] = useState({ loaded: false, rawBodies: false, traceAudit: false });
   const [saveWarning, setSaveWarning] = useState(false);
+  const pendingProtectionTicket = useRef<string | undefined>(undefined);
+  const protectionPreviewRequest = useRef<{ generation: number; controller?: AbortController }>({ generation: 0 });
+  const [protectionReview, setProtectionReview] = useState<{
+    text: string;
+    preview: GatewayProtectionPreview;
+    newlyProtectedValues: string[];
+    action: "send" | "reload";
+  }>();
+  const [protectionReviewLoading, setProtectionReviewLoading] = useState(false);
+  const [protectionReviewError, setProtectionReviewError] = useState("");
+  const [protectionReviewNotice, setProtectionReviewNotice] = useState("");
 
   // A new chat gets a stable id up front so its snapshot has a home before the first save.
   const tid = useMemo(() => threadId ?? crypto.randomUUID(), [threadId]);
   const forwardedProps = useMemo(
-    () => ({ provider: model.provider, model: model.model, reasoningEffort, traceEnabled: threadTraceEnabled }),
+    () => ({
+      provider: model.provider,
+      model: model.model,
+      reasoningEffort,
+      traceEnabled: threadTraceEnabled,
+    }),
     [model.provider, model.model, reasoningEffort, threadTraceEnabled],
+  );
+  const chatConnection = useMemo(
+    () => withOneShotProtectionTicket(fetchServerSentEvents("/api/chat"), pendingProtectionTicket),
+    [],
   );
 
   const { messages, sendMessage, isLoading, error, stop, reload, clear } = useChat({
-    connection: fetchServerSentEvents("/api/chat"),
+    connection: chatConnection,
     forwardedProps,
     id: tid,
     threadId: tid,
@@ -136,9 +162,46 @@ export function ChatView({
   const startingThread = useRef(false);
   const { displayMessages, restoreHighlightsAvailable } = useRestoreHighlightDisplay(tid, messages);
 
+  const cancelProtectionPreview = () => {
+    protectionPreviewRequest.current.controller?.abort();
+    protectionPreviewRequest.current = { generation: protectionPreviewRequest.current.generation + 1 };
+  };
+
+  const startProtectionPreview = () => {
+    cancelProtectionPreview();
+    const controller = new AbortController();
+    const generation = protectionPreviewRequest.current.generation;
+    protectionPreviewRequest.current = { generation, controller };
+    return { controller, generation };
+  };
+
+  const protectionPreviewIsCurrent = (generation: number) =>
+    protectionPreviewRequest.current.generation === generation &&
+    protectionPreviewRequest.current.controller?.signal.aborted === false;
+
   useEffect(() => {
     setThreadTraceEnabledState(initialThreadTraceEnabled ?? false);
   }, [initialThreadTraceEnabled]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset all chat-scoped review state when the route changes
+  useEffect(() => {
+    cancelProtectionPreview();
+    pendingProtectionTicket.current = undefined;
+    setReviewBeforeSend(true);
+    setThreadTraceError(false);
+    setProtectionReview(undefined);
+    setProtectionReviewLoading(false);
+    setProtectionReviewError("");
+    setProtectionReviewNotice("");
+  }, [threadId]);
+
+  useEffect(
+    () => () => {
+      protectionPreviewRequest.current.controller?.abort();
+      protectionPreviewRequest.current = { generation: protectionPreviewRequest.current.generation + 1 };
+    },
+    [],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -210,25 +273,48 @@ export function ChatView({
 
   // Whether the current protection posture allows sending, blocks it, or needs a one-time acknowledgement.
   const posture = sendPosture(protectionStatus);
+  const protectionReviewRequired = instance.protectionReviewRequired === true;
+  const reviewBeforeSendEnabled = protectionReviewRequired || reviewBeforeSend;
 
-  const dispatchSend = (text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed || isLoading || isExtracting || startingThread.current) return;
-    const content = messageWithAttachments(trimmed, attachments);
+  const dispatchContent = (content: string, protectionTicket?: string) => {
+    if (!content.trim() || isLoading || isExtracting || startingThread.current) return;
     const startedMessage = messagesRef.current.length === 0 ? userMessage(content) : undefined;
     setInput("");
     setAttachments([]);
     setUploadWarning(undefined);
 
     startingThread.current = true;
+    pendingProtectionTicket.current = protectionTicket;
     const sendPromise = sendMessage(content);
     // `sendMessage()` awaits TanStack AI's internal onResponse hook before it starts `connection.send()`.
     // A microtask can still run inside that gap, so schedule thread/sidebar/URL work as a macrotask to avoid
     // perturbing the first stream startup path.
     if (startedMessage) setTimeout(() => startThreadNow(startedMessage), 0);
     void sendPromise.finally(() => {
+      if (pendingProtectionTicket.current === protectionTicket) pendingProtectionTicket.current = undefined;
       startingThread.current = false;
     });
+  };
+
+  const beginProtectionReview = async (text: string, action: "send" | "reload" = "send") => {
+    const trimmed = text.trim();
+    if (!trimmed || isLoading || isExtracting || protectionReviewLoading || startingThread.current) return;
+    const content = action === "send" ? messageWithAttachments(trimmed, attachments) : trimmed;
+    setProtectionReview(undefined);
+    setProtectionReviewError("");
+    setProtectionReviewNotice("");
+    setProtectionReviewLoading(true);
+    const request = startProtectionPreview();
+    try {
+      const preview = await previewProtection({ threadId: tid, text: content, signal: request.controller.signal });
+      if (!protectionPreviewIsCurrent(request.generation)) return;
+      setProtectionReview({ text: content, preview, newlyProtectedValues: [], action });
+    } catch (err) {
+      if (!protectionPreviewIsCurrent(request.generation) || isAbortError(err)) return;
+      setProtectionReviewError(err instanceof Error ? err.message : "Protection preview could not run.");
+    } finally {
+      if (protectionPreviewIsCurrent(request.generation)) setProtectionReviewLoading(false);
+    }
   };
 
   // Gate the raw dispatch on protection posture so the Send affordance can't outrun the banner: a blocked
@@ -240,17 +326,121 @@ export function ChatView({
       setConfirmSendOpen(true);
       return;
     }
-    dispatchSend(text);
+    if (reviewBeforeSendEnabled) void beginProtectionReview(text);
+    else dispatchContent(messageWithAttachments(text.trim(), attachments));
   };
 
   const confirmPassthroughSend = () => {
     setPassthroughAck(true);
     setConfirmSendOpen(false);
-    dispatchSend(input);
+    if (reviewBeforeSendEnabled) void beginProtectionReview(input);
+    else dispatchContent(messageWithAttachments(input.trim(), attachments));
+  };
+
+  const protectSelection = async (value: string) => {
+    if (!protectionReview || !value.trim()) return;
+    setProtectionReviewLoading(true);
+    setProtectionReviewError("");
+    setProtectionReviewNotice("");
+    const request = startProtectionPreview();
+    try {
+      const preview = await previewProtection({
+        threadId: tid,
+        text: protectionReview.text,
+        addValues: [value],
+        signal: request.controller.signal,
+      });
+      if (!protectionPreviewIsCurrent(request.generation)) return;
+      setProtectionReview({
+        ...protectionReview,
+        preview,
+        newlyProtectedValues: [...new Set([...protectionReview.newlyProtectedValues, value.trim()])],
+      });
+    } catch (err) {
+      if (!protectionPreviewIsCurrent(request.generation) || isAbortError(err)) return;
+      setProtectionReviewError(err instanceof Error ? err.message : "That selection could not be protected.");
+    } finally {
+      if (protectionPreviewIsCurrent(request.generation)) setProtectionReviewLoading(false);
+    }
+  };
+
+  const removeChatProtection = async (value: string) => {
+    if (!protectionReview) return;
+    setProtectionReviewLoading(true);
+    setProtectionReviewError("");
+    setProtectionReviewNotice("");
+    const request = startProtectionPreview();
+    try {
+      const preview = await previewProtection({
+        threadId: tid,
+        text: protectionReview.text,
+        removeValues: [value],
+        signal: request.controller.signal,
+      });
+      if (!protectionPreviewIsCurrent(request.generation)) return;
+      setProtectionReview({
+        ...protectionReview,
+        preview,
+        newlyProtectedValues: protectionReview.newlyProtectedValues.filter((entry) => entry !== value),
+      });
+    } catch (err) {
+      if (!protectionPreviewIsCurrent(request.generation) || isAbortError(err)) return;
+      setProtectionReviewError(err instanceof Error ? err.message : "That chat protection could not be removed.");
+    } finally {
+      if (protectionPreviewIsCurrent(request.generation)) setProtectionReviewLoading(false);
+    }
+  };
+
+  const suggestForWorkspace = async (values: string[]) => {
+    setProtectionReviewLoading(true);
+    setProtectionReviewError("");
+    setProtectionReviewNotice("");
+    try {
+      const saved = await suggestProtectedRegistryEntries({ data: values });
+      setProtectionReviewNotice(
+        saved.length > 0
+          ? `${saved.length} value${saved.length === 1 ? " was" : "s were"} sent to the Protected Registry for admin review.`
+          : "These values are already in the Protected Registry.",
+      );
+      setProtectionReview((current) => (current ? { ...current, newlyProtectedValues: [] } : current));
+    } catch (err) {
+      setProtectionReviewError(err instanceof Error ? err.message : "Workspace suggestions could not be saved.");
+    } finally {
+      setProtectionReviewLoading(false);
+    }
+  };
+
+  const sendProtected = () => {
+    if (!protectionReview || protectionReviewLoading) return;
+    const content = protectionReview.text;
+    const ticket = protectionReview.preview.ticket;
+    setProtectionReview(undefined);
+    setProtectionReviewError("");
+    setProtectionReviewNotice("");
+    if (protectionReview.action === "send") {
+      dispatchContent(content, ticket);
+      return;
+    }
+    pendingProtectionTicket.current = ticket;
+    const reloadPromise = reload();
+    void reloadPromise.finally(() => {
+      if (pendingProtectionTicket.current === ticket) pendingProtectionTicket.current = undefined;
+    });
+  };
+
+  const closeProtectionReview = () => {
+    cancelProtectionPreview();
+    pendingProtectionTicket.current = undefined;
+    setProtectionReview(undefined);
+    setProtectionReviewLoading(false);
+    setProtectionReviewError("");
+    setProtectionReviewNotice("");
+    requestAnimationFrame(() => composerRef.current?.focusEnd());
   };
 
   const toggleThreadTrace = () => {
     if (!admin || !traceCapture.rawBodies) return;
+    setThreadTraceError(false);
     const persistedThreadId = activeThreadId;
     const next = !threadTraceEnabled;
     setThreadTraceEnabledState(next);
@@ -262,6 +452,7 @@ export function ChatView({
       .then(() => invalidateThreads(queryClient))
       .catch((err) => {
         console.warn("Failed to update thread trace capture", err);
+        setThreadTraceError(true);
         setThreadTraceEnabledState(!next);
         queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) =>
           current?.map((thread) => (thread.id === persistedThreadId ? { ...thread, traceEnabled: !next } : thread)),
@@ -355,6 +546,8 @@ export function ChatView({
     // than silently dropping typed text or staged attachments.
     const hasDraft = input.trim().length > 0 || attachments.length > 0;
     if (hasDraft && !window.confirm("Discard your unsent message and start a new chat?")) return;
+    cancelProtectionPreview();
+    pendingProtectionTicket.current = undefined;
 
     // Start a genuinely new thread: navigate to `/`, which mounts a fresh ChatView with a new thread id.
     // (clear() alone would reuse this id and overwrite the current thread, and the URL may already be
@@ -368,7 +561,18 @@ export function ChatView({
     setInput("");
     setAttachments([]);
     setUploadWarning(undefined);
+    setProtectionReview(undefined);
+    setProtectionReviewError("");
     requestAnimationFrame(() => composerRef.current?.focus());
+  };
+
+  const regenerate = () => {
+    const latestUserText = latestUserMessageText(messagesRef.current);
+    if (reviewBeforeSendEnabled && latestUserText) {
+      void beginProtectionReview(latestUserText, "reload");
+      return;
+    }
+    void reload();
   };
 
   return (
@@ -393,8 +597,14 @@ export function ChatView({
             threadTraceEnabled={threadTraceEnabled}
             threadTraceControlVisible={admin}
             threadTraceControlDisabled={!traceCapture.loaded || !traceCapture.rawBodies}
-            threadTraceAuditEnabled={traceCapture.traceAudit}
+            threadTraceControlLoading={!traceCapture.loaded}
+            threadTraceError={threadTraceError}
             onToggleThreadTrace={toggleThreadTrace}
+            reviewBeforeSend={reviewBeforeSendEnabled}
+            reviewBeforeSendRequired={protectionReviewRequired}
+            onToggleReviewBeforeSend={() => {
+              if (!protectionReviewRequired) setReviewBeforeSend((enabled) => !enabled);
+            }}
             restoreDisplayMode={restoreDisplayMode}
             restoreHighlightsAvailable={restoreHighlightsAvailable}
             onToggleRestoreDisplay={() =>
@@ -405,14 +615,14 @@ export function ChatView({
           <MessageList
             messages={displayMessages}
             isLoading={isLoading}
-            onRegenerate={reload}
+            onRegenerate={regenerate}
             onPickSuggestion={pickSuggestion}
             restoreDisplayMode={restoreDisplayMode}
           />
 
           {error ? (
             <div className="pb-2">
-              <ErrorBanner message={error.message} onRetry={isLoading ? undefined : reload} />
+              <ErrorBanner message={error.message} onRetry={isLoading ? undefined : regenerate} />
             </div>
           ) : null}
 
@@ -420,28 +630,56 @@ export function ChatView({
 
           <ProtectionNotice status={protectionStatus} />
 
-          <Composer
-            ref={composerRef}
-            value={input}
-            onChange={setInput}
-            onSubmit={() => send(input)}
-            onStop={stop}
-            isLoading={isLoading}
-            isExtracting={isExtracting}
-            disabledReason={posture.kind === "blocked" ? posture.reason : undefined}
-            model={model}
-            onModelChange={setModel}
-            reasoningEffort={reasoningEffort}
-            onReasoningEffortChange={setReasoningEffort}
-            attachments={attachments}
-            uploadWarning={uploadWarning}
-            autoFocus={!threadId && messages.length === 0}
-            onFilesSelected={handleFilesSelected}
-            onRemoveAttachment={(id) =>
-              setAttachments((current) => current.filter((attachment) => attachment.id !== id))
-            }
-            onDismissUploadWarning={() => setUploadWarning(undefined)}
-          />
+          {protectionReview ? (
+            <ProtectionReview
+              text={protectionReview.text}
+              preview={protectionReview.preview}
+              busy={protectionReviewLoading}
+              error={protectionReviewError || undefined}
+              notice={protectionReviewNotice || undefined}
+              onBack={closeProtectionReview}
+              onProtect={protectSelection}
+              onRemove={removeChatProtection}
+              onSend={sendProtected}
+              onSuggest={suggestForWorkspace}
+              suggestValues={protectionReview.newlyProtectedValues}
+            />
+          ) : protectionReviewLoading ? (
+            <ProtectionReviewLoading onBack={closeProtectionReview} />
+          ) : (
+            <>
+              {protectionReviewError ? (
+                <div className="pb-2">
+                  <ErrorBanner message={protectionReviewError} onRetry={() => void beginProtectionReview(input)} />
+                </div>
+              ) : null}
+              <Composer
+                ref={composerRef}
+                value={input}
+                onChange={(value) => {
+                  setInput(value);
+                  setProtectionReviewError("");
+                }}
+                onSubmit={() => send(input)}
+                onStop={stop}
+                isLoading={isLoading}
+                isExtracting={isExtracting}
+                disabledReason={posture.kind === "blocked" ? posture.reason : undefined}
+                model={model}
+                onModelChange={setModel}
+                reasoningEffort={reasoningEffort}
+                onReasoningEffortChange={setReasoningEffort}
+                attachments={attachments}
+                uploadWarning={uploadWarning}
+                autoFocus={!threadId && messages.length === 0}
+                onFilesSelected={handleFilesSelected}
+                onRemoveAttachment={(id) =>
+                  setAttachments((current) => current.filter((attachment) => attachment.id !== id))
+                }
+                onDismissUploadWarning={() => setUploadWarning(undefined)}
+              />
+            </>
+          )}
         </div>
 
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} userSettings={userSettings} />
@@ -564,6 +802,19 @@ function deriveTitle(messages: UIMessage[]): string {
   return deriveThreadTitleFromText(text);
 }
 
+function latestUserMessageText(messages: UIMessage[]): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (message?.role !== "user") continue;
+    const text = message.parts
+      .filter((part) => part.type === "text")
+      .map((part) => part.content)
+      .join("");
+    return text || undefined;
+  }
+  return undefined;
+}
+
 function messageWithAttachments(text: string, attachments: TextAttachment[]): string {
   if (attachments.length === 0) return text;
 
@@ -580,4 +831,8 @@ function messageWithAttachments(text: string, attachments: TextAttachment[]): st
 
   if (!text) return `Please review the attached text file content.\n\n${fileContext}`;
   return `${fileContext}\n\nUser request:\n${text}`;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
 }

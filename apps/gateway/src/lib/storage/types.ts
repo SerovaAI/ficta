@@ -24,6 +24,8 @@ export interface InstanceSettings {
   allowedModels?: string[];
   /** Empty-chat suggestion prompts. Undefined = defaults; empty array = hide prompt buttons. */
   suggestedPrompts?: string[];
+  /** When true, protection review is locked on. Otherwise each chat starts on and the user may turn it off. */
+  protectionReviewRequired?: boolean;
 }
 
 /** Client-visible metadata for a workspace provider key. Never includes plaintext or ciphertext. */

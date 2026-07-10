@@ -1,8 +1,10 @@
+import { FICTA_PROTECTION_PREVIEW_PATH, FICTA_SCOPE_HEADER, isProtectionPreviewOk } from "@serovaai/ficta-protocol";
 import { chat, toServerSentEventsResponse } from "@tanstack/ai";
 import { createFileRoute } from "@tanstack/react-router";
 import { scopeFromAuth } from "../../lib/auth/guards.server";
 import { getActiveProvider } from "../../lib/auth/provider.server";
 import { isAdmin } from "../../lib/auth/types";
+import { fictaScopeFor } from "../../lib/ficta-scope.server";
 import { createModelAdapter } from "../../lib/model-adapter";
 import {
   DEFAULT_REASONING_EFFORT,
@@ -13,6 +15,7 @@ import {
 } from "../../lib/models";
 import { recordProtectionStatsTrend } from "../../lib/protection-stats.server";
 import { MissingKeyError, ProviderKeyDecryptionError, resolveProviderApiKey } from "../../lib/provider-keys.server";
+import { proxyBaseUrl } from "../../lib/proxy-base.server";
 import { stripRestoreHighlightMarkers } from "../../lib/restore-highlights";
 import { getStorage } from "../../lib/storage/storage.server";
 import { isModelAllowed } from "../../lib/storage/types";
@@ -44,6 +47,7 @@ export const Route = createFileRoute("/api/chat")({
         let messages: Parameters<typeof chat>[0]["messages"];
         let threadId: string | undefined;
         let requestedTraceEnabled = false;
+        let protectionTicket: string | undefined;
         try {
           const body = await request.json();
           provider = body.forwardedProps?.provider ?? "openai";
@@ -52,8 +56,9 @@ export const Route = createFileRoute("/api/chat")({
             ? body.forwardedProps.reasoningEffort
             : DEFAULT_REASONING_EFFORT;
           requestedTraceEnabled = body.forwardedProps?.traceEnabled === true;
+          protectionTicket = cleanProtectionTicket(body.forwardedProps?.protectionTicket);
           messages = stripRestoreHighlightMarkers(body.messages);
-          threadId = typeof body.threadId === "string" ? body.threadId.slice(0, 128) : undefined;
+          threadId = typeof body.threadId === "string" ? body.threadId.trim().slice(0, 128) || undefined : undefined;
           if (!PROVIDERS.includes(provider)) throw new Error(`unknown provider "${provider}"`);
           if (!model) throw new Error("no model selected");
         } catch (err) {
@@ -65,13 +70,21 @@ export const Route = createFileRoute("/api/chat")({
         const storage = await getStorage();
         const userId = scope?.userId ?? "local";
         const orgId = scope?.orgId ?? "local";
-        const [instance, storedThread] = await Promise.all([
+        const [instance, storedThread, threadOwner] = await Promise.all([
           storage.getInstanceSettings(orgId),
           threadId ? storage.getThread(userId, orgId, threadId) : Promise.resolve(null),
+          threadId ? storage.getThreadOwner(threadId) : Promise.resolve(null),
         ]);
+        if (threadOwner && (threadOwner.userId !== userId || threadOwner.orgId !== orgId)) {
+          return errorResponse(404, "chat not found");
+        }
         if (!isModelAllowed(instance, `${provider}/${model}`)) {
           return errorResponse(403, "model not enabled on this instance");
         }
+        if (requiresProtectionReviewTicket(instance, protectionTicket)) {
+          return errorResponse(428, "protection review is required before sending");
+        }
+        if (protectionTicket && !threadId) return errorResponse(400, "a chat id is required for protection review");
 
         let stream: ReturnType<typeof chat>;
         try {
@@ -82,7 +95,15 @@ export const Route = createFileRoute("/api/chat")({
           recordProtectionStatsTrend(orgId).catch((err: unknown) => {
             console.warn("Failed to ingest redaction proof trend.", err);
           });
-          const fictaScope = threadId ? `${orgId}:${threadId}` : undefined;
+          const fictaScope = threadId ? fictaScopeFor(orgId, userId, threadId) : undefined;
+          if (!protectionTicket && threadId && fictaScope) {
+            const protectedValues = await storage.listThreadProtectedValues(userId, orgId, threadId);
+            if (protectedValues.length > 0) {
+              const currentUserText = latestUserText(messages);
+              if (!currentUserText) throw new Error("the current user message could not be prepared for protection");
+              protectionTicket = await prepareStoredThreadProtection(fictaScope, currentUserText, protectedValues);
+            }
+          }
           const apiKey = await resolveProviderApiKey(orgId, provider);
           const traceEnabled = resolveChatTraceEnabled({
             storedTraceEnabled: storedThread?.thread.traceEnabled,
@@ -96,6 +117,7 @@ export const Route = createFileRoute("/api/chat")({
               apiKey,
               fictaScope,
               traceEnabled,
+              protectionTicket,
             }),
             messages,
             modelOptions: provider === "openai" ? { reasoning: { effort: reasoningEffort } } : undefined,
@@ -127,6 +149,54 @@ function reason(err: unknown, fallback: string): string {
   return message || fallback;
 }
 
+function cleanProtectionTicket(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const ticket = value.trim();
+  return /^[0-9a-f-]{20,80}$/i.test(ticket) ? ticket : undefined;
+}
+
+async function prepareStoredThreadProtection(
+  fictaScope: string,
+  currentUserText: string,
+  protectedValues: string[],
+): Promise<string> {
+  const response = await fetch(`${proxyBaseUrl()}${FICTA_PROTECTION_PREVIEW_PATH}`, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      [FICTA_SCOPE_HEADER]: fictaScope,
+    },
+    body: JSON.stringify({ text: currentUserText, protectedValues }),
+  });
+  const json = (await response.json()) as unknown;
+  if (!response.ok || !isProtectionPreviewOk(json)) {
+    throw new Error("stored chat protections could not be prepared; review protection and try again");
+  }
+  return json.ticket;
+}
+
+export function latestUserText(messages: readonly unknown[] | undefined): string | undefined {
+  if (!messages) return undefined;
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index] as unknown;
+    if (!message || typeof message !== "object" || Array.isArray(message)) continue;
+    const record = message as Record<string, unknown>;
+    if (record.role !== "user") continue;
+    if (typeof record.content === "string") return record.content;
+    if (!Array.isArray(record.parts)) return undefined;
+    const text = record.parts
+      .flatMap((part) => {
+        if (!part || typeof part !== "object" || Array.isArray(part)) return [];
+        const partRecord = part as Record<string, unknown>;
+        return partRecord.type === "text" && typeof partRecord.content === "string" ? [partRecord.content] : [];
+      })
+      .join("");
+    return text || undefined;
+  }
+  return undefined;
+}
+
 export function resolveChatTraceEnabled({
   storedTraceEnabled,
   requestedTraceEnabled,
@@ -137,4 +207,11 @@ export function resolveChatTraceEnabled({
   admin: boolean;
 }): boolean {
   return storedTraceEnabled ?? (requestedTraceEnabled && admin);
+}
+
+export function requiresProtectionReviewTicket(
+  instance: { protectionReviewRequired?: boolean },
+  protectionTicket: string | undefined,
+): boolean {
+  return instance.protectionReviewRequired === true && !protectionTicket;
 }

@@ -59,6 +59,10 @@ function validateInstancePatch(input: unknown): Partial<InstanceSettings> {
   if ("suggestedPrompts" in i) {
     patch.suggestedPrompts = normalizeSuggestedPrompts(i.suggestedPrompts);
   }
+  if ("protectionReviewRequired" in i) {
+    if (typeof i.protectionReviewRequired !== "boolean") throw new Error("invalid protectionReviewRequired");
+    patch.protectionReviewRequired = i.protectionReviewRequired;
+  }
   return patch;
 }
 

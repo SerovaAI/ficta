@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  FICTA_PROTECTION_PREVIEW_PATH,
+  FICTA_PROTECTION_TICKET_HEADER,
   FICTA_REGISTRY_REVISION_HEADER,
   FICTA_SCOPE_HEADER,
   FICTA_TRACE_CAPTURE_HEADER,
+  isProtectionPreviewOk,
   isProtectionStatsOk,
   isProxyConfigOk,
   isRegistryReloadOk,
@@ -138,6 +141,11 @@ describe("protocol constants", () => {
   it("exports the registry revision acknowledgement header", () => {
     assert.equal(FICTA_REGISTRY_REVISION_HEADER, "x-ficta-registry-revision");
   });
+
+  it("exports the protection preview path and ticket header", () => {
+    assert.equal(FICTA_PROTECTION_PREVIEW_PATH, "/__ficta/protection-preview");
+    assert.equal(FICTA_PROTECTION_TICKET_HEADER, "x-ficta-protection-ticket");
+  });
 });
 
 describe("normalizers", () => {
@@ -190,5 +198,30 @@ describe("runtime guards", () => {
       isRegistryReloadOk({ ok: true, service: "ficta", registry: { added: 0, total: 12, filesErrored: 0.5 } }),
       false,
     );
+  });
+
+  it("validates protection previews", () => {
+    const preview = {
+      ok: true,
+      service: "ficta",
+      ticket: "ticket-1",
+      textSha256: "a".repeat(64),
+      redactedText: "Contact FICTA_0123456789abcdef0123456789abcdef",
+      findings: [
+        {
+          start: 8,
+          end: 25,
+          surrogate: "FICTA_0123456789abcdef0123456789abcdef",
+          origin: "detected",
+          name: "EMAIL",
+          source: "pii-regex",
+          kind: "pii",
+          confidence: "high",
+        },
+      ],
+    };
+    assert.equal(isProtectionPreviewOk(preview), true);
+    preview.findings[0].end = 7;
+    assert.equal(isProtectionPreviewOk(preview), false);
   });
 });

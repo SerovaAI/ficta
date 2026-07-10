@@ -46,6 +46,12 @@ privacy tool, but a usability cost. For higher precision, layer a HuggingFace OR
 specific client/counterparty/matter entities, register them in the value registry so they get the
 strong exact-match promise rather than relying on probabilistic NER.
 
+**Explicit user selections:** Gateway's pre-send review lets a user mark a phrase the configured detectors
+missed. That phrase receives exact-match, registry-strength treatment inside the user's current chat and is
+re-applied on later sends from Gateway's private thread storage. This improves the request the user actually
+reviewed; it does not make PII detection complete, infer other missed phrases, or silently promote the value to
+organization-wide policy. Workspace promotion remains an admin-reviewed Protected Registry action.
+
 ## Fail-closed does not rescue missed PII
 
 This is the load-bearing caveat and must not be blurred:

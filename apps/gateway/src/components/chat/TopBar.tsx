@@ -1,9 +1,24 @@
-import { Activity, Eye, EyeOff, Moon, PanelLeft, Sun } from "lucide-react";
+import {
+  Circle,
+  CircleAlert,
+  CircleDot,
+  CircleOff,
+  Eye,
+  EyeOff,
+  ListChecks,
+  ListTodo,
+  Loader2,
+  LockKeyhole,
+  Moon,
+  PanelLeft,
+  Sun,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ProtectionStatus } from "@/lib/protection-status";
 import type { RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
 import { useTheme } from "@/lib/use-theme";
+import { cn } from "@/lib/utils";
 import { ProtectionBadge } from "./ProtectionBadge";
 
 export function TopBar({
@@ -13,8 +28,12 @@ export function TopBar({
   threadTraceEnabled = false,
   threadTraceControlVisible = false,
   threadTraceControlDisabled = true,
-  threadTraceAuditEnabled = false,
+  threadTraceControlLoading = false,
+  threadTraceError = false,
   onToggleThreadTrace,
+  reviewBeforeSend = true,
+  reviewBeforeSendRequired = false,
+  onToggleReviewBeforeSend,
   restoreDisplayMode = "values",
   restoreHighlightsAvailable = false,
   onToggleRestoreDisplay,
@@ -26,8 +45,12 @@ export function TopBar({
   threadTraceEnabled?: boolean;
   threadTraceControlVisible?: boolean;
   threadTraceControlDisabled?: boolean;
-  threadTraceAuditEnabled?: boolean;
+  threadTraceControlLoading?: boolean;
+  threadTraceError?: boolean;
   onToggleThreadTrace?: () => void;
+  reviewBeforeSend?: boolean;
+  reviewBeforeSendRequired?: boolean;
+  onToggleReviewBeforeSend?: () => void;
   restoreDisplayMode?: RestoreHighlightDisplayMode;
   restoreHighlightsAvailable?: boolean;
   onToggleRestoreDisplay?: () => void;
@@ -37,7 +60,8 @@ export function TopBar({
   const traceToggle = threadTraceToggleLabels({
     enabled: threadTraceEnabled,
     disabled: threadTraceControlDisabled,
-    auditEnabled: threadTraceAuditEnabled,
+    loading: threadTraceControlLoading,
+    error: threadTraceError,
   });
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
@@ -66,22 +90,82 @@ export function TopBar({
           <ProtectionBadge status={protectionStatus} labelClassName="hidden sm:inline" />
         </div>
         <div className="flex items-center gap-2">
+          {onToggleReviewBeforeSend ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={reviewBeforeSend ? "secondary" : "ghost"}
+                  size="icon"
+                  className={cn(
+                    reviewBeforeSend ? "text-foreground shadow-xs" : "text-muted-foreground",
+                    reviewBeforeSendRequired && "cursor-default",
+                  )}
+                  onClick={onToggleReviewBeforeSend}
+                  aria-disabled={reviewBeforeSendRequired}
+                  aria-label={
+                    reviewBeforeSendRequired
+                      ? "Review before sending is required by your workspace"
+                      : `${reviewBeforeSend ? "Disable" : "Enable"} review before sending for this chat`
+                  }
+                  aria-pressed={reviewBeforeSend}
+                >
+                  {reviewBeforeSendRequired ? (
+                    <LockKeyhole className="size-4" aria-hidden />
+                  ) : reviewBeforeSend ? (
+                    <ListChecks className="size-4" aria-hidden />
+                  ) : (
+                    <ListTodo className="size-4" aria-hidden />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {reviewBeforeSendRequired
+                  ? "Review before send is required by your workspace"
+                  : reviewBeforeSend
+                    ? "Review before send is on · Click to turn off"
+                    : "Review before send is off · Click to turn on"}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
           {threadTraceControlVisible && onToggleThreadTrace ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant={threadTraceEnabled ? "secondary" : "ghost"}
                   size="icon"
+                  className={cn(
+                    threadTraceEnabled ? "text-foreground shadow-xs" : "text-muted-foreground",
+                    threadTraceError && "text-destructive",
+                    (threadTraceControlDisabled || threadTraceControlLoading) && "cursor-default opacity-70",
+                  )}
                   onClick={onToggleThreadTrace}
-                  disabled={threadTraceControlDisabled}
+                  aria-disabled={threadTraceControlDisabled || threadTraceControlLoading}
                   aria-label={traceToggle.ariaLabel}
                   aria-pressed={threadTraceEnabled}
                 >
-                  <Activity className="size-4" aria-hidden />
+                  {threadTraceControlLoading ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                  ) : threadTraceError ? (
+                    <CircleAlert className="size-4" aria-hidden />
+                  ) : threadTraceControlDisabled ? (
+                    <CircleOff className="size-4" aria-hidden />
+                  ) : threadTraceEnabled ? (
+                    <CircleDot className="size-4" aria-hidden />
+                  ) : (
+                    <Circle className="size-4" aria-hidden />
+                  )}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{traceToggle.tooltip}</TooltipContent>
+              {threadTraceError ? (
+                <span className="sr-only" role="status" aria-live="polite">
+                  Trace capture setting wasn't saved.
+                </span>
+              ) : null}
             </Tooltip>
+          ) : null}
+          {onToggleReviewBeforeSend || (threadTraceControlVisible && onToggleThreadTrace) ? (
+            <span className="h-4 w-px bg-border" aria-hidden />
           ) : null}
           {restoreHighlightsAvailable && onToggleRestoreDisplay ? (
             <Tooltip>
@@ -120,30 +204,44 @@ export function TopBar({
 export function threadTraceToggleLabels({
   enabled,
   disabled,
-  auditEnabled,
+  loading = false,
+  error = false,
 }: {
   enabled: boolean;
   disabled: boolean;
-  auditEnabled: boolean;
+  loading?: boolean;
+  error?: boolean;
 }): {
   ariaLabel: string;
   tooltip: string;
 } {
+  if (loading) {
+    return {
+      ariaLabel: "Checking trace capture availability",
+      tooltip: "Trace capture: Checking availability…",
+    };
+  }
+  if (error) {
+    return {
+      ariaLabel: "Retry changing trace capture",
+      tooltip: "Trace capture setting wasn't saved · Click to try again",
+    };
+  }
   if (disabled) {
     return {
-      ariaLabel: "Thread trace capture unavailable",
-      tooltip: "Enable FICTA_LOG_LEVEL=trace on the proxy to trace selected threads",
+      ariaLabel: "Trace capture unavailable",
+      tooltip: "Trace capture: Unavailable · Enable FICTA_LOG_LEVEL=trace on the proxy",
     };
   }
   if (enabled) {
     return {
-      ariaLabel: "Disable thread trace capture",
-      tooltip: auditEnabled ? "Trace and audit capture is on for this thread" : "Raw body trace is on for this thread",
+      ariaLabel: "Stop trace capture for this chat",
+      tooltip: "Trace capture: On for this chat · Click to stop",
     };
   }
   return {
-    ariaLabel: "Enable thread trace capture",
-    tooltip: auditEnabled ? "Trace and audit capture is off for this thread" : "Raw body trace is off for this thread",
+    ariaLabel: "Start trace capture for this chat",
+    tooltip: "Trace capture: Off for this chat · Click to start",
   };
 }
 

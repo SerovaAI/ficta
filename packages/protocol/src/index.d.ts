@@ -4,6 +4,8 @@ export declare const FICTA_CONFIG_PATH = "/__ficta/config";
 export declare const FICTA_REGISTRY_RELOAD_PATH = "/__ficta/registry/reload";
 export declare const FICTA_REGISTRY_REVISION_HEADER = "x-ficta-registry-revision";
 export declare const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
+export declare const FICTA_PROTECTION_PREVIEW_PATH = "/__ficta/protection-preview";
+export declare const FICTA_PROTECTION_TICKET_HEADER = "x-ficta-protection-ticket";
 export declare const FICTA_SCOPE_HEADER = "x-ficta-scope";
 export declare const FICTA_TRACE_CAPTURE_HEADER = "x-ficta-trace-capture";
 export declare const FICTA_RESTORE_HIGHLIGHT_HEADER = "x-ficta-restore-highlights";
@@ -72,6 +74,42 @@ export interface ProtectionStatusError {
 }
 
 export type ProtectionStatus = ProtectionStatusOk | ProtectionStatusError;
+
+export type ProtectionPreviewOrigin = "registry" | "detected" | "user";
+
+/** UTF-16 coordinates into the exact preview text supplied by the caller. */
+export interface ProtectionPreviewFinding extends ProtectionHit {
+  start: number;
+  end: number;
+  surrogate: string;
+  origin: ProtectionPreviewOrigin;
+}
+
+/** Loopback-only request used to inspect and prepare one outbound chat message. */
+export interface ProtectionPreviewRequest {
+  text: string;
+  /** User-selected values to apply with registry-strength provenance inside this trusted scope. */
+  protectedValues?: string[];
+}
+
+export interface ProtectionPreviewOk {
+  ok: true;
+  service: "ficta";
+  ticket: string;
+  /** SHA-256 of `text`; the proxy binds the single-use ticket to the final outbound user message. */
+  textSha256: string;
+  redactedText: string;
+  findings: ProtectionPreviewFinding[];
+}
+
+export interface ProtectionPreviewError {
+  ok: false;
+  service: "ficta";
+  status: "forbidden" | "invalid_request" | "detector_unavailable" | "invariant";
+  message: string;
+}
+
+export type ProtectionPreview = ProtectionPreviewOk | ProtectionPreviewError;
 
 export type ProtectionStatsSurface = "body" | "query string" | "non-auth headers";
 
@@ -305,6 +343,7 @@ export interface RegistryReloadError {
 export type RegistryReload = RegistryReloadOk | RegistryReloadError;
 
 export declare function isProtectionStatusOk(value: unknown): value is ProtectionStatusOk;
+export declare function isProtectionPreviewOk(value: unknown): value is ProtectionPreviewOk;
 export declare function isProtectionStatsOk(value: unknown): value is ProtectionStatsOk;
 export declare function isProxyConfigOk(value: unknown): value is ProxyConfigOk;
 export declare function isProxyConfigUpdateOk(value: unknown): value is ProxyConfigUpdateOk;

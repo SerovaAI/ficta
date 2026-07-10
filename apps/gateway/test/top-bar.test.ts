@@ -19,20 +19,31 @@ describe("restore privacy toggle labels", () => {
 
 describe("thread trace toggle labels", () => {
   it("explains unavailable capture when global trace is off", () => {
-    expect(threadTraceToggleLabels({ enabled: false, disabled: true, auditEnabled: false })).toEqual({
-      ariaLabel: "Thread trace capture unavailable",
-      tooltip: "Enable FICTA_LOG_LEVEL=trace on the proxy to trace selected threads",
+    expect(threadTraceToggleLabels({ enabled: false, disabled: true })).toEqual({
+      ariaLabel: "Trace capture unavailable",
+      tooltip: "Trace capture: Unavailable · Enable FICTA_LOG_LEVEL=trace on the proxy",
     });
   });
 
   it("describes thread-scoped raw body capture", () => {
-    expect(threadTraceToggleLabels({ enabled: false, disabled: false, auditEnabled: false })).toEqual({
-      ariaLabel: "Enable thread trace capture",
-      tooltip: "Raw body trace is off for this thread",
+    expect(threadTraceToggleLabels({ enabled: false, disabled: false })).toEqual({
+      ariaLabel: "Start trace capture for this chat",
+      tooltip: "Trace capture: Off for this chat · Click to start",
     });
-    expect(threadTraceToggleLabels({ enabled: true, disabled: false, auditEnabled: true })).toEqual({
-      ariaLabel: "Disable thread trace capture",
-      tooltip: "Trace and audit capture is on for this thread",
+    expect(threadTraceToggleLabels({ enabled: true, disabled: false })).toEqual({
+      ariaLabel: "Stop trace capture for this chat",
+      tooltip: "Trace capture: On for this chat · Click to stop",
+    });
+  });
+
+  it("distinguishes loading and failed updates", () => {
+    expect(threadTraceToggleLabels({ enabled: false, disabled: true, loading: true })).toEqual({
+      ariaLabel: "Checking trace capture availability",
+      tooltip: "Trace capture: Checking availability…",
+    });
+    expect(threadTraceToggleLabels({ enabled: false, disabled: false, error: true })).toEqual({
+      ariaLabel: "Retry changing trace capture",
+      tooltip: "Trace capture setting wasn't saved · Click to try again",
     });
   });
 });

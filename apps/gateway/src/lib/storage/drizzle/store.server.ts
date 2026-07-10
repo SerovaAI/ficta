@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gte, lt, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, notInArray, sql } from "drizzle-orm";
 import type { Provider } from "@/lib/models";
 import { deriveThreadTitleFromText, THREAD_TITLE_MAX } from "@/lib/thread-title";
-import type { Storage } from "../storage.server";
+import { type Storage, ThreadProtectionLimitError } from "../storage.server";
 import type {
   InstanceSettings,
   ProtectedRegistryEntry,
@@ -21,12 +21,16 @@ import {
   protectionStatsCheckpoints,
   protectionStatsDaily,
   providerKeys,
+  threadProtectedValues,
   threads,
   userSettings,
 } from "./schema";
 
 const PROTECTION_STATS_RETENTION_DAYS = 90;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const THREAD_PROTECTED_VALUES_MAX = 200;
+const THREAD_PROTECTED_VALUE_MAX = 2_000;
+const ABANDONED_PROTECTION_RETENTION_MS = 24 * 60 * 60 * 1_000;
 
 /**
  * The Drizzle-backed `Storage` implementation. Speaks the schema in schema.ts; the actual driver (PGlite
@@ -318,6 +322,91 @@ export function createStorage(): Storage {
         .where(and(eq(protectedRegistryEntries.orgId, orgId), eq(protectedRegistryEntries.id, id)));
     },
 
+    async listThreadProtectedValues(userId, orgId, threadId) {
+      const db = await getDb();
+      const rows = await db
+        .select({ value: threadProtectedValues.value })
+        .from(threadProtectedValues)
+        .where(
+          and(
+            eq(threadProtectedValues.userId, userId),
+            eq(threadProtectedValues.orgId, orgId),
+            eq(threadProtectedValues.threadId, threadId),
+          ),
+        )
+        .orderBy(asc(threadProtectedValues.createdAt));
+      return rows.map((row) => row.value);
+    },
+
+    async addThreadProtectedValues(userId, orgId, threadId, values) {
+      return this.updateThreadProtectedValues(userId, orgId, threadId, { add: values, remove: [] });
+    },
+
+    async removeThreadProtectedValues(userId, orgId, threadId, values) {
+      return this.updateThreadProtectedValues(userId, orgId, threadId, { add: [], remove: values });
+    },
+
+    async updateThreadProtectedValues(userId, orgId, threadId, changes) {
+      const db = await getDb();
+      const additions = [...new Set(changes.add.map((value) => value.trim()).filter(Boolean))];
+      const removals = [...new Set(changes.remove.map((value) => value.trim()).filter(Boolean))];
+      if (additions.some((value) => value.length > THREAD_PROTECTED_VALUE_MAX)) {
+        throw new ThreadProtectionLimitError("A chat-protected value is too long.");
+      }
+      return db.transaction(async (tx) => {
+        const rows = await tx
+          .select({ value: threadProtectedValues.value })
+          .from(threadProtectedValues)
+          .where(
+            and(
+              eq(threadProtectedValues.userId, userId),
+              eq(threadProtectedValues.orgId, orgId),
+              eq(threadProtectedValues.threadId, threadId),
+            ),
+          )
+          .orderBy(asc(threadProtectedValues.createdAt));
+        const known = new Set(rows.map((row) => row.value));
+        for (const value of removals) known.delete(value);
+        for (const value of additions) known.add(value);
+        if (known.size > THREAD_PROTECTED_VALUES_MAX) {
+          throw new ThreadProtectionLimitError(`Protect at most ${THREAD_PROTECTED_VALUES_MAX} values in one chat.`);
+        }
+        if (removals.length > 0) {
+          await tx
+            .delete(threadProtectedValues)
+            .where(
+              and(
+                eq(threadProtectedValues.userId, userId),
+                eq(threadProtectedValues.orgId, orgId),
+                eq(threadProtectedValues.threadId, threadId),
+                inArray(threadProtectedValues.value, removals),
+              ),
+            );
+        }
+        const existing = new Set(rows.map((row) => row.value).filter((value) => !removals.includes(value)));
+        for (const value of additions) {
+          if (existing.has(value)) continue;
+          await tx.insert(threadProtectedValues).values({ id: randomUUID(), userId, orgId, threadId, value });
+          existing.add(value);
+        }
+        return [...known];
+      });
+    },
+
+    async pruneAbandonedThreadProtectedValues(userId, orgId) {
+      const db = await getDb();
+      await db
+        .delete(threadProtectedValues)
+        .where(
+          and(
+            eq(threadProtectedValues.userId, userId),
+            eq(threadProtectedValues.orgId, orgId),
+            lt(threadProtectedValues.createdAt, new Date(Date.now() - ABANDONED_PROTECTION_RETENTION_MS)),
+            notInArray(threadProtectedValues.threadId, db.select({ id: threads.id }).from(threads)),
+          ),
+        );
+    },
+
     async listThreads(userId, orgId) {
       const db = await getDb();
       const rows = await db
@@ -347,6 +436,15 @@ export function createStorage(): Storage {
           }),
         ),
       };
+    },
+
+    async getThreadOwner(threadId) {
+      const db = await getDb();
+      const [thread] = await db
+        .select({ userId: threads.userId, orgId: threads.orgId })
+        .from(threads)
+        .where(eq(threads.id, threadId));
+      return thread ?? null;
     },
 
     async startThread(userId, orgId, threadId, message, traceEnabled = false) {
@@ -429,10 +527,21 @@ export function createStorage(): Storage {
 
     async deleteThread(userId, orgId, threadId) {
       const db = await getDb();
-      // messages cascade via the FK.
-      await db
-        .delete(threads)
-        .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)));
+      await db.transaction(async (tx) => {
+        await tx
+          .delete(threadProtectedValues)
+          .where(
+            and(
+              eq(threadProtectedValues.threadId, threadId),
+              eq(threadProtectedValues.userId, userId),
+              eq(threadProtectedValues.orgId, orgId),
+            ),
+          );
+        // messages cascade via the FK.
+        await tx
+          .delete(threads)
+          .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)));
+      });
     },
   };
 }

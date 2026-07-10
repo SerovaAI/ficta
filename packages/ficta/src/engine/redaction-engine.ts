@@ -79,6 +79,12 @@ export interface RedactionEngine {
  * exactly one request and then discarded.
  */
 export interface RequestScope {
+  /**
+   * Admit explicit user-selected values into this trusted scope with registry-strength provenance.
+   * These values remain request-local and are never added to the process registry or keyed detector state.
+   */
+  registerProtectedValues(values: readonly ProtectedValue[]): void;
+
   /** Redact a request body (JSON-aware); detected values enter this scope's ephemeral layer. */
   redactBodyDetailed(body: string, ctx?: BodyRedactionContext): Promise<BodyRedactionDetails>;
 
@@ -137,6 +143,14 @@ interface TraceRedactionOptions {
    * proxy audit sidecars; normal callers should leave it unset so detailed redaction stays values-free.
    */
   traceValues?: boolean;
+
+  /**
+   * Include the resolver's exact leaf-local replacement ranges. This is used by the loopback-only
+   * protection preview so the UI renders the same occurrence plan as body redaction. Coordinates
+   * and metadata are safe; the caller already owns the source document and no raw value is copied
+   * into the returned occurrence.
+   */
+  traceOccurrences?: boolean;
 }
 
 export type BodyRedactionContext = Omit<DetectTextContext, "surface"> & TraceRedactionOptions;
@@ -168,6 +182,15 @@ export interface ProtectionTraceValue extends ProtectionHit {
   valueSha256: string;
   surrogate?: string;
   provenance?: "permanent" | "detected";
+}
+
+/** Exact resolver output for one replacement in a body string leaf. */
+export interface ProtectionTraceOccurrence extends ProtectionHit {
+  leaf: number;
+  start: number;
+  end: number;
+  surrogate: string;
+  origin: "registry" | "detected" | "user";
 }
 
 export interface RestoreTraceDetails {
@@ -208,6 +231,7 @@ export interface BodyRedactionDetails extends BodyRedactionResult {
   leakHits: ProtectionHit[];
   traceValues?: ProtectionTraceValue[];
   traceLeakValues?: ProtectionTraceValue[];
+  traceOccurrences?: ProtectionTraceOccurrence[];
 }
 
 export interface TextRedactionDetails extends TextRedactionResult {

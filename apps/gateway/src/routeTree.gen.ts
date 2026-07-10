@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChatThreadIdRouteImport } from './routes/chat.$threadId'
+import { Route as ApiProtectionPreviewRouteImport } from './routes/api/protection-preview'
 import { Route as ApiExtractRouteImport } from './routes/api/extract'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as ApiAuthSignOutRouteImport } from './routes/api/auth/sign-out'
@@ -31,6 +32,11 @@ const IndexRoute = IndexRouteImport.update({
 const ChatThreadIdRoute = ChatThreadIdRouteImport.update({
   id: '/chat/$threadId',
   path: '/chat/$threadId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProtectionPreviewRoute = ApiProtectionPreviewRouteImport.update({
+  id: '/api/protection-preview',
+  path: '/api/protection-preview',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiExtractRoute = ApiExtractRouteImport.update({
@@ -64,6 +70,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/api/chat': typeof ApiChatRoute
   '/api/extract': typeof ApiExtractRoute
+  '/api/protection-preview': typeof ApiProtectionPreviewRoute
   '/chat/$threadId': typeof ChatThreadIdRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/sign-in': typeof ApiAuthSignInRoute
@@ -74,6 +81,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/api/chat': typeof ApiChatRoute
   '/api/extract': typeof ApiExtractRoute
+  '/api/protection-preview': typeof ApiProtectionPreviewRoute
   '/chat/$threadId': typeof ChatThreadIdRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/sign-in': typeof ApiAuthSignInRoute
@@ -85,6 +93,7 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/api/chat': typeof ApiChatRoute
   '/api/extract': typeof ApiExtractRoute
+  '/api/protection-preview': typeof ApiProtectionPreviewRoute
   '/chat/$threadId': typeof ChatThreadIdRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/sign-in': typeof ApiAuthSignInRoute
@@ -97,6 +106,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/api/chat'
     | '/api/extract'
+    | '/api/protection-preview'
     | '/chat/$threadId'
     | '/api/auth/callback'
     | '/api/auth/sign-in'
@@ -107,6 +117,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/api/chat'
     | '/api/extract'
+    | '/api/protection-preview'
     | '/chat/$threadId'
     | '/api/auth/callback'
     | '/api/auth/sign-in'
@@ -117,6 +128,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/api/chat'
     | '/api/extract'
+    | '/api/protection-preview'
     | '/chat/$threadId'
     | '/api/auth/callback'
     | '/api/auth/sign-in'
@@ -128,6 +140,7 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   ApiChatRoute: typeof ApiChatRoute
   ApiExtractRoute: typeof ApiExtractRoute
+  ApiProtectionPreviewRoute: typeof ApiProtectionPreviewRoute
   ChatThreadIdRoute: typeof ChatThreadIdRoute
   ApiAuthCallbackRoute: typeof ApiAuthCallbackRoute
   ApiAuthSignInRoute: typeof ApiAuthSignInRoute
@@ -155,6 +168,13 @@ declare module '@tanstack/react-router' {
       path: '/chat/$threadId'
       fullPath: '/chat/$threadId'
       preLoaderRoute: typeof ChatThreadIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/protection-preview': {
+      id: '/api/protection-preview'
+      path: '/api/protection-preview'
+      fullPath: '/api/protection-preview'
+      preLoaderRoute: typeof ApiProtectionPreviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/extract': {
@@ -200,6 +220,7 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   ApiChatRoute: ApiChatRoute,
   ApiExtractRoute: ApiExtractRoute,
+  ApiProtectionPreviewRoute: ApiProtectionPreviewRoute,
   ChatThreadIdRoute: ChatThreadIdRoute,
   ApiAuthCallbackRoute: ApiAuthCallbackRoute,
   ApiAuthSignInRoute: ApiAuthSignInRoute,

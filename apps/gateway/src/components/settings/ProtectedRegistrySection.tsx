@@ -137,6 +137,22 @@ export function ProtectedRegistrySection({ showHeader = true }: { showHeader?: b
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not update registry entry.");
+      return;
+    }
+    if (status !== "approved") return;
+    setPublishStatus("saving");
+    try {
+      const result = await publishProtectedRegistry();
+      setPublishResult(result);
+      setExportResult(undefined);
+      setPublishStatus("idle");
+    } catch (err) {
+      setPublishStatus("error");
+      setError(
+        err instanceof Error
+          ? `Entry approved, but publishing failed: ${err.message}`
+          : "Entry approved, but publishing failed. Use Publish to proxy to retry.",
+      );
     }
   };
 
@@ -598,9 +614,10 @@ function ProtectedRegistryTable({
                           variant="ghost"
                           size="icon-sm"
                           onClick={() => onSetStatus(entry, "approved")}
+                          title="Approve and publish"
                         >
                           <Check className="size-4" aria-hidden />
-                          <span className="sr-only">Approve {entry.value}</span>
+                          <span className="sr-only">Approve and publish {entry.value}</span>
                         </Button>
                       ) : null}
                       <Button type="button" variant="ghost" size="icon-sm" onClick={() => onEdit(entry)}>

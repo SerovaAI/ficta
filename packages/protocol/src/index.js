@@ -4,6 +4,8 @@ export const FICTA_CONFIG_PATH = "/__ficta/config";
 export const FICTA_REGISTRY_RELOAD_PATH = "/__ficta/registry/reload";
 export const FICTA_REGISTRY_REVISION_HEADER = "x-ficta-registry-revision";
 export const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
+export const FICTA_PROTECTION_PREVIEW_PATH = "/__ficta/protection-preview";
+export const FICTA_PROTECTION_TICKET_HEADER = "x-ficta-protection-ticket";
 export const FICTA_SCOPE_HEADER = "x-ficta-scope";
 export const FICTA_TRACE_CAPTURE_HEADER = "x-ficta-trace-capture";
 export const FICTA_RESTORE_HIGHLIGHT_HEADER = "x-ficta-restore-highlights";
@@ -178,6 +180,41 @@ export function isProtectionStatusOk(value) {
     typeof value.pii.message === "string" &&
     (value.pii.url === undefined || typeof value.pii.url === "string") &&
     (value.pii.detail === undefined || typeof value.pii.detail === "string")
+  );
+}
+
+/** @param {unknown} value */
+export function isProtectionPreviewOk(value) {
+  if (!isRecord(value) || value.ok !== true || value.service !== "ficta") return false;
+  return (
+    typeof value.ticket === "string" &&
+    value.ticket.length > 0 &&
+    typeof value.textSha256 === "string" &&
+    /^[0-9a-f]{64}$/.test(value.textSha256) &&
+    typeof value.redactedText === "string" &&
+    Array.isArray(value.findings) &&
+    value.findings.every(isProtectionPreviewFinding)
+  );
+}
+
+/** @param {unknown} value */
+function isProtectionPreviewFinding(value) {
+  return (
+    isRecord(value) &&
+    Number.isSafeInteger(value.start) &&
+    Number.isSafeInteger(value.end) &&
+    value.start >= 0 &&
+    value.end > value.start &&
+    typeof value.surrogate === "string" &&
+    (value.origin === "registry" || value.origin === "detected" || value.origin === "user") &&
+    typeof value.name === "string" &&
+    typeof value.source === "string" &&
+    (value.plugin === undefined || typeof value.plugin === "string") &&
+    (value.kind === undefined || value.kind === "secret" || value.kind === "pii" || value.kind === "custom") &&
+    (value.confidence === undefined ||
+      value.confidence === "exact" ||
+      value.confidence === "high" ||
+      value.confidence === "probabilistic")
   );
 }
 

@@ -634,25 +634,41 @@ export class Vault extends VaultView {
 export class ScopedVault extends VaultView {
   private readonly detected: SurrogateTable;
   private readonly registryDerived: SurrogateTable;
+  private readonly userProtected: SurrogateTable;
 
   constructor(
     permanent: SurrogateTable,
     detected: SurrogateTable = new SurrogateTable(permanent.surrogate, "detected"),
     registryDerived: SurrogateTable = new SurrogateTable(permanent.surrogate, "permanent"),
   ) {
+    const userProtected = new SurrogateTable(permanent.surrogate, "permanent");
     // Registry-derived forms (e.g. the caps twin of a registered secret found in a request body)
     // live in a separate layer because they ARE the registry secret in another casing. The layer is
     // request-owned by default and may be shared by a keyed scope; either way its `permanent`
     // provenance makes the `detected` restore-into-tools policy withhold variants exactly like the
     // canonical form. Ordered before `detected` so registry authority wins a duplicate (first match).
-    super([registryDerived, detected, permanent]); // all share the permanent strategy → same surrogates
+    super([userProtected, registryDerived, detected, permanent]); // all share one strategy → same surrogates
     this.detected = detected;
     this.registryDerived = registryDerived;
+    this.userProtected = userProtected;
   }
 
   /** Register request-detected values into the ephemeral layer only (never the permanent vault). */
   register(values: ReadonlyArray<VaultValue>): number {
     return this.detected.register(values);
+  }
+
+  /**
+   * Register an explicit caller-selected value in a request-local permanent-provenance layer. Gateway
+   * re-seeds this layer from its durable thread state on every send, so removing a chat protection takes
+   * effect immediately without mutating the process registry or a persistent keyed detector layer.
+   */
+  registerUserProtectedSurface(value: VaultValue, addMatchForm: boolean): string {
+    if (addMatchForm) this.userProtected.addMatchForm(value);
+    else this.userProtected.ensureToken(value);
+    const token = this.userProtected.toSur.get(value.value);
+    if (token === undefined) throw new Error("user-protected surface did not mint a surrogate");
+    return token;
   }
 
   /**

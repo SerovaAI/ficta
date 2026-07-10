@@ -12,6 +12,13 @@ import type {
   UserSettings,
 } from "./types";
 
+export class ThreadProtectionLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ThreadProtectionLimitError";
+  }
+}
+
 /**
  * The persistence boundary seam. Everything that reads or writes durable state in apps/gateway — settings and
  * chat history — goes through a `Storage`, so the backend (Drizzle over PGlite/Postgres today, possibly
@@ -57,12 +64,25 @@ export interface Storage {
   ): Promise<ProtectedRegistryEntry[]>;
   deleteProtectedRegistryEntry(orgId: string, id: string): Promise<void>;
 
+  listThreadProtectedValues(userId: string, orgId: string, threadId: string): Promise<string[]>;
+  addThreadProtectedValues(userId: string, orgId: string, threadId: string, values: string[]): Promise<string[]>;
+  removeThreadProtectedValues(userId: string, orgId: string, threadId: string, values: string[]): Promise<string[]>;
+  updateThreadProtectedValues(
+    userId: string,
+    orgId: string,
+    threadId: string,
+    changes: { add: string[]; remove: string[] },
+  ): Promise<string[]>;
+  pruneAbandonedThreadProtectedValues(userId: string, orgId: string): Promise<void>;
+
   listThreads(userId: string, orgId: string): Promise<ThreadSummary[]>;
   getThread(
     userId: string,
     orgId: string,
     threadId: string,
   ): Promise<{ thread: ThreadSummary; messages: StoredMessage[] } | null>;
+  /** Ownership probe used only by authenticated API boundaries; missing means a new draft id is available. */
+  getThreadOwner(threadId: string): Promise<{ userId: string; orgId: string } | null>;
   /** Creates the thread if missing and upserts the initial user message without deleting later messages. */
   startThread(
     userId: string,

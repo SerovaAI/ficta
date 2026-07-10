@@ -1,10 +1,13 @@
+import { createHash, randomUUID } from "node:crypto";
 import { argv } from "node:process";
 import { fileURLToPath } from "node:url";
 import { type HttpBindings, serve } from "@hono/node-server";
 import {
   FICTA_CONFIG_PATH,
   FICTA_HEALTH_PATH,
+  FICTA_PROTECTION_PREVIEW_PATH,
   FICTA_PROTECTION_STATS_PATH,
+  FICTA_PROTECTION_TICKET_HEADER,
   FICTA_REGISTRY_RELOAD_PATH,
   FICTA_REGISTRY_REVISION_HEADER,
   FICTA_RESTORE_HIGHLIGHT_END,
@@ -14,6 +17,9 @@ import {
   FICTA_SCOPE_HEADER,
   FICTA_STATUS_PATH,
   FICTA_TRACE_CAPTURE_HEADER,
+  type ProtectionPreviewFinding,
+  type ProtectionPreviewOk,
+  type ProtectionPreviewRequest,
   type ProtectionStatsOk,
   type ProtectionStatusOk,
   type ProxyConfigOk,
@@ -25,11 +31,13 @@ import { configPosture } from "./config-posture.js";
 import { detectorFailClosed } from "./engine/detection-policy.js";
 import { setEngineWarnSink } from "./engine/diagnostics.js";
 import { ProtectionEngine } from "./engine/engine.js";
+import type { ProtectedValue } from "./engine/plugins/types.js";
 import { withPreservationInstruction } from "./engine/preserve-literals.js";
 import { ProtectionStats, type ProtectionStatsSnapshot, type ProtectionSurface } from "./engine/protection-stats.js";
 import {
   DetectorUnavailableError,
   type ProtectionHit,
+  type ProtectionTraceOccurrence,
   type ProtectionTraceValue,
   type RedactionEngine,
   RedactionInvariantError,
@@ -99,6 +107,7 @@ export async function startProxy(
   const configEditLocks = proxyConfigLockedFields();
   const engine: RedactionEngine = new ProtectionEngine({ plugins: opts.plugins ?? defaultRedactionPlugins });
   const stats = new ProtectionStats(protectionStatsPath, { captureDir: currentRunDir });
+  const protectionTickets = new Map<string, ProtectionTicket>();
   const app = new Hono<{ Bindings: HttpBindings }>();
 
   app.all("*", async (c) => {
@@ -107,6 +116,90 @@ export async function startProxy(
     if (url.pathname === FICTA_HEALTH_PATH) return c.json({ ok: true, service: "ficta" });
     if (url.pathname === FICTA_STATUS_PATH) return c.json(await protectionStatus(engine, stats));
     if (url.pathname === FICTA_PROTECTION_STATS_PATH) return c.json(protectionStatsResponse(stats, url));
+    if (url.pathname === FICTA_PROTECTION_PREVIEW_PATH) {
+      if (method !== "POST") {
+        return c.json({ error: { type: "method_not_allowed", message: "Use POST for protection preview." } }, 405);
+      }
+      if (!isLoopbackAddress(c.env.incoming.socket.remoteAddress)) {
+        return c.json(
+          { ok: false, service: "ficta", status: "forbidden", message: "Protection preview is loopback-only." },
+          403,
+        );
+      }
+      const scopeKey = scopeKeyFrom(c);
+      if (!scopeKey) {
+        return c.json(
+          { ok: false, service: "ficta", status: "invalid_request", message: "A trusted scope is required." },
+          400,
+        );
+      }
+      let preview: ProtectionPreviewRequest;
+      try {
+        preview = validateProtectionPreviewRequest(await c.req.json());
+      } catch (err) {
+        return c.json(
+          {
+            ok: false,
+            service: "ficta",
+            status: "invalid_request",
+            message: err instanceof Error ? err.message : "Invalid protection preview request.",
+          },
+          400,
+        );
+      }
+
+      const scope = engine.beginRequest(scopeKey);
+      const selected = preview.protectedValues ?? [];
+      scope.registerProtectedValues(selected.map(userProtectedValue));
+      try {
+        const result = await scope.redactBodyDetailed(JSON.stringify(preview.text), {
+          path: FICTA_PROTECTION_PREVIEW_PATH,
+          traceOccurrences: true,
+        });
+        if (result.leaks > 0) throw new RedactionInvariantError("preview left known values unprotected");
+        const redactedText = JSON.parse(result.body) as unknown;
+        if (typeof redactedText !== "string") throw new RedactionInvariantError("preview body shape changed");
+        const ticket = randomUUID();
+        const now = Date.now();
+        pruneProtectionTickets(protectionTickets, now);
+        pruneScopeProtectionTickets(protectionTickets, scopeKey);
+        const textSha256 = sha256(preview.text);
+        protectionTickets.set(ticket, {
+          scopeKey,
+          protectedValues: selected,
+          textSha256,
+          expiresAt: now + PROTECTION_TICKET_TTL_MS,
+        });
+        const response: ProtectionPreviewOk = {
+          ok: true,
+          service: "ficta",
+          ticket,
+          textSha256,
+          redactedText,
+          findings: protectionPreviewFindings(result.traceOccurrences ?? []),
+        };
+        return c.json(response);
+      } catch (err) {
+        if (err instanceof DetectorUnavailableError) {
+          return c.json(
+            {
+              ok: false,
+              service: "ficta",
+              status: "detector_unavailable",
+              message: `Protection preview could not run because ${err.plugin} is unavailable.`,
+            },
+            503,
+          );
+        }
+        if (err instanceof RedactionInvariantError) {
+          return c.json(
+            { ok: false, service: "ficta", status: "invariant", message: "Protection preview was blocked." },
+            422,
+          );
+        }
+        throw err;
+      }
+    }
     // Values-free config posture (see ConfigPosture). Kept separate from FICTA_STATUS_PATH, which the
     // gateway's non-admin protection widget polls: transport config (upstreams, host/port, log dir)
     // is admin-facing, and the gateway gates its fetch server-side. The proxy itself stays
@@ -201,7 +294,8 @@ export async function startProxy(
     // Protect every outbound request body, query string, and non-auth header by default.
     // Provider/client paths change, and an "unknown" route can still carry conversation/tool
     // content; exact-match redaction is safe.
-    const protect = engine.protecting;
+    const requestedProtectionTicket = c.req.header(FICTA_PROTECTION_TICKET_HEADER)?.trim();
+    const protect = engine.protecting || Boolean(requestedProtectionTicket);
     const wire = wireOf(url.pathname);
     const captureRawBodies = traceCaptureFrom(c, cfg.logBodies);
     const captureTraceAudit = captureRawBodies && cfg.traceAudit;
@@ -220,7 +314,33 @@ export async function startProxy(
     // when the handler returns, so detected values are bounded and can never be restored into
     // another request's response. A trusted caller may pin a persistent per-thread detected vault
     // via the internal scope header (see scopeKeyFrom); isolation then holds across keys instead.
-    const scope = engine.beginRequest(scopeKeyFrom(c));
+    const scopeKey = scopeKeyFrom(c);
+    const scope = engine.beginRequest(scopeKey);
+    let preparedProtectionTicket: ProtectionTicket | undefined;
+    if (requestedProtectionTicket) {
+      const prepared = protectionTickets.get(requestedProtectionTicket);
+      if (!prepared || prepared.expiresAt <= Date.now() || prepared.scopeKey !== scopeKey) {
+        if (prepared?.expiresAt !== undefined && prepared.expiresAt <= Date.now()) {
+          protectionTickets.delete(requestedProtectionTicket);
+        }
+        return c.json(
+          {
+            error: {
+              type: "ficta_protection_preview_stale",
+              message: "Protection preview expired or does not belong to this chat. Preview again before sending.",
+            },
+          },
+          409,
+        );
+      }
+      if (method === "GET" || method === "HEAD") {
+        return c.json(
+          { error: { type: "ficta_protection_preview_stale", message: "Protection tickets require a request body." } },
+          409,
+        );
+      }
+      preparedProtectionTicket = prepared;
+    }
     const traceRedactions: ProtectionTraceRedaction[] = [];
 
     let searchToSend = url.search;
@@ -279,6 +399,7 @@ export async function startProxy(
     headers.delete(FICTA_SCOPE_HEADER); // internal routing metadata — must never reach the upstream vendor
     headers.delete(FICTA_TRACE_CAPTURE_HEADER); // internal trace/audit selector — must never reach upstream
     headers.delete(FICTA_RESTORE_HIGHLIGHT_HEADER); // trace-demo UI hint — must never reach the upstream vendor
+    headers.delete(FICTA_PROTECTION_TICKET_HEADER); // opaque preflight capability — must never reach upstream
 
     let bodyToSend: string | undefined;
     let n: number;
@@ -286,6 +407,28 @@ export async function startProxy(
 
     if (method !== "GET" && method !== "HEAD") {
       const bodyText = await c.req.raw.text();
+      if (requestedProtectionTicket && preparedProtectionTicket) {
+        const stillCurrent = protectionTickets.get(requestedProtectionTicket);
+        if (
+          stillCurrent !== preparedProtectionTicket ||
+          preparedProtectionTicket.expiresAt <= Date.now() ||
+          !requestContainsReviewedText(bodyText, preparedProtectionTicket.textSha256)
+        ) {
+          if (stillCurrent === preparedProtectionTicket) protectionTickets.delete(requestedProtectionTicket);
+          return c.json(
+            {
+              error: {
+                type: "ficta_protection_preview_stale",
+                message: "The outbound message no longer matches the protection preview. Preview again before sending.",
+              },
+            },
+            409,
+          );
+        }
+        // Consume atomically before any detector/upstream await. Concurrent replay sees a missing ticket.
+        protectionTickets.delete(requestedProtectionTicket);
+        scope.registerProtectedValues(preparedProtectionTicket.protectedValues.map(userProtectedValue));
+      }
       const originalModel = requestModelFromBody(bodyText);
       n = logRequest({ method, path: url.pathname, body: bodyText, target, route, captureRawBodies });
 
@@ -713,6 +856,13 @@ async function protectionStatus(engine: RedactionEngine, stats: ProtectionStats)
 
 const DEFAULT_PROTECTION_STATS_LIMIT = 100;
 const MAX_PROTECTION_STATS_LIMIT = 500;
+const PROTECTION_PREVIEW_TEXT_MAX = 2 * 1024 * 1024;
+const PROTECTION_PREVIEW_VALUES_MAX = 200;
+const PROTECTION_PREVIEW_VALUE_MAX = 2_000;
+const PROTECTION_PREVIEW_VALUES_BYTES_MAX = 64 * 1024;
+const PROTECTION_TICKET_TTL_MS = 5 * 60_000;
+const PROTECTION_TICKETS_MAX = 256;
+const PROTECTION_TICKETS_PER_SCOPE_MAX = 8;
 const REQUIRED_AUTH_HEADER_NAMES = new Set(["authorization", "proxy-authorization", "x-api-key", "cookie"]);
 const SURROGATE_RE = /FICTA_[0-9a-f]{32}/;
 
@@ -740,6 +890,133 @@ interface ProtectionTraceAudit {
   outcome: "blocked" | "completed" | "not-restored" | "upstream-error";
   redactions: ProtectionTraceRedaction[];
   restore: RestoreTraceDetails;
+}
+
+interface ProtectionTicket {
+  scopeKey: string;
+  protectedValues: string[];
+  textSha256: string;
+  expiresAt: number;
+}
+
+function validateProtectionPreviewRequest(value: unknown): ProtectionPreviewRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Preview body must be an object.");
+  const record = value as Record<string, unknown>;
+  if (typeof record.text !== "string") throw new Error("Preview text is required.");
+  if (Buffer.byteLength(record.text, "utf8") > PROTECTION_PREVIEW_TEXT_MAX) {
+    throw new Error("Preview text is too large.");
+  }
+  if (record.protectedValues !== undefined && !Array.isArray(record.protectedValues)) {
+    throw new Error("Protected values must be a list.");
+  }
+  const raw = (record.protectedValues ?? []) as unknown[];
+  if (raw.length > PROTECTION_PREVIEW_VALUES_MAX) throw new Error("Too many protected values for one chat.");
+  const seen = new Set<string>();
+  const protectedValues: string[] = [];
+  let protectedValueBytes = 0;
+  for (const entry of raw) {
+    if (typeof entry !== "string") throw new Error("Every protected value must be text.");
+    const normalized = entry.trim();
+    if (!normalized || normalized.length > PROTECTION_PREVIEW_VALUE_MAX) {
+      throw new Error("A protected value is empty or too long.");
+    }
+    if (seen.has(normalized)) continue;
+    protectedValueBytes += Buffer.byteLength(normalized, "utf8");
+    if (protectedValueBytes > PROTECTION_PREVIEW_VALUES_BYTES_MAX) {
+      throw new Error("Protected values are too large for one chat.");
+    }
+    seen.add(normalized);
+    protectedValues.push(normalized);
+  }
+  return { text: record.text, protectedValues };
+}
+
+function userProtectedValue(value: string): ProtectedValue {
+  return {
+    name: "USER_SELECTED",
+    value,
+    source: "gateway-user",
+    plugin: "gateway-preview",
+    kind: "custom",
+    confidence: "exact",
+  };
+}
+
+function protectionPreviewFindings(occurrences: readonly ProtectionTraceOccurrence[]): ProtectionPreviewFinding[] {
+  return occurrences
+    .filter((occurrence) => occurrence.leaf === 0)
+    .map(({ leaf: _leaf, ...occurrence }) => occurrence)
+    .sort((a, b) => a.start - b.start || b.end - a.end);
+}
+
+function pruneProtectionTickets(tickets: Map<string, ProtectionTicket>, now: number): void {
+  for (const [ticket, prepared] of tickets) if (prepared.expiresAt <= now) tickets.delete(ticket);
+  while (tickets.size >= PROTECTION_TICKETS_MAX) {
+    const oldest = tickets.keys().next().value;
+    if (oldest === undefined) break;
+    tickets.delete(oldest);
+  }
+}
+
+function pruneScopeProtectionTickets(tickets: Map<string, ProtectionTicket>, scopeKey: string): void {
+  const scoped = [...tickets].filter(([, prepared]) => prepared.scopeKey === scopeKey);
+  while (scoped.length >= PROTECTION_TICKETS_PER_SCOPE_MAX) {
+    const oldest = scoped.shift();
+    if (!oldest) break;
+    tickets.delete(oldest[0]);
+  }
+}
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+/**
+ * Bind a preview capability to the current user message in the real provider body. Looking only at
+ * the last user message prevents a reviewed phrase in transcript history from authorizing a changed
+ * new prompt. Gateway currently emits OpenAI Responses/Chat and Anthropic message arrays; the small
+ * structural adapter below intentionally rejects unknown shapes rather than weakening the binding.
+ */
+function requestContainsReviewedText(body: string, expectedSha256: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return sha256(body) === expectedSha256;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+  const record = parsed as Record<string, unknown>;
+  const conversation = Array.isArray(record.input)
+    ? record.input
+    : Array.isArray(record.messages)
+      ? record.messages
+      : undefined;
+  if (!conversation) return typeof record.input === "string" && sha256(record.input) === expectedSha256;
+  for (let index = conversation.length - 1; index >= 0; index--) {
+    const message = conversation[index];
+    if (!message || typeof message !== "object" || Array.isArray(message)) continue;
+    const messageRecord = message as Record<string, unknown>;
+    if (messageRecord.role !== "user") continue;
+    return textParts(messageRecord.content).some((text) => sha256(text) === expectedSha256);
+  }
+  return false;
+}
+
+function textParts(content: unknown): string[] {
+  if (typeof content === "string") return [content];
+  if (!Array.isArray(content)) return [];
+  const parts: string[] = [];
+  for (const part of content) {
+    if (typeof part === "string") {
+      parts.push(part);
+      continue;
+    }
+    if (!part || typeof part !== "object" || Array.isArray(part)) continue;
+    const record = part as Record<string, unknown>;
+    if (typeof record.text === "string") parts.push(record.text);
+    else if (typeof record.content === "string") parts.push(record.content);
+  }
+  return parts;
 }
 
 interface QueryRedaction extends SurfaceRedaction {

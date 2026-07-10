@@ -16,7 +16,8 @@ The browser talks to the gateway server, not directly to the model provider:
 
 ```txt
 browser (useChat)
-  -> /api/chat        server route (src/routes/api/chat.ts)
+  -> /api/protection-preview  detect + preview only; no model traffic
+  -> /api/chat        confirmed send (src/routes/api/chat.ts)
   -> ficta proxy      redact -> forward -> restore   (FICTA_PROXY_URL)
   -> OpenAI / Anthropic
 ```
@@ -40,6 +41,8 @@ Current app capabilities:
 - model allow-list, default model, and instance-name settings;
 - admin-managed Protected Registry for known sensitive values, with CSV paste/import and managed-registry JSON
   export for proxy loading;
+- pre-send protection review showing registry matches and detected PII, with user-selected phrases remembered
+  for the current chat and optional suggestions routed to the admin Protected Registry queue;
 - protection badge/banner polling the proxy's safe `/__ficta/status` endpoint;
 - text-file attachments inlined into chat requests so ficta can redact them;
 - PDF/DOCX conversion through a document-converter sidecar before inlining/redaction;
@@ -138,6 +141,20 @@ proxy without a restart. Gateway writes the file atomically and confirms that th
 exact revision; a path, shared-volume, or source error is reported as partial success rather than active
 protection. Configure the same absolute path with `FICTA_GATEWAY_MANAGED_REGISTRY_PATH` in Gateway and
 `FICTA_REGISTRY_MANAGED_FILE_PATHS` in the proxy. Suggested and ignored rows are review workflow only.
+
+Each chat starts with **Review before send** on, so **Send** opens an inline protection review before any
+provider request starts. Users can turn it off for the current chat and turn it back on whenever they want
+another review. An admin can lock review on under **Admin > General**. Users can inspect
+the original message, switch to the exact surrogate-bearing text the model will see, and select or type a
+missed phrase to protect throughout that chat. Chat selections remain user/thread-scoped and do not silently
+change workspace policy. **Suggest for workspace** adds review-only rows to the existing Protected Registry;
+an admin may edit, approve, and publish them. Stored chat selections are treated as sensitive
+application data alongside the restored transcript and are deleted with the thread.
+
+Each confirmation is a short-lived, single-use capability bound to the authenticated user, workspace, chat,
+and exact current message. The proxy rejects edited content, replayed confirmations, and confirmations from a
+different chat. Several independently reviewed tabs may remain valid at once. Admin-required review is also
+enforced by the server API, not only by the browser controls.
 
 One Gateway + proxy deployment serves one organization: the proxy's permanent registry is
 process-global. With `AUTH_PROVIDER=workos`, set `FICTA_GATEWAY_ORG_ID` to the deployment's WorkOS

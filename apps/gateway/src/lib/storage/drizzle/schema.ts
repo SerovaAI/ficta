@@ -129,6 +129,22 @@ export const threads = pgTable(
   (t) => [index("threads_scope_updated_idx").on(t.userId, t.orgId, t.updatedAt.desc())],
 );
 
+/** User-selected values remembered for one chat. Kept separate from the workspace registry so a chat
+ * selection never silently becomes organization-wide policy, and so a not-yet-sent chat stays out of
+ * the history list. Values are private application data, like the restored transcript itself. */
+export const threadProtectedValues = pgTable(
+  "thread_protected_values",
+  {
+    id: text("id").primaryKey(),
+    threadId: text("thread_id").notNull(),
+    userId: text("user_id").notNull(),
+    orgId: text("org_id").notNull(),
+    value: text("value").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("thread_protected_values_scope_idx").on(t.userId, t.orgId, t.threadId)],
+);
+
 /**
  * One row per message (not a blob per thread) to leave search/pagination open later. `parts` is the
  * opaque UIMessage parts array; `orderIdx` is the message's position within the snapshot so ordering

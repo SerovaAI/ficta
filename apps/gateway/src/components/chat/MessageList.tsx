@@ -5,6 +5,7 @@ import { resolveSuggestedPrompts } from "@/lib/storage/types";
 import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
 import { EmptyState } from "./EmptyState";
 import { MessageBubble } from "./MessageBubble";
+import { StreamingIndicator } from "./StreamingIndicator";
 
 export function MessageList({
   messages,
@@ -22,6 +23,9 @@ export function MessageList({
   const scrollRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const lastIndex = messages.length - 1;
+  // TanStack AI creates the assistant message lazily on the first content chunk. Until then the
+  // transcript ends with the user turn, so render request feedback independently of that message.
+  const awaitingFirstAssistantChunk = isLoading && messages[lastIndex]?.role !== "assistant";
   const suggestions = resolveSuggestedPrompts(useInstanceSettings());
 
   // Announce the assistant's reply once, on completion. The transcript itself is NOT an aria-live region:
@@ -82,6 +86,7 @@ export function MessageList({
             />
           );
         })}
+        {awaitingFirstAssistantChunk ? <StreamingIndicator /> : null}
       </div>
     </div>
   );

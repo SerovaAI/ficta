@@ -388,6 +388,42 @@ describe("confidential protected registry", () => {
 });
 
 describe("threads + messages", () => {
+  it("remembers user-selected values per chat without creating a history row", async () => {
+    expect(await store.listThreadProtectedValues("preview-owner", "org-preview", "draft-thread")).toEqual([]);
+    expect(
+      await store.addThreadProtectedValues("preview-owner", "org-preview", "draft-thread", [
+        "Project Copper Kite",
+        "Project Copper Kite",
+        "Northstar account 47",
+      ]),
+    ).toEqual(["Project Copper Kite", "Northstar account 47"]);
+
+    expect(await store.listThreads("preview-owner", "org-preview")).toEqual([]);
+    expect(await store.listThreadProtectedValues("other-user", "org-preview", "draft-thread")).toEqual([]);
+    expect(await store.listThreadProtectedValues("preview-owner", "other-org", "draft-thread")).toEqual([]);
+    expect(
+      await store.removeThreadProtectedValues("preview-owner", "org-preview", "draft-thread", ["Project Copper Kite"]),
+    ).toEqual(["Northstar account 47"]);
+
+    await store.saveThreadSnapshot("preview-owner", "org-preview", "draft-thread", [
+      textMessage("preview-message", "user", "Review Project Copper Kite"),
+    ]);
+    await store.deleteThread("preview-owner", "org-preview", "draft-thread");
+    expect(await store.listThreadProtectedValues("preview-owner", "org-preview", "draft-thread")).toEqual([]);
+  });
+
+  it("updates chat protections atomically when the per-chat limit is exceeded", async () => {
+    const values = Array.from({ length: 200 }, (_, index) => `protected-${index}`);
+    await store.addThreadProtectedValues("limit-owner", "org-limit", "limit-thread", values);
+    await expect(
+      store.updateThreadProtectedValues("limit-owner", "org-limit", "limit-thread", {
+        remove: ["protected-0"],
+        add: ["overflow-a", "overflow-b"],
+      }),
+    ).rejects.toThrow("Protect at most 200 values");
+    expect(await store.listThreadProtectedValues("limit-owner", "org-limit", "limit-thread")).toEqual(values);
+  });
+
   it("creates a thread from a snapshot, deriving the title from the first user message", async () => {
     const messages = [
       textMessage("m1", "user", "How do I redact secrets?"),
@@ -494,6 +530,7 @@ describe("threads + messages", () => {
 
   it("isolates threads by user", async () => {
     await store.saveThreadSnapshot("alice", ORG, "secret", [textMessage("s", "user", "mine")]);
+    expect(await store.getThreadOwner("secret")).toEqual({ userId: "alice", orgId: ORG });
     expect(await store.getThread("mallory", ORG, "secret")).toBeNull();
     await expect(
       store.saveThreadSnapshot("mallory", ORG, "secret", [textMessage("s2", "user", "hijack")]),
