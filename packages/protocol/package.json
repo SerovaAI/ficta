@@ -36,7 +36,7 @@
     "test": "node --test test/**/*.test.js"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.2",
+    "@biomejs/biome": "^2.5.3",
     "typescript": "^6.0.3"
   },
   "engines": {
