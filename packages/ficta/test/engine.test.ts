@@ -178,6 +178,31 @@ describe("protection engine plugins", () => {
     expect(engine.beginRequest("org-2:thread-1").restoreText(redacted.body)).toBe(redacted.body);
   });
 
+  it("strips request-local detector spans before retaining keyed-scope metadata", async () => {
+    const value = "Amelia Naidoo";
+    const detector: DetectorPlugin = {
+      kind: "detector",
+      name: "span-fixture",
+      detectText: (text) => {
+        const start = text.indexOf(value);
+        return start === -1
+          ? []
+          : [{ name: "person", value, source: "fixture", kind: "pii", spans: [{ start, end: start + value.length }] }];
+      },
+    };
+    const engine = new ProtectionEngine({ plugins: [detector] });
+    const key = "org-1:span-thread";
+    await engine.beginRequest(key).redactBodyDetailed(JSON.stringify({ content: `Contact ${value}` }));
+    await engine.beginRequest(key).redactBodyDetailed(JSON.stringify({ content: "A later request without the value" }));
+
+    const keyedScopes = (
+      engine as unknown as {
+        keyedScopes: Map<string, { metadata: Map<string, Array<{ spans?: readonly unknown[] }>> }>;
+      }
+    ).keyedScopes;
+    expect(keyedScopes.get(key)?.metadata.get(value)?.[0]).not.toHaveProperty("spans");
+  });
+
   it("withholds a registry secret's case-variant from tool-call arguments like the canonical form", async () => {
     // A caps twin of a registered secret is still that secret. It is registered into the scope's
     // registry-derived layer (permanent provenance), so the default restore-into-tools policy

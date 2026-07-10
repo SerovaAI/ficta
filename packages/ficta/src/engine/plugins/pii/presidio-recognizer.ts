@@ -71,6 +71,12 @@ interface PresidioSpan {
   score: number;
 }
 
+export interface TextChunk {
+  text: string;
+  /** Absolute UTF-16 offset of `text` in the recognizer input. */
+  base: number;
+}
+
 export const presidioRecognizer: PiiRecognizer = {
   name: "presidio",
   usesNlp: true,
@@ -131,12 +137,12 @@ export async function checkPresidioCompatibleAnalyzerHealth(
 
 async function detectChunk(
   config: PresidioConfig,
-  chunk: string,
+  chunk: TextChunk,
   signal: AbortSignal,
   sourceLabel: string,
 ): Promise<ProtectedValue[]> {
-  const spans = await analyzeChunk(config, chunk, signal);
-  return spansToValues(chunk, spans, config, sourceLabel);
+  const spans = await analyzeChunk(config, chunk.text, signal);
+  return spansToValues(chunk.text, spans, config, sourceLabel, chunk.base);
 }
 
 async function analyzeChunk(config: PresidioConfig, chunk: string, signal: AbortSignal): Promise<PresidioSpan[]> {
@@ -183,12 +189,12 @@ function spansToValues(
   spans: readonly PresidioSpan[],
   config: PresidioConfig,
   sourceLabel: string,
+  base: number,
 ): ProtectedValue[] {
   const index = makeCodepointIndexer(chunk);
   const allowlist =
     config.entities.length > 0 ? new Set(config.entities.map((entity) => entity.toUpperCase())) : undefined;
   const out: ProtectedValue[] = [];
-  const seen = new Set<string>();
 
   for (const span of spans) {
     if (span.score < config.scoreThreshold) continue;
@@ -197,10 +203,14 @@ function spansToValues(
     // Trim the sliced span: Markdown normalization masks formatting to spaces (so a `**NAME**` span can
     // slice with space edges), and spaCy NER commonly over-extends across whitespace. Storing the trimmed
     // value tightens the boundary and keeps it a substring of the original text for value-based redaction.
-    const value = index.slice(span.start, span.end).trim();
+    const localStart = index.toUtf16(span.start);
+    const localEnd = index.toUtf16(span.end);
+    if (localStart === undefined || localEnd === undefined || localStart >= localEnd) continue;
+    const raw = chunk.slice(localStart, localEnd);
+    const leading = raw.length - raw.trimStart().length;
+    const trailing = raw.length - raw.trimEnd().length;
+    const value = raw.trim();
     if (value.length < MIN_PII_VALUE_LENGTH) continue;
-    if (seen.has(value)) continue;
-    seen.add(value);
 
     out.push({
       name: categoryOf(span.entity_type),
@@ -208,6 +218,7 @@ function spansToValues(
       source: `pii-${sourceLabel}`,
       kind: "pii",
       confidence: span.score >= HIGH_CONFIDENCE_SCORE ? "high" : "probabilistic",
+      spans: [{ start: base + localStart + leading, end: base + localEnd - trailing }],
     });
   }
   return out;
@@ -223,9 +234,23 @@ export function categoryOf(entityType: string): string {
  * char (emoji, some CJK) before a span would shift every subsequent slice. Fast path when the text
  * has no surrogate pairs (offsets already match); otherwise build a code-point → UTF-16 index map.
  */
-function makeCodepointIndexer(text: string): { slice(start: number, end: number): string } {
+export function makeCodepointIndexer(text: string): {
+  slice(start: number, end: number): string;
+  toUtf16(offset: number): number | undefined;
+} {
   if (!/[\uD800-\uDBFF]/.test(text)) {
-    return { slice: (start, end) => text.slice(start, end) };
+    const toUtf16 = (offset: number): number | undefined =>
+      Number.isInteger(offset) && offset >= 0 && offset <= text.length ? offset : undefined;
+    return {
+      slice: (start, end) => {
+        const utf16Start = toUtf16(start);
+        const utf16End = toUtf16(end);
+        return utf16Start === undefined || utf16End === undefined || utf16Start >= utf16End
+          ? ""
+          : text.slice(utf16Start, utf16End);
+      },
+      toUtf16,
+    };
   }
   const offsets: number[] = [];
   let utf16 = 0;
@@ -239,40 +264,53 @@ function makeCodepointIndexer(text: string): { slice(start: number, end: number)
       if (start < 0 || end >= offsets.length || start >= end) return "";
       return text.slice(offsets[start], offsets[end]);
     },
+    toUtf16(offset) {
+      return Number.isInteger(offset) && offset >= 0 && offset < offsets.length ? offsets[offset] : undefined;
+    },
   };
 }
 
 /** Newline-first chunking for joined redactable body leaves; hard-split giant lines. */
-export function chunkText(text: string): string[] {
-  if (text.length <= MAX_CHUNK_CHARS) return [text];
-  const chunks: string[] = [];
+export function chunkText(text: string): TextChunk[] {
+  if (text.length <= MAX_CHUNK_CHARS) return [{ text, base: 0 }];
+  const chunks: TextChunk[] = [];
   let current = "";
-  for (const line of text.split("\n")) {
+  let currentBase = 0;
+  let lineStart = 0;
+
+  while (lineStart <= text.length) {
+    const newline = text.indexOf("\n", lineStart);
+    const lineEnd = newline === -1 ? text.length : newline;
+    const line = text.slice(lineStart, lineEnd);
     if (line.length > MAX_CHUNK_CHARS) {
       if (current) {
-        chunks.push(current);
+        chunks.push({ text: current, base: currentBase });
         current = "";
       }
-      for (const piece of hardSplit(line)) chunks.push(piece);
-      continue;
-    }
-    const candidate = current ? `${current}\n${line}` : line;
-    if (candidate.length > MAX_CHUNK_CHARS) {
-      if (current) chunks.push(current);
-      current = line;
+      chunks.push(...hardSplit(line, lineStart));
     } else {
-      current = candidate;
+      const candidate = current ? `${current}\n${line}` : line;
+      if (candidate.length > MAX_CHUNK_CHARS) {
+        if (current) chunks.push({ text: current, base: currentBase });
+        current = line;
+        currentBase = lineStart;
+      } else {
+        if (!current) currentBase = lineStart;
+        current = candidate;
+      }
     }
+    if (newline === -1) break;
+    lineStart = newline + 1;
   }
-  if (current) chunks.push(current);
+  if (current) chunks.push({ text: current, base: currentBase });
   return chunks;
 }
 
-function hardSplit(line: string): string[] {
-  const pieces: string[] = [];
+function hardSplit(line: string, base: number): TextChunk[] {
+  const pieces: TextChunk[] = [];
   const step = MAX_CHUNK_CHARS - CHUNK_OVERLAP_CHARS;
   for (let start = 0; start < line.length; start += step) {
-    pieces.push(line.slice(start, start + MAX_CHUNK_CHARS));
+    pieces.push({ text: line.slice(start, start + MAX_CHUNK_CHARS), base: base + start });
     if (start + MAX_CHUNK_CHARS >= line.length) break;
   }
   return pieces;
@@ -298,14 +336,32 @@ export async function mapConcurrent<T, R>(
 }
 
 export function dedupeByValue(values: readonly ProtectedValue[]): ProtectedValue[] {
-  const seen = new Set<string>();
+  const byValue = new Map<string, number>();
   const out: ProtectedValue[] = [];
   for (const value of values) {
-    if (seen.has(value.value)) continue;
-    seen.add(value.value);
+    const existingIndex = byValue.get(value.value);
+    if (existingIndex !== undefined) {
+      const existing = out[existingIndex];
+      if (existing) out[existingIndex] = withMergedSpans(existing, value);
+      continue;
+    }
+    byValue.set(value.value, out.length);
     out.push(value);
   }
   return out;
+}
+
+/** Keep first-value metadata while unioning request-local coordinates from duplicate detections. */
+export function withMergedSpans(primary: ProtectedValue, secondary: ProtectedValue): ProtectedValue {
+  const spans = [...(primary.spans ?? []), ...(secondary.spans ?? [])]
+    .filter(
+      (span) => Number.isInteger(span.start) && Number.isInteger(span.end) && span.start >= 0 && span.end > span.start,
+    )
+    .sort((a, b) => a.start - b.start || a.end - b.end)
+    .filter(
+      (span, index, all) => index === 0 || span.start !== all[index - 1]?.start || span.end !== all[index - 1]?.end,
+    );
+  return spans.length > 0 ? { ...primary, spans } : primary;
 }
 
 function toSpan(item: unknown): PresidioSpan | undefined {

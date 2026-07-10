@@ -3,6 +3,8 @@ import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   checkPresidioHealth,
+  chunkText,
+  makeCodepointIndexer,
   PresidioUnavailableError,
   presidioRecognizer,
 } from "../src/engine/plugins/pii/presidio-recognizer.js";
@@ -72,6 +74,7 @@ describe("presidio recognizer", () => {
       source: "pii-presidio",
       kind: "pii",
       confidence: "high",
+      spans: [{ start: text.indexOf("John Smith"), end: text.indexOf("John Smith") + "John Smith".length }],
     });
     expect(byName["phone-number"]).toMatchObject({ value: "212-555-0187", confidence: "probabilistic" });
   });
@@ -105,13 +108,14 @@ describe("presidio recognizer", () => {
     expect(withEntities.requests[0]?.entities).toEqual(["PERSON", "PHONE_NUMBER"]);
   });
 
-  it("drops below-threshold spans, short values, and duplicate values", async () => {
+  it("drops below-threshold/short spans and merges coordinates for duplicate values", async () => {
     const text = "John Smith met Al and John Smith again";
+    const second = text.lastIndexOf("John Smith");
     const { result } = await withStub(
       {
         analyze: () => [
           span(text, "John Smith", "PERSON", 0.9), // kept
-          span(text, "John Smith", "PERSON", 0.9), // exact-value dupe → collapsed
+          { entity_type: "PERSON", start: second, end: second + "John Smith".length, score: 0.9 },
           { entity_type: "PERSON", start: text.indexOf("Al"), end: text.indexOf("Al") + 2, score: 0.9 }, // "Al" too short
           span(text, "John Smith", "PERSON", 0.2), // below default 0.5 threshold (also a dupe)
         ],
@@ -121,6 +125,10 @@ describe("presidio recognizer", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]?.value).toBe("John Smith");
+    expect(result[0]?.spans).toEqual([
+      { start: text.indexOf("John Smith"), end: text.indexOf("John Smith") + "John Smith".length },
+      { start: second, end: second + "John Smith".length },
+    ]);
   });
 
   it("respects a configured entity allowlist client-side", async () => {
@@ -143,6 +151,28 @@ describe("presidio recognizer", () => {
       () => presidioRecognizer.detect(text, BODY),
     );
     expect(result[0]?.value).toBe("John Smith");
+    expect(result[0]?.spans).toEqual([{ start: text.indexOf(person), end: text.indexOf(person) + person.length }]);
+  });
+
+  it("exposes code-point to UTF-16 conversion and adjusts coordinates when trimming a span", async () => {
+    const text = "🎉 contact   John Smith \t now";
+    const raw = "  John Smith \t";
+    const rawUtf16Start = text.indexOf(raw);
+    const rawCpStart = Array.from(text.slice(0, rawUtf16Start)).length;
+    const rawCpEnd = rawCpStart + Array.from(raw).length;
+    const indexer = makeCodepointIndexer(text);
+    expect(indexer.toUtf16(rawCpStart)).toBe(rawUtf16Start);
+    expect(indexer.toUtf16(rawCpEnd)).toBe(rawUtf16Start + raw.length);
+
+    const { result } = await withStub(
+      { analyze: () => [{ entity_type: "PERSON", start: rawCpStart, end: rawCpEnd, score: 0.9 }] },
+      () => presidioRecognizer.detect(text, BODY),
+    );
+    const start = text.indexOf("John Smith");
+    expect(result[0]).toMatchObject({
+      value: "John Smith",
+      spans: [{ start, end: start + "John Smith".length }],
+    });
   });
 
   it("does not contact the sidecar for non-body surfaces", async () => {
@@ -167,6 +197,33 @@ describe("presidio recognizer", () => {
     );
     expect(requests.length).toBeGreaterThan(1);
     expect(result.map((v) => v.value)).toContain("SECRETNAME");
+    const detected = result.find((v) => v.value === "SECRETNAME");
+    expect(detected?.spans).toEqual([
+      { start: text.indexOf("SECRETNAME"), end: text.indexOf("SECRETNAME") + "SECRETNAME".length },
+    ]);
+  });
+
+  it("tracks absolute bases and dedupes a hard-split overlap's identical coordinates", async () => {
+    const secret = "SECRETNAME";
+    const text = `${"x".repeat(19_950)}${secret}${"y".repeat(500)}`;
+    const chunks = chunkText(text);
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0]?.base).toBe(0);
+    expect(chunks[1]?.base).toBe(20_000 - 128);
+    expect(chunks.every((chunk) => chunk.text.includes(secret))).toBe(true);
+
+    const { result, requests } = await withStub(
+      {
+        analyze: (req) => {
+          const start = req.text.indexOf(secret);
+          return start === -1 ? [] : [{ entity_type: "PERSON", start, end: start + secret.length, score: 0.9 }];
+        },
+      },
+      () => presidioRecognizer.detect(text, BODY),
+    );
+    expect(requests).toHaveLength(2);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.spans).toEqual([{ start: 19_950, end: 19_950 + secret.length }]);
   });
 
   describe("failure taxonomy (fail-open is the plugin's job; the recognizer throws)", () => {

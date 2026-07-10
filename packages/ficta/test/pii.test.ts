@@ -44,6 +44,18 @@ describe("pii regex recognizer", () => {
     // The match must end on the last digit — no trailing space pulled in (would mangle vendor text).
     expect(found.find((v) => v.name === "credit-card")?.value).toBe(VISA);
   });
+
+  it("attaches UTF-16 offsets and merges repeated matches of the same value", () => {
+    const text = `first ${EMAIL}; second ${EMAIL}`;
+    const found = regexRecognizer.detect(text, { surface: "body" }) as ProtectedValue[];
+    const email = found.find((value) => value.value === EMAIL);
+    const first = text.indexOf(EMAIL);
+    const second = text.lastIndexOf(EMAIL);
+    expect(email?.spans).toEqual([
+      { start: first, end: first + EMAIL.length },
+      { start: second, end: second + EMAIL.length },
+    ]);
+  });
 });
 
 describe("pii detector plugin", () => {

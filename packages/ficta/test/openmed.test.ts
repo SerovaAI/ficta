@@ -80,6 +80,7 @@ describe("openmed recognizer", () => {
       kind: "pii",
       confidence: "high",
     });
+    expect(byName.person).not.toHaveProperty("spans");
     expect(byName["id-num"]).toMatchObject({ value: "MRN-8675309", confidence: "probabilistic" });
   });
 

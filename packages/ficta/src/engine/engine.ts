@@ -544,7 +544,10 @@ function isCaseExpandable(value: string): boolean {
 function remember(metadata: Map<string, ProtectedValue[]>, value: ProtectedValue): void {
   if (!value.value) return;
   const existing = metadata.get(value.value) ?? [];
-  existing.push(value);
+  // Detector spans are coordinates in one request's detectText() input. Persisting them into the
+  // engine or a keyed scope would make request N's offsets appear to describe request N+1.
+  const { spans: _spans, ...persistent } = value;
+  existing.push(persistent);
   metadata.set(value.value, existing);
 }
 

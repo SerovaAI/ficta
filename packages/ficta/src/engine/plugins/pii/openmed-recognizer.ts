@@ -94,7 +94,7 @@ export const openmedRecognizer: PiiRecognizer = {
     const timer = setTimeout(() => controller.abort(), config.timeoutMs);
     try {
       const perChunk = await mapConcurrent(chunks, MAX_CONCURRENCY, (chunk) =>
-        detectChunk(config, chunk, controller.signal),
+        detectChunk(config, chunk.text, controller.signal),
       );
       return dedupeByValue(perChunk.flat());
     } catch (err) {

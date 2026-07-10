@@ -6,7 +6,12 @@ import { flexibleOccurrences } from "../../vault.js";
 import type { DetectorPlugin, PluginDiscovery, ProtectedValue } from "../types.js";
 import { normalizeMarkdownForDetection } from "./markdown.js";
 import { OpenmedUnavailableError, openmedConfig } from "./openmed-recognizer.js";
-import { MIN_PII_VALUE_LENGTH, PresidioUnavailableError, presidioConfig } from "./presidio-recognizer.js";
+import {
+  MIN_PII_VALUE_LENGTH,
+  PresidioUnavailableError,
+  presidioConfig,
+  withMergedSpans,
+} from "./presidio-recognizer.js";
 import type { PiiRecognizer } from "./recognizer.js";
 import { activeBackends, ENV_BACKEND, ENV_BACKENDS } from "./registry.js";
 
@@ -235,7 +240,10 @@ function expandCaseVariants(values: readonly ProtectedValue[], text: string): Pr
       // value has a separate, operator-controlled expansion path in engine.ts.
       if (isLowercaseSingleWord(form) && !isLowercaseSingleWord(value.value)) continue;
       present.add(form);
-      out.push({ ...value, value: form });
+      // These are newly discovered surfaces, not the surface reported by the recognizer. Phase 3
+      // will re-anchor expanders explicitly; inheriting the canonical offsets would be incorrect.
+      const { spans: _spans, ...metadata } = value;
+      out.push({ ...metadata, value: form });
     }
   }
   return out;
@@ -294,9 +302,9 @@ function mergeDetectedValues(values: readonly ProtectedValue[]): ProtectedValue[
     if (!value.value.trim()) continue;
     const exact = accepted.find((existing) => existing.value === value.value);
     if (exact) {
-      if (preferValue(value, exact) === value) {
-        accepted.splice(accepted.indexOf(exact), 1, value);
-      }
+      const index = accepted.indexOf(exact);
+      const preferred = preferValue(value, exact);
+      accepted[index] = preferred === value ? withMergedSpans(value, exact) : withMergedSpans(exact, value);
       continue;
     }
 

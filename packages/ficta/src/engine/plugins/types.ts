@@ -85,6 +85,13 @@ export interface RegistryPluginSetup {
 }
 
 /** A concrete value ficta can reversibly surrogate. Values must never be logged. */
+export interface ProtectedValueSpan {
+  /** Inclusive UTF-16 offset in the exact text passed to detectText(). */
+  start: number;
+  /** Exclusive UTF-16 offset in the exact text passed to detectText(). */
+  end: number;
+}
+
 export interface ProtectedValue {
   /** Safe label for metadata/logging, e.g. env var name. Never the value. */
   name: string;
@@ -96,6 +103,8 @@ export interface ProtectedValue {
   plugin?: string;
   kind?: ProtectedValueKind;
   confidence?: ProtectionConfidence;
+  /** Request-transient detector coordinates. Never retained in engine/keyed-scope metadata. */
+  spans?: readonly ProtectedValueSpan[];
 }
 
 export interface DetectTextContext {

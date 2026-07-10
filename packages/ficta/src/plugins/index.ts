@@ -87,6 +87,7 @@ export type {
   PluginDiscoveryStatus,
   ProtectedValue,
   ProtectedValueKind,
+  ProtectedValueSpan,
   ProtectionConfidence,
   RedactionPlugin,
   RegistryExclusionKind,

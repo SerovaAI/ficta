@@ -1,4 +1,5 @@
 import type { ProtectedValue } from "../types.js";
+import { dedupeByValue } from "./presidio-recognizer.js";
 import type { PiiRecognizer } from "./recognizer.js";
 
 interface StructuredPattern {
@@ -27,17 +28,22 @@ export const regexRecognizer: PiiRecognizer = {
   detect(text) {
     if (!text) return [];
     const out: ProtectedValue[] = [];
-    const seen = new Set<string>();
     for (const pattern of PATTERNS) {
       for (const match of text.matchAll(pattern.regex)) {
         const value = match[0];
         if (pattern.validate && !pattern.validate(value)) continue;
-        if (seen.has(value)) continue;
-        seen.add(value);
-        out.push({ name: pattern.category, value, source: "pii-regex", kind: "pii", confidence: pattern.confidence });
+        const start = match.index;
+        out.push({
+          name: pattern.category,
+          value,
+          source: "pii-regex",
+          kind: "pii",
+          confidence: pattern.confidence,
+          spans: [{ start, end: start + value.length }],
+        });
       }
     }
-    return out;
+    return dedupeByValue(out);
   },
 };
 
