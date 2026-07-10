@@ -1,4 +1,5 @@
 import type { ProtectedValue, ProtectionConfidence } from "./plugins/types.js";
+import { RedactionInvariantError } from "./redaction-engine.js";
 
 export type EntityAuthority = "registry" | "detected";
 export type OccurrenceOrigin = "detector" | "expansion" | "clipped";
@@ -145,6 +146,32 @@ export function mapJoinedOffsets(
   return wasClipped ? mapped.map((occurrence) => ({ ...occurrence, origin: "clipped" })) : mapped;
 }
 
+/** Splice one leaf from right to left after validating every resolved claim re-anchors exactly. */
+export function spliceResolvedOccurrences(
+  text: string,
+  occurrences: readonly ResolvedOccurrence[],
+  tokenFor: (occurrence: ResolvedOccurrence) => string,
+): string {
+  const ordered = [...occurrences].sort((a, b) => a.start - b.start || a.end - b.end);
+  let previousEnd = 0;
+  for (const occurrence of ordered) {
+    if (
+      occurrence.start < previousEnd ||
+      occurrence.end > text.length ||
+      text.slice(occurrence.start, occurrence.end) !== occurrence.surface
+    ) {
+      throw new RedactionInvariantError("resolved occurrence failed to re-anchor");
+    }
+    previousEnd = occurrence.end;
+  }
+
+  let out = text;
+  for (const occurrence of ordered.reverse()) {
+    out = `${out.slice(0, occurrence.start)}${tokenFor(occurrence)}${out.slice(occurrence.end)}`;
+  }
+  return out;
+}
+
 function finalizeSlice(
   leaf: number,
   slice: WinningSlice,
@@ -165,7 +192,7 @@ function finalizeSlice(
   }
   if (!surface || start >= end) return undefined;
 
-  const clipped = newlyClipped || inherited?.clipped === true;
+  const clipped = newlyClipped || inherited?.clipped === true || slice.source.origin === "clipped";
   const clippedBy = newlyClipped ? clippingAuthority(slice.source, claims) : inherited?.clippedBy;
   return {
     leaf,

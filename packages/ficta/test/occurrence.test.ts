@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { type Entity, mapJoinedOffsets, type Occurrence, resolveOccurrences } from "../src/engine/occurrence.js";
+import {
+  type Entity,
+  mapJoinedOffsets,
+  type Occurrence,
+  resolveOccurrences,
+  spliceResolvedOccurrences,
+} from "../src/engine/occurrence.js";
+import { RedactionInvariantError } from "../src/engine/redaction-engine.js";
 
 describe("occurrence resolver", () => {
   it("lets a registry entity own its exact span and clips a noisy detected superset", () => {
@@ -183,6 +190,40 @@ describe("mapJoinedOffsets", () => {
     expect(() => mapJoinedOffsets(leaves, [4, 4], { start: 0, end: 1, entity: item, origin: "detector" })).toThrow(
       /unique/,
     );
+  });
+});
+
+describe("spliceResolvedOccurrences", () => {
+  it("splices non-overlapping claims from right to left", () => {
+    const text = "Alpha and Beta";
+    const claims = resolveOccurrences([
+      occurrence(text, 0, 5, entity("alpha", "registry", "Alpha"), "expansion"),
+      occurrence(text, 10, 14, entity("beta", "detected", "Beta"), "detector"),
+    ]);
+    expect(spliceResolvedOccurrences(text, claims, (claim) => `<${claim.entity.id}>`)).toBe("<alpha> and <beta>");
+  });
+
+  it("throws the always-blocking invariant error before minting on a re-anchor mismatch", () => {
+    const saved = process.env.FICTA_FAIL_CLOSED;
+    process.env.FICTA_FAIL_CLOSED = "0";
+    const claim = {
+      ...occurrence("Alpha", 0, 5, entity("alpha", "registry", "Alpha"), "expansion"),
+      surface: "Wrong",
+      clipped: false,
+    };
+    let minted = false;
+    try {
+      expect(() =>
+        spliceResolvedOccurrences("Alpha", [claim], () => {
+          minted = true;
+          return "token";
+        }),
+      ).toThrow(RedactionInvariantError);
+      expect(minted).toBe(false);
+    } finally {
+      if (saved === undefined) delete process.env.FICTA_FAIL_CLOSED;
+      else process.env.FICTA_FAIL_CLOSED = saved;
+    }
   });
 });
 

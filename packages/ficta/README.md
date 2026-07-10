@@ -71,6 +71,10 @@ every option. The table below is just a quick tour of the most useful knobs:
 | `logging.log_dir` | `FICTA_LOG_DIR` | unset | Full override of the exact capture-log path (bypasses the root+role split for all roles). |
 | `upstreams.anthropic` | `FICTA_ANTHROPIC_UPSTREAM` | Anthropic API | Override the Anthropic upstream (also `..._OPENAI_...` / `..._CHATGPT_...`). |
 
+Temporary rollback for the occurrence-based body redactor: set `FICTA_BODY_REDACTION_LEGACY=1` to
+use the previous longest-string-first body path. This compatibility flag is retained for one release;
+header and query redaction are unaffected.
+
 **Registry sources** — managed registry files, env-file, process-env, and Doppler discovery — have
 their own config under `[registry.*]`; see
 [`docs/plugins.md`](./docs/plugins.md#configuring-built-in-plugins) for the per-source options

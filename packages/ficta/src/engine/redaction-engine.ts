@@ -231,3 +231,14 @@ export class DetectorUnavailableError extends Error {
     this.name = "DetectorUnavailableError";
   }
 }
+
+/**
+ * An internal coordinate/re-anchor failure. Unlike operator-tunable leak and detector policy, this
+ * always blocks forwarding because continuing would knowingly use a corrupted redaction plan.
+ */
+export class RedactionInvariantError extends Error {
+  constructor(readonly reason: string) {
+    super(`redaction invariant failed: ${reason}`);
+    this.name = "RedactionInvariantError";
+  }
+}

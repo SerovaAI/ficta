@@ -150,6 +150,8 @@ export interface PluginDiscovery {
 export interface FictaPluginBase {
   name: string;
   description?: string;
+  /** Body detection surface: content excludes structural object keys; all preserves key/value context. */
+  bodyDetectionView?: "content" | "all";
   /**
    * Safe metadata-only registry policy owned by this plugin's domain. Core enforces it (only for
    * trusted built-ins) wherever named candidates enter protection — registry load and request-time

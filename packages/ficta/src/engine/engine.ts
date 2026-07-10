@@ -1,6 +1,15 @@
 import { createHash } from "node:crypto";
 import { detectorFailClosed } from "./detection-policy.js";
-import { expandEntities } from "./expander.js";
+import { envFlag } from "./env-flags.js";
+import { expandEntities, expansionSpans, isCaseExpandable } from "./expander.js";
+import {
+  type Entity,
+  mapJoinedOffsets,
+  type Occurrence,
+  type ResolvedOccurrence,
+  resolveOccurrences,
+  spliceResolvedOccurrences,
+} from "./occurrence.js";
 import { protectedValueExcludedBy } from "./plugins/policy.js";
 import { defaultDetectors, loadPluginRegistry, type PluginRegistrySnapshot } from "./plugins/registry.js";
 import type {
@@ -17,13 +26,21 @@ import {
   type ProtectionHit,
   type ProtectionTraceValue,
   type RedactionEngine,
+  RedactionInvariantError,
   type RequestScope,
   type RestoreOptions,
   type RestoreTraceDetails,
   type TextRedactionContext,
   type TextRedactionDetails,
 } from "./redaction-engine.js";
-import { redactableBodyLeaves, type ScopedVault, type SurrogateTable, Vault } from "./vault.js";
+import {
+  type BodyLeaf,
+  redactableBodyLeaves,
+  type ScopedVault,
+  type SurrogateTable,
+  Vault,
+  visitBodyLeaves,
+} from "./vault.js";
 import type { Wire } from "./wire.js";
 import { bufferedRestoreAdapterFor, sseRestoreAdapterFor } from "./wire-restore.js";
 
@@ -43,6 +60,9 @@ export interface ProtectionEngineOptions {
 const KEYED_SCOPE_IDLE_TTL_MS = 30 * 60_000;
 /** Upper bound on concurrently-retained keyed scopes (least-recently-used evicted first). */
 const KEYED_SCOPE_MAX = 256;
+/** Hard safety bounds for adversarial detector/expander output; invariant failures always block. */
+const MAX_BODY_ENTITIES = 10_000;
+const MAX_BODY_OCCURRENCES = 100_000;
 
 /**
  * Persistent state for one scope key: the detected value↔surrogate layer shared by the key's
@@ -53,8 +73,31 @@ interface KeyedScopeState {
   detected: SurrogateTable;
   registryDerived: SurrogateTable;
   metadata: Map<string, ProtectedValue[]>;
+  tokenOnly: Set<string>;
   seenLeaves: Set<string>;
   lastUsedAt: number;
+}
+
+interface BodyDocument {
+  readonly body: string;
+  readonly parsed?: unknown;
+  readonly leaves: readonly BodyLeaf[];
+  readonly isJson: boolean;
+}
+
+interface DetectionPass {
+  readonly complete: boolean;
+  readonly values: readonly ProtectedValue[];
+}
+
+interface BodyDetectedValue {
+  readonly value: ProtectedValue;
+  readonly leaves: readonly BodyLeaf[];
+}
+
+interface BodyDetectionPass {
+  readonly complete: boolean;
+  readonly detections: readonly BodyDetectedValue[];
 }
 
 /**
@@ -115,7 +158,7 @@ export class ProtectionEngine implements RedactionEngine {
    * Values arrive already policy-filtered by {@link loadPluginRegistry} (the same enforced-exclusion
    * seam as launch, under the same trusted set). New values are immediately protected: `size` /
    * `protecting` are live, every subsequent `beginRequest` scope (keyed scopes included) stacks over
-   * this vault, and `registerRegistryCaseVariants` reads the shared metadata map per request.
+   * this vault, and the entity expander reads the shared metadata map per request.
    *
    * DELETIONS ARE INTENTIONALLY NOT PROCESSED: the vault has no delete, and removing a value
    * mid-process would break restore of surrogates already sitting in transcripts. A value removed
@@ -186,6 +229,7 @@ export class ProtectionEngine implements RedactionEngine {
       this.vault.beginScope(state.detected, state.registryDerived),
       state.metadata,
       state.seenLeaves,
+      state.tokenOnly,
     );
   }
 
@@ -197,6 +241,7 @@ export class ProtectionEngine implements RedactionEngine {
       detected: this.vault.newDetectedLayer(),
       registryDerived: this.vault.newRegistryDerivedLayer(),
       metadata: new Map<string, ProtectedValue[]>(),
+      tokenOnly: new Set<string>(),
       seenLeaves: new Set<string>(),
       lastUsedAt: now,
     };
@@ -276,31 +321,154 @@ class ProtectionRequestScope implements RequestScope {
     private readonly detectedMetadata: Map<string, ProtectedValue[]> = new Map(),
     /** Present only for keyed scopes: leaf hashes already swept by every available detector. */
     private readonly seenLeaves?: Set<string>,
+    /** Resolver-clipped surfaces retain restore metadata but never become future entity candidates. */
+    private readonly tokenOnly = new Set<string>(),
   ) {}
 
   async redactBodyDetailed(body: string, ctx: BodyRedactionContext = {}): Promise<BodyRedactionDetails> {
+    if (envFlag(process.env.FICTA_BODY_REDACTION_LEGACY)) return this.redactBodyLegacy(body, ctx);
+    return this.redactBodyOccurrences(body, ctx);
+  }
+
+  private async redactBodyOccurrences(body: string, ctx: BodyRedactionContext): Promise<BodyRedactionDetails> {
     const { traceValues, ...detectCtx } = ctx;
-    // Detect over the redactable text surface (JSON string leaves), not the raw body, so a value is
-    // detected iff redaction can rewrite it — number-only leaves are neither, avoiding a fail-closed
-    // reject on PII we could not have removed anyway. See redactableBodyLeaves.
-    //
-    // Keyed scopes detect incrementally: a leaf every available detector has already swept in this
-    // scope is skipped, so turn N of a resent transcript only pays detection for its new content —
-    // and old content cannot be reinterpreted into new detections later. Redaction and the leak
-    // gate still run over the FULL body with all of the scope's known values, so skipping detection
-    // never skips protection. Leaves are marked swept only when no detector was unavailable, so a
-    // recovering detector gets a full pass at anything it missed.
+    const document = bodyDocument(body);
+    const seen = this.seenLeaves;
+    const hashes = seen ? document.leaves.map((leaf) => leafHash(leaf.text)) : [];
+    const freshLeaves = seen ? document.leaves.filter((_, i) => !seen.has(hashes[i] ?? "")) : document.leaves;
+    const freshContentLeaves = freshLeaves.filter((leaf) => leaf.kind !== "key");
+    const detection = await this.detectBodyValues(freshContentLeaves, freshLeaves, {
+      ...detectCtx,
+      surface: "body",
+    });
+    if (seen && detection.complete) for (const hash of hashes) seen.add(hash);
+
+    const registryEntities = entitiesFromMetadata(this.permanentMetadata, "registry");
+    const detectedByValue = new Map<string, ProtectedValue>();
+    for (const [value, metas] of this.detectedMetadata) {
+      if (this.tokenOnly.has(value)) continue;
+      const meta = metas[0];
+      if (meta) detectedByValue.set(value, meta);
+    }
+    for (const { value } of detection.detections) detectedByValue.set(value.value, value);
+    const detectedEntities = entitiesFromValues([...detectedByValue.values()], "detected");
+    const detectedEntityByValue = new Map(detectedEntities.map((entity) => [entity.canonical, entity]));
+
+    const occurrences: Occurrence[] = [];
+    for (const { value, leaves: detectedLeaves } of detection.detections) {
+      const entity = detectedEntityByValue.get(value.value);
+      if (!entity) continue;
+      const detectedText = detectedLeaves.map((leaf) => leaf.text).join("\n");
+      const detectedTexts = detectedLeaves.map((leaf) => leaf.text);
+      const detectedIndices = detectedLeaves.map((leaf) => leaf.index);
+      let validSpans = value.spans !== undefined && value.spans.length > 0;
+      if (validSpans) {
+        for (const span of value.spans ?? []) {
+          if (
+            !Number.isSafeInteger(span.start) ||
+            !Number.isSafeInteger(span.end) ||
+            span.start < 0 ||
+            span.end <= span.start ||
+            span.end > detectedText.length
+          ) {
+            validSpans = false;
+            break;
+          }
+          occurrences.push(
+            ...mapJoinedOffsets(detectedTexts, detectedIndices, {
+              start: span.start,
+              end: span.end,
+              origin: "detector",
+              entity,
+            }),
+          );
+        }
+      }
+      if (!validSpans) occurrences.push(...exactDetectorOccurrences(detectedLeaves, value.value, entity));
+    }
+
+    const allEntities = [...registryEntities, ...detectedEntities];
+    if (allEntities.length > MAX_BODY_ENTITIES) throw new RedactionInvariantError("body entity limit exceeded");
+    occurrences.push(...exactEntityOccurrences(document.leaves, allEntities));
+    occurrences.push(
+      ...expandEntities(
+        document.leaves.map((leaf) => leaf.text),
+        allEntities,
+      ),
+    );
+    if (occurrences.length > MAX_BODY_OCCURRENCES) {
+      throw new RedactionInvariantError("body occurrence limit exceeded");
+    }
+    const admissible = occurrences.filter((occurrence) => {
+      const leaf = document.leaves[occurrence.leaf];
+      return leaf !== undefined && this.vault.isRedactableRange(leaf.text, occurrence.start, occurrence.end);
+    });
+    const resolved = resolveOccurrences(admissible);
+    if (resolved.length > MAX_BODY_OCCURRENCES) {
+      throw new RedactionInvariantError("resolved body occurrence limit exceeded");
+    }
+
+    for (const { value } of detection.detections) remember(this.detectedMetadata, value);
+    const replacements = new Map<number, string>();
+    const owners = new Map<string, Entity>();
+    const found = new Set<string>();
+    const matchSurfaces = new Set(
+      resolved.filter((occurrence) => !occurrence.clipped).map((occurrence) => occurrence.surface),
+    );
+    for (const [leafIndex, claims] of groupResolvedByLeaf(resolved)) {
+      const leaf = document.leaves[leafIndex];
+      if (!leaf) continue;
+      const rewritten = spliceResolvedOccurrences(leaf.text, claims, (occurrence) => {
+        const token = this.vault.registerResolvedSurface(
+          { ...occurrence.entity.meta, value: occurrence.surface },
+          occurrence.entity.authority,
+          matchSurfaces.has(occurrence.surface),
+        );
+        found.add(occurrence.surface);
+        const owner = owners.get(occurrence.surface);
+        if (!owner || occurrence.entity.authority === "registry") owners.set(occurrence.surface, occurrence.entity);
+        remember(this.detectedMetadata, { ...occurrence.entity.meta, value: occurrence.surface });
+        if (matchSurfaces.has(occurrence.surface)) this.tokenOnly.delete(occurrence.surface);
+        else this.tokenOnly.add(occurrence.surface);
+        return token;
+      });
+      if (rewritten !== leaf.text) replacements.set(leafIndex, rewritten);
+    }
+
+    const redactedBody = renderBodyDocument(document, replacements);
+    const leakValues = this.vault.leakValues(redactedBody);
+    const leakOwners = entityOwners(allEntities);
+    const details: BodyRedactionDetails = {
+      body: redactedBody,
+      count: found.size,
+      leaks: leakValues.length,
+      hits: this.hitsForEntities([...owners.values()]),
+      leakHits: this.hitsForOwnedValues(leakValues, leakOwners),
+    };
+    if (traceValues) {
+      if (found.size > 0) details.traceValues = this.traceValuesForOwnedValues(found, owners);
+      if (leakValues.length > 0) details.traceLeakValues = this.traceValuesForOwnedValues(leakValues, leakOwners);
+    }
+    return details;
+  }
+
+  private async redactBodyLegacy(body: string, ctx: BodyRedactionContext): Promise<BodyRedactionDetails> {
+    const { traceValues, ...detectCtx } = ctx;
     const leaves = redactableBodyLeaves(body);
     const seen = this.seenLeaves;
     const hashes = seen ? leaves.map(leafHash) : [];
     const fresh = seen ? leaves.filter((_, i) => !seen.has(hashes[i] ?? "")) : leaves;
-    const complete = await this.registerDetectedValues(fresh.join("\n"), { ...detectCtx, surface: "body" });
-    if (seen && complete) for (const hash of hashes) seen.add(hash);
+    const detectionText = fresh.join("\n");
+    const detection = await this.detectValues(detectionText, { ...detectCtx, surface: "body" });
+    const legacyValues = legacyExpandedDetectedValues(detectionText, detection.values);
+    for (const value of legacyValues) remember(this.detectedMetadata, value);
+    this.vault.register(legacyValues);
+    if (seen && detection.complete) for (const hash of hashes) seen.add(hash);
     // Cover every casing of a registered word/name-like value present in this body (a place/party name
     // registered once as "Mauritius" must also catch "MAURITIUS" in a heading — the vault matcher is
     // case-sensitive). Runs over the full leaf surface, not just fresh leaves, so a caps twin in resent
     // content is caught too.
-    this.registerRegistryCaseVariants(leaves.join("\n"));
+    this.registerLegacyRegistryCaseVariants(leaves.join("\n"));
     // The body preserves path-like tokens (the default): agent tool calls (`cd`, `Read`, `Edit`) live
     // here, and a registered value inside a real path is far more likely a path segment than a secret,
     // so mangling the path would break the agent. Only headers opt out of preservation — see server.ts.
@@ -383,8 +551,16 @@ class ProtectionRequestScope implements RequestScope {
 
   /** Returns true when every detector ran (nothing was skipped by a fail-open outage or crash). */
   private async registerDetectedValues(text: string, ctx: DetectTextContext): Promise<boolean> {
-    if (!text) return true;
+    const detection = await this.detectValues(text, ctx);
+    for (const value of detection.values) remember(this.detectedMetadata, value);
+    this.vault.register(detection.values);
+    return detection.complete;
+  }
+
+  private async detectValues(text: string, ctx: DetectTextContext): Promise<DetectionPass> {
+    if (!text) return { complete: true, values: [] };
     let complete = true;
+    const values: ProtectedValue[] = [];
     for (const plugin of this.plugins) {
       let detected: readonly ProtectedValue[];
       try {
@@ -405,11 +581,41 @@ class ProtectionRequestScope implements RequestScope {
       }
       if (detected.length === 0) continue;
       const candidates = detected.map((value) => ({ ...value, plugin: value.plugin ?? plugin.name }));
-      const admitted = admit(candidates, this.policy);
-      for (const value of admitted) remember(this.detectedMetadata, value);
-      this.vault.register(admitted);
+      values.push(...admit(candidates, this.policy));
     }
-    return complete;
+    return { complete, values };
+  }
+
+  private async detectBodyValues(
+    contentLeaves: readonly BodyLeaf[],
+    allLeaves: readonly BodyLeaf[],
+    ctx: DetectTextContext,
+  ): Promise<BodyDetectionPass> {
+    let complete = true;
+    const detections: BodyDetectedValue[] = [];
+    for (const plugin of this.plugins) {
+      // NLP detectors opt into content-only leaves so protocol/object keys never contaminate spans.
+      // Exact structural detectors retain key context (e.g. `api_token` followed by its value).
+      const leaves = plugin.bodyDetectionView === "content" ? contentLeaves : allLeaves;
+      const text = leaves.map((leaf) => leaf.text).join("\n");
+      if (!text) continue;
+      let detected: readonly ProtectedValue[];
+      try {
+        detected = (await plugin.detectText?.(text, ctx)) ?? [];
+      } catch (err) {
+        if (err instanceof DetectorUnavailableError) {
+          const override = plugin.kind === "detector" ? plugin.failClosed?.() : undefined;
+          if (detectorFailClosed(override)) throw err;
+          complete = false;
+          continue;
+        }
+        complete = false;
+        continue;
+      }
+      const candidates = detected.map((value) => ({ ...value, plugin: value.plugin ?? plugin.name }));
+      for (const value of admit(candidates, this.policy)) detections.push({ value, leaves });
+    }
+    return { complete, detections };
   }
 
   /**
@@ -430,7 +636,7 @@ class ProtectionRequestScope implements RequestScope {
    * Registering it as `detected` would let a prompt-injected tool call exfiltrate the secret via its
    * case variant while the canonical form is withheld.
    */
-  private registerRegistryCaseVariants(text: string): void {
+  private registerLegacyRegistryCaseVariants(text: string): void {
     if (!text || this.permanentMetadata.size === 0) return;
     const entities = [...this.permanentMetadata].flatMap(([value, metas], index) => {
       const meta = metas[0];
@@ -453,28 +659,53 @@ class ProtectionRequestScope implements RequestScope {
     this.vault.registerRegistryDerived(admitted);
   }
 
-  /**
-   * Metadata for a raw value, used only to attribute a redaction in the audit trace / stats (name,
-   * source, kind, confidence). A registered secret is authoritative: when a value is BOTH in the
-   * permanent registry and detected this request, the registry's exact, operator-declared identity
-   * wins over the probabilistic detector's guess — so a value like a registered client name shows as
-   * `env-file / secret / exact`, not `person / pii / high`. Values only seen by a detector this
-   * request (not in the registry) fall back to the detected metadata.
-   *
-   * This governs reporting only; it does not touch span selection, the surrogate token, restore, or
-   * restore-into-tools provenance (see the vault's own layer walk). Span-level authority — making the
-   * registry win the redacted *span/boundary*, not just its label — is the correct-fix rework tracked
-   * in ficta-internal (span-based detection + conflict resolution).
-   */
-  private metadataFor(raw: string): ProtectedValue | undefined {
+  /** Stored metadata fallback for header/query redaction and later response restore traces. */
+  private storedMetadataFor(raw: string): ProtectedValue | undefined {
     return (this.permanentMetadata.get(raw) ?? this.detectedMetadata.get(raw))?.[0];
+  }
+
+  private hitsForEntities(entities: readonly Entity[]): ProtectionHit[] {
+    const hits: ProtectionHit[] = [];
+    const seen = new Set<string>();
+    for (const entity of entities) {
+      const hit = this.hitFromProtectedValue(entity.meta);
+      const key = JSON.stringify(hit);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      hits.push(hit);
+    }
+    return hits;
+  }
+
+  private hitsForOwnedValues(values: readonly string[], owners: ReadonlyMap<string, Entity>): ProtectionHit[] {
+    const entities = values.flatMap((value) => {
+      const owner = owners.get(value);
+      return owner ? [owner] : [];
+    });
+    const hits = this.hitsForEntities(entities);
+    if (hits.length > 0 || values.length === 0) return hits;
+    return this.hitsFor(values);
+  }
+
+  private traceValuesForOwnedValues(
+    values: Iterable<string>,
+    owners: ReadonlyMap<string, Entity>,
+  ): ProtectionTraceValue[] {
+    return this.vault.traceValues(values).map((entry) => {
+      const meta = owners.get(entry.value)?.meta ?? this.storedMetadataFor(entry.value);
+      const hit = meta === undefined ? unknownHit() : this.hitFromProtectedValue(meta);
+      const trace: ProtectionTraceValue = { ...hit, value: entry.value, valueSha256: valueHash(entry.value) };
+      if (entry.surrogate !== undefined) trace.surrogate = entry.surrogate;
+      if (entry.provenance !== undefined) trace.provenance = entry.provenance;
+      return trace;
+    });
   }
 
   private hitsFor(values: readonly string[]): ProtectionHit[] {
     const hits: ProtectionHit[] = [];
     const seen = new Set<string>();
     for (const raw of values) {
-      const value = this.metadataFor(raw);
+      const value = this.storedMetadataFor(raw);
       const hit = value === undefined ? unknownHit() : this.hitFromProtectedValue(value);
       const key = JSON.stringify(hit);
       if (seen.has(key)) continue;
@@ -486,7 +717,7 @@ class ProtectionRequestScope implements RequestScope {
 
   private traceValuesFor(values: Iterable<string>): ProtectionTraceValue[] {
     return this.vault.traceValues(values).map((entry) => {
-      const value = this.metadataFor(entry.value);
+      const value = this.storedMetadataFor(entry.value);
       const hit = value === undefined ? unknownHit() : this.hitFromProtectedValue(value);
       const trace: ProtectionTraceValue = {
         ...hit,
@@ -515,6 +746,120 @@ class ProtectionRequestScope implements RequestScope {
     if (!text) return fallback;
     return this.containsProtectedValue(text) ? fallback : text;
   }
+}
+
+function bodyDocument(body: string): BodyDocument {
+  try {
+    const parsed: unknown = JSON.parse(body);
+    const leaves: BodyLeaf[] = [];
+    visitBodyLeaves(parsed, (leaf) => {
+      leaves.push(leaf);
+    });
+    return { body, parsed, leaves, isJson: true };
+  } catch {
+    const leaves: BodyLeaf[] = [];
+    visitBodyLeaves(
+      body,
+      (leaf) => {
+        leaves.push(leaf);
+      },
+      "raw",
+    );
+    return { body, leaves, isJson: false };
+  }
+}
+
+function renderBodyDocument(document: BodyDocument, replacements: ReadonlyMap<number, string>): string {
+  if (replacements.size === 0) return document.body;
+  if (!document.isJson) return replacements.get(0) ?? document.body;
+  const mapped = visitBodyLeaves(document.parsed, (leaf) => replacements.get(leaf.index));
+  return JSON.stringify(mapped);
+}
+
+function entitiesFromMetadata(
+  metadata: ReadonlyMap<string, readonly ProtectedValue[]>,
+  authority: Entity["authority"],
+): Entity[] {
+  const values: ProtectedValue[] = [];
+  for (const [value, metas] of metadata) {
+    const meta = metas[0];
+    if (meta) values.push({ ...meta, value });
+  }
+  return entitiesFromValues(values, authority);
+}
+
+function entitiesFromValues(values: readonly ProtectedValue[], authority: Entity["authority"]): Entity[] {
+  const byValue = new Map<string, ProtectedValue>();
+  for (const value of values) if (value.value && !byValue.has(value.value)) byValue.set(value.value, value);
+  return [...byValue].map(([canonical, meta]) => ({
+    id: `${authority}:${valueHash(canonical)}`,
+    canonical,
+    forms: [canonical],
+    authority,
+    meta,
+  }));
+}
+
+function exactDetectorOccurrences(leaves: readonly BodyLeaf[], value: string, entity: Entity): Occurrence[] {
+  const occurrences: Occurrence[] = [];
+  for (const leaf of leaves) {
+    for (const span of expansionSpans(leaf.text, value)) {
+      occurrences.push({ leaf: leaf.index, ...span, origin: "detector", entity });
+    }
+  }
+  return occurrences;
+}
+
+function legacyExpandedDetectedValues(text: string, values: readonly ProtectedValue[]): ProtectedValue[] {
+  const out = [...values];
+  const present = new Set(values.map((value) => value.value));
+  const piiValues = values.filter((value) => value.plugin === "pii");
+  const entities = entitiesFromValues(piiValues, "detected");
+  for (const occurrence of expandEntities([text], entities)) {
+    if (present.has(occurrence.surface) || occurrence.surface.trim().length < 4) continue;
+    present.add(occurrence.surface);
+    const { spans: _spans, ...meta } = occurrence.entity.meta;
+    out.push({ ...meta, value: occurrence.surface });
+  }
+  return out;
+}
+
+function exactEntityOccurrences(leaves: readonly BodyLeaf[], entities: readonly Entity[]): Occurrence[] {
+  const occurrences: Occurrence[] = [];
+  for (const entity of entities) {
+    for (const form of new Set([entity.canonical, ...entity.forms])) {
+      // expandEntities already includes exact surfaces for detected and case-expandable registry
+      // forms; only opaque/digit-bearing registry forms need this exact-only pass.
+      if (entity.authority === "detected" || isCaseExpandable(form)) continue;
+      for (const leaf of leaves) {
+        for (const span of expansionSpans(leaf.text, form)) {
+          occurrences.push({ leaf: leaf.index, ...span, origin: "expansion", entity });
+        }
+      }
+    }
+  }
+  return occurrences;
+}
+
+function groupResolvedByLeaf(resolved: readonly ResolvedOccurrence[]): Map<number, ResolvedOccurrence[]> {
+  const grouped = new Map<number, ResolvedOccurrence[]>();
+  for (const occurrence of resolved) {
+    const claims = grouped.get(occurrence.leaf) ?? [];
+    claims.push(occurrence);
+    grouped.set(occurrence.leaf, claims);
+  }
+  return grouped;
+}
+
+function entityOwners(entities: readonly Entity[]): Map<string, Entity> {
+  const owners = new Map<string, Entity>();
+  for (const entity of [...entities].sort((a, b) =>
+    a.authority === b.authority ? 0 : a.authority === "registry" ? 1 : -1,
+  )) {
+    owners.set(entity.canonical, entity);
+    for (const form of entity.forms) owners.set(form, entity);
+  }
+  return owners;
 }
 
 /** Content hash for the swept-leaf ledger; hashes are retained, never the leaf text itself. */

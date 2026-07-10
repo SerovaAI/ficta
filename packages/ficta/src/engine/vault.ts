@@ -201,7 +201,7 @@ export abstract class VaultView {
     return out;
   }
 
-  private surrogateFor(value: string): string | undefined {
+  protected surrogateFor(value: string): string | undefined {
     for (const layer of this.layers) {
       const sur = layer.toSur.get(value);
       if (sur !== undefined) return sur;
@@ -467,7 +467,9 @@ export abstract class VaultView {
     const strings: string[] = [];
     let masked: string | undefined;
     try {
-      collectStrings(JSON.parse(body), strings);
+      visitBodyLeaves(JSON.parse(body), (leaf) => {
+        strings.push(leaf.text);
+      });
       masked = maskJsonStringLiterals(body);
     } catch {
       // Non-JSON: the whole raw body is scanned for any known value below.
@@ -677,8 +679,27 @@ export class ScopedVault extends VaultView {
   }
 
   /**
+   * Register one resolver-owned surface in its authority layer and return its deterministic token.
+   * Clipped residuals request dictionary-only admission so they cannot pollute future body-wide scans.
+   */
+  registerResolvedSurface(value: VaultValue, authority: "registry" | "detected", addMatchForm: boolean): string {
+    const layer = authority === "registry" ? this.registryDerived : this.detected;
+    if (addMatchForm) layer.addMatchForm(value);
+    else layer.ensureToken(value);
+    const token = layer.toSur.get(value.value);
+    if (token === undefined) throw new Error("resolved surface did not mint a surrogate");
+    return token;
+  }
+
+  /** Whether a resolver claim is outside existing surrogate tokens and preserved filesystem paths. */
+  isRedactableRange(text: string, start: number, end: number, preservePaths = true): boolean {
+    if (overlapsSpan(surrogateSpans(text, this.surrogate.pattern), start, end)) return false;
+    return !isInsidePathLikeToken(text, start, end, text.slice(start, end), preservePaths);
+  }
+
+  /**
    * Register request-found variants OF registered values (case twins — see the engine's
-   * `registerRegistryCaseVariants`). The layer is ephemeral for ordinary requests and persistent for
+   * legacy registry case expansion). The layer is ephemeral for ordinary requests and persistent for
    * keyed scopes, always with `permanent` provenance so tool-withholding and reporting treat the
    * variant as the registry secret it is.
    */
@@ -1272,14 +1293,7 @@ function trimPathPunctuation(value: string): string {
 }
 
 function mapStrings(value: unknown, fn: (s: string) => string): unknown {
-  if (typeof value === "string") return fn(value);
-  if (Array.isArray(value)) return value.map((v) => mapStrings(v, fn));
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[fn(k)] = mapStrings(v, fn);
-    return out;
-  }
-  return value;
+  return visitBodyLeaves(value, (leaf) => fn(leaf.text));
 }
 
 function maskJsonStringLiterals(text: string): string {
@@ -1318,23 +1332,6 @@ function maskJsonStringLiterals(text: string): string {
   return out;
 }
 
-function collectStrings(value: unknown, out: string[]): void {
-  if (typeof value === "string") {
-    out.push(value);
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const v of value) collectStrings(v, out);
-    return;
-  }
-  if (value && typeof value === "object") {
-    for (const [k, v] of Object.entries(value)) {
-      out.push(k);
-      collectStrings(v, out);
-    }
-  }
-}
-
 /**
  * The individual redactable string leaves (values + object keys) of a JSON body; `[body]` for non-JSON.
  * Detection runs over these leaves, not the raw body, so "detected == redactable": a value that appears
@@ -1344,10 +1341,51 @@ function collectStrings(value: unknown, out: string[]): void {
 export function redactableBodyLeaves(body: string): string[] {
   if (!body) return [];
   try {
-    const strings: string[] = [];
-    collectStrings(JSON.parse(body), strings);
-    return strings;
+    const leaves: string[] = [];
+    visitBodyLeaves(JSON.parse(body), (leaf) => {
+      leaves.push(leaf.text);
+    });
+    return leaves;
   } catch {
     return [body]; // non-JSON: the entire body is redactable text
   }
+}
+
+export type BodyLeafKind = "key" | "value" | "raw";
+export type BodyLeafPath = readonly (string | number)[];
+
+export interface BodyLeaf {
+  readonly index: number;
+  readonly kind: BodyLeafKind;
+  readonly path: BodyLeafPath;
+  readonly text: string;
+}
+
+export type BodyLeafVisitor = (leaf: BodyLeaf) => string | undefined;
+
+/**
+ * Visit and optionally rewrite every JSON string leaf through one structural traversal. Object keys
+ * are visited immediately before their values; arrays retain index order. The returned structure is
+ * suitable for JSON.stringify and preserves all non-string primitives unchanged.
+ */
+export function visitBodyLeaves(value: unknown, visit: BodyLeafVisitor, rootKind: "value" | "raw" = "value"): unknown {
+  let index = 0;
+  const walk = (current: unknown, path: BodyLeafPath): unknown => {
+    if (typeof current === "string") {
+      const replacement = visit({ index: index++, kind: path.length === 0 ? rootKind : "value", path, text: current });
+      return replacement ?? current;
+    }
+    if (Array.isArray(current)) return current.map((entry, i) => walk(entry, [...path, i]));
+    if (current && typeof current === "object") {
+      const out: Record<string, unknown> = {};
+      for (const [key, entry] of Object.entries(current)) {
+        const entryPath = [...path, key];
+        const replacement = visit({ index: index++, kind: "key", path: entryPath, text: key });
+        out[replacement ?? key] = walk(entry, entryPath);
+      }
+      return out;
+    }
+    return current;
+  };
+  return walk(value, []);
 }

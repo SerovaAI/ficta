@@ -82,9 +82,8 @@ describe("protection engine plugins", () => {
     // `provenance` is deliberately NOT flipped here: it comes from the vault's layer walk and reflects
     // what mechanically governed this redaction (the detected layer's surrogate and its
     // restore-into-tools classification). It stays `detected` — claiming `permanent` while the value is
-    // still mechanically treated as detected would make the audit misreport tool behavior. Making the
-    // registry win the span itself (and thus provenance + restore-into-tools) is the span-resolver
-    // rework tracked in ficta-internal.
+    // The occurrence resolver makes the registry win the span itself, including provenance and
+    // restore-into-tools handling — not just its audit label.
     const NAME = "Amelia Naidoo";
     const registry: RegistrySourcePlugin = {
       kind: "registry-source",
@@ -123,7 +122,7 @@ describe("protection engine plugins", () => {
       source: "env-file",
       kind: "secret",
       confidence: "exact",
-      provenance: "detected", // mechanical layer, unchanged by the identity fix; see comment above
+      provenance: "permanent",
     });
   });
 

@@ -1,11 +1,10 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { ProtectionEngine } from "../src/engine/engine.js";
 import { normalizeMarkdownForDetection } from "../src/engine/plugins/pii/markdown.js";
 import { flexibleOccurrences } from "../src/engine/vault.js";
-import { type ProtectedValue, piiPlugin } from "../src/plugins/index.js";
-
-const BODY = { surface: "body" } as const;
+import { piiPlugin } from "../src/plugins/index.js";
 
 describe("normalizeMarkdownForDetection", () => {
   it("masks emphasis/heading/list/strike/escape formatting to spaces, length-preserving", () => {
@@ -101,19 +100,15 @@ describe("piiPlugin.detectText — markdown + case coverage", () => {
     process.env.FICTA_PII_BACKEND = "presidio";
     process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
     try {
-      const detected = (await piiPlugin.detectText?.(body, BODY)) as ProtectedValue[];
-      const values = detected.map((v) => v.value);
+      const engine = new ProtectionEngine({ plugins: [piiPlugin] });
+      const redacted = await engine.redactBodyDetailed(JSON.stringify({ content: body }));
 
       // NER saw Markdown-normalized text (no `**`/`#`), which is why the heading name is detectable.
       expect(sawText).not.toContain("**");
       expect(sawText).not.toContain("#");
-      // The detected title-case entity AND its ALL-CAPS twin (present in the doc) are both covered.
-      expect(values).toContain("Viven Bhowani");
-      expect(values).toContain("VIVEN BHOWANI");
-      // The ALL-CAPS form carries the same category as the detection it was expanded from.
-      const expanded = detected.find((v) => v.value === "VIVEN BHOWANI");
-      expect(expanded).toMatchObject({ name: "person", kind: "pii" });
-      expect(expanded).not.toHaveProperty("spans");
+      expect(redacted.body).not.toContain("Viven Bhowani");
+      expect(redacted.body).not.toContain("VIVEN BHOWANI");
+      expect(engine.restoreText(redacted.body)).toContain("VIVEN BHOWANI");
     } finally {
       await close(server);
     }
@@ -130,11 +125,11 @@ describe("piiPlugin.detectText — markdown + case coverage", () => {
     process.env.FICTA_PII_BACKEND = "presidio";
     process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
     try {
-      const detected = (await piiPlugin.detectText?.(body, BODY)) as ProtectedValue[];
-      const values = detected.map((value) => value.value);
-      expect(values).toContain("Will");
-      expect(values).toContain("WILL");
-      expect(values).not.toContain("will");
+      const engine = new ProtectionEngine({ plugins: [piiPlugin] });
+      const redacted = await engine.redactBodyDetailed(JSON.stringify({ content: body }));
+      expect(redacted.body).not.toContain("Will Smith");
+      expect(redacted.body).not.toContain("WILL SMITH");
+      expect(redacted.body).toContain("We will proceed");
     } finally {
       await close(server);
     }

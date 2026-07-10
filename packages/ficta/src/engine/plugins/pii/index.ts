@@ -1,17 +1,11 @@
 import { detectorFailClosed } from "../../detection-policy.js";
 import { engineWarn } from "../../diagnostics.js";
 import { envFlag, parseBoolean } from "../../env-flags.js";
-import { expandEntities } from "../../expander.js";
 import { DetectorUnavailableError } from "../../redaction-engine.js";
 import type { DetectorPlugin, PluginDiscovery, ProtectedValue } from "../types.js";
 import { normalizeMarkdownForDetection } from "./markdown.js";
 import { OpenmedUnavailableError, openmedConfig } from "./openmed-recognizer.js";
-import {
-  MIN_PII_VALUE_LENGTH,
-  PresidioUnavailableError,
-  presidioConfig,
-  withMergedSpans,
-} from "./presidio-recognizer.js";
+import { PresidioUnavailableError, presidioConfig, withMergedSpans } from "./presidio-recognizer.js";
 import type { PiiRecognizer } from "./recognizer.js";
 import { activeBackends, ENV_BACKEND, ENV_BACKENDS } from "./registry.js";
 
@@ -127,6 +121,7 @@ export function resetPiiRecognizerStateForTests(): void {
 export const piiPlugin: DetectorPlugin = {
   kind: "detector",
   name: PLUGIN_NAME,
+  bodyDetectionView: "content",
   description:
     "Best-effort PII detection (regex + optional Presidio/OpenMed sidecars), tokenized like any protected value",
   config: {
@@ -216,40 +211,9 @@ export const piiPlugin: DetectorPlugin = {
     if (failures.length > 0 && detectorFailClosed(piiFailClosed())) {
       throw new DetectorUnavailableError(PLUGIN_NAME, failures.join("; "));
     }
-    return expandCaseVariants(mergeDetectedValues(values), text);
+    return mergeDetectedValues(values);
   },
 };
-
-/**
- * Cover an entity detected in one casing that also appears in another. NER catches a party name in
- * title-case prose but misses its ALL-CAPS heading/signature form; vault matching is case-sensitive, so
- * the caps form would leak (observed: `VIVEN BHOWANI`, `ELTON LAU`, `LSD LIMITED SEYCHELLES`). For each
- * detected value, register every distinct case-form ACTUALLY PRESENT in the (raw) request text — each
- * mints its own surrogate and restores its own casing. Bounded to forms that genuinely occur, so it
- * never invents strings; the only cost is redacting an extra casing of a noisy detection, an acceptable
- * privacy-favoring trade for a redaction proxy.
- */
-function expandCaseVariants(values: readonly ProtectedValue[], text: string): ProtectedValue[] {
-  const out = [...values];
-  const present = new Set(out.map((value) => value.value));
-  const entities = values.map((value, index) => ({
-    id: `detected:${index}`,
-    canonical: value.value,
-    forms: [value.value],
-    authority: "detected" as const,
-    meta: value,
-  }));
-  for (const occurrence of expandEntities([text], entities)) {
-    const form = occurrence.surface;
-    if (present.has(form) || form.trim().length < MIN_PII_VALUE_LENGTH) continue;
-    present.add(form);
-    // The adapter still returns string values until Phase 4 consumes occurrences directly. Never
-    // copy the canonical detector offsets onto a distinct expanded surface.
-    const { spans: _spans, ...metadata } = occurrence.entity.meta;
-    out.push({ ...metadata, value: form });
-  }
-  return out;
-}
 
 function discoverPii(): PluginDiscovery {
   const enabled = piiEnabled();

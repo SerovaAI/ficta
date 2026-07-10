@@ -30,9 +30,14 @@ function buildBody(targetBytes: number, secrets: { value: string }[]): string {
 
 function stats(times: number[]) {
   const s = [...times].sort((a, b) => a - b);
-  if (s.length === 0) return { mean: 0, p50: 0, p95: 0 };
+  if (s.length === 0) return { mean: 0, p50: 0, p95: 0, p99: 0 };
   const sum = s.reduce((a, b) => a + b, 0);
-  return { mean: sum / s.length, p50: s[Math.floor(s.length * 0.5)] ?? 0, p95: s[Math.floor(s.length * 0.95)] ?? 0 };
+  return {
+    mean: sum / s.length,
+    p50: s[Math.floor(s.length * 0.5)] ?? 0,
+    p95: s[Math.floor(s.length * 0.95)] ?? 0,
+    p99: s[Math.floor(s.length * 0.99)] ?? 0,
+  };
 }
 function timeSync(fn: () => void, iters: number, warmup = 5): number[] {
   for (let i = 0; i < warmup; i++) fn();
@@ -82,7 +87,7 @@ const BODY_SIZES: [string, number, number][] = [
 const fmt = (n: number) => n.toFixed(3).padStart(8);
 console.log(`\nficta vault microbench — ${process.platform} node ${process.version}\n`);
 console.log(
-  "| registry | body  | iters | redactBody (ms) p50/mean/p95 | leakCount p50 | restoreText p50 | restoreStream p50 |",
+  "| registry | body  | iters | redactBody (ms) p50/mean/p95/p99 | leakCount p50 | restoreText p50 | restoreStream p50 |",
 );
 console.log(
   "|---------:|------:|------:|------------------------------|--------------:|----------------:|------------------:|",
@@ -102,7 +107,7 @@ for (const reg of REG_SIZES) {
 
     console.log(
       `| ${String(reg).padStart(8)} | ${label.padStart(5)} | ${String(iters).padStart(5)} | ` +
-        `${fmt(rb.p50)}/${fmt(rb.mean)}/${fmt(rb.p95)} | ${fmt(lc.p50)} | ${fmt(rt.p50)} | ${fmt(ss.p50)} |`,
+        `${fmt(rb.p50)}/${fmt(rb.mean)}/${fmt(rb.p95)}/${fmt(rb.p99)} | ${fmt(lc.p50)} | ${fmt(rt.p50)} | ${fmt(ss.p50)} |`,
     );
   }
 }

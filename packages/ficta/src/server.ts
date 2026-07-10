@@ -32,6 +32,7 @@ import {
   type ProtectionHit,
   type ProtectionTraceValue,
   type RedactionEngine,
+  RedactionInvariantError,
   type RequestScope,
   type RestoreTraceDetails,
 } from "./engine/redaction-engine.js";
@@ -299,6 +300,7 @@ export async function startProxy(
           // A fail-closed detector (e.g. Presidio required but unreachable) refuses the request rather
           // than forwarding data it could not screen. The raw body has not left the process.
           if (err instanceof DetectorUnavailableError) return blockedDetectionResponse(c, err.plugin, n);
+          if (err instanceof RedactionInvariantError) return blockedInvariantResponse(c, err.reason, n);
           throw err;
         }
         const redacted = redaction.body;
@@ -889,6 +891,20 @@ function blockedDetectionResponse(c: Context, plugin: string, n?: number): Respo
       },
     },
     503,
+  );
+}
+
+/** Always-blocking response for an internal coordinate/redaction invariant failure. */
+function blockedInvariantResponse(c: Context, reason: string, n?: number): Response {
+  log.error({ reqId: n, reason }, "🛑 BLOCKED — internal redaction invariant failed; refusing to forward");
+  return c.json(
+    {
+      error: {
+        type: "ficta_protection_error",
+        message: "ficta refused to forward: an internal redaction safety check failed",
+      },
+    },
+    500,
   );
 }
 
