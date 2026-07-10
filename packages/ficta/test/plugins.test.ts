@@ -1,6 +1,7 @@
 import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { FICTA_MANAGED_REGISTRY_SCHEMA } from "@serovaai/ficta-protocol";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   buildRegistryPolicy,
@@ -215,7 +216,10 @@ describe("registry plugin discovery", () => {
     writeFileSync(
       file,
       JSON.stringify({
-        schema: "ficta.managed-registry.v1",
+        schema: FICTA_MANAGED_REGISTRY_SCHEMA,
+        revision: "plugins-test-1",
+        generatedBy: "ficta-test",
+        generatedAt: "2026-07-10T00:00:00.000Z",
         entries: [
           {
             id: "entry-1",
@@ -260,6 +264,40 @@ describe("registry plugin discovery", () => {
     expect(managed?.status).toBe("loaded");
     expect(managed?.valueCount).toBe(2);
     expect(JSON.stringify(snapshot.discoveries)).not.toContain(value);
+  });
+
+  it("rejects an unknown managed registry schema instead of partially loading it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ficta-managed-registry-schema-"));
+    const file = join(dir, "protected-registry.json");
+    writeFileSync(
+      file,
+      JSON.stringify({
+        schema: "ficta.managed-registry.v2",
+        revision: "future-schema-1",
+        generatedBy: "future-gateway",
+        generatedAt: "2026-07-10T00:00:00.000Z",
+        entries: [
+          {
+            id: "entry-1",
+            name: "gateway:client:global:entry-1",
+            type: "client",
+            value: "must-not-load",
+            aliases: [],
+            kind: "custom",
+          },
+        ],
+      }),
+      { mode: 0o600 },
+    );
+    process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+    process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "1";
+    process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = file;
+
+    const snapshot = loadPluginRegistry();
+    const managed = snapshot.discoveries.find((discovery) => discovery.id === "managed-registry-file/json-files");
+
+    expect(snapshot.values).not.toEqual(expect.arrayContaining([expect.objectContaining({ value: "must-not-load" })]));
+    expect(managed).toMatchObject({ status: "error", valueCount: 0 });
   });
 
   it("refuses Doppler commands resolved inside the current working tree", () => {

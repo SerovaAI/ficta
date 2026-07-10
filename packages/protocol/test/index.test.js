@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  FICTA_MANAGED_REGISTRY_SCHEMA,
   FICTA_PROTECTION_PREVIEW_PATH,
   FICTA_PROTECTION_TICKET_HEADER,
   FICTA_REGISTRY_REVISION_HEADER,
   FICTA_SCOPE_HEADER,
   FICTA_TRACE_CAPTURE_HEADER,
+  isManagedRegistryFile,
   isProtectionPreviewOk,
   isProtectionStatsOk,
   isProxyConfigOk,
+  isRegistryReloadError,
   isRegistryReloadOk,
   normalizePiiBackends,
   normalizeRestoreIntoToolsPolicy,
@@ -198,6 +201,37 @@ describe("runtime guards", () => {
       isRegistryReloadOk({ ok: true, service: "ficta", registry: { added: 0, total: 12, filesErrored: 0.5 } }),
       false,
     );
+    assert.equal(
+      isRegistryReloadError({ ok: false, service: "ficta", status: "forbidden", message: "loopback only" }),
+      true,
+    );
+    assert.equal(
+      isRegistryReloadError({ ok: false, proxyUrl: "http://127.0.0.1", status: "unreachable", message: "down" }),
+      false,
+    );
+  });
+
+  it("strictly validates the managed-registry file contract", () => {
+    const file = {
+      schema: FICTA_MANAGED_REGISTRY_SCHEMA,
+      revision: "revision-123",
+      generatedBy: "ficta-gateway",
+      generatedAt: "2026-07-10T10:00:00.000Z",
+      entries: [
+        {
+          id: "entry-1",
+          name: "gateway:client:global:entry-1",
+          type: "client",
+          value: "Northstar Biologics",
+          aliases: ["Northstar"],
+          kind: "custom",
+        },
+      ],
+    };
+    assert.equal(isManagedRegistryFile(file), true);
+    assert.equal(isManagedRegistryFile({ ...file, schema: "ficta.managed-registry.v2" }), false);
+    assert.equal(isManagedRegistryFile({ ...file, entries: [{ ...file.entries[0], value: "" }] }), false);
+    assert.equal(isManagedRegistryFile({ ...file, revision: "bad revision" }), false);
   });
 
   it("validates protection previews", () => {

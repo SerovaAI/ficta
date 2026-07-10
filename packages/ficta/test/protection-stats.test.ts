@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ProtectionStats } from "../src/engine/protection-stats.js";
+import { ProtectionStats } from "../src/protection-stats.js";
 
 describe("protection stats label accounting", () => {
   it("counts distinct protected values rather than deduplicated labels", () => {

@@ -23,6 +23,8 @@ import {
   type ProtectionStatsOk,
   type ProtectionStatusOk,
   type ProxyConfigOk,
+  type ProxyConfigPatchError,
+  type RegistryReloadError,
   type RegistryReloadOk,
 } from "@serovaai/ficta-protocol";
 import { type Context, Hono } from "hono";
@@ -33,7 +35,6 @@ import { setEngineWarnSink } from "./engine/diagnostics.js";
 import { ProtectionEngine } from "./engine/engine.js";
 import type { ProtectedValue } from "./engine/plugins/types.js";
 import { withPreservationInstruction } from "./engine/preserve-literals.js";
-import { ProtectionStats, type ProtectionStatsSnapshot, type ProtectionSurface } from "./engine/protection-stats.js";
 import {
   DetectorUnavailableError,
   type ProtectionHit,
@@ -74,6 +75,7 @@ import {
   secretShapesEnabled,
   selectedBackendNames,
 } from "./plugins/index.js";
+import { ProtectionStats, type ProtectionStatsSnapshot, type ProtectionSurface } from "./protection-stats.js";
 import {
   applyProxyConfigPatch,
   isLoopbackAddress,
@@ -223,7 +225,7 @@ export async function startProxy(
               service: "ficta",
               status: "forbidden",
               message: "Proxy config edits are accepted only from loopback clients.",
-            },
+            } satisfies ProxyConfigPatchError,
             403,
           );
         }
@@ -232,7 +234,12 @@ export async function startProxy(
           patch = await c.req.json();
         } catch {
           return c.json(
-            { ok: false, service: "ficta", status: "invalid_patch", message: "Config patch must be valid JSON." },
+            {
+              ok: false,
+              service: "ficta",
+              status: "invalid_patch",
+              message: "Config patch must be valid JSON.",
+            } satisfies ProxyConfigPatchError,
             400,
           );
         }
@@ -258,13 +265,18 @@ export async function startProxy(
             service: "ficta",
             status: "forbidden",
             message: "Registry reload is accepted only from loopback clients.",
-          },
+          } satisfies RegistryReloadError,
           403,
         );
       }
       if (!engine.reloadRegistryValues) {
         return c.json(
-          { ok: false, service: "ficta", status: "unsupported", message: "This engine has no reloadable registry." },
+          {
+            ok: false,
+            service: "ficta",
+            status: "unsupported",
+            message: "This engine has no reloadable registry.",
+          } satisfies RegistryReloadError,
           501,
         );
       }
@@ -697,23 +709,23 @@ export async function startProxy(
       );
       // Per-source discovery + policy detail is the old --ficta-verbose report; keep it at debug.
       for (const line of registryDiscoveryLines(
-        engine.registry.discoveries,
+        engine.registryStatus.discoveries,
         "",
-        engine.registry.policyExcludedBySource,
+        engine.registryStatus.policyExcludedBySource,
       )) {
         log.debug({}, line.trim());
       }
-      for (const line of registryPolicyLines(engine.registry.registryPolicy, "")) {
+      for (const line of registryPolicyLines(engine.registryStatus.registryPolicy, "")) {
         log.debug({}, `registry policy exclusion: ${line.trim()}`);
       }
       if (keyWarning) log.warn({}, `key warning: ${keyWarning}`);
       resolve({
         port: info.port,
         protectedValues: engine.size,
-        registry: engine.registry.discoveries,
-        policyExcluded: engine.registry.policyExcluded,
-        policyExcludedBySource: engine.registry.policyExcludedBySource,
-        registryPolicy: engine.registry.registryPolicy,
+        registry: [...engine.registryStatus.discoveries],
+        policyExcluded: engine.registryStatus.policyExcluded,
+        policyExcludedBySource: { ...engine.registryStatus.policyExcludedBySource },
+        registryPolicy: engine.registryStatus.registryPolicy,
         keptCount: () => stats.snapshot().totals.keptOutOfModelValues,
         protectionStats: () => stats.snapshot(),
         statsSummary: () => stats.renderSummary(),
@@ -834,7 +846,7 @@ async function protectionStatus(engine: RedactionEngine, stats: ProtectionStats)
       enabled: engine.enabled,
       protecting: engine.protecting,
       registeredValues: engine.size,
-      policyExcluded: engine.registry.policyExcluded,
+      policyExcluded: engine.registryStatus.policyExcluded,
     },
     secretShapes: {
       enabled: secretShapesEnabled(),

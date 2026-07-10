@@ -1,12 +1,21 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ProtectionHit } from "./redaction-engine.js";
-import { plural } from "./text.js";
-import type { Wire } from "./wire.js";
+import type {
+  ProtectionHit,
+  ProtectionStatsBucket,
+  ProtectionStatsEvent,
+  ProtectionStatsLabelBucket,
+  ProtectionStatsSnapshot,
+  ProtectionStatsSurface,
+  ProtectionStatsTotals,
+} from "@serovaai/ficta-protocol";
+import { plural } from "./engine/text.js";
+import type { Wire } from "./engine/wire.js";
 
-export type ProtectionSurface = "body" | "query string" | "non-auth headers";
+export type ProtectionSurface = ProtectionStatsSurface;
+export type { ProtectionStatsSnapshot };
 
-export interface ProtectionStatsRecord {
+interface ProtectionStatsRecord {
   requestId?: number;
   method: string;
   path: string;
@@ -19,61 +28,6 @@ export interface ProtectionStatsRecord {
   blocked: boolean;
   redactedHits?: readonly ProtectionHit[];
   survivingHits?: readonly ProtectionHit[];
-}
-
-export interface ProtectionStatsEvent
-  extends Required<Omit<ProtectionStatsRecord, "requestId" | "route" | "model" | "redactedHits" | "survivingHits">> {
-  index: number;
-  at: string;
-  requestId?: number;
-  route?: string;
-  model: string;
-  redactedHits: ProtectionHit[];
-  survivingHits: ProtectionHit[];
-}
-
-export interface ProtectionStatsTotals {
-  events: number;
-  affectedRequests: number;
-  redactedValues: number;
-  /** Registered or detected values still present after redaction; excludes PII detectors never recognized. */
-  survivingValues: number;
-  blockedRequests: number;
-  keptOutOfModelValues: number;
-  /** Distinct values restored back into responses, summed per response (see recordRestore). */
-  restoredValues: number;
-  /** Values held back from tool-call arguments (restore-into-tools withholding), summed per response. */
-  withheldFromToolsValues: number;
-}
-
-export interface ProtectionStatsBucket {
-  name: string;
-  requests: number;
-  redactedValues: number;
-  /** Registered or detected values still present after redaction; excludes undetected PII. */
-  survivingValues: number;
-  blockedRequests: number;
-  keptOutOfModelValues: number;
-}
-
-export interface ProtectionStatsLabelBucket extends ProtectionStatsBucket {
-  source: string;
-  plugin?: string;
-  kind?: ProtectionHit["kind"];
-  confidence?: ProtectionHit["confidence"];
-}
-
-export interface ProtectionStatsSnapshot {
-  version: 1;
-  path: string;
-  startedAt: string;
-  updatedAt: string;
-  totals: ProtectionStatsTotals;
-  byModel: ProtectionStatsBucket[];
-  bySurface: ProtectionStatsBucket[];
-  byWire: ProtectionStatsBucket[];
-  byLabel: ProtectionStatsLabelBucket[];
-  events: ProtectionStatsEvent[];
 }
 
 interface MutableBucket {

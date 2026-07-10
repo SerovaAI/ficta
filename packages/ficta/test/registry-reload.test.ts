@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  FICTA_MANAGED_REGISTRY_SCHEMA,
   FICTA_REGISTRY_RELOAD_PATH,
   FICTA_REGISTRY_REVISION_HEADER,
   FICTA_STATUS_PATH,
@@ -56,8 +57,10 @@ function writeManagedFile(file: string, values: string[], revision = `revision-$
   writeFileSync(
     file,
     JSON.stringify({
-      schema: "ficta.managed-registry.v1",
+      schema: FICTA_MANAGED_REGISTRY_SCHEMA,
       revision,
+      generatedBy: "ficta-test",
+      generatedAt: "2026-07-10T00:00:00.000Z",
       entries: values.map((value, i) => ({
         id: `entry-${i}`,
         name: `gateway:client:global:entry-${i}`,
