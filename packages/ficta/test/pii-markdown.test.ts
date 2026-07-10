@@ -148,6 +148,34 @@ describe("piiPlugin.detectText — markdown + case coverage", () => {
     }
   });
 
+  it("preserves standalone person candidates contained in full names for occurrence resolution", async () => {
+    const body = "Alice Example and Candice Sample signed. Alice and Candice will visit.";
+    const { server, port } = await startAnalyzeStub((req) => {
+      const spans = ["Alice Example", "Candice Sample", "Alice", "Candice"].flatMap((value, index) => {
+        const from = index < 2 ? 0 : req.text.indexOf("signed.") + "signed.".length;
+        const start = req.text.indexOf(value, from);
+        return start === -1 ? [] : [{ entity_type: "PERSON", start, end: start + value.length, score: 0.95 }];
+      });
+      return spans;
+    });
+    process.env.FICTA_PII_ENABLED = "1";
+    process.env.FICTA_PII_BACKEND = "presidio";
+    process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
+    try {
+      const engine = new ProtectionEngine({ plugins: [piiPlugin] });
+      const redacted = await engine.redactBodyDetailed(JSON.stringify({ content: body }));
+      expect(redacted.body).not.toContain("Alice");
+      expect(redacted.body).not.toContain("Candice");
+      expect(redacted.count).toBe(4);
+      expect(redacted.hits).toHaveLength(4);
+      expect(redacted.hits.every((hit) => hit.name === "person")).toBe(true);
+      expect(redacted.leaks).toBe(0);
+      expect(engine.restoreJson(redacted.body)).toContain(body);
+    } finally {
+      await close(server);
+    }
+  });
+
   it("maps a compact internal-Markdown NER span back to the exact raw body range", async () => {
     const party = "LSD Open FZCO";
     const body = "The counterparty is LSD **Open** FZCO.";

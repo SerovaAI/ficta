@@ -103,7 +103,9 @@ also run the analyzer sidecar explicitly before launching the agent:
 ```sh
 docker run --rm -p 5002:3000 \
   -v "$PWD/packages/ficta/presidio/default_recognizers.za.yaml:/app/ficta-presidio-recognizers.yaml:ro" \
+  -v "$PWD/packages/ficta/presidio/nlp_engine.za.yaml:/app/ficta-nlp-engine.yaml:ro" \
   -e RECOGNIZER_REGISTRY_CONF_FILE=/app/ficta-presidio-recognizers.yaml \
+  -e NLP_CONF_FILE=/app/ficta-nlp-engine.yaml \
   ghcr.io/data-privacy-stack/presidio-analyzer:latest
 
 FICTA_PII_ENABLED=1 \
@@ -113,7 +115,9 @@ ficta claude
 ```
 
 The committed registry config keeps Presidio's default recognizers, enables `ZA_ID_NUMBER`, and adds
-`ZA_COMPANY_REGISTRATION` for South African company registration numbers.
+`ZA_COMPANY_REGISTRATION` plus legal-document identifier, Mauritius phone, and ordinal-date patterns.
+With the sidecar running, validate the complete detector→resolver→typed-surrogate→restore path using
+`pnpm --filter @serovaai/ficta verify:presidio`.
 
 For medical workspaces that need both general PII and medical/PHI-style identifiers, run the
 upstream OpenMed REST service alongside Presidio (published image

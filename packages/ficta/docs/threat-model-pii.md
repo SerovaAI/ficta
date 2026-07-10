@@ -32,9 +32,10 @@ covered surfaces leave, and **fail-closed blocked** if one would be forwarded ve
 ficta is supposed to redact. This is the layer to lead the demo with.
 
 **Best-effort (this document):** **detected PII** — the regex backend (email, US SSN, Luhn card) and
-the Presidio NER sidecar (names, locations, organizations, phones). NER is probabilistic: it will
-miss entities, especially unusual names, partial identifiers, and firm-specific shapes not registered
-or added as recognizers/deny-lists. Detection is only as good as the configured backend.
+the Presidio sidecar (deterministic recognizers plus NER for names, locations, organizations, phones,
+dates, and configured document-ID shapes). NER is probabilistic: it will miss entities, especially
+unusual names, partial identifiers, and firm-specific shapes not registered or added as
+recognizers/deny-lists. Detection is only as good as the configured backend.
 
 **Organization detection is enabled but noisy.** `ORGANIZATION` NER is un-suppressed via
 `presidio/nlp_engine.za.yaml` (upstream ignores it — "Has many false positives"), so unregistered

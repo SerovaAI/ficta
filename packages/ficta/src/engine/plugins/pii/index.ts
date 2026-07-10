@@ -283,21 +283,13 @@ function mergeDetectedValues(values: readonly ProtectedValue[]): ProtectedValue[
       accepted[index] = preferred === value ? withMergedSpans(value, exact) : withMergedSpans(exact, value);
       continue;
     }
-
-    const overlaps = accepted.filter((existing) => containsEither(existing.value, value.value));
-    if (overlaps.length === 0) {
-      accepted.push(value);
-      continue;
-    }
-    if (overlaps.some((existing) => preferValue(existing, value) === existing)) continue;
-    for (const overlap of overlaps) accepted.splice(accepted.indexOf(overlap), 1);
+    // Containment is not duplication. A detector may legitimately return both "Alice Example" and
+    // the later standalone "Alice"; dropping the shorter literal here loses that second occurrence
+    // before the occurrence resolver can arbitrate the overlapping full-name range. Preserve every
+    // distinct literal and let resolveOccurrences() make range-local ownership decisions.
     accepted.push(value);
   }
   return accepted;
-}
-
-function containsEither(a: string, b: string): boolean {
-  return a.includes(b) || b.includes(a);
 }
 
 function preferValue(a: ProtectedValue, b: ProtectedValue): ProtectedValue {

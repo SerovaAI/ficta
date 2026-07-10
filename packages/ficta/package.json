@@ -55,6 +55,7 @@
     "ficta": "tsx src/cli.ts",
     "build": "tsc",
     "verify": "pnpm check && pnpm typecheck && pnpm test",
+    "verify:presidio": "tsx scripts/verify-presidio-sidecar.mts",
     "prepack": "pnpm build",
     "format": "biome format --write .",
     "lint": "biome lint .",

@@ -34,6 +34,7 @@ describe("typedSurrogateStrategy", () => {
     expect(typeOf(s.mint("x", { name: "person", kind: "pii" }))).toBe("PERSON");
     expect(typeOf(s.mint("x", { name: "phone-number", kind: "pii" }))).toBe("PHONE");
     expect(typeOf(s.mint("x", { name: "credit-card", kind: "pii" }))).toBe("CARD");
+    expect(typeOf(s.mint("x", { name: "document-id", kind: "pii" }))).toBe("ID");
   });
 
   it("falls back to the coarse kind for unmapped categories", () => {

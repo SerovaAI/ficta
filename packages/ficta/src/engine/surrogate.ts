@@ -158,6 +158,8 @@ const CATEGORY_TYPE: Record<string, string> = {
   "us-itin": "ID",
   "us-driver-license": "ID",
   "us-passport": "ID",
+  id: "ID",
+  "document-id": "ID",
   "medical-license": "ID",
   "uk-nhs": "ID",
   "uk-nino": "ID",

@@ -265,7 +265,9 @@ custom general PII, while OpenMed adds medical/PHI-style learned detection.
 ficta calls [`presidio-analyzer`](https://microsoft.github.io/presidio/) at the configured URL. Two
 managed ways to run it (both mount `packages/ficta/presidio/default_recognizers.za.yaml`, which
 keeps Presidio's default recognizers, enables South African ID numbers, and adds a South African
-company registration number pattern recognizer):
+company registration number pattern recognizer). Ficta also ships context-aware patterns for
+confidential document identifiers, Mauritius international telephone numbers, and ordinal long-form
+dates observed in legal-document traffic:
 
 - **`pnpm sidecars`** (repo root, ↔ `docker-compose.sidecars.yml`) starts the shared sidecar stack
   detached with health-gated `--wait`: the Gateway document converter plus both PII sidecars.
@@ -282,9 +284,20 @@ to avoid one request fanning out into many sidecar calls). To run the container 
 ```sh
 docker run -d --name presidio-analyzer -p 5002:3000 \
   -v "$PWD/packages/ficta/presidio/default_recognizers.za.yaml:/app/ficta-presidio-recognizers.yaml:ro" \
+  -v "$PWD/packages/ficta/presidio/nlp_engine.za.yaml:/app/ficta-nlp-engine.yaml:ro" \
   -e RECOGNIZER_REGISTRY_CONF_FILE=/app/ficta-presidio-recognizers.yaml \
+  -e NLP_CONF_FILE=/app/ficta-nlp-engine.yaml \
   ghcr.io/data-privacy-stack/presidio-analyzer:latest
 curl http://127.0.0.1:5002/health   # {"status":"..."} once ready
+```
+
+After changing or deploying the recognizer/NLP configuration, run the synthetic invitation-document
+gate against the live sidecar. It verifies full names plus later standalone names, document IDs,
+Mauritius phone, ordinal dates, email, reflowed locations, typed surrogates, zero known survivors, and
+exact restoration:
+
+```sh
+pnpm --filter @serovaai/ficta verify:presidio
 ```
 
 Config (`[pii.presidio]` ↔ `FICTA_PII_PRESIDIO_*`):
@@ -302,8 +315,9 @@ Config (`[pii.presidio]` ↔ `FICTA_PII_PRESIDIO_*`):
 
 A registered value replaces **every** occurrence of that string in the body, so recommend an
 allowlist tuned for coding-agent traffic rather than the full entity set — e.g.
-`entities = ["PERSON", "PHONE_NUMBER", "LOCATION", "EMAIL_ADDRESS"]`. Values shorter than 4 chars are
-dropped regardless, to avoid shredding normal prose.
+`entities = ["PERSON", "PHONE_NUMBER", "LOCATION", "EMAIL_ADDRESS"]`. Legal-document deployments
+should also include `DOCUMENT_ID` and `DATE_TIME`; leaving `entities = []` enables every configured
+recognizer. Values shorter than 4 chars are dropped regardless, to avoid shredding normal prose.
 
 ### The `openmed` backend
 

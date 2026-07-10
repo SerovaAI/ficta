@@ -87,6 +87,7 @@ export interface ProtectionStatsTotals {
   events: number;
   affectedRequests: number;
   redactedValues: number;
+  /** Registered or detected values still present after redaction; excludes PII the detectors never recognized. */
   survivingValues: number;
   blockedRequests: number;
   keptOutOfModelValues: number;
@@ -98,6 +99,7 @@ export interface ProtectionStatsBucket {
   name: string;
   requests: number;
   redactedValues: number;
+  /** Registered or detected values still present after redaction; excludes undetected PII. */
   survivingValues: number;
   blockedRequests: number;
   keptOutOfModelValues: number;

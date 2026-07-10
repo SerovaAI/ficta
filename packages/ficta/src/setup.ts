@@ -75,7 +75,8 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
         { value: "regex", label: "Built-in regex — emails, SSNs, cards; in-process, no dependencies" },
         {
           value: "presidio",
-          label: "Microsoft Presidio — names, addresses, orgs, phones (needs a running presidio-analyzer sidecar)",
+          label:
+            "Microsoft Presidio — names, locations, contact details, dates, and document IDs (needs a running presidio-analyzer sidecar)",
         },
         {
           value: "openmed",

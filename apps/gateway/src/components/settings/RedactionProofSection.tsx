@@ -42,9 +42,10 @@ export function RedactionProofSection() {
   return (
     <section aria-label="Redaction proof">
       <div className="pt-6 pb-1">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Redaction proof</h3>
+        <h3 className="text-sm font-medium">Redaction proof</h3>
         <p className="pt-1 text-xs text-muted-foreground leading-relaxed">
-          Running-session proof from the proxy. Counts and labels only; protected values are never shown.
+          Counts cover values ficta registered or detected; undetected PII is outside this proof. Protected values are
+          never shown.
         </p>
       </div>
 
@@ -73,7 +74,7 @@ function ProofRows({
         <Metric label="Kept out" value={totals.keptOutOfModelValues} />
         <Metric label="Affected requests" value={totals.affectedRequests} />
         <Metric label="Restored" value={totals.restoredValues} />
-        <Metric label="Survived" value={totals.survivingValues} warn={totals.survivingValues > 0} />
+        <Metric label="Known values left" value={totals.survivingValues} warn={totals.survivingValues > 0} />
         <Metric label="Blocked" value={totals.blockedRequests} warn={totals.blockedRequests > 0} />
         <Metric
           label="Withheld from tool calls"
@@ -122,7 +123,7 @@ function TrendSummary({ history }: { history: ProtectionStatsDailySummary[] | un
             <Metric label="Kept out" value={totals.keptOutOfModelValues} />
             <Metric label="Affected requests" value={totals.affectedRequests} />
             <Metric label="Restored" value={totals.restoredValues} />
-            <Metric label="Survived" value={totals.survivingValues} warn={totals.survivingValues > 0} />
+            <Metric label="Known values left" value={totals.survivingValues} warn={totals.survivingValues > 0} />
             <Metric label="Blocked" value={totals.blockedRequests} warn={totals.blockedRequests > 0} />
           </div>
           <div className="overflow-x-auto rounded-lg border border-border">
@@ -139,7 +140,7 @@ function TrendSummary({ history }: { history: ProtectionStatsDailySummary[] | un
                     Requests
                   </th>
                   <th scope="col" className="px-3 py-2 font-medium">
-                    Survived
+                    Known values left
                   </th>
                   <th scope="col" className="px-3 py-2 font-medium">
                     Blocked
@@ -211,7 +212,7 @@ function KeySummary({ buckets }: { buckets: ProtectionStatsLabelBucket[] }) {
                 Redacted
               </th>
               <th scope="col" className="px-3 py-2 font-medium">
-                Survived
+                Known values left
               </th>
               <th scope="col" className="px-3 py-2 font-medium">
                 Requests

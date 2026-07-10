@@ -202,14 +202,18 @@ export interface TextRedactionResult {
 }
 
 export interface BodyRedactionDetails extends BodyRedactionResult {
+  /** Safe metadata, one entry per distinct redacted value/surface (labels may repeat). */
   hits: ProtectionHit[];
+  /** Safe metadata, one entry per distinct surviving known value (labels may repeat). */
   leakHits: ProtectionHit[];
   traceValues?: ProtectionTraceValue[];
   traceLeakValues?: ProtectionTraceValue[];
 }
 
 export interface TextRedactionDetails extends TextRedactionResult {
+  /** Safe metadata, one entry per distinct redacted value (labels may repeat). */
   hits: ProtectionHit[];
+  /** Safe metadata, one entry per distinct surviving known value (labels may repeat). */
   leakHits: ProtectionHit[];
   traceValues?: ProtectionTraceValue[];
   traceLeakValues?: ProtectionTraceValue[];

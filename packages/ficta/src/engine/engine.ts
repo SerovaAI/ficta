@@ -579,16 +579,10 @@ class ProtectionRequestScope implements RequestScope {
   }
 
   private hitsForEntities(entities: readonly Entity[]): ProtectionHit[] {
-    const hits: ProtectionHit[] = [];
-    const seen = new Set<string>();
-    for (const entity of entities) {
-      const hit = this.hitFromProtectedValue(entity.meta);
-      const key = JSON.stringify(hit);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      hits.push(hit);
-    }
-    return hits;
+    // One entry per distinct redacted surface, even when several surfaces share the same safe label.
+    // ProtectionStats groups these entries to produce actual per-label value counts; deduplicating
+    // metadata here made three PERSON values look like one.
+    return entities.map((entity) => this.hitFromProtectedValue(entity.meta));
   }
 
   private hitsForOwnedValues(values: readonly string[], owners: ReadonlyMap<string, Entity>): ProtectionHit[] {
@@ -616,17 +610,10 @@ class ProtectionRequestScope implements RequestScope {
   }
 
   private hitsFor(values: readonly string[]): ProtectionHit[] {
-    const hits: ProtectionHit[] = [];
-    const seen = new Set<string>();
-    for (const raw of values) {
+    return values.map((raw) => {
       const value = this.storedMetadataFor(raw);
-      const hit = value === undefined ? unknownHit() : this.hitFromProtectedValue(value);
-      const key = JSON.stringify(hit);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      hits.push(hit);
-    }
-    return hits;
+      return value === undefined ? unknownHit() : this.hitFromProtectedValue(value);
+    });
   }
 
   private traceValuesFor(values: Iterable<string>): ProtectionTraceValue[] {
