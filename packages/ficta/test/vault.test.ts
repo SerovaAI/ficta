@@ -13,6 +13,7 @@ import {
   FICTA_RESTORE_HIGHLIGHT_START,
 } from "@serovaai/ficta-protocol";
 import { afterEach, describe, expect, it } from "vitest";
+import { ProtectionEngine } from "../src/engine/engine.js";
 import { hexSurrogateStrategy } from "../src/engine/surrogate.js";
 import { ScopedVault, SurrogateTable, Vault } from "../src/engine/vault.js";
 import { bufferedRestoreAdapterFor, sseRestoreAdapterFor } from "../src/engine/wire-restore.js";
@@ -67,24 +68,24 @@ describe("vault", () => {
     expect(table.toVal.size).toBe(2);
   });
 
-  it("redacts known values out of a JSON body", () => {
+  it("redacts known values out of raw JSON text", () => {
     const body = JSON.stringify({ messages: [{ role: "user", content: `key is ${AWS}` }] });
-    const { body: red, count } = v.redactBody(body);
+    const { text: red, count } = v.redactText(body);
     expect(count).toBe(1);
     expect(red).not.toContain(AWS);
     expect(red).toMatch(/FICTA_[0-9a-f]{32}/);
   });
 
-  it("redacts registered multi-word values across serialized whitespace differences", () => {
+  it("redacts registered multi-word values across whitespace differences", () => {
     const value = "Proxima Medical Supplies CC";
     const vault = new Vault([{ value }]);
-    const body = JSON.stringify({ content: "counterparty: Proxima Medical\nSupplies CC" });
-    const { body: red, count } = vault.redactBody(body);
+    const text = "counterparty: Proxima Medical\nSupplies CC";
+    const { text: red, count } = vault.redactText(text);
 
     expect(count).toBe(1);
     expect(red).not.toContain("Proxima Medical");
     expect(red).toMatch(/FICTA_[0-9a-f]{32}/);
-    expect(vault.leakCount(body)).toBe(1);
+    expect(vault.leakCount(text)).toBe(1);
     expect(vault.leakCount(red)).toBe(0);
     expect(vault.restoreText(red)).toContain(value);
   });
@@ -94,22 +95,22 @@ describe("vault", () => {
     // tokens separated by a paragraph break are likely unrelated, not a reflowed value.
     const value = "Proxima Medical Supplies CC";
     const vault = new Vault([{ value }]);
-    const body = JSON.stringify({ content: "counterparty: Proxima Medical\n\nSupplies CC arrived" });
-    const { body: red, count } = vault.redactBody(body);
+    const text = "counterparty: Proxima Medical\n\nSupplies CC arrived";
+    const { text: red, count } = vault.redactText(text);
 
     expect(count).toBe(0);
     expect(red).toContain("Proxima Medical");
-    expect(vault.leakCount(body)).toBe(0);
+    expect(vault.leakCount(text)).toBe(0);
   });
 
   it("round-trips: restore(redact(x)) recovers the value", () => {
-    const { body: red } = v.redactBody(JSON.stringify({ x: AWS }));
+    const { text: red } = v.redactText(JSON.stringify({ x: AWS }));
     expect(v.restoreText(red)).toContain(AWS);
   });
 
   it("redacts and gates known values when they appear as JSON object keys", () => {
     const body = JSON.stringify({ [AWS]: "value" });
-    const { body: red, count } = v.redactBody(body);
+    const { text: red, count } = v.redactText(body);
     expect(count).toBe(1);
     expect(red).not.toContain(AWS);
     expect(v.leakCount(body)).toBe(1);
@@ -118,19 +119,19 @@ describe("vault", () => {
 
   it("leaves JSON byte-for-byte when no known value is present", () => {
     const body = '{\n  "message": "nothing sensitive here"\n}';
-    expect(v.redactBody(body)).toEqual({ body, count: 0 });
+    expect(v.redactText(body)).toEqual({ text: body, count: 0 });
   });
 
   it("deterministic surrogate: same value → same token", () => {
-    const a = v.redactBody(JSON.stringify({ x: AWS })).body;
-    const b = v.redactBody(JSON.stringify({ y: AWS })).body;
+    const a = v.redactText(JSON.stringify({ x: AWS })).text;
+    const b = v.redactText(JSON.stringify({ y: AWS })).text;
     const sa = a.match(/FICTA_[0-9a-f]{32}/)?.[0];
     const sb = b.match(/FICTA_[0-9a-f]{32}/)?.[0];
     expect(sa).toBe(sb);
   });
 
   it("uses keyed, non-guessable surrogates rather than a raw secret hash", () => {
-    const red = v.redactBody(JSON.stringify({ x: AWS })).body;
+    const red = v.redactText(JSON.stringify({ x: AWS })).text;
     const sur = red.match(/FICTA_[0-9a-f]{32}/)?.[0];
     expect(sur).toBeTruthy();
     const rawHashPrefix = "FICTA_" + createHash("sha256").update(AWS).digest("hex").slice(0, 32);
@@ -140,20 +141,22 @@ describe("vault", () => {
   it("fail-closed gate: flags raw leaks, clean after redaction", () => {
     const body = JSON.stringify({ x: AWS });
     expect(v.leakCount(body)).toBe(1);
-    expect(v.leakCount(v.redactBody(body).body)).toBe(0);
+    expect(v.leakCount(v.redactText(body).text)).toBe(0);
   });
 
-  it("fail-closed gate catches registered values in JSON number primitives", () => {
-    const vault = new Vault([{ value: "12345678" }]);
-    const redacted = vault.redactBody(JSON.stringify({ pin: 12345678 }));
+  it("leaves JSON number primitives for the fail-closed gate", async () => {
+    const engine = new ProtectionEngine({ plugins: [], values: [{ value: "12345678" }] });
+    const body = JSON.stringify({ pin: 12345678 });
+    const redacted = await engine.redactBodyDetailed(body);
 
-    expect(redacted).toEqual({ body: JSON.stringify({ pin: 12345678 }), count: 0 });
-    expect(vault.leakCount(redacted.body)).toBe(1);
+    expect(redacted.body).toBe(body);
+    expect(redacted.count).toBe(0);
+    expect(redacted.leaks).toBe(1);
   });
 
   it("redacts a value living inside a longer string", () => {
     const body = JSON.stringify({ content: "DATABASE_URL=postgres://u:longpassword@host:5432/db end" });
-    expect(v.redactBody(body).body).not.toContain("longpassword");
+    expect(v.redactText(body).text).not.toContain("longpassword");
   });
 
   it("does not redact known values inside filesystem paths", () => {
@@ -161,7 +164,7 @@ describe("vault", () => {
     const path = "/Users/alice/src/acme/eu-central-1-prod";
     const body = JSON.stringify({ cwd: path, command: `cd ${path} && git diff` });
 
-    expect(vault.redactBody(body)).toEqual({ body, count: 0 });
+    expect(vault.redactText(body)).toEqual({ text: body, count: 0 });
     expect(vault.leakCount(body)).toBe(0);
   });
 
@@ -169,7 +172,7 @@ describe("vault", () => {
     const vault = new Vault([{ value: "eu-central-1" }]);
     const path = "/Users/alice/src/acme/eu-central-1-prod";
     const body = JSON.stringify({ content: `cwd=${path}\nAWS_REGION=eu-central-1` });
-    const { body: red, count } = vault.redactBody(body);
+    const { text: red, count } = vault.redactText(body);
 
     expect(count).toBe(1);
     expect(red).toContain(path);
@@ -181,17 +184,16 @@ describe("vault", () => {
   it("does not redact simple registered values when used as bare cd path operands", () => {
     const vault = new Vault([{ value: "eu-central-1-prod" }]);
     const command = "cd eu-central-1-prod && grep -ril supabase .";
-    const body = JSON.stringify({ command });
 
-    expect(vault.redactBody(body)).toEqual({ body, count: 0 });
-    expect(vault.leakCount(body)).toBe(0);
+    expect(vault.redactText(command)).toEqual({ text: command, count: 0 });
+    expect(vault.leakCount(command)).toBe(0);
   });
 
   it("does not redact registered values that are themselves explicit path operands", () => {
     const vault = new Vault([{ value: "./corova" }, { value: "/corova" }]);
     const body = JSON.stringify({ content: "check ./corova and find /corova -type f" });
 
-    expect(vault.redactBody(body)).toEqual({ body, count: 0 });
+    expect(vault.redactText(body)).toEqual({ text: body, count: 0 });
     expect(vault.leakCount(body)).toBe(0);
   });
 
@@ -199,7 +201,7 @@ describe("vault", () => {
     const secret = "/fake/secret/value-12345";
     const vault = new Vault([{ value: secret }]);
     const body = JSON.stringify({ content: `API_SECRET=${secret}` });
-    const { body: red, count } = vault.redactBody(body);
+    const { text: red, count } = vault.redactText(body);
 
     expect(count).toBe(1);
     expect(red).not.toContain(secret);
@@ -209,7 +211,7 @@ describe("vault", () => {
   it("still redacts the same simple value in non-path env assignment context", () => {
     const vault = new Vault([{ value: "eu-central-1-prod" }]);
     const body = JSON.stringify({ content: "AWS_PROFILE=eu-central-1-prod" });
-    const { body: red, count } = vault.redactBody(body);
+    const { text: red, count } = vault.redactText(body);
 
     expect(count).toBe(1);
     expect(red).not.toContain("AWS_PROFILE=eu-central-1-prod");
@@ -220,14 +222,14 @@ describe("vault", () => {
     const vault = new Vault([{ value: "longpassword" }]);
     const body = JSON.stringify({ content: "DATABASE_URL=postgres://u:longpassword@host:5432/db" });
 
-    expect(vault.redactBody(body).body).not.toContain("longpassword");
+    expect(vault.redactText(body).text).not.toContain("longpassword");
   });
 
   it("redacts slash-containing secrets instead of treating them as filesystem paths", () => {
     const secret = "fake/secret/value-12345";
     const vault = new Vault([{ value: secret }]);
     const body = JSON.stringify({ content: `API_SECRET=${secret}` });
-    const { body: red, count } = vault.redactBody(body);
+    const { text: red, count } = vault.redactText(body);
 
     expect(count).toBe(1);
     expect(red).not.toContain(secret);
@@ -237,8 +239,7 @@ describe("vault", () => {
   it("redacts multiline private-key-like values", () => {
     const secret = "-----BEGIN TEST PRIVATE KEY-----\nabc123multilinefake\n-----END TEST PRIVATE KEY-----";
     const vault = new Vault([{ value: secret }]);
-    const body = JSON.stringify({ content: secret });
-    const { body: red, count } = vault.redactBody(body);
+    const { text: red, count } = vault.redactText(secret);
 
     expect(count).toBe(1);
     expect(red).not.toContain(secret);
@@ -259,7 +260,7 @@ describe("vault", () => {
   });
 
   it("restoreJson falls back to raw text restore for non-JSON bodies", () => {
-    const { body: red } = v.redactBody(JSON.stringify({ x: AWS }));
+    const { text: red } = v.redactText(JSON.stringify({ x: AWS }));
     const sur = red.match(/FICTA_[0-9a-f]{32}/)?.[0] ?? "";
     expect(v.restoreJson(`not json but has ${sur}`)).toContain(AWS);
   });
@@ -284,7 +285,7 @@ describe("vault", () => {
     try {
       const vault = new Vault([{ value: "eu-central-1" }]);
       const path = "/Users/alice/src/acme/eu-central-1-prod";
-      const { body: red, count } = vault.redactBody(JSON.stringify({ cwd: path }));
+      const { text: red, count } = vault.redactText(JSON.stringify({ cwd: path }));
 
       expect(count).toBe(1);
       expect(red).not.toContain(path);
@@ -300,7 +301,7 @@ describe("vault", () => {
     try {
       const vault = new Vault([{ value: "eu-central-1" }]);
       const path = "/Users/alice/src/acme/eu-central-1-prod";
-      const { body: red, count } = vault.redactBody(JSON.stringify({ cwd: path }));
+      const { text: red, count } = vault.redactText(JSON.stringify({ cwd: path }));
 
       expect(count).toBe(1);
       expect(red).not.toContain(path);
@@ -311,7 +312,7 @@ describe("vault", () => {
   });
 
   it("streaming restore reassembles a surrogate split across chunks", async () => {
-    const red = v.redactBody(JSON.stringify({ x: AWS })).body;
+    const red = v.redactText(JSON.stringify({ x: AWS })).text;
     const sur = red.match(/FICTA_[0-9a-f]{32}/)?.[0] ?? "";
     const text = `data: {"t":"${sur}"}\n\n`;
     const cut = text.indexOf(sur) + 8; // mid-surrogate

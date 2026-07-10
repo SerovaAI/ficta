@@ -3,23 +3,16 @@ export type MarkdownOffsetEdge = "start" | "end";
 export interface MarkdownDetectionView {
   /** Markdown-clean text sent to an NLP backend. */
   text: string;
-  /** Whether the compatibility equal-length masker produced this view. */
-  equalLength: boolean;
   /** Map a normalized UTF-16 boundary back to a raw UTF-16 boundary. */
   toRaw(offset: number, edge?: MarkdownOffsetEdge): number | undefined;
 }
 
 /**
  * Remove unambiguous Markdown syntax for NLP while retaining an exact normalized→raw boundary map.
- * The default compact view closes internal-formatting gaps (`LSD **Open** FZCO` → `LSD Open FZCO`).
- * `equalLength` retains the previous space-mask algorithm as a one-release rollback path.
+ * The compact view closes internal-formatting gaps (`LSD **Open** FZCO` → `LSD Open FZCO`).
  */
-export function normalizeMarkdownForDetection(
-  text: string,
-  opts: { equalLength?: boolean } = {},
-): MarkdownDetectionView {
-  if (opts.equalLength) return equalLengthView(text);
-  if (!text) return identityView(text, false);
+export function normalizeMarkdownForDetection(text: string): MarkdownDetectionView {
+  if (!text) return identityView(text);
 
   const removed = new Uint8Array(text.length);
   const remove = (start: number, end: number): void => {
@@ -58,7 +51,6 @@ export function normalizeMarkdownForDetection(
 
   return {
     text: normalized,
-    equalLength: false,
     toRaw(offset, edge = "start") {
       if (!Number.isSafeInteger(offset) || offset < 0 || offset > normalized.length) return undefined;
       return edge === "end" ? ends[offset] : starts[offset];
@@ -66,27 +58,9 @@ export function normalizeMarkdownForDetection(
   };
 }
 
-function equalLengthView(text: string): MarkdownDetectionView {
-  if (!text) return identityView(text, true);
-  let out = text;
-  out = out.replace(/\\([\\`*_{}[\]()#+\-.!|~>])/g, " $1");
-  out = out.replace(/[*~`]+/g, (run) => " ".repeat(run.length));
-  out = out.replace(
-    /^([ \t]*)(#{1,6})(?=[ \t])/gm,
-    (_match, lead: string, hashes: string) => lead + " ".repeat(hashes.length),
-  );
-  out = out.replace(/^([ \t]*)[-+](?=[ \t])/gm, (_match, lead: string) => `${lead} `);
-  out = out.replace(
-    /^([ \t]*)(\d+)\.(?=[ \t])/gm,
-    (_match, lead: string, digits: string) => `${lead}${" ".repeat(digits.length)} `,
-  );
-  return identityView(out, true);
-}
-
-function identityView(text: string, equalLength: boolean): MarkdownDetectionView {
+function identityView(text: string): MarkdownDetectionView {
   return {
     text,
-    equalLength,
     toRaw(offset) {
       return Number.isSafeInteger(offset) && offset >= 0 && offset <= text.length ? offset : undefined;
     },

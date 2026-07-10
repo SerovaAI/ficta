@@ -79,7 +79,7 @@ describe("vault with typed surrogates end to end", () => {
     const ssn = "123-45-6789";
     const vault = new Vault([{ value: ssn, name: "us-ssn", kind: "pii" }], typedSurrogateStrategy(KEY));
 
-    const { body: redacted, count } = vault.redactBody(JSON.stringify({ note: `SSN is ${ssn}` }));
+    const { text: redacted, count } = vault.redactText(JSON.stringify({ note: `SSN is ${ssn}` }));
     expect(count).toBe(1);
     expect(redacted).not.toContain(ssn);
     expect(redacted).toMatch(/FICTA_SSN_[0-9a-f]{32}/);
@@ -95,7 +95,7 @@ describe("vault with typed surrogates end to end", () => {
       const email = "jane@example.com";
       // No explicit strategy — exactly how engine.ts constructs the vault.
       const vault = new Vault([{ value: email, name: "email-address", kind: "pii" }]);
-      const { body: redacted } = vault.redactBody(JSON.stringify({ to: email }));
+      const { text: redacted } = vault.redactText(JSON.stringify({ to: email }));
       expect(redacted).toMatch(/FICTA_EMAIL_[0-9a-f]{32}/);
       expect(vault.restoreText(redacted)).toContain(email);
     } finally {

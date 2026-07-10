@@ -87,7 +87,7 @@ const BODY_SIZES: [string, number, number][] = [
 const fmt = (n: number) => n.toFixed(3).padStart(8);
 console.log(`\nficta vault microbench — ${process.platform} node ${process.version}\n`);
 console.log(
-  "| registry | body  | iters | redactBody (ms) p50/mean/p95/p99 | leakCount p50 | restoreText p50 | restoreStream p50 |",
+  "| registry | body  | iters | redactText (ms) p50/mean/p95/p99 | leakCount p50 | restoreText p50 | restoreStream p50 |",
 );
 console.log(
   "|---------:|------:|------:|------------------------------|--------------:|----------------:|------------------:|",
@@ -98,9 +98,9 @@ for (const reg of REG_SIZES) {
   const vault = new Vault(secrets);
   for (const [label, bytes, iters] of BODY_SIZES) {
     const body = buildBody(bytes, secrets);
-    const redacted = vault.redactBody(body).body;
+    const redacted = vault.redactText(body).text;
 
-    const rb = stats(timeSync(() => void vault.redactBody(body), iters));
+    const rb = stats(timeSync(() => void vault.redactText(body), iters));
     const lc = stats(timeSync(() => void vault.leakCount(redacted), iters));
     const rt = stats(timeSync(() => void vault.restoreText(redacted), iters));
     const ss = stats(await timeAsync(() => streamRestore(vault, redacted), Math.max(10, Math.floor(iters / 3))));
@@ -112,5 +112,5 @@ for (const reg of REG_SIZES) {
   }
 }
 console.log(
-  "\n(redactBody = parse+walk+replace; leakCount = fail-closed gate; restoreText = response replace; restoreStream = chunked SSE restore)\n",
+  "\n(redactText = raw exact replace; leakCount = fail-closed gate; restoreText = response replace; restoreStream = chunked SSE restore)\n",
 );

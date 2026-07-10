@@ -273,29 +273,6 @@ export abstract class VaultView {
     return { text: this.replaceKnown(text, found, preservePaths), count: found.size, values: [...found] };
   }
 
-  /**
-   * Redact a request body. Parses JSON and replaces inside string leaves and object keys so
-   * escaping stays correct; falls back to raw string replace for non-JSON. Returns the new body +
-   * how many distinct known values were swapped out.
-   */
-  redactBody(body: string, preservePaths = true): { body: string; count: number } {
-    const result = this.redactBodyDetailed(body, preservePaths);
-    return { body: result.body, count: result.count };
-  }
-
-  /** Redact a request body and report which raw values matched. See {@link redactTextDetailed} for `preservePaths`. */
-  redactBodyDetailed(body: string, preservePaths = true): { body: string; count: number; values: string[] } {
-    if (!this.hasValues || !body) return { body, count: 0, values: [] };
-    const found = new Set<string>();
-    const replace = (s: string): string => this.replaceKnown(s, found, preservePaths);
-    try {
-      const mapped = mapStrings(JSON.parse(body), replace);
-      return { body: found.size > 0 ? JSON.stringify(mapped) : body, count: found.size, values: [...found] };
-    } catch {
-      return { body: replace(body), count: found.size, values: [...found] };
-    }
-  }
-
   private replaceKnown(text: string, found: Set<string>, preservePaths = true): string {
     let out = text;
     for (const v of this.orderedValues()) {
@@ -663,7 +640,7 @@ export class ScopedVault extends VaultView {
     detected: SurrogateTable = new SurrogateTable(permanent.surrogate, "detected"),
     registryDerived: SurrogateTable = new SurrogateTable(permanent.surrogate, "permanent"),
   ) {
-    // Registry-derived variants (e.g. the caps twin of a registered secret found in a request body)
+    // Registry-derived forms (e.g. the caps twin of a registered secret found in a request body)
     // live in a separate layer because they ARE the registry secret in another casing. The layer is
     // request-owned by default and may be shared by a keyed scope; either way its `permanent`
     // provenance makes the `detected` restore-into-tools policy withhold variants exactly like the
@@ -695,16 +672,6 @@ export class ScopedVault extends VaultView {
   isRedactableRange(text: string, start: number, end: number, preservePaths = true): boolean {
     if (overlapsSpan(surrogateSpans(text, this.surrogate.pattern), start, end)) return false;
     return !isInsidePathLikeToken(text, start, end, text.slice(start, end), preservePaths);
-  }
-
-  /**
-   * Register request-found variants OF registered values (case twins — see the engine's
-   * legacy registry case expansion). The layer is ephemeral for ordinary requests and persistent for
-   * keyed scopes, always with `permanent` provenance so tool-withholding and reporting treat the
-   * variant as the registry secret it is.
-   */
-  registerRegistryDerived(values: ReadonlyArray<VaultValue>): number {
-    return this.registryDerived.register(values);
   }
 
   /** Count of ephemeral values detected in this request (the permanent layer is excluded). */
@@ -1330,25 +1297,6 @@ function maskJsonStringLiterals(text: string): string {
   }
 
   return out;
-}
-
-/**
- * The individual redactable string leaves (values + object keys) of a JSON body; `[body]` for non-JSON.
- * Detection runs over these leaves, not the raw body, so "detected == redactable": a value that appears
- * only as a JSON number leaf is neither detected nor rewritten, and it never trips the fail-closed leak
- * gate. Registered numeric secrets still enter the permanent vault directly.
- */
-export function redactableBodyLeaves(body: string): string[] {
-  if (!body) return [];
-  try {
-    const leaves: string[] = [];
-    visitBodyLeaves(JSON.parse(body), (leaf) => {
-      leaves.push(leaf.text);
-    });
-    return leaves;
-  } catch {
-    return [body]; // non-JSON: the entire body is redactable text
-  }
 }
 
 export type BodyLeafKind = "key" | "value" | "raw";

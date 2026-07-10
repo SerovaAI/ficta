@@ -1,4 +1,4 @@
-// Differential microbenchmark for the legacy and occurrence body paths.
+// Microbenchmark for the occurrence-based body path.
 // Run: pnpm exec tsx bench/entity-redaction-bench.mts
 import { ProtectionEngine } from "../src/engine/engine.js";
 import { expandEntities } from "../src/engine/expander.js";
@@ -21,9 +21,7 @@ const values: ProtectedValue[] = entityValues.map((value, i) => ({
 const content = `${entityValues.map((value) => `${value} / ${value.toUpperCase()}`).join("\n")}\n${"x".repeat(24_000)}`;
 const body = JSON.stringify({ messages: [{ role: "user", content }] });
 
-async function run(legacy: boolean): Promise<{ times: number[]; peakHeap: number }> {
-  if (legacy) process.env.FICTA_BODY_REDACTION_LEGACY = "1";
-  else delete process.env.FICTA_BODY_REDACTION_LEGACY;
+async function run(): Promise<{ times: number[]; peakHeap: number }> {
   const engine = new ProtectionEngine({ plugins: [], values });
   for (let i = 0; i < 5; i++) await engine.beginRequest().redactBodyDetailed(body);
   const times: number[] = [];
@@ -51,9 +49,7 @@ const entities: Entity[] = values.map((meta, i) => ({
   meta,
 }));
 const peakOccurrences = resolveOccurrences(expandEntities([content], entities)).length;
-const legacy = await run(true);
-const occurrence = await run(false);
-delete process.env.FICTA_BODY_REDACTION_LEGACY;
+const occurrence = await run();
 
 console.log(
   JSON.stringify(
@@ -61,7 +57,6 @@ console.log(
       bodyBytes: Buffer.byteLength(body),
       iterations: ITERATIONS,
       peakOccurrences,
-      legacy: { ...percentiles(legacy.times), peakHeap: legacy.peakHeap },
       occurrence: { ...percentiles(occurrence.times), peakHeap: occurrence.peakHeap },
     },
     null,

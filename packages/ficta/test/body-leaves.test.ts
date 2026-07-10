@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type BodyLeaf, redactableBodyLeaves, visitBodyLeaves } from "../src/engine/vault.js";
+import { type BodyLeaf, visitBodyLeaves } from "../src/engine/vault.js";
 
 describe("visitBodyLeaves", () => {
   it("visits keys and values once in deterministic structural order with paths", () => {
@@ -45,6 +45,5 @@ describe("visitBodyLeaves", () => {
     );
     expect(leaves).toEqual([{ index: 0, kind: "raw", path: [], text: "plain body" }]);
     expect(mapped).toBe("PLAIN BODY");
-    expect(redactableBodyLeaves("plain body")).toEqual(["plain body"]);
   });
 });

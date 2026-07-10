@@ -13,7 +13,6 @@ const PLUGIN_NAME = "pii";
 const ENV_ENABLED = "FICTA_PII_ENABLED";
 const ENV_AGENTS = "FICTA_PII_AGENTS";
 const ENV_FAIL_CLOSED = "FICTA_PII_FAIL_CLOSED";
-const ENV_EQUAL_LENGTH_MARKDOWN = "FICTA_PII_MARKDOWN_EQUAL_LENGTH";
 
 /**
  * PII detection can run one or more configured backends — `FICTA_PII_BACKENDS` ↔ `[pii] backends`.
@@ -201,9 +200,7 @@ export const piiPlugin: DetectorPlugin = {
           values.push(...(await backend.detect(text, ctx)));
           continue;
         }
-        normalized ??= normalizeMarkdownForDetection(text, {
-          equalLength: envFlag(process.env[ENV_EQUAL_LENGTH_MARKDOWN]),
-        });
+        normalized ??= normalizeMarkdownForDetection(text);
         const detected = await backend.detect(normalized.text, ctx);
         values.push(...mapNlpOffsets(detected, normalized));
       } catch (err) {
@@ -222,8 +219,7 @@ export const piiPlugin: DetectorPlugin = {
 function mapNlpOffsets(values: readonly ProtectedValue[], view: MarkdownDetectionView): ProtectedValue[] {
   return values.map((value) => {
     const normalizedSpans =
-      value.spans ??
-      (view.equalLength ? undefined : expansionSpans(view.text, value.value).map(({ start, end }) => ({ start, end })));
+      value.spans ?? expansionSpans(view.text, value.value).map(({ start, end }) => ({ start, end }));
     if (!normalizedSpans || normalizedSpans.length === 0) return value;
     const spans = normalizedSpans.flatMap((span) => {
       const start = view.toRaw(span.start, "start");

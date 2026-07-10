@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { detectorFailClosed } from "./detection-policy.js";
-import { envFlag } from "./env-flags.js";
 import { expandEntities, expansionSpans, isCaseExpandable } from "./expander.js";
 import {
   type Entity,
@@ -33,14 +32,7 @@ import {
   type TextRedactionContext,
   type TextRedactionDetails,
 } from "./redaction-engine.js";
-import {
-  type BodyLeaf,
-  redactableBodyLeaves,
-  type ScopedVault,
-  type SurrogateTable,
-  Vault,
-  visitBodyLeaves,
-} from "./vault.js";
+import { type BodyLeaf, type ScopedVault, type SurrogateTable, Vault, visitBodyLeaves } from "./vault.js";
 import type { Wire } from "./wire.js";
 import { bufferedRestoreAdapterFor, sseRestoreAdapterFor } from "./wire-restore.js";
 
@@ -326,7 +318,6 @@ class ProtectionRequestScope implements RequestScope {
   ) {}
 
   async redactBodyDetailed(body: string, ctx: BodyRedactionContext = {}): Promise<BodyRedactionDetails> {
-    if (envFlag(process.env.FICTA_BODY_REDACTION_LEGACY)) return this.redactBodyLegacy(body, ctx);
     return this.redactBodyOccurrences(body, ctx);
   }
 
@@ -448,42 +439,6 @@ class ProtectionRequestScope implements RequestScope {
     if (traceValues) {
       if (found.size > 0) details.traceValues = this.traceValuesForOwnedValues(found, owners);
       if (leakValues.length > 0) details.traceLeakValues = this.traceValuesForOwnedValues(leakValues, leakOwners);
-    }
-    return details;
-  }
-
-  private async redactBodyLegacy(body: string, ctx: BodyRedactionContext): Promise<BodyRedactionDetails> {
-    const { traceValues, ...detectCtx } = ctx;
-    const leaves = redactableBodyLeaves(body);
-    const seen = this.seenLeaves;
-    const hashes = seen ? leaves.map(leafHash) : [];
-    const fresh = seen ? leaves.filter((_, i) => !seen.has(hashes[i] ?? "")) : leaves;
-    const detectionText = fresh.join("\n");
-    const detection = await this.detectValues(detectionText, { ...detectCtx, surface: "body" });
-    const legacyValues = legacyExpandedDetectedValues(detectionText, detection.values);
-    for (const value of legacyValues) remember(this.detectedMetadata, value);
-    this.vault.register(legacyValues);
-    if (seen && detection.complete) for (const hash of hashes) seen.add(hash);
-    // Cover every casing of a registered word/name-like value present in this body (a place/party name
-    // registered once as "Mauritius" must also catch "MAURITIUS" in a heading — the vault matcher is
-    // case-sensitive). Runs over the full leaf surface, not just fresh leaves, so a caps twin in resent
-    // content is caught too.
-    this.registerLegacyRegistryCaseVariants(leaves.join("\n"));
-    // The body preserves path-like tokens (the default): agent tool calls (`cd`, `Read`, `Edit`) live
-    // here, and a registered value inside a real path is far more likely a path segment than a secret,
-    // so mangling the path would break the agent. Only headers opt out of preservation — see server.ts.
-    const redacted = this.vault.redactBodyDetailed(body);
-    const leakValues = this.vault.leakValues(redacted.body);
-    const details: BodyRedactionDetails = {
-      body: redacted.body,
-      count: redacted.count,
-      leaks: leakValues.length,
-      hits: this.hitsFor(redacted.values),
-      leakHits: this.hitsFor(leakValues),
-    };
-    if (traceValues) {
-      if (redacted.values.length > 0) details.traceValues = this.traceValuesFor(redacted.values);
-      if (leakValues.length > 0) details.traceLeakValues = this.traceValuesFor(leakValues);
     }
     return details;
   }
@@ -616,47 +571,6 @@ class ProtectionRequestScope implements RequestScope {
       for (const value of admit(candidates, this.policy)) detections.push({ value, leaves });
     }
     return { complete, detections };
-  }
-
-  /**
-   * Register the case-variants of registered (permanent) registry values that appear in this body into
-   * the ephemeral detected layer — so a value registered once (e.g. a client/place name "Mauritius") is
-   * redacted in every casing present ("MAURITIUS", "mauritius"), which the case-sensitive vault matcher
-   * would otherwise miss. Each variant attributes to its registry entry's metadata (so the audit still
-   * names it) but lives in the per-request detected layer, since the shared permanent vault is immutable.
-   *
-   * Scoped by the expander to word/name-like values: folding the casing of an opaque secret, key, ID,
-   * account number, or amount is meaningless and risks matching unrelated text — those all carry digits
-   * and are skipped. A registered common word (no digits) would fold too; that is a bounded,
-   * privacy-favouring over-redaction the operator opted into by registering it.
-   *
-   * Variants go through {@link ScopedVault.registerRegistryDerived}, NOT the detected layer: a caps twin
-   * of a registered secret is still that secret, so it must keep `permanent` provenance — the `detected`
-   * restore-into-tools policy withholds it from tool-call arguments exactly like the canonical form.
-   * Registering it as `detected` would let a prompt-injected tool call exfiltrate the secret via its
-   * case variant while the canonical form is withheld.
-   */
-  private registerLegacyRegistryCaseVariants(text: string): void {
-    if (!text || this.permanentMetadata.size === 0) return;
-    const entities = [...this.permanentMetadata].flatMap(([value, metas], index) => {
-      const meta = metas[0];
-      return meta
-        ? [{ id: `registry:${index}`, canonical: value, forms: [value], authority: "registry" as const, meta }]
-        : [];
-    });
-    const variants: ProtectedValue[] = [];
-    const present = new Set<string>();
-    for (const occurrence of expandEntities([text], entities)) {
-      if (occurrence.surface === occurrence.entity.canonical) continue;
-      const key = `${occurrence.entity.id}\0${occurrence.surface}`;
-      if (present.has(key)) continue;
-      present.add(key);
-      variants.push({ ...occurrence.entity.meta, value: occurrence.surface });
-    }
-    if (variants.length === 0) return;
-    const admitted = admit(variants, this.policy);
-    for (const value of admitted) remember(this.detectedMetadata, value);
-    this.vault.registerRegistryDerived(admitted);
   }
 
   /** Stored metadata fallback for header/query redaction and later response restore traces. */
@@ -808,20 +722,6 @@ function exactDetectorOccurrences(leaves: readonly BodyLeaf[], value: string, en
     }
   }
   return occurrences;
-}
-
-function legacyExpandedDetectedValues(text: string, values: readonly ProtectedValue[]): ProtectedValue[] {
-  const out = [...values];
-  const present = new Set(values.map((value) => value.value));
-  const piiValues = values.filter((value) => value.plugin === "pii");
-  const entities = entitiesFromValues(piiValues, "detected");
-  for (const occurrence of expandEntities([text], entities)) {
-    if (present.has(occurrence.surface) || occurrence.surface.trim().length < 4) continue;
-    present.add(occurrence.surface);
-    const { spans: _spans, ...meta } = occurrence.entity.meta;
-    out.push({ ...meta, value: occurrence.surface });
-  }
-  return out;
 }
 
 function exactEntityOccurrences(leaves: readonly BodyLeaf[], entities: readonly Entity[]): Occurrence[] {

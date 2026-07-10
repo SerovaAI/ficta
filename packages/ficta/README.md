@@ -71,13 +71,8 @@ every option. The table below is just a quick tour of the most useful knobs:
 | `logging.log_dir` | `FICTA_LOG_DIR` | unset | Full override of the exact capture-log path (bypasses the root+role split for all roles). |
 | `upstreams.anthropic` | `FICTA_ANTHROPIC_UPSTREAM` | Anthropic API | Override the Anthropic upstream (also `..._OPENAI_...` / `..._CHATGPT_...`). |
 
-Temporary rollback for the occurrence-based body redactor: set `FICTA_BODY_REDACTION_LEGACY=1` to
-use the previous longest-string-first body path. This compatibility flag is retained for one release;
-header and query redaction are unaffected.
-
-NLP detection now removes internal Markdown formatting with an offset map. Set
-`FICTA_PII_MARKDOWN_EQUAL_LENGTH=1` for the previous equal-length space-mask view during its
-one-release compatibility window.
+NLP detection removes internal Markdown formatting with an offset map so detected spans re-anchor to
+the exact raw body range.
 
 **Registry sources** — managed registry files, env-file, process-env, and Doppler discovery — have
 their own config under `[registry.*]`; see

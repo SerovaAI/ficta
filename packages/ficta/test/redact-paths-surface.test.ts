@@ -18,19 +18,19 @@ const REGION = "eu-central-1"; // low-entropy registered value that legitimately
 const PATHY = `/Users/alice/src/acme/${REGION}-prod`; // the value embedded in a real filesystem path
 
 describe("vault preservePaths flag (the mechanism)", () => {
-  it("preserves a path-embedded value by default (redactBody)", () => {
+  it("preserves a path-embedded value by default", () => {
     const vault = new Vault([{ value: REGION }]);
-    const { body, count } = vault.redactBody(JSON.stringify({ cmd: `cd ${PATHY}` }));
+    const { text, count } = vault.redactText(`cd ${PATHY}`);
     expect(count).toBe(0);
-    expect(body).toContain(REGION);
+    expect(text).toContain(REGION);
   });
 
   it("redacts a path-embedded value when preservePaths=false", () => {
     const vault = new Vault([{ value: REGION }]);
-    const { body, count } = vault.redactBody(JSON.stringify({ cmd: `cd ${PATHY}` }), false);
+    const { text, count } = vault.redactText(`cd ${PATHY}`, false);
     expect(count).toBe(1);
-    expect(body).not.toContain(REGION);
-    expect(body).toMatch(/FICTA_[0-9a-f]{32}/);
+    expect(text).not.toContain(REGION);
+    expect(text).toMatch(/FICTA_[0-9a-f]{32}/);
   });
 
   it("redactText mirrors the flag for raw (header/query) strings", () => {

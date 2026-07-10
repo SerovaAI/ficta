@@ -42,17 +42,12 @@ describe("normalizeMarkdownForDetection", () => {
     expect(out.trim()).toBe("LSD LIMITED SEYCHELLES");
   });
 
-  it("closes internal-markdown gaps and retains the equal-length compatibility view", () => {
+  it("closes internal-markdown gaps and maps the compact span back to raw text", () => {
     const raw = "LSD **Open** FZCO";
     const compact = normalizeMarkdownForDetection(raw);
     expect(compact.text).toBe("LSD Open FZCO");
     const start = compact.text.indexOf("LSD Open FZCO");
     expect(raw.slice(compact.toRaw(start, "start"), compact.toRaw(start + "LSD Open FZCO".length, "end"))).toBe(raw);
-
-    const fallback = normalizeMarkdownForDetection(raw, { equalLength: true });
-    expect(fallback.equalLength).toBe(true);
-    expect(fallback.text).toHaveLength(raw.length);
-    expect(fallback.toRaw(7)).toBe(7);
   });
 });
 
@@ -85,12 +80,7 @@ describe("flexibleOccurrences", () => {
 });
 
 describe("piiPlugin.detectText — markdown + case coverage", () => {
-  const ENV_KEYS = [
-    "FICTA_PII_ENABLED",
-    "FICTA_PII_BACKEND",
-    "FICTA_PII_PRESIDIO_URL",
-    "FICTA_PII_MARKDOWN_EQUAL_LENGTH",
-  ] as const;
+  const ENV_KEYS = ["FICTA_PII_ENABLED", "FICTA_PII_BACKEND", "FICTA_PII_PRESIDIO_URL"] as const;
   let saved: Record<string, string | undefined>;
 
   beforeEach(() => {
@@ -177,26 +167,6 @@ describe("piiPlugin.detectText — markdown + case coverage", () => {
       expect(redacted.body).not.toContain("LSD **Open** FZCO");
       expect(redacted.leaks).toBe(0);
       expect(engine.restoreJson(redacted.body)).toContain("LSD **Open** FZCO");
-    } finally {
-      await close(server);
-    }
-  });
-
-  it("retains the one-release equal-length Markdown fallback", async () => {
-    const party = "LSD Open FZCO";
-    const body = "The counterparty is LSD **Open** FZCO.";
-    const { server, port } = await startAnalyzeStub((req) => {
-      const start = req.text.indexOf(party);
-      return start === -1 ? [] : [{ entity_type: "ORGANIZATION", start, end: start + party.length, score: 0.95 }];
-    });
-    process.env.FICTA_PII_ENABLED = "1";
-    process.env.FICTA_PII_BACKEND = "presidio";
-    process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
-    process.env.FICTA_PII_MARKDOWN_EQUAL_LENGTH = "1";
-    try {
-      const engine = new ProtectionEngine({ plugins: [piiPlugin] });
-      const redacted = await engine.redactBodyDetailed(JSON.stringify({ content: body }));
-      expect(redacted.body).toContain("LSD **Open** FZCO");
     } finally {
       await close(server);
     }

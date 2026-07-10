@@ -4,7 +4,6 @@ import type { DetectorPlugin, ProtectedValue } from "../src/plugins/index.js";
 
 describe("occurrence-based body redaction", () => {
   afterEach(() => {
-    delete process.env.FICTA_BODY_REDACTION_LEGACY;
     delete process.env.FICTA_SURROGATE_STYLE;
   });
 
