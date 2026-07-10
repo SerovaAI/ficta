@@ -6,7 +6,7 @@ import {
   OpenmedUnavailableError,
   openmedRecognizer,
 } from "../src/engine/plugins/pii/openmed-recognizer.js";
-import type { ProtectedValue } from "../src/plugins/index.js";
+import { type ProtectedValue, piiPlugin } from "../src/plugins/index.js";
 
 interface ExtractRequest {
   text: string;
@@ -156,6 +156,25 @@ describe("openmed recognizer", () => {
     );
     expect(requests.length).toBeGreaterThan(1);
     expect(result.map((v) => v.value)).toContain("SECRETNAME");
+  });
+
+  it("re-anchors the spanless API value through the compact Markdown view in the PII coordinator", async () => {
+    const party = "LSD Open FZCO";
+    const raw = "Counterparty LSD **Open** FZCO signed.";
+    process.env.FICTA_PII_ENABLED = "1";
+    process.env.FICTA_PII_BACKEND = "openmed";
+    const { value, requests } = await withStub(
+      {
+        extract: (req) => (req.text.includes(party) ? [entity(party, { confidence: 0.9 })] : []),
+      },
+      async () => (await piiPlugin.detectText?.(raw, BODY)) ?? [],
+    );
+    const detected = value[0];
+    expect(requests[0]?.text).toContain(party);
+    expect(detected?.value).toBe(party);
+    expect(detected?.spans).toEqual([
+      { start: raw.indexOf("LSD **Open** FZCO"), end: raw.indexOf("LSD **Open** FZCO") + "LSD **Open** FZCO".length },
+    ]);
   });
 
   describe("failure taxonomy (fail-open is the plugin's job; the recognizer throws)", () => {

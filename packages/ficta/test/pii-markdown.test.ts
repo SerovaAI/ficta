@@ -7,10 +7,11 @@ import { flexibleOccurrences } from "../src/engine/vault.js";
 import { piiPlugin } from "../src/plugins/index.js";
 
 describe("normalizeMarkdownForDetection", () => {
-  it("masks emphasis/heading/list/strike/escape formatting to spaces, length-preserving", () => {
+  it("removes emphasis/heading/list/strike/escape formatting and maps offsets back to raw text", () => {
     const raw = "### **VIVEN BHOWANI**\n- **Reviewed by** ~~Neil White~~ \\_\\_\\_\\_";
-    const out = normalizeMarkdownForDetection(raw);
-    expect(out.length).toBe(raw.length); // offsets stay 1:1 for Presidio's code-point slicing
+    const view = normalizeMarkdownForDetection(raw);
+    const out = view.text;
+    expect(out.length).toBeLessThan(raw.length);
     expect(out).not.toContain("*");
     expect(out).not.toContain("#");
     expect(out).not.toContain("~");
@@ -18,11 +19,15 @@ describe("normalizeMarkdownForDetection", () => {
     // Entities remain as contiguous substrings so value-based redaction still finds them in the original.
     expect(out).toContain("VIVEN BHOWANI");
     expect(out).toContain("Neil White");
+    const start = out.indexOf("VIVEN BHOWANI");
+    const rawStart = view.toRaw(start, "start");
+    const rawEnd = view.toRaw(start + "VIVEN BHOWANI".length, "end");
+    expect(raw.slice(rawStart, rawEnd)).toBe("VIVEN BHOWANI");
   });
 
   it("leaves content punctuation that appears inside real entities untouched", () => {
     const raw = "shareholder of **LSD Open (Pty) Ltd (South Africa)** and LSD Open FZCO (UAE)";
-    const out = normalizeMarkdownForDetection(raw);
+    const out = normalizeMarkdownForDetection(raw).text;
     expect(out).toContain("LSD Open (Pty) Ltd (South Africa)"); // parens, spaces preserved
     expect(out).toContain("LSD Open FZCO (UAE)");
     expect(out).not.toContain("**");
@@ -30,11 +35,24 @@ describe("normalizeMarkdownForDetection", () => {
 
   it("keeps a bolded whole entity as a substring of the original after trimming", () => {
     const raw = "**LSD LIMITED SEYCHELLES**";
-    const out = normalizeMarkdownForDetection(raw);
+    const out = normalizeMarkdownForDetection(raw).text;
     // A NER span over the masked text slices "LSD LIMITED SEYCHELLES" (± space edges); trimmed, it is a
     // substring of the raw text, so redaction on the original finds it.
     expect(raw).toContain(out.trim());
     expect(out.trim()).toBe("LSD LIMITED SEYCHELLES");
+  });
+
+  it("closes internal-markdown gaps and retains the equal-length compatibility view", () => {
+    const raw = "LSD **Open** FZCO";
+    const compact = normalizeMarkdownForDetection(raw);
+    expect(compact.text).toBe("LSD Open FZCO");
+    const start = compact.text.indexOf("LSD Open FZCO");
+    expect(raw.slice(compact.toRaw(start, "start"), compact.toRaw(start + "LSD Open FZCO".length, "end"))).toBe(raw);
+
+    const fallback = normalizeMarkdownForDetection(raw, { equalLength: true });
+    expect(fallback.equalLength).toBe(true);
+    expect(fallback.text).toHaveLength(raw.length);
+    expect(fallback.toRaw(7)).toBe(7);
   });
 });
 
@@ -67,7 +85,12 @@ describe("flexibleOccurrences", () => {
 });
 
 describe("piiPlugin.detectText — markdown + case coverage", () => {
-  const ENV_KEYS = ["FICTA_PII_ENABLED", "FICTA_PII_BACKEND", "FICTA_PII_PRESIDIO_URL"] as const;
+  const ENV_KEYS = [
+    "FICTA_PII_ENABLED",
+    "FICTA_PII_BACKEND",
+    "FICTA_PII_PRESIDIO_URL",
+    "FICTA_PII_MARKDOWN_EQUAL_LENGTH",
+  ] as const;
   let saved: Record<string, string | undefined>;
 
   beforeEach(() => {
@@ -130,6 +153,50 @@ describe("piiPlugin.detectText — markdown + case coverage", () => {
       expect(redacted.body).not.toContain("Will Smith");
       expect(redacted.body).not.toContain("WILL SMITH");
       expect(redacted.body).toContain("We will proceed");
+    } finally {
+      await close(server);
+    }
+  });
+
+  it("maps a compact internal-Markdown NER span back to the exact raw body range", async () => {
+    const party = "LSD Open FZCO";
+    const body = "The counterparty is LSD **Open** FZCO.";
+    let analyzerText = "";
+    const { server, port } = await startAnalyzeStub((req) => {
+      analyzerText = req.text;
+      const start = req.text.indexOf(party);
+      return start === -1 ? [] : [{ entity_type: "ORGANIZATION", start, end: start + party.length, score: 0.95 }];
+    });
+    process.env.FICTA_PII_ENABLED = "1";
+    process.env.FICTA_PII_BACKEND = "presidio";
+    process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
+    try {
+      const engine = new ProtectionEngine({ plugins: [piiPlugin] });
+      const redacted = await engine.redactBodyDetailed(JSON.stringify({ content: body }));
+      expect(analyzerText).toContain(party);
+      expect(redacted.body).not.toContain("LSD **Open** FZCO");
+      expect(redacted.leaks).toBe(0);
+      expect(engine.restoreJson(redacted.body)).toContain("LSD **Open** FZCO");
+    } finally {
+      await close(server);
+    }
+  });
+
+  it("retains the one-release equal-length Markdown fallback", async () => {
+    const party = "LSD Open FZCO";
+    const body = "The counterparty is LSD **Open** FZCO.";
+    const { server, port } = await startAnalyzeStub((req) => {
+      const start = req.text.indexOf(party);
+      return start === -1 ? [] : [{ entity_type: "ORGANIZATION", start, end: start + party.length, score: 0.95 }];
+    });
+    process.env.FICTA_PII_ENABLED = "1";
+    process.env.FICTA_PII_BACKEND = "presidio";
+    process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
+    process.env.FICTA_PII_MARKDOWN_EQUAL_LENGTH = "1";
+    try {
+      const engine = new ProtectionEngine({ plugins: [piiPlugin] });
+      const redacted = await engine.redactBodyDetailed(JSON.stringify({ content: body }));
+      expect(redacted.body).toContain("LSD **Open** FZCO");
     } finally {
       await close(server);
     }

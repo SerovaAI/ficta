@@ -75,6 +75,10 @@ Temporary rollback for the occurrence-based body redactor: set `FICTA_BODY_REDAC
 use the previous longest-string-first body path. This compatibility flag is retained for one release;
 header and query redaction are unaffected.
 
+NLP detection now removes internal Markdown formatting with an offset map. Set
+`FICTA_PII_MARKDOWN_EQUAL_LENGTH=1` for the previous equal-length space-mask view during its
+one-release compatibility window.
+
 **Registry sources** — managed registry files, env-file, process-env, and Doppler discovery — have
 their own config under `[registry.*]`; see
 [`docs/plugins.md`](./docs/plugins.md#configuring-built-in-plugins) for the per-source options

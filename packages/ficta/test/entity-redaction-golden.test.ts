@@ -34,9 +34,9 @@ describe("entity redaction golden fixtures", () => {
     expect(restored).toContain("Proxima Medical\nSupplies CC");
   });
 
-  it("protects markitdown party shapes while pinning the one Phase 4 internal-markdown survivor", async () => {
+  it("protects every markitdown party shape, including internal Markdown", async () => {
     const hoa = fixture("markitdown-hoa.md");
-    const detected = ["Viven Bhowani", "Elton Lau", "LSD LIMITED SEYCHELLES"];
+    const detected = ["Viven Bhowani", "Elton Lau", "LSD LIMITED SEYCHELLES", "LSD Open FZCO"];
     const engine = new ProtectionEngine({
       plugins: [normalizedFixtureDetector(detected)],
       values: [
@@ -50,7 +50,7 @@ describe("entity redaction golden fixtures", () => {
     for (const value of [...detected, "VIVEN BHOWANI", "ELTON LAU", "MAURITIUS", "UAE"]) {
       expect(redacted.body).not.toContain(value);
     }
-    expect(redacted.body).toContain("LSD **Open** FZCO");
+    expect(redacted.body).not.toContain("LSD **Open** FZCO");
   });
 });
 
@@ -102,8 +102,15 @@ describe("legacy/new body-path differential", () => {
           protectedValue("JURISDICTION", "Mauritius", "golden-registry", "secret", "exact"),
           protectedValue("JURISDICTION", "UAE", "golden-registry", "secret", "exact"),
         ],
-        plugin: normalizedFixtureDetector(["Viven Bhowani", "Elton Lau", "LSD LIMITED SEYCHELLES"]),
-        expectedSurfaces: ["VIVEN BHOWANI", "ELTON LAU", "LSD LIMITED SEYCHELLES", "MAURITIUS", "UAE"],
+        plugin: normalizedFixtureDetector(["Viven Bhowani", "Elton Lau", "LSD LIMITED SEYCHELLES", "LSD Open FZCO"]),
+        expectedSurfaces: [
+          "VIVEN BHOWANI",
+          "ELTON LAU",
+          "LSD LIMITED SEYCHELLES",
+          "LSD **Open** FZCO",
+          "MAURITIUS",
+          "UAE",
+        ],
       },
     ];
     const random = mulberry32(0x44494646);
@@ -195,7 +202,19 @@ function normalizedFixtureDetector(values: readonly string[]): DetectorPlugin {
     bodyDetectionView: "content",
     detectText: (text) => {
       const normalized = normalizeMarkdownForDetection(text);
-      return values.flatMap((value) => detectedSpan(normalized, value));
+      return values.flatMap((value) => {
+        const start = normalized.text.indexOf(value);
+        const rawStart = normalized.toRaw(start, "start");
+        const rawEnd = normalized.toRaw(start + value.length, "end");
+        return start === -1 || rawStart === undefined || rawEnd === undefined
+          ? []
+          : [
+              {
+                ...protectedValue("organization", value, "fixture-detector", "pii", "high"),
+                spans: [{ start: rawStart, end: rawEnd }],
+              },
+            ];
+      });
     },
   };
 }

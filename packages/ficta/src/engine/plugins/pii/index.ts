@@ -1,18 +1,19 @@
 import { detectorFailClosed } from "../../detection-policy.js";
 import { engineWarn } from "../../diagnostics.js";
 import { envFlag, parseBoolean } from "../../env-flags.js";
+import { expansionSpans } from "../../expander.js";
 import { DetectorUnavailableError } from "../../redaction-engine.js";
 import type { DetectorPlugin, PluginDiscovery, ProtectedValue } from "../types.js";
-import { normalizeMarkdownForDetection } from "./markdown.js";
+import { type MarkdownDetectionView, normalizeMarkdownForDetection } from "./markdown.js";
 import { OpenmedUnavailableError, openmedConfig } from "./openmed-recognizer.js";
 import { PresidioUnavailableError, presidioConfig, withMergedSpans } from "./presidio-recognizer.js";
-import type { PiiRecognizer } from "./recognizer.js";
 import { activeBackends, ENV_BACKEND, ENV_BACKENDS } from "./registry.js";
 
 const PLUGIN_NAME = "pii";
 const ENV_ENABLED = "FICTA_PII_ENABLED";
 const ENV_AGENTS = "FICTA_PII_AGENTS";
 const ENV_FAIL_CLOSED = "FICTA_PII_FAIL_CLOSED";
+const ENV_EQUAL_LENGTH_MARKDOWN = "FICTA_PII_MARKDOWN_EQUAL_LENGTH";
 
 /**
  * PII detection can run one or more configured backends — `FICTA_PII_BACKENDS` ↔ `[pii] backends`.
@@ -191,17 +192,20 @@ export const piiPlugin: DetectorPlugin = {
     // NLP/NER backends see Markdown-normalized text — a party name inside a `**heading**` is otherwise
     // missed or mis-bounded. Format-anchored regex recognizers keep the raw text (their email/SSN/card
     // boundary anchors depend on exact punctuation). Normalized text is computed once, lazily.
-    let normalized: string | undefined;
-    const inputFor = (backend: PiiRecognizer): string => {
-      if (!backend.usesNlp) return text;
-      normalized ??= normalizeMarkdownForDetection(text);
-      return normalized;
-    };
+    let normalized: MarkdownDetectionView | undefined;
 
     for (const { name, backend } of backends) {
       try {
         // The backend may be sync (regex) or async (a Presidio/NER sidecar); await normalizes both.
-        values.push(...(await backend.detect(inputFor(backend), ctx)));
+        if (!backend.usesNlp) {
+          values.push(...(await backend.detect(text, ctx)));
+          continue;
+        }
+        normalized ??= normalizeMarkdownForDetection(text, {
+          equalLength: envFlag(process.env[ENV_EQUAL_LENGTH_MARKDOWN]),
+        });
+        const detected = await backend.detect(normalized.text, ctx);
+        values.push(...mapNlpOffsets(detected, normalized));
       } catch (err) {
         const { reason, detail } = notePiiRecognizerFailure(name, err);
         failures.push(`${name}: ${detail ? `${reason} (${detail})` : reason}`);
@@ -214,6 +218,21 @@ export const piiPlugin: DetectorPlugin = {
     return mergeDetectedValues(values);
   },
 };
+
+function mapNlpOffsets(values: readonly ProtectedValue[], view: MarkdownDetectionView): ProtectedValue[] {
+  return values.map((value) => {
+    const normalizedSpans =
+      value.spans ??
+      (view.equalLength ? undefined : expansionSpans(view.text, value.value).map(({ start, end }) => ({ start, end })));
+    if (!normalizedSpans || normalizedSpans.length === 0) return value;
+    const spans = normalizedSpans.flatMap((span) => {
+      const start = view.toRaw(span.start, "start");
+      const end = view.toRaw(span.end, "end");
+      return start === undefined || end === undefined || start >= end ? [] : [{ start, end }];
+    });
+    return spans.length > 0 ? { ...value, spans } : value;
+  });
+}
 
 function discoverPii(): PluginDiscovery {
   const enabled = piiEnabled();
