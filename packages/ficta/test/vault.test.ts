@@ -13,7 +13,8 @@ import {
   FICTA_RESTORE_HIGHLIGHT_START,
 } from "@serovaai/ficta-protocol";
 import { afterEach, describe, expect, it } from "vitest";
-import { Vault } from "../src/engine/vault.js";
+import { hexSurrogateStrategy } from "../src/engine/surrogate.js";
+import { ScopedVault, SurrogateTable, Vault } from "../src/engine/vault.js";
 import { bufferedRestoreAdapterFor, sseRestoreAdapterFor } from "../src/engine/wire-restore.js";
 import { loadRegistryValues } from "../src/plugins/index.js";
 
@@ -29,6 +30,41 @@ describe("vault", () => {
 
   it("loads the registry", () => {
     expect(v.size).toBeGreaterThanOrEqual(3);
+  });
+
+  it("separates token-only restore mappings from future match forms", () => {
+    const strategy = hexSurrogateStrategy("phase-1-test-key");
+    const permanent = new SurrogateTable(strategy, "permanent");
+    const table = new SurrogateTable(strategy, "detected");
+    const scope = new ScopedVault(permanent, table);
+    const clipped = { value: "Smith", name: "person", kind: "pii" as const };
+
+    expect(table.ensureToken(clipped)).toBe(true);
+    expect(table.ensureToken(clipped)).toBe(false);
+    expect(table.size).toBe(0);
+    expect(table.values).toEqual([]);
+    const token = table.toSur.get(clipped.value);
+    expect(token).toBeTruthy();
+    expect(table.toVal.get(token ?? "")).toBe(clipped.value);
+    expect(scope.redactText(clipped.value)).toEqual({ text: clipped.value, count: 0 });
+    expect(scope.leakCount(clipped.value)).toBe(0);
+    expect(scope.restoreText(token ?? "")).toBe(clipped.value);
+
+    expect(table.addMatchForm(clipped)).toBe(true);
+    expect(table.addMatchForm(clipped)).toBe(false);
+    expect(table.size).toBe(1);
+    expect(table.values).toEqual([clipped.value]);
+    expect(table.toSur.get(clipped.value)).toBe(token); // promotion never remints the token
+    expect(scope.redactText(clipped.value).text).toBe(token);
+  });
+
+  it("keeps register behavior-compatible while using the split table APIs", () => {
+    const table = new SurrogateTable(hexSurrogateStrategy("phase-1-register-key"));
+    expect(table.register([{ value: "short" }, { value: "a much longer value" }, { value: "short" }])).toBe(2);
+    expect(table.size).toBe(2);
+    expect(table.values).toEqual(["a much longer value", "short"]);
+    expect(table.toSur.size).toBe(2);
+    expect(table.toVal.size).toBe(2);
   });
 
   it("redacts known values out of a JSON body", () => {

@@ -67,7 +67,7 @@ export type LayerProvenance = "permanent" | "detected";
 
 export class SurrogateTable {
   readonly values: string[] = []; // known values, longest first
-  private readonly seen = new Set<string>();
+  private readonly matchForms = new Set<string>();
   readonly toSur = new Map<string, string>();
   readonly toVal = new Map<string, string>();
 
@@ -81,6 +81,31 @@ export class SurrogateTable {
   }
 
   /**
+   * Ensure a reversible raw-value↔token mapping without admitting the raw value to future matching
+   * or leak scans. Phase 4 uses this for clip-produced residuals: they must round-trip, but must not
+   * silently become body-wide persistent match candidates in a keyed scope. The table is name-blind:
+   * callers with named candidates must enforce registry policy before calling this method.
+   */
+  ensureToken(item: VaultValue): boolean {
+    const value = item.value;
+    if (!value || this.toSur.has(value)) return false;
+    const surrogate = this.surrogate.mint(value, { name: item.name, kind: item.kind });
+    this.toSur.set(value, surrogate);
+    this.toVal.set(surrogate, value);
+    return true;
+  }
+
+  /**
+   * Ensure a token and admit its raw surface to future matching and leak scans. The table is
+   * name-blind: callers with named candidates must enforce registry policy before calling this method.
+   */
+  addMatchForm(item: VaultValue): boolean {
+    const added = this.admitMatchForm(item);
+    if (added) this.sortMatchForms();
+    return added;
+  }
+
+  /**
    * Register additional values, e.g. from request-time detector plugins. The store is name-blind, so
    * it cannot apply registry-policy exclusions itself: that enforcement happens upstream where names
    * are still known — `loadPluginRegistry` for launch values and `ProtectionEngine.admit()` for
@@ -89,18 +114,22 @@ export class SurrogateTable {
    */
   register(values: ReadonlyArray<VaultValue>): number {
     let added = 0;
-    for (const item of values) {
-      const value = item.value;
-      if (!value || this.seen.has(value)) continue;
-      this.seen.add(value);
-      this.values.push(value);
-      const sur = this.surrogate.mint(value, { name: item.name, kind: item.kind });
-      this.toSur.set(value, sur);
-      this.toVal.set(sur, value);
-      added++;
-    }
-    if (added > 0) this.values.sort((a, b) => b.length - a.length);
+    for (const item of values) if (this.admitMatchForm(item)) added++;
+    if (added > 0) this.sortMatchForms();
     return added;
+  }
+
+  private admitMatchForm(item: VaultValue): boolean {
+    const value = item.value;
+    if (!value || this.matchForms.has(value)) return false;
+    this.ensureToken(item);
+    this.matchForms.add(value);
+    this.values.push(value);
+    return true;
+  }
+
+  private sortMatchForms(): void {
+    this.values.sort((a, b) => b.length - a.length);
   }
 }
 
