@@ -1,6 +1,7 @@
 export const FICTA_HEALTH_PATH = "/__ficta/health";
 export const FICTA_STATUS_PATH = "/__ficta/status";
 export const FICTA_CONFIG_PATH = "/__ficta/config";
+export const FICTA_REGISTRY_RELOAD_PATH = "/__ficta/registry/reload";
 export const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
 export const FICTA_SCOPE_HEADER = "x-ficta-scope";
 export const FICTA_TRACE_CAPTURE_HEADER = "x-ficta-trace-capture";
@@ -73,6 +74,18 @@ export function isProxyConfigOk(value) {
 /** @param {unknown} value */
 export function isProxyConfigUpdateOk(value) {
   return isRecord(value) && value.ok === true && value.service === "ficta" && isProxyConfigEditState(value.edit);
+}
+
+/** @param {unknown} value */
+export function isRegistryReloadOk(value) {
+  if (!isRecord(value)) return false;
+  if (value.ok !== true || value.service !== "ficta") return false;
+  if (!isRecord(value.registry)) return false;
+  return (
+    typeof value.registry.added === "number" &&
+    typeof value.registry.total === "number" &&
+    (value.registry.skippedTooShort === undefined || typeof value.registry.skippedTooShort === "number")
+  );
 }
 
 /** @param {unknown} value */

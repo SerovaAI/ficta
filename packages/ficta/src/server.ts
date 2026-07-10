@@ -5,6 +5,7 @@ import {
   FICTA_CONFIG_PATH,
   FICTA_HEALTH_PATH,
   FICTA_PROTECTION_STATS_PATH,
+  FICTA_REGISTRY_RELOAD_PATH,
   FICTA_RESTORE_HIGHLIGHT_END,
   FICTA_RESTORE_HIGHLIGHT_HEADER,
   FICTA_RESTORE_HIGHLIGHT_METADATA,
@@ -15,6 +16,7 @@ import {
   type ProtectionStatsOk,
   type ProtectionStatusOk,
   type ProxyConfigOk,
+  type RegistryReloadOk,
 } from "@serovaai/ficta-protocol";
 import { type Context, Hono } from "hono";
 import { loadConfig, resolveTarget, upstreamPolicyIssue } from "./config.js";
@@ -50,6 +52,7 @@ import {
   activeBackends,
   backendHealthCheck,
   defaultRedactionPlugins,
+  managedRegistryLoadCounts,
   type PluginDiscovery,
   piiEnabled,
   piiFailClosed,
@@ -57,6 +60,7 @@ import {
   type RegistryPolicy,
   registryDiscoveryLines,
   registryPolicyLines,
+  resetManagedRegistryFilePluginCache,
   secretShapesEnabled,
   selectedBackendNames,
 } from "./plugins/index.js";
@@ -141,6 +145,49 @@ export async function startProxy(
         return c.json(result, result.ok ? 200 : result.status === "locked" ? 409 : 400);
       }
       return c.json({ error: { type: "method_not_allowed", message: "Use GET or PATCH for proxy config." } }, 405);
+    }
+    // Live registry reload: re-read the env-configured managed registry file(s) and register any NEW
+    // values into the running engine (the gateway's "Publish to proxy" action). The request body is
+    // never read — no paths or values are accepted from the caller; reload can only re-load what the
+    // operator already configured via FICTA_REGISTRY_MANAGED_FILE_PATHS. Deletions apply on restart
+    // (see ProtectionEngine.reloadRegistryValues). Response carries counts only, never values.
+    if (url.pathname === FICTA_REGISTRY_RELOAD_PATH) {
+      if (method !== "POST") {
+        return c.json({ error: { type: "method_not_allowed", message: "Use POST for registry reload." } }, 405);
+      }
+      const remoteAddress = c.env.incoming.socket.remoteAddress;
+      if (!isLoopbackAddress(remoteAddress)) {
+        return c.json(
+          {
+            ok: false,
+            service: "ficta",
+            status: "forbidden",
+            message: "Registry reload is accepted only from loopback clients.",
+          },
+          403,
+        );
+      }
+      if (!engine.reloadRegistryValues) {
+        return c.json(
+          { ok: false, service: "ficta", status: "unsupported", message: "This engine has no reloadable registry." },
+          501,
+        );
+      }
+      // Explicit cache bust before reloading: the stat-based cache key catches ordinary file edits, but
+      // a rewrite landing with an identical {mtimeMs, size} fingerprint would otherwise be missed.
+      resetManagedRegistryFilePluginCache();
+      const reloaded = engine.reloadRegistryValues();
+      // Surface min-len drops (counts only): a published value shorter than FICTA_REGISTRY_MIN_LEN is
+      // filtered at load, and without this it would read back to the gateway as a successful no-op.
+      const { skippedTooShort } = managedRegistryLoadCounts();
+      log.info(
+        { added: reloaded.added, total: reloaded.total, skippedTooShort },
+        `🔄 registry reload: +${reloaded.added} value(s), ${reloaded.total} total${
+          skippedTooShort > 0 ? `, ${skippedTooShort} below min length` : ""
+        }`,
+      );
+      const response: RegistryReloadOk = { ok: true, service: "ficta", registry: { ...reloaded, skippedTooShort } };
+      return c.json(response);
     }
 
     // Protect every outbound request body, query string, and non-auth header by default.

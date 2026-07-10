@@ -127,6 +127,78 @@ describe("protection engine plugins", () => {
     });
   });
 
+  it("case-expands word-like registry values to every casing present, but not digit-bearing secrets", async () => {
+    const engine = new ProtectionEngine({
+      plugins: [],
+      values: [
+        { name: "JURISDICTION", value: "Mauritius", source: "env-file", kind: "secret", confidence: "exact" },
+        { name: "MATTER_ID", value: "NSB-2026-0147", source: "env-file", kind: "secret", confidence: "exact" },
+      ],
+    });
+    const scope = engine.beginRequest();
+    const body = JSON.stringify({
+      content: "In Mauritius; heading MAURITIUS; and mauritius. Matter NSB-2026-0147 vs nsb-2026-0147.",
+    });
+    const redacted = await scope.redactBodyDetailed(body);
+
+    // The registered word-like value now covers all three casings present in the body.
+    expect(redacted.body).not.toContain("Mauritius");
+    expect(redacted.body).not.toContain("MAURITIUS");
+    expect(redacted.body).not.toContain("mauritius");
+    // The digit-bearing secret is NOT case-folded: the registered casing is redacted, the lowercase twin
+    // is left intact (folding an ID/key is meaningless and would risk matching unrelated text).
+    expect(redacted.body).not.toContain("NSB-2026-0147");
+    expect(redacted.body).toContain("nsb-2026-0147");
+    expect(redacted.count).toBe(4); // Mauritius ×3 casings + NSB-2026-0147 ×1
+    expect(redacted.leaks).toBe(0);
+
+    // Each casing round-trips to its own surface form.
+    const restored = scope.restoreText(redacted.body);
+    expect(restored).toContain("Mauritius");
+    expect(restored).toContain("MAURITIUS");
+    expect(restored).toContain("mauritius");
+  });
+
+  it("withholds a registry secret's case-variant from tool-call arguments like the canonical form", async () => {
+    // A caps twin of a registered secret is still that secret. It is registered into the scope's
+    // registry-derived layer (permanent provenance), so the default restore-into-tools policy
+    // (`detected`) must withhold BOTH forms from tool-call arguments — registering the variant as
+    // `detected` would let a prompt-injected tool call exfiltrate the secret via its case variant.
+    const saved = process.env.FICTA_RESTORE_INTO_TOOLS;
+    delete process.env.FICTA_RESTORE_INTO_TOOLS; // default policy: "detected"
+    try {
+      const engine = new ProtectionEngine({
+        plugins: [],
+        values: [{ name: "CLIENT", value: "Mauritius Holdings", source: "env-file", kind: "secret" }],
+      });
+      const scope = engine.beginRequest();
+      const body = JSON.stringify({ content: "Client Mauritius Holdings; heading MAURITIUS HOLDINGS." });
+      const redacted = await scope.redactBodyDetailed(body);
+      expect(redacted.leaks).toBe(0);
+      const surrogates = [...new Set(redacted.body.match(/FICTA_[0-9a-f]{32}/g) ?? [])];
+      expect(surrogates).toHaveLength(2);
+
+      // Model places both surrogates into a tool-call argument (openai-chat buffered restore path).
+      const toolBody = JSON.stringify({
+        choices: [
+          {
+            message: {
+              tool_calls: [{ function: { arguments: JSON.stringify({ cmd: surrogates.join(" ") }) } }],
+            },
+          },
+        ],
+      });
+      const restored = scope.restoreJson(toolBody, "openai-chat");
+      expect(restored).not.toContain("Mauritius Holdings"); // canonical: withheld
+      expect(restored).not.toContain("MAURITIUS HOLDINGS"); // caps twin: withheld too (the fix)
+      for (const surrogate of surrogates) expect(restored).toContain(surrogate);
+      expect(scope.withheldFromToolsCount).toBe(2);
+    } finally {
+      if (saved === undefined) delete process.env.FICTA_RESTORE_INTO_TOOLS;
+      else process.env.FICTA_RESTORE_INTO_TOOLS = saved;
+    }
+  });
+
   it("isolates detector plugin exceptions", async () => {
     const engine = new ProtectionEngine({
       plugins: [

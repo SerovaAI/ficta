@@ -116,7 +116,11 @@ export {
   piModelsConfig,
 } from "./agents.js";
 export { dopplerPlugin } from "./doppler.js";
-export { managedRegistryFilePlugin } from "./managed-registry-file.js";
+export {
+  managedRegistryFilePlugin,
+  managedRegistryLoadCounts,
+  resetManagedRegistryFilePluginCache,
+} from "./managed-registry-file.js";
 
 /**
  * The redaction plugins ficta ships and enforces by default: exact-value registry sources

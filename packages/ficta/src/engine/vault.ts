@@ -619,18 +619,36 @@ export class Vault extends VaultView {
  */
 export class ScopedVault extends VaultView {
   private readonly detected: SurrogateTable;
+  private readonly registryDerived: SurrogateTable;
 
   constructor(
     permanent: SurrogateTable,
     detected: SurrogateTable = new SurrogateTable(permanent.surrogate, "detected"),
   ) {
-    super([detected, permanent]); // detected shares the permanent strategy → same surrogates
+    // Registry-derived variants (e.g. the caps twin of a registered secret found in this request's
+    // body) are ephemeral like detected values, but they ARE the registry secret in another casing —
+    // so their layer carries `permanent` provenance: the `detected` restore-into-tools policy withholds
+    // them from tool-call arguments exactly like the canonical form, and the audit reports them as
+    // registry-owned. Ordered before `detected` so a string that is both a registry variant and a
+    // detector hit resolves to registry authority (first match wins).
+    const registryDerived = new SurrogateTable(permanent.surrogate, "permanent");
+    super([registryDerived, detected, permanent]); // all share the permanent strategy → same surrogates
     this.detected = detected;
+    this.registryDerived = registryDerived;
   }
 
   /** Register request-detected values into the ephemeral layer only (never the permanent vault). */
   register(values: ReadonlyArray<VaultValue>): number {
     return this.detected.register(values);
+  }
+
+  /**
+   * Register request-found variants OF registered values (case twins — see the engine's
+   * `registerRegistryCaseVariants`). Ephemeral like `register`, but with `permanent` provenance so
+   * tool-withholding and provenance reporting treat the variant as the registry secret it is.
+   */
+  registerRegistryDerived(values: ReadonlyArray<VaultValue>): number {
+    return this.registryDerived.register(values);
   }
 
   /** Count of ephemeral values detected in this request (the permanent layer is excluded). */
@@ -1116,6 +1134,32 @@ function buildFlexibleWhitespacePattern(value: string): RegExp {
     )
     .join("");
   return new RegExp(source, "g");
+}
+
+/**
+ * Distinct surface substrings of `text` that match `value` under the same whitespace-flexible rules the
+ * vault uses for redaction (see {@link buildFlexibleWhitespacePattern}), optionally case-insensitively.
+ * Returned forms are the literal text as it appears — so a caller can register each casing it finds and
+ * have redaction match and round-trip it. Used by the PII plugin to cover an entity detected in one
+ * casing that also appears in another (e.g. a title-case name that recurs ALL-CAPS in a heading), which
+ * the case-sensitive matcher would otherwise leak.
+ */
+export function flexibleOccurrences(text: string, value: string, opts: { caseInsensitive?: boolean } = {}): string[] {
+  if (!text || !value) return [];
+  // Reuse the exact redaction pattern so any form returned is guaranteed to match on redaction; add `i`
+  // only for the case-insensitive sweep. A fresh RegExp keeps this off the shared lastIndex-stateful cache.
+  const re = new RegExp(buildFlexibleWhitespacePattern(value).source, opts.caseInsensitive ? "gi" : "g");
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (let match = re.exec(text); match !== null; match = re.exec(text)) {
+    const form = match[0];
+    if (form && !seen.has(form)) {
+      seen.add(form);
+      out.push(form);
+    }
+    if (match.index === re.lastIndex) re.lastIndex += 1; // defensive: never spin on a zero-width match
+  }
+  return out;
 }
 
 function escapeRegExp(value: string): string {

@@ -1,6 +1,7 @@
 export declare const FICTA_HEALTH_PATH = "/__ficta/health";
 export declare const FICTA_STATUS_PATH = "/__ficta/status";
 export declare const FICTA_CONFIG_PATH = "/__ficta/config";
+export declare const FICTA_REGISTRY_RELOAD_PATH = "/__ficta/registry/reload";
 export declare const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
 export declare const FICTA_SCOPE_HEADER = "x-ficta-scope";
 export declare const FICTA_TRACE_CAPTURE_HEADER = "x-ficta-trace-capture";
@@ -267,10 +268,36 @@ export interface ProxyConfigPatchError {
 
 export type ProxyConfigPatchResponse = ProxyConfigUpdateOk | ProxyConfigPatchError;
 
+/** Success shape of POST /__ficta/registry/reload — counts only, never values. */
+export interface RegistryReloadOk {
+  ok: true;
+  service: "ficta";
+  registry: {
+    /** Newly registered values this reload (0 when the file is unchanged). */
+    added: number;
+    /** Live count of registered values in the running proxy after the reload. */
+    total: number;
+    /** Managed-file values dropped by the proxy's FICTA_REGISTRY_MIN_LEN filter — a published value
+     *  shorter than the minimum would otherwise read as a silent no-op. Optional for older proxies. */
+    skippedTooShort?: number;
+  };
+}
+
+export interface RegistryReloadError {
+  ok: false;
+  proxyUrl: string;
+  status: "unreachable" | "bad_response" | "forbidden";
+  message: string;
+  detail?: string;
+}
+
+export type RegistryReload = RegistryReloadOk | RegistryReloadError;
+
 export declare function isProtectionStatusOk(value: unknown): value is ProtectionStatusOk;
 export declare function isProtectionStatsOk(value: unknown): value is ProtectionStatsOk;
 export declare function isProxyConfigOk(value: unknown): value is ProxyConfigOk;
 export declare function isProxyConfigUpdateOk(value: unknown): value is ProxyConfigUpdateOk;
+export declare function isRegistryReloadOk(value: unknown): value is RegistryReloadOk;
 export declare function isProxyConfigEditState(value: unknown): value is ProxyConfigEditState;
 export declare function isEditableProxyConfigValues(value: unknown): value is EditableProxyConfigValues;
 export declare function isPiiBackendName(value: unknown): value is PiiBackendName;

@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { FICTA_REGISTRY_RELOAD_PATH, isRegistryReloadOk } from "@serovaai/ficta-protocol";
 import { createServerFn } from "@tanstack/react-start";
 import { requireAdminScope } from "@/lib/auth/guards.server";
 import { getStorage } from "./storage.server";
@@ -23,6 +24,15 @@ export interface ProtectedRegistryExport {
   entries: number;
   values: number;
   skippedAliases: number;
+}
+
+/** Result of the proxy-reload half of a publish. Failure is partial success: the file is written. */
+export type ProtectedRegistryReloadResult =
+  | { ok: true; added: number; total: number; skippedTooShort: number }
+  | { ok: false; status: "unreachable" | "bad_response" | "forbidden"; message: string };
+
+export interface ProtectedRegistryPublish extends ProtectedRegistryExport {
+  reload: ProtectedRegistryReloadResult;
 }
 
 export const fetchProtectedRegistryEntries = createServerFn({ method: "GET" }).handler(
@@ -56,20 +66,91 @@ export const deleteProtectedRegistryEntry = createServerFn({ method: "POST" })
 export const exportProtectedRegistryFile = createServerFn({ method: "POST" }).handler(
   async (): Promise<ProtectedRegistryExport> => {
     const { orgId } = await requireAdminScope();
-    const entries = await (await getStorage()).listProtectedRegistryEntries(orgId);
-    const approved = entries.filter((entry) => entry.status === "approved");
-    const result = renderManagedRegistryFile(approved);
-    const path = managedRegistryPath();
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, result.body, { mode: 0o600 });
-    return {
-      path,
-      entries: approved.length,
-      values: result.values,
-      skippedAliases: result.skippedAliases,
-    };
+    return writeManagedRegistryFile(orgId);
   },
 );
+
+/**
+ * One admin action closing the UI → proxy loop: write the managed registry file, then ask the running
+ * proxy to reload it (POST /__ficta/registry/reload — loopback-gated, body-less, counts-only response).
+ * A reload failure is PARTIAL success — the file is written either way, and the caller gets restart
+ * guidance — never a throw. Note the proxy applies additions live; deletions apply on its next restart.
+ */
+export const publishProtectedRegistry = createServerFn({ method: "POST" }).handler(
+  async (): Promise<ProtectedRegistryPublish> => {
+    const { orgId } = await requireAdminScope();
+    const written = await writeManagedRegistryFile(orgId); // await completes before reload — no write/reload race
+    return { ...written, reload: await requestProxyRegistryReload() };
+  },
+);
+
+/** Render + write the approved entries to the managed registry file. Shared by export and publish. */
+async function writeManagedRegistryFile(orgId: string): Promise<ProtectedRegistryExport> {
+  const entries = await (await getStorage()).listProtectedRegistryEntries(orgId);
+  const approved = entries.filter((entry) => entry.status === "approved");
+  const result = renderManagedRegistryFile(approved);
+  const path = managedRegistryPath();
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, result.body, { mode: 0o600 });
+  return {
+    path,
+    entries: approved.length,
+    values: result.values,
+    skippedAliases: result.skippedAliases,
+  };
+}
+
+const RELOAD_TIMEOUT_MS = 1500;
+
+async function requestProxyRegistryReload(): Promise<ProtectedRegistryReloadResult> {
+  const { proxyBaseUrl } = await import("@/lib/proxy-base.server");
+  const proxyUrl = proxyBaseUrl();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RELOAD_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${proxyUrl}${FICTA_REGISTRY_RELOAD_PATH}`, {
+      method: "POST",
+      headers: { accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (res.status === 403) {
+      return {
+        ok: false,
+        status: "forbidden",
+        message: `ficta proxy at ${proxyUrl} refused the reload (loopback-only); restart the proxy to load the file.`,
+      };
+    }
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: "bad_response",
+        message: `ficta proxy registry reload returned HTTP ${res.status}; restart the proxy to load the file.`,
+      };
+    }
+    const json = (await res.json()) as unknown;
+    if (!isRegistryReloadOk(json)) {
+      return {
+        ok: false,
+        status: "bad_response",
+        message: "ficta proxy reload response was not understood; the proxy and web app versions may be out of sync.",
+      };
+    }
+    return {
+      ok: true,
+      added: json.registry.added,
+      total: json.registry.total,
+      skippedTooShort: json.registry.skippedTooShort ?? 0,
+    };
+  } catch {
+    return {
+      ok: false,
+      status: "unreachable",
+      message: `ficta proxy is unreachable at ${proxyUrl}; start it (with FICTA_REGISTRY_MANAGED_FILE_PATHS including the exported file) or restart it to load the file.`,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function validateProtectedRegistryEntry(input: unknown): ProtectedRegistryEntryInput {
   return normalizeProtectedRegistryEntry(asRecord(input), "manual");

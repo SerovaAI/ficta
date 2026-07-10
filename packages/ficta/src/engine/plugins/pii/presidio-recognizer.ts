@@ -73,6 +73,7 @@ interface PresidioSpan {
 
 export const presidioRecognizer: PiiRecognizer = {
   name: "presidio",
+  usesNlp: true,
   async detect(text, ctx) {
     return detectWithPresidioCompatibleAnalyzer(text, ctx, presidioConfig(), "presidio");
   },
@@ -193,8 +194,11 @@ function spansToValues(
     if (span.score < config.scoreThreshold) continue;
     if (allowlist && !allowlist.has(span.entity_type.toUpperCase())) continue;
 
-    const value = index.slice(span.start, span.end);
-    if (value.trim().length < MIN_PII_VALUE_LENGTH) continue;
+    // Trim the sliced span: Markdown normalization masks formatting to spaces (so a `**NAME**` span can
+    // slice with space edges), and spaCy NER commonly over-extends across whitespace. Storing the trimmed
+    // value tightens the boundary and keeps it a substring of the original text for value-based redaction.
+    const value = index.slice(span.start, span.end).trim();
+    if (value.length < MIN_PII_VALUE_LENGTH) continue;
     if (seen.has(value)) continue;
     seen.add(value);
 

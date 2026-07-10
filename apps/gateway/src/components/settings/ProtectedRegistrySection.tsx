@@ -1,4 +1,4 @@
-import { Check, Download, Pencil, Plus, Trash2, Upload } from "lucide-react";
+import { Check, Download, Pencil, Plus, Trash2, Upload, UploadCloud } from "lucide-react";
 import type * as React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,8 @@ import {
   fetchProtectedRegistryEntries,
   importProtectedRegistryEntries,
   type ProtectedRegistryExport,
+  type ProtectedRegistryPublish,
+  publishProtectedRegistry,
   saveProtectedRegistryEntry,
 } from "@/lib/storage/protected-registry";
 import {
@@ -68,8 +70,10 @@ export function ProtectedRegistrySection({ showHeader = true }: { showHeader?: b
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [importStatus, setImportStatus] = useState<SaveStatus>("idle");
   const [exportStatus, setExportStatus] = useState<SaveStatus>("idle");
+  const [publishStatus, setPublishStatus] = useState<SaveStatus>("idle");
   const [error, setError] = useState("");
   const [exportResult, setExportResult] = useState<ProtectedRegistryExport>();
+  const [publishResult, setPublishResult] = useState<ProtectedRegistryPublish>();
 
   const approvedEntries = useMemo(() => entries?.filter((entry) => entry.status === "approved") ?? [], [entries]);
   const approvedValues = useMemo(
@@ -160,10 +164,25 @@ export function ProtectedRegistrySection({ showHeader = true }: { showHeader?: b
     try {
       const result = await exportProtectedRegistryFile();
       setExportResult(result);
+      setPublishResult(undefined);
       setExportStatus("idle");
     } catch (err) {
       setExportStatus("error");
       setError(err instanceof Error ? err.message : "Could not export registry file.");
+    }
+  };
+
+  const publishRegistry = async () => {
+    setPublishStatus("saving");
+    setError("");
+    try {
+      const result = await publishProtectedRegistry();
+      setPublishResult(result);
+      setExportResult(undefined);
+      setPublishStatus("idle");
+    } catch (err) {
+      setPublishStatus("error");
+      setError(err instanceof Error ? err.message : "Could not publish registry to the proxy.");
     }
   };
 
@@ -203,29 +222,69 @@ export function ProtectedRegistrySection({ showHeader = true }: { showHeader?: b
       <div className="border-t border-border pt-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h4 className="text-sm font-medium">Approved registry export</h4>
+            <h4 className="text-sm font-medium">Publish approved values to the proxy</h4>
             <p className="pt-1 text-muted-foreground text-xs leading-relaxed">
-              Writes a managed registry JSON file. Add it to{" "}
-              <code className="font-mono">FICTA_REGISTRY_MANAGED_FILE_PATHS</code> and restart the proxy to load
-              approved registry values.
+              Writes the managed registry JSON file and reloads the running proxy — new approved values are protected
+              immediately, no restart needed. The file path must be in the proxy&apos;s{" "}
+              <code className="font-mono">FICTA_REGISTRY_MANAGED_FILE_PATHS</code>. Removed values keep redacting until
+              the proxy restarts.
             </p>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={exportRegistry}
-            disabled={exportStatus === "saving" || approvedEntries.length === 0}
-          >
-            <Download className="size-4" aria-hidden />
-            Export registry
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={exportRegistry}
+              disabled={exportStatus === "saving" || publishStatus === "saving" || approvedEntries.length === 0}
+            >
+              <Download className="size-4" aria-hidden />
+              Export file only
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={publishRegistry}
+              disabled={publishStatus === "saving" || exportStatus === "saving" || approvedEntries.length === 0}
+            >
+              <UploadCloud className="size-4" aria-hidden />
+              Publish to proxy
+            </Button>
+          </div>
         </div>
         {exportResult ? (
           <p className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2 font-mono text-xs leading-relaxed">
             {exportResult.values} value{exportResult.values === 1 ? "" : "s"} written to {exportResult.path}
             {exportResult.skippedAliases > 0 ? `; ${exportResult.skippedAliases} short alias(es) skipped` : ""}
           </p>
+        ) : null}
+        {publishResult ? (
+          <div className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2 font-mono text-xs leading-relaxed">
+            <p>
+              {publishResult.values} value{publishResult.values === 1 ? "" : "s"} written to {publishResult.path}
+              {publishResult.skippedAliases > 0 ? `; ${publishResult.skippedAliases} short alias(es) skipped` : ""}
+            </p>
+            {publishResult.reload.ok ? (
+              <>
+                <p className="pt-1 text-emerald-600 dark:text-emerald-400">
+                  Proxy reloaded: now protecting {publishResult.reload.total} value
+                  {publishResult.reload.total === 1 ? "" : "s"} (+{publishResult.reload.added} new).
+                </p>
+                {publishResult.reload.skippedTooShort > 0 ? (
+                  <p className="pt-1 text-amber-600 dark:text-amber-400">
+                    {publishResult.reload.skippedTooShort} value
+                    {publishResult.reload.skippedTooShort === 1 ? " is" : "s are"} shorter than the proxy&apos;s minimum
+                    length and NOT protected (FICTA_REGISTRY_MIN_LEN).
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <p className="pt-1 text-amber-600 dark:text-amber-400">
+                Proxy reload failed: {publishResult.reload.message}
+              </p>
+            )}
+          </div>
         ) : null}
       </div>
 

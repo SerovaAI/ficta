@@ -63,6 +63,13 @@ export interface RedactionEngine {
 
   /** Safe launch-time snapshot of registry-source discovery (counts, names — never values). */
   readonly registry: PluginRegistrySnapshot;
+
+  /**
+   * Re-run the registry-source plugins and register any new values live (additions only — deletions
+   * apply on restart). Optional: engines without a reloadable registry simply omit it, and the proxy's
+   * reload endpoint reports the capability as unavailable.
+   */
+  reloadRegistryValues?(): { added: number; total: number };
 }
 
 /**

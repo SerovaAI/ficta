@@ -2,9 +2,12 @@ import { detectorFailClosed } from "../../detection-policy.js";
 import { engineWarn } from "../../diagnostics.js";
 import { envFlag, parseBoolean } from "../../env-flags.js";
 import { DetectorUnavailableError } from "../../redaction-engine.js";
+import { flexibleOccurrences } from "../../vault.js";
 import type { DetectorPlugin, PluginDiscovery, ProtectedValue } from "../types.js";
+import { normalizeMarkdownForDetection } from "./markdown.js";
 import { OpenmedUnavailableError, openmedConfig } from "./openmed-recognizer.js";
-import { PresidioUnavailableError, presidioConfig } from "./presidio-recognizer.js";
+import { MIN_PII_VALUE_LENGTH, PresidioUnavailableError, presidioConfig } from "./presidio-recognizer.js";
+import type { PiiRecognizer } from "./recognizer.js";
 import { activeBackends, ENV_BACKEND, ENV_BACKENDS } from "./registry.js";
 
 const PLUGIN_NAME = "pii";
@@ -185,10 +188,20 @@ export const piiPlugin: DetectorPlugin = {
     const values: ProtectedValue[] = [];
     const failures: string[] = [];
 
+    // NLP/NER backends see Markdown-normalized text — a party name inside a `**heading**` is otherwise
+    // missed or mis-bounded. Format-anchored regex recognizers keep the raw text (their email/SSN/card
+    // boundary anchors depend on exact punctuation). Normalized text is computed once, lazily.
+    let normalized: string | undefined;
+    const inputFor = (backend: PiiRecognizer): string => {
+      if (!backend.usesNlp) return text;
+      normalized ??= normalizeMarkdownForDetection(text);
+      return normalized;
+    };
+
     for (const { name, backend } of backends) {
       try {
         // The backend may be sync (regex) or async (a Presidio/NER sidecar); await normalizes both.
-        values.push(...(await backend.detect(text, ctx)));
+        values.push(...(await backend.detect(inputFor(backend), ctx)));
       } catch (err) {
         const { reason, detail } = notePiiRecognizerFailure(name, err);
         failures.push(`${name}: ${detail ? `${reason} (${detail})` : reason}`);
@@ -198,9 +211,31 @@ export const piiPlugin: DetectorPlugin = {
     if (failures.length > 0 && detectorFailClosed(piiFailClosed())) {
       throw new DetectorUnavailableError(PLUGIN_NAME, failures.join("; "));
     }
-    return mergeDetectedValues(values);
+    return expandCaseVariants(mergeDetectedValues(values), text);
   },
 };
+
+/**
+ * Cover an entity detected in one casing that also appears in another. NER catches a party name in
+ * title-case prose but misses its ALL-CAPS heading/signature form; vault matching is case-sensitive, so
+ * the caps form would leak (observed: `VIVEN BHOWANI`, `ELTON LAU`, `LSD LIMITED SEYCHELLES`). For each
+ * detected value, register every distinct case-form ACTUALLY PRESENT in the (raw) request text — each
+ * mints its own surrogate and restores its own casing. Bounded to forms that genuinely occur, so it
+ * never invents strings; the only cost is redacting an extra casing of a noisy detection, an acceptable
+ * privacy-favoring trade for a redaction proxy.
+ */
+function expandCaseVariants(values: readonly ProtectedValue[], text: string): ProtectedValue[] {
+  const out = [...values];
+  const present = new Set(out.map((value) => value.value));
+  for (const value of values) {
+    for (const form of flexibleOccurrences(text, value.value, { caseInsensitive: true })) {
+      if (present.has(form) || form.trim().length < MIN_PII_VALUE_LENGTH) continue;
+      present.add(form);
+      out.push({ ...value, value: form });
+    }
+  }
+  return out;
+}
 
 function discoverPii(): PluginDiscovery {
   const enabled = piiEnabled();

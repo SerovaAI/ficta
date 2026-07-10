@@ -22,7 +22,7 @@ import {
   type TextRedactionContext,
   type TextRedactionDetails,
 } from "./redaction-engine.js";
-import { redactableBodyLeaves, type ScopedVault, type SurrogateTable, Vault } from "./vault.js";
+import { flexibleOccurrences, redactableBodyLeaves, type ScopedVault, type SurrogateTable, Vault } from "./vault.js";
 import type { Wire } from "./wire.js";
 import { bufferedRestoreAdapterFor, sseRestoreAdapterFor } from "./wire-restore.js";
 
@@ -77,25 +77,58 @@ export class ProtectionEngine implements RedactionEngine {
   private readonly keyedScopes = new Map<string, KeyedScopeState>();
   private defaultRequestScope?: ProtectionRequestScope;
 
-  /** Safe launch-time snapshot of registry-source discovery. */
-  readonly registry: PluginRegistrySnapshot;
+  /** The trusted plugin set used at launch; kept so a live registry reload enforces the same fence. */
+  private readonly trusted: ReadonlySet<FictaPluginBase>;
+  /** Current registry-source snapshot; replaced by {@link reloadRegistryValues}. */
+  private registrySnapshot: PluginRegistrySnapshot;
 
-  /** Number of values loaded at construction time from exact-registry plugins. */
+  /** Safe snapshot of registry-source discovery (refreshed by {@link reloadRegistryValues}). */
+  get registry(): PluginRegistrySnapshot {
+    return this.registrySnapshot;
+  }
+
+  /** Number of values loaded at construction time from exact-registry plugins ("as of launch" — see
+   *  {@link size} for the live count after any {@link reloadRegistryValues}). */
   readonly registrySize: number;
 
   constructor(opts: ProtectionEngineOptions = {}) {
     this.plugins = opts.plugins ?? defaultDetectors;
-    this.registry = loadPluginRegistry(this.plugins, opts.trusted ?? new Set(this.plugins));
+    this.trusted = opts.trusted ?? new Set(this.plugins);
+    this.registrySnapshot = loadPluginRegistry(this.plugins, this.trusted);
     // loadPluginRegistry already ran validatePluginBoundaries, so derive this directly rather than
     // calling pluginsHaveDetectors (which would re-validate every plugin).
     this.hasDetectors = this.plugins.some((plugin) => Boolean(plugin.detectText));
-    this.policy = this.registry.registryPolicy;
+    this.policy = this.registrySnapshot.registryPolicy;
     // registry.values are already policy-filtered by loadPluginRegistry; caller-supplied opts.values
     // pass through the same enforced exclusions so every ingress into the vault is consistent.
-    const values = [...this.registry.values, ...admit(opts.values ?? [], this.policy)];
+    const values = [...this.registrySnapshot.values, ...admit(opts.values ?? [], this.policy)];
     for (const value of values) remember(this.metadataByValue, value);
     this.registrySize = values.length;
     this.vault = new Vault(values);
+  }
+
+  /**
+   * Re-run the registry-source plugins and register any NEW values into the shared permanent vault —
+   * the live-registry path (gateway "Publish to proxy" → managed registry file → reload endpoint).
+   * Values arrive already policy-filtered by {@link loadPluginRegistry} (the same enforced-exclusion
+   * seam as launch, under the same trusted set). New values are immediately protected: `size` /
+   * `protecting` are live, every subsequent `beginRequest` scope (keyed scopes included) stacks over
+   * this vault, and `registerRegistryCaseVariants` reads the shared metadata map per request.
+   *
+   * DELETIONS ARE INTENTIONALLY NOT PROCESSED: the vault has no delete, and removing a value
+   * mid-process would break restore of surrogates already sitting in transcripts. A value removed
+   * from the registry file keeps redacting (privacy-favoring over-redaction) until process restart.
+   *
+   * Callers that want a file edit picked up must bust the source plugin's cache first (see
+   * `resetManagedRegistryFilePluginCache`); the stat-based cache key covers ordinary edits.
+   */
+  reloadRegistryValues(): { added: number; total: number } {
+    const snapshot = loadPluginRegistry(this.plugins, this.trusted);
+    const fresh = snapshot.values.filter((value) => value.value && !this.metadataByValue.has(value.value));
+    for (const value of fresh) remember(this.metadataByValue, value);
+    const added = this.vault.register(fresh);
+    this.registrySnapshot = snapshot; // discovery/policyExcluded lines in /__ficta/status reflect the reload
+    return { added, total: this.vault.size };
   }
 
   get size(): number {
@@ -260,6 +293,11 @@ class ProtectionRequestScope implements RequestScope {
     const fresh = seen ? leaves.filter((_, i) => !seen.has(hashes[i] ?? "")) : leaves;
     const complete = await this.registerDetectedValues(fresh.join("\n"), { ...detectCtx, surface: "body" });
     if (seen && complete) for (const hash of hashes) seen.add(hash);
+    // Cover every casing of a registered word/name-like value present in this body (a place/party name
+    // registered once as "Mauritius" must also catch "MAURITIUS" in a heading — the vault matcher is
+    // case-sensitive). Runs over the full leaf surface, not just fresh leaves, so a caps twin in resent
+    // content is caught too.
+    this.registerRegistryCaseVariants(leaves.join("\n"));
     // The body preserves path-like tokens (the default): agent tool calls (`cd`, `Read`, `Edit`) live
     // here, and a registered value inside a real path is far more likely a path segment than a secret,
     // so mangling the path would break the agent. Only headers opt out of preservation — see server.ts.
@@ -372,6 +410,40 @@ class ProtectionRequestScope implements RequestScope {
   }
 
   /**
+   * Register the case-variants of registered (permanent) registry values that appear in this body into
+   * the ephemeral detected layer — so a value registered once (e.g. a client/place name "Mauritius") is
+   * redacted in every casing present ("MAURITIUS", "mauritius"), which the case-sensitive vault matcher
+   * would otherwise miss. Each variant attributes to its registry entry's metadata (so the audit still
+   * names it) but lives in the per-request detected layer, since the shared permanent vault is immutable.
+   *
+   * Scoped to word/name-like values via {@link isCaseExpandable}: folding the casing of an opaque secret,
+   * key, ID, account number, or amount is meaningless and risks matching unrelated text — those all carry
+   * digits and are skipped. A registered common word (no digits) would fold too; that is a bounded,
+   * privacy-favouring over-redaction the operator opted into by registering it.
+   *
+   * Variants go through {@link ScopedVault.registerRegistryDerived}, NOT the detected layer: a caps twin
+   * of a registered secret is still that secret, so it must keep `permanent` provenance — the `detected`
+   * restore-into-tools policy withholds it from tool-call arguments exactly like the canonical form.
+   * Registering it as `detected` would let a prompt-injected tool call exfiltrate the secret via its
+   * case variant while the canonical form is withheld.
+   */
+  private registerRegistryCaseVariants(text: string): void {
+    if (!text || this.permanentMetadata.size === 0) return;
+    const variants: ProtectedValue[] = [];
+    for (const [value, metas] of this.permanentMetadata) {
+      const meta = metas[0];
+      if (!meta || !isCaseExpandable(value)) continue;
+      for (const form of flexibleOccurrences(text, value, { caseInsensitive: true })) {
+        if (form !== value) variants.push({ ...meta, value: form });
+      }
+    }
+    if (variants.length === 0) return;
+    const admitted = admit(variants, this.policy);
+    for (const value of admitted) remember(this.detectedMetadata, value);
+    this.vault.registerRegistryDerived(admitted);
+  }
+
+  /**
    * Metadata for a raw value, used only to attribute a redaction in the audit trace / stats (name,
    * source, kind, confidence). A registered secret is authoritative: when a value is BOTH in the
    * permanent registry and detected this request, the registry's exact, operator-declared identity
@@ -447,6 +519,24 @@ function valueHash(value: string): string {
 /** Drop named candidates excluded by an enforced (trusted) registry-policy rule. */
 function admit(values: readonly ProtectedValue[], policy: RegistryPolicy): ProtectedValue[] {
   return values.filter((value) => !protectedValueExcludedBy(value, policy));
+}
+
+/**
+ * Whether a registered value is word/name-like and therefore safe to case-fold (see
+ * {@link ProtectionRequestScope.registerRegistryCaseVariants}). Opaque secrets, API keys, ID/account
+ * numbers, and amounts carry digits — their casing is meaningless and folding them risks matching
+ * unrelated text — so a value containing any digit is excluded. Require ≥2 letters so a bare token
+ * (e.g. "--") is not treated as a name.
+ */
+function isCaseExpandable(value: string): boolean {
+  if (/\d/.test(value)) return false;
+  let letters = 0;
+  for (const ch of value) {
+    if (ch >= "a" && ch <= "z") letters++;
+    else if (ch >= "A" && ch <= "Z") letters++;
+    if (letters >= 2) return true;
+  }
+  return false;
 }
 
 function remember(metadata: Map<string, ProtectedValue[]>, value: ProtectedValue): void {

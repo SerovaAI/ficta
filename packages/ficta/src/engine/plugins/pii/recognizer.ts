@@ -17,6 +17,14 @@ import type { DetectTextContext, ProtectedValue } from "../types.js";
 export interface PiiRecognizer {
   /** Stable, safe label for diagnostics (e.g. "regex", "presidio"). Never contains a value. */
   readonly name: string;
+  /**
+   * True for NLP/NER model backends (Presidio, OpenMed) that benefit from Markdown-normalized input:
+   * the PII plugin masks Markdown formatting before calling these so a party name inside a `**heading**`
+   * is not missed or mis-bounded. Format-anchored regex recognizers must see the RAW text (their
+   * email/SSN/card boundary anchors depend on exact punctuation), so they leave this false/undefined.
+   * See `pii/index.ts` detectText and `pii/markdown.ts`.
+   */
+  readonly usesNlp?: boolean;
   /** Find PII in `text`; return one ProtectedValue per distinct span found (empty if none). */
   detect(text: string, ctx: DetectTextContext): ProtectedValue[] | Promise<ProtectedValue[]>;
 }

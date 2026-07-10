@@ -84,6 +84,7 @@ interface OpenmedEntity {
 
 export const openmedRecognizer: PiiRecognizer = {
   name: "openmed",
+  usesNlp: true,
   async detect(text, ctx) {
     // One sidecar round-trip per request body; per-component header/query calls stay regex-only.
     if (!text || ctx.surface !== "body") return [];
@@ -171,13 +172,16 @@ function entitiesToValues(entities: readonly OpenmedEntity[], config: OpenmedCon
   for (const entity of entities) {
     if (entity.confidence < config.scoreThreshold) continue;
     if (allowlist && !allowlist.has(entity.label.toUpperCase())) continue;
-    if (entity.text.trim().length < MIN_PII_VALUE_LENGTH) continue;
-    if (seen.has(entity.text)) continue;
-    seen.add(entity.text);
+    // Trim like the Presidio path: Markdown normalization can leave space edges on the returned text,
+    // and a trimmed value stays a substring of the original for value-based redaction.
+    const value = entity.text.trim();
+    if (value.length < MIN_PII_VALUE_LENGTH) continue;
+    if (seen.has(value)) continue;
+    seen.add(value);
 
     out.push({
       name: categoryOf(entity.label),
-      value: entity.text,
+      value,
       source: "pii-openmed",
       kind: "pii",
       confidence: entity.confidence >= HIGH_CONFIDENCE_SCORE ? "high" : "probabilistic",

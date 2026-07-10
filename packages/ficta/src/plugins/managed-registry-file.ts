@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { envEnabled } from "../engine/env-flags.js";
 import type {
   PluginDiscovery,
@@ -157,10 +157,30 @@ function loadManagedRegistryStats(): ManagedRegistryStats {
   return cachedStats ?? emptyStats();
 }
 
-export function resetManagedRegistryFilePluginCacheForTests(): void {
+/**
+ * Counts-only view of the last managed-registry load, for the reload endpoint's response: values the
+ * operator published that were silently dropped by the `FICTA_REGISTRY_MIN_LEN` filter would otherwise
+ * read as a successful no-op. Never contains values or file contents.
+ */
+export function managedRegistryLoadCounts(): { loaded: number; skippedTooShort: number } {
+  const stats = loadManagedRegistryStats();
+  return { loaded: stats.loaded, skippedTooShort: stats.skippedTooShort };
+}
+
+/**
+ * Drop the memoized load so the next `loadValues()` re-reads the files. The registry-reload endpoint
+ * calls this before reloading: the stat-based cache key already catches ordinary edits, but an explicit
+ * reset also covers a rewrite that lands with an identical `{mtimeMs, size}` fingerprint (same-ms write
+ * of a same-length file).
+ */
+export function resetManagedRegistryFilePluginCache(): void {
   cachedKey = undefined;
   cachedValues = undefined;
   cachedStats = undefined;
+}
+
+export function resetManagedRegistryFilePluginCacheForTests(): void {
+  resetManagedRegistryFilePluginCache();
 }
 
 function managedRegistrySetupSource(env: NodeJS.ProcessEnv): RegistrySetupSource {
@@ -375,5 +395,19 @@ function cacheKey(): string {
     enabled: managedRegistryEnabled(),
     paths: managedRegistryPathSetting(),
     minLen: registryMinLen(),
+    // Per-file stat fingerprints so an edited/created/deleted registry file busts the cache. Without
+    // this the key was content-blind: a gateway "publish" that rewrote the file returned stale values
+    // to every consumer (per-request log meta, discover(), doctor) until the process restarted.
+    files: managedRegistryPaths().map((file) => fileFingerprint(file)),
   });
+}
+
+/** `{mtimeMs, size}` for the cache key; `null` for a missing/unreadable file so create/delete bust too. */
+function fileFingerprint(file: string): { mtimeMs: number; size: number } | null {
+  try {
+    const stat = statSync(file);
+    return { mtimeMs: stat.mtimeMs, size: stat.size };
+  } catch {
+    return null;
+  }
 }
