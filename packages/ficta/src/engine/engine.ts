@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { detectorFailClosed } from "./detection-policy.js";
-import { expandEntities, expansionSpans, isCaseExpandable } from "./expander.js";
+import { expandEntities, expansionSpans } from "./expander.js";
 import {
   type Entity,
   mapJoinedOffsets,
@@ -380,7 +380,6 @@ class ProtectionRequestScope implements RequestScope {
 
     const allEntities = [...registryEntities, ...detectedEntities];
     if (allEntities.length > MAX_BODY_ENTITIES) throw new RedactionInvariantError("body entity limit exceeded");
-    occurrences.push(...exactEntityOccurrences(document.leaves, allEntities));
     occurrences.push(
       ...expandEntities(
         document.leaves.map((leaf) => leaf.text),
@@ -428,7 +427,18 @@ class ProtectionRequestScope implements RequestScope {
 
     const redactedBody = renderBodyDocument(document, replacements);
     const leakValues = this.vault.leakValues(redactedBody);
+    const leakValueSet = new Set(leakValues);
     const leakOwners = entityOwners(allEntities);
+    // The string catalog catches exact known surfaces. Re-scan the already-redacted body against
+    // logical entity policy as an independent backstop for case/whitespace variants that were not
+    // admitted to the catalog because downstream resolution/catalog registration missed them.
+    for (const [surface, owner] of entityPolicyLeakOwners(redactedBody, allEntities, this.vault)) {
+      if (!leakValueSet.has(surface)) {
+        leakValueSet.add(surface);
+        leakValues.push(surface);
+      }
+      preferOwner(leakOwners, surface, owner);
+    }
     const details: BodyRedactionDetails = {
       body: redactedBody,
       count: found.size,
@@ -695,7 +705,7 @@ function entitiesFromValues(values: readonly ProtectedValue[], authority: Entity
   return [...byValue].map(([canonical, meta]) => ({
     id: `${authority}:${valueHash(canonical)}`,
     canonical,
-    forms: [canonical],
+    forms: [],
     authority,
     meta,
   }));
@@ -706,23 +716,6 @@ function exactDetectorOccurrences(leaves: readonly BodyLeaf[], value: string, en
   for (const leaf of leaves) {
     for (const span of expansionSpans(leaf.text, value)) {
       occurrences.push({ leaf: leaf.index, ...span, origin: "detector", entity });
-    }
-  }
-  return occurrences;
-}
-
-function exactEntityOccurrences(leaves: readonly BodyLeaf[], entities: readonly Entity[]): Occurrence[] {
-  const occurrences: Occurrence[] = [];
-  for (const entity of entities) {
-    for (const form of new Set([entity.canonical, ...entity.forms])) {
-      // expandEntities already includes exact surfaces for detected and case-expandable registry
-      // forms; only opaque/digit-bearing registry forms need this exact-only pass.
-      if (entity.authority === "detected" || isCaseExpandable(form)) continue;
-      for (const leaf of leaves) {
-        for (const span of expansionSpans(leaf.text, form)) {
-          occurrences.push({ leaf: leaf.index, ...span, origin: "expansion", entity });
-        }
-      }
     }
   }
   return occurrences;
@@ -740,13 +733,37 @@ function groupResolvedByLeaf(resolved: readonly ResolvedOccurrence[]): Map<numbe
 
 function entityOwners(entities: readonly Entity[]): Map<string, Entity> {
   const owners = new Map<string, Entity>();
-  for (const entity of [...entities].sort((a, b) =>
-    a.authority === b.authority ? 0 : a.authority === "registry" ? 1 : -1,
-  )) {
-    owners.set(entity.canonical, entity);
-    for (const form of entity.forms) owners.set(form, entity);
+  for (const entity of entities) {
+    preferOwner(owners, entity.canonical, entity);
+    for (const form of entity.forms) preferOwner(owners, form.value, entity);
   }
   return owners;
+}
+
+/** Logical-entity leak scan, deliberately independent of which surfaces the resolver registered. */
+function entityPolicyLeakOwners(body: string, entities: readonly Entity[], vault: ScopedVault): Map<string, Entity> {
+  const document = bodyDocument(body);
+  const owners = new Map<string, Entity>();
+  const occurrences = expandEntities(
+    document.leaves.map((leaf) => leaf.text),
+    entities,
+  );
+  if (occurrences.length > MAX_BODY_OCCURRENCES) {
+    throw new RedactionInvariantError("body leak-gate occurrence limit exceeded");
+  }
+  for (const occurrence of occurrences) {
+    const leaf = document.leaves[occurrence.leaf];
+    if (!leaf || !vault.isRedactableRange(leaf.text, occurrence.start, occurrence.end)) continue;
+    preferOwner(owners, occurrence.surface, occurrence.entity);
+  }
+  return owners;
+}
+
+function preferOwner(owners: Map<string, Entity>, surface: string, candidate: Entity): void {
+  const current = owners.get(surface);
+  if (!current || (current.authority === "detected" && candidate.authority === "registry")) {
+    owners.set(surface, candidate);
+  }
 }
 
 /** Content hash for the swept-leaf ledger; hashes are retained, never the leaf text itself. */

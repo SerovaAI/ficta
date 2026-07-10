@@ -1,4 +1,4 @@
-import type { Entity, Occurrence } from "./occurrence.js";
+import type { Entity, EntityForm, Occurrence } from "./occurrence.js";
 
 export interface ExpansionOptions {
   caseInsensitive?: boolean;
@@ -44,14 +44,23 @@ export function expandEntities(leaves: readonly string[], entities: readonly Ent
   const seen = new Set<string>();
 
   for (const entity of entities) {
-    const forms = [...new Set([entity.canonical, ...entity.forms].filter(Boolean))];
+    const forms = matchingForms(entity);
     for (const form of forms) {
-      if (entity.authority === "registry" && !isCaseExpandable(form)) continue;
+      // Registered opaque/digit-bearing forms retain exact-case matching. Detected values retain
+      // their existing case expansion because the detector has already admitted the entity.
+      const caseInsensitive = entity.authority === "detected" || isCaseExpandable(form.value);
       for (let leaf = 0; leaf < leaves.length; leaf++) {
         const text = leaves[leaf];
         if (text === undefined) continue;
-        for (const span of expansionSpans(text, form, { caseInsensitive: true, wordBounded: true })) {
-          if (entity.authority === "detected" && isLowercaseSingleWord(span.surface) && !isLowercaseSingleWord(form)) {
+        for (const span of expansionSpans(text, form.value, {
+          caseInsensitive,
+          wordBounded: form.boundary === "token",
+        })) {
+          if (
+            entity.authority === "detected" &&
+            isLowercaseSingleWord(span.surface) &&
+            !isLowercaseSingleWord(form.value)
+          ) {
             continue;
           }
           const key = `${entity.id}\0${leaf}\0${span.start}\0${span.end}`;
@@ -63,6 +72,20 @@ export function expandEntities(leaves: readonly string[], entities: readonly Ent
     }
   }
   return occurrences;
+}
+
+/** Canonical/full values are substring matches; only explicitly declared aliases may be token-bounded. */
+function matchingForms(entity: Entity): EntityForm[] {
+  const forms = new Map<string, EntityForm>();
+  if (entity.canonical) forms.set(entity.canonical, { value: entity.canonical, boundary: "substring" });
+  for (const form of entity.forms) {
+    if (!form.value) continue;
+    const existing = forms.get(form.value);
+    // The less restrictive full-form policy wins if malformed input declares the canonical value
+    // again as a bounded alias. Matching a registered canonical must never depend on alias metadata.
+    if (!existing || existing.boundary === "token") forms.set(form.value, form);
+  }
+  return [...forms.values()];
 }
 
 /** Word/name-like registry values may safely gain case variants; opaque digit-bearing values may not. */

@@ -3,12 +3,21 @@ import { RedactionInvariantError } from "./redaction-engine.js";
 
 export type EntityAuthority = "registry" | "detected";
 export type OccurrenceOrigin = "detector" | "expansion" | "clipped";
+export type EntityFormBoundary = "substring" | "token";
+
+/** A declared non-canonical form with an explicit matching boundary policy. */
+export interface EntityForm {
+  readonly value: string;
+  readonly boundary: EntityFormBoundary;
+}
 
 /** One logical protected thing; declared aliases/forms share the same stable identity and policy. */
 export interface Entity {
   readonly id: string;
+  /** Full canonical values always match as unbounded substrings, preserving exact registry semantics. */
   readonly canonical: string;
-  readonly forms: readonly string[];
+  /** Additional full forms or short aliases; short aliases must opt into token boundaries explicitly. */
+  readonly forms: readonly EntityForm[];
   readonly authority: EntityAuthority;
   readonly meta: ProtectedValue;
 }

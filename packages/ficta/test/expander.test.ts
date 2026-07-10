@@ -32,7 +32,11 @@ describe("expandEntities", () => {
     const entity = fixtureEntity({
       id: "registry:acme",
       canonical: "Acme Holdings",
-      forms: ["Acme Holdings", "AH", "AH"],
+      forms: [
+        { value: "Acme Holdings", boundary: "token" },
+        { value: "AH", boundary: "token" },
+        { value: "AH", boundary: "token" },
+      ],
       authority: "registry",
     });
     const leaves = ["ACME HOLDINGS retained AH.", "AHEAD is unrelated; Acme Holdings signed."];
@@ -51,16 +55,18 @@ describe("expandEntities", () => {
   });
 
   it("keeps digit-bearing registry values out of case expansion", () => {
-    const entity = fixtureEntity({ canonical: "Matter NSB-2026", forms: ["Matter NSB-2026"], authority: "registry" });
-    expect(expandEntities(["MATTER NSB-2026"], [entity])).toEqual([]);
+    const entity = fixtureEntity({ canonical: "Matter NSB-2026", forms: [], authority: "registry" });
+    expect(expandEntities(["MATTER NSB-2026", "tagMatter NSB-2026tag"], [entity])).toEqual([
+      expect.objectContaining({ leaf: 1, surface: "Matter NSB-2026" }),
+    ]);
   });
 
   it("preserves the detected lowercase-single-word guard but expands multi-token names", () => {
-    const will = fixtureEntity({ id: "detected:will", canonical: "Will", forms: ["Will"], authority: "detected" });
+    const will = fixtureEntity({ id: "detected:will", canonical: "Will", forms: [], authority: "detected" });
     const person = fixtureEntity({
       id: "detected:person",
       canonical: "Viven Bhowani",
-      forms: ["Viven Bhowani"],
+      forms: [],
       authority: "detected",
     });
     const surfaces = expandEntities(
@@ -79,7 +85,7 @@ function fixtureEntity(overrides: Partial<Entity>): Entity {
   return {
     id: "fixture",
     canonical: "Fixture Entity",
-    forms: ["Fixture Entity"],
+    forms: [],
     authority: "detected",
     meta: {
       name: "person",

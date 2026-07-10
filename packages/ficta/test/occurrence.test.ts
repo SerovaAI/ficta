@@ -236,7 +236,7 @@ function entity(
   return {
     id,
     canonical,
-    forms: [canonical],
+    forms: [],
     authority,
     meta: { name: id, value: canonical, source: "test", kind: authority === "registry" ? "secret" : "pii", confidence },
   };

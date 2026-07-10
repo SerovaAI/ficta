@@ -111,6 +111,63 @@ describe("occurrence-based body redaction", () => {
     expect(engine.restoreJson(redacted.body)).toContain(value.toUpperCase());
   });
 
+  it("redacts registered full values inside larger word tokens in every casing", async () => {
+    const value = "Copper Kite";
+    for (const style of ["opaque", "typed"] as const) {
+      process.env.FICTA_SURROGATE_STYLE = style;
+      for (const surface of ["tagCOPPER KITEtag", "tagCopper Kitetag"]) {
+        const engine = new ProtectionEngine({
+          plugins: [],
+          values: [{ name: "PROJECT", value, source: "fixture", kind: "secret", confidence: "exact" }],
+        });
+        const redacted = await engine.redactBodyDetailed(JSON.stringify({ content: surface }));
+
+        expect(redacted.count).toBe(1);
+        expect(redacted.leaks).toBe(0);
+        expect(redacted.body).not.toContain(surface);
+        expect(engine.restoreJson(redacted.body)).toContain(surface);
+      }
+    }
+  });
+
+  it("redacts embedded case variants of detected PII in the same request and later keyed turns", async () => {
+    const value = "Copper Kite";
+    const sameRequestDetector: DetectorPlugin = {
+      kind: "detector",
+      name: "fixture-detector",
+      bodyDetectionView: "content",
+      detectText: (text) => {
+        const start = text.indexOf(value);
+        return start === -1 ? [] : [pii("person", value, [{ start, end: start + value.length }])];
+      },
+    };
+    const sameRequest = new ProtectionEngine({ plugins: [sameRequestDetector] });
+    const body = JSON.stringify({ content: `${value}; tagCOPPER KITEtag` });
+    const first = await sameRequest.redactBodyDetailed(body);
+    expect(first.count).toBe(2);
+    expect(first.leaks).toBe(0);
+    expect(first.body).not.toContain(value);
+    expect(first.body).not.toContain("tagCOPPER KITEtag");
+    expect(sameRequest.restoreJson(first.body)).toContain(`${value}; tagCOPPER KITEtag`);
+
+    let calls = 0;
+    const onceDetector: DetectorPlugin = {
+      kind: "detector",
+      name: "fixture-detector",
+      detectText: () => (++calls === 1 ? [pii("person", value)] : []),
+    };
+    const persisted = new ProtectionEngine({ plugins: [onceDetector] });
+    const key = "org:embedded-detected";
+    await persisted.beginRequest(key).redactBodyDetailed(JSON.stringify({ content: value }));
+    for (const surface of ["tagCOPPER KITEtag", "tagCopper Kitetag"]) {
+      const redacted = await persisted.beginRequest(key).redactBodyDetailed(JSON.stringify({ content: surface }));
+      expect(redacted.count).toBe(1);
+      expect(redacted.leaks).toBe(0);
+      expect(redacted.body).not.toContain(surface);
+      expect(persisted.beginRequest(key).restoreJson(redacted.body)).toContain(surface);
+    }
+  });
+
   it("keeps clipped residuals token-only across keyed turns", async () => {
     const registry = "Project Copper Kite";
     const detected = "Project:** Project Copper Kite";
@@ -144,6 +201,33 @@ describe("occurrence-based body redaction", () => {
       expect(result.body).not.toContain(registry);
       expect(result.body).not.toContain(right);
       expect(engine.restoreText(result.body)).toContain(detected);
+    }
+  });
+
+  it("redacts every seeded full-form occurrence regardless of casing or Unicode word adjacency", async () => {
+    const random = mulberry32(0x424f554e);
+    const wordEdges = ["tag", "_", "é", "界", "9"];
+    const separators = [" ", "\n", "\r\n  ", "\t"];
+    for (let i = 0; i < 80; i++) {
+      const suffix = `${String.fromCharCode(65 + (i % 26))}${String.fromCharCode(65 + Math.floor(i / 26))}`;
+      const canonical = `Copper${suffix} Kite${suffix}`;
+      const separator = separators[Math.floor(random() * separators.length)] ?? " ";
+      const casing = Math.floor(random() * 3);
+      const rawForm = canonical.replace(" ", separator);
+      const form = casing === 0 ? rawForm : casing === 1 ? rawForm.toUpperCase() : rawForm.toLowerCase();
+      const left = wordEdges[Math.floor(random() * wordEdges.length)] ?? "tag";
+      const right = wordEdges[Math.floor(random() * wordEdges.length)] ?? "tag";
+      const surface = `${left}${form}${right}`;
+      const engine = new ProtectionEngine({
+        plugins: [],
+        values: [{ name: "PROJECT", value: canonical, source: "fixture", kind: "secret", confidence: "exact" }],
+      });
+      const redacted = await engine.redactBodyDetailed(JSON.stringify({ content: surface }));
+
+      expect(redacted.count, JSON.stringify({ i, canonical, form, surface })).toBe(1);
+      expect(redacted.leaks).toBe(0);
+      expect(JSON.parse(redacted.body).content).not.toContain(form);
+      expect(JSON.parse(engine.restoreJson(redacted.body)).content).toBe(surface);
     }
   });
 });
