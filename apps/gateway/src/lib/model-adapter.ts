@@ -43,8 +43,7 @@ export function createModelAdapter({
   const defaultHeaders = {
     // Advertises that this client can render restore-highlight markers — a static capability (the UI
     // always knows how). It's an internal handshake header (the proxy strips it before upstream), so
-    // it's sent unconditionally; the proxy only emits markers when global trace audit and this thread's
-    // trace capture are both enabled.
+    // it's sent unconditionally and remains independent from sensitive raw trace/audit capture.
     [FICTA_RESTORE_HIGHLIGHT_HEADER]: "1",
     [FICTA_TRACE_CAPTURE_HEADER]: traceEnabled ? "1" : "0",
     ...(protectionTicket ? { [FICTA_PROTECTION_TICKET_HEADER]: protectionTicket } : {}),

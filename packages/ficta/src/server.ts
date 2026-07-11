@@ -13,6 +13,7 @@ import {
   FICTA_RESTORE_HIGHLIGHT_END,
   FICTA_RESTORE_HIGHLIGHT_HEADER,
   FICTA_RESTORE_HIGHLIGHT_METADATA,
+  FICTA_RESTORE_HIGHLIGHT_ORIGIN,
   FICTA_RESTORE_HIGHLIGHT_START,
   FICTA_SCOPE_HEADER,
   FICTA_STATUS_PATH,
@@ -365,9 +366,10 @@ export async function startProxy(
     const captureRawBodies = traceCaptureFrom(c, runtimeTraceCaptureEnabled);
     const captureTraceAudit = captureRawBodies && cfg.traceAudit;
     const restoreHighlightMarkers =
-      captureTraceAudit && c.req.header(FICTA_RESTORE_HIGHLIGHT_HEADER) === "1"
+      c.req.header(FICTA_RESTORE_HIGHLIGHT_HEADER) === "1"
         ? {
             start: FICTA_RESTORE_HIGHLIGHT_START,
+            origin: FICTA_RESTORE_HIGHLIGHT_ORIGIN,
             metadata: FICTA_RESTORE_HIGHLIGHT_METADATA,
             end: FICTA_RESTORE_HIGHLIGHT_END,
           }
@@ -489,7 +491,7 @@ export async function startProxy(
     headers.delete("accept-encoding");
     headers.delete(FICTA_SCOPE_HEADER); // internal routing metadata — must never reach the upstream vendor
     headers.delete(FICTA_TRACE_CAPTURE_HEADER); // internal trace/audit selector — must never reach upstream
-    headers.delete(FICTA_RESTORE_HIGHLIGHT_HEADER); // trace-demo UI hint — must never reach the upstream vendor
+    headers.delete(FICTA_RESTORE_HIGHLIGHT_HEADER); // client display capability — must never reach upstream
     headers.delete(FICTA_PROTECTION_TICKET_HEADER); // opaque preflight capability — must never reach upstream
 
     let bodyToSend: string | undefined;

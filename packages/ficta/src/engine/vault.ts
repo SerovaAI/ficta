@@ -1,6 +1,7 @@
 import { envFlag, type RestoreIntoToolsPolicy, restoreIntoToolsPolicy } from "./env-flags.js";
 import { expansionSpans, flexiblePatternSource } from "./expander.js";
 import type { ProtectedValueKind } from "./plugins/types.js";
+import type { RestoreOrigin } from "./redaction-engine.js";
 import { type SurrogateStrategy, surrogateStrategy } from "./surrogate.js";
 
 /**
@@ -35,6 +36,7 @@ export interface VaultTraceValue {
 
 interface RestoreMarkers {
   start: string;
+  origin?: string;
   metadata?: string;
   end: string;
 }
@@ -75,6 +77,7 @@ export class SurrogateTable {
   constructor(
     readonly surrogate: SurrogateStrategy,
     readonly provenance: LayerProvenance = "permanent",
+    readonly restoreOrigin: RestoreOrigin = provenance === "detected" ? "detected" : "registry",
   ) {}
 
   get size(): number {
@@ -225,6 +228,14 @@ export abstract class VaultView {
     return undefined;
   }
 
+  /** UI provenance of the first layer mapping `surrogate`, matching value/redaction precedence. */
+  private restoreOriginFor(surrogate: string): RestoreOrigin | undefined {
+    for (const layer of this.layers) {
+      if (layer.toVal.has(surrogate)) return layer.restoreOrigin;
+    }
+    return undefined;
+  }
+
   /**
    * Surrogate and its layer's provenance for a raw value, in one pass over the layers (first match
    * wins, mirroring redaction order). traceValues needs both; the same layer that holds the surrogate
@@ -312,7 +323,7 @@ export abstract class VaultView {
       const value = this.valueFor(m);
       if (value === undefined) return m;
       this.restored.add(value);
-      return markRestoredValue(value, m, opts.markers);
+      return markRestoredValue(value, m, this.restoreOriginFor(m), opts.markers);
     });
   }
 
@@ -419,7 +430,7 @@ export abstract class VaultView {
       const value = this.valueFor(m);
       if (value === undefined) return m;
       this.restored.add(value);
-      return jsonStringEscape(markRestoredValue(value, m, opts.markers));
+      return jsonStringEscape(markRestoredValue(value, m, this.restoreOriginFor(m), opts.markers));
     });
   }
 
@@ -641,7 +652,7 @@ export class ScopedVault extends VaultView {
     detected: SurrogateTable = new SurrogateTable(permanent.surrogate, "detected"),
     registryDerived: SurrogateTable = new SurrogateTable(permanent.surrogate, "permanent"),
   ) {
-    const userProtected = new SurrogateTable(permanent.surrogate, "permanent");
+    const userProtected = new SurrogateTable(permanent.surrogate, "permanent", "user");
     // Registry-derived forms (e.g. the caps twin of a registered secret found in a request body)
     // live in a separate layer because they ARE the registry secret in another casing. The layer is
     // request-owned by default and may be shared by a keyed scope; either way its `permanent`
@@ -1049,11 +1060,16 @@ function jsonStringEscape(value: string): string {
   return json.slice(1, -1);
 }
 
-function markRestoredValue(value: string, surrogate: string, markers: RestoreMarkers | undefined): string {
+function markRestoredValue(
+  value: string,
+  surrogate: string,
+  origin: RestoreOrigin | undefined,
+  markers: RestoreMarkers | undefined,
+): string {
   if (!markers) return value;
-  return markers.metadata
-    ? `${markers.start}${surrogate}${markers.metadata}${value}${markers.end}`
-    : `${markers.start}${value}${markers.end}`;
+  if (!markers.metadata) return `${markers.start}${value}${markers.end}`;
+  const originMetadata = markers.origin && origin ? `${markers.origin}${origin}` : "";
+  return `${markers.start}${surrogate}${originMetadata}${markers.metadata}${value}${markers.end}`;
 }
 
 function completeRestoreMarkerSpans(

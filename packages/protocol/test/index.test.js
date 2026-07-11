@@ -5,6 +5,7 @@ import {
   FICTA_PROTECTION_PREVIEW_PATH,
   FICTA_PROTECTION_TICKET_HEADER,
   FICTA_REGISTRY_REVISION_HEADER,
+  FICTA_RESTORE_HIGHLIGHT_ORIGIN,
   FICTA_SCOPE_HEADER,
   FICTA_TRACE_CAPTURE_HEADER,
   FICTA_TRACE_CAPTURE_PATH,
@@ -18,6 +19,10 @@ import {
   normalizePiiBackends,
   normalizeRestoreIntoToolsPolicy,
 } from "../src/index.js";
+
+it("exports the restore-highlight origin delimiter", () => {
+  assert.equal(FICTA_RESTORE_HIGHLIGHT_ORIGIN, "\u001eFICTA_RESTORE_ORIGIN\u001e");
+});
 
 function statsPayload() {
   return {

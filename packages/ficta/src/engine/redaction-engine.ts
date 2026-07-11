@@ -207,17 +207,22 @@ export interface RestoreTraceDetails {
 
 export interface RestoreMarkers {
   start: string;
+  /** Optional delimiter followed by the winning protection origin (`registry`, `detected`, or `user`). */
+  origin?: string;
   metadata?: string;
   end: string;
 }
 
 export interface RestoreOptions {
   /**
-   * Optional client-facing markers around restored human text. Used by the Gateway trace demo to
-   * render highlights; callers must strip or render these markers before resending transcripts.
+   * Optional client-facing markers around restored human text. Used by clients that explicitly
+   * advertise restore-highlight support; callers must strip or render them before resending transcripts.
    */
   markers?: RestoreMarkers;
 }
+
+/** Mirrors the public protocol's ProtectionPreviewOrigin without coupling the engine boundary to product packages. */
+export type RestoreOrigin = "registry" | "detected" | "user";
 
 export interface BodyRedactionResult {
   body: string;

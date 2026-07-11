@@ -1,6 +1,7 @@
 import {
   FICTA_RESTORE_HIGHLIGHT_END,
   FICTA_RESTORE_HIGHLIGHT_METADATA,
+  FICTA_RESTORE_HIGHLIGHT_ORIGIN,
   FICTA_RESTORE_HIGHLIGHT_START,
 } from "@serovaai/ficta-protocol";
 import type { UIMessage } from "@tanstack/ai-react";
@@ -9,7 +10,7 @@ import type { RestoreHighlight } from "@/lib/restore-highlights";
 import { createRestoreHighlightStore, deriveRestoreHighlightDisplay } from "@/lib/use-restore-highlight-display";
 
 const SURROGATE = "FICTA_EMAIL_1234567890abcdef1234567890abcdef";
-const MARKED = `${FICTA_RESTORE_HIGHLIGHT_START}${SURROGATE}${FICTA_RESTORE_HIGHLIGHT_METADATA}jane.doe@example.com${FICTA_RESTORE_HIGHLIGHT_END}`;
+const MARKED = `${FICTA_RESTORE_HIGHLIGHT_START}${SURROGATE}${FICTA_RESTORE_HIGHLIGHT_ORIGIN}detected${FICTA_RESTORE_HIGHLIGHT_METADATA}jane.doe@example.com${FICTA_RESTORE_HIGHLIGHT_END}`;
 
 function assistant(content: string, id = "assistant-1"): UIMessage {
   return { id, role: "assistant", parts: [{ type: "text", content }] } as UIMessage;
@@ -36,10 +37,10 @@ describe("deriveRestoreHighlightDisplay", () => {
 
     expect(partOf(displayMessages[1], 0).content).toBe("Email: jane.doe@example.com");
     expect(partOf(displayMessages[1], 0).restorations).toEqual([
-      { value: "jane.doe@example.com", surrogate: SURROGATE },
+      { value: "jane.doe@example.com", surrogate: SURROGATE, origin: "detected" },
     ]);
     expect(restoreHighlightsAvailable).toBe(true);
-    expect(store.get(1)?.get(0)).toEqual([{ value: "jane.doe@example.com", surrogate: SURROGATE }]);
+    expect(store.get(1)?.get(0)).toEqual([{ value: "jane.doe@example.com", surrogate: SURROGATE, origin: "detected" }]);
   });
 
   it("re-attaches highlights to a finished marker-free message whose text has DRIFTED", () => {
@@ -52,7 +53,7 @@ describe("deriveRestoreHighlightDisplay", () => {
     const { displayMessages, restoreHighlightsAvailable } = deriveRestoreHighlightDisplay(finished, store);
 
     expect(partOf(displayMessages[1], 0).restorations).toEqual([
-      { value: "jane.doe@example.com", surrogate: SURROGATE },
+      { value: "jane.doe@example.com", surrogate: SURROGATE, origin: "detected" },
     ]);
     expect(partOf(displayMessages[1], 0).content).toBe("Email: jane.doe@example.com\n");
     expect(restoreHighlightsAvailable).toBe(true);
@@ -66,7 +67,7 @@ describe("deriveRestoreHighlightDisplay", () => {
     const { displayMessages } = deriveRestoreHighlightDisplay(finished, store);
 
     expect(partOf(displayMessages[1], 0).restorations).toEqual([
-      { value: "jane.doe@example.com", surrogate: SURROGATE },
+      { value: "jane.doe@example.com", surrogate: SURROGATE, origin: "detected" },
     ]);
   });
 
