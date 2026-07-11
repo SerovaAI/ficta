@@ -16,7 +16,6 @@ import {
 } from "@/lib/storage/protected-registry";
 import {
   PROTECTED_REGISTRY_ENTRY_STATUSES,
-  PROTECTED_REGISTRY_ENTRY_TYPES,
   type ProtectedRegistryEntry,
   type ProtectedRegistryEntryInput,
   type ProtectedRegistryEntryStatus,
@@ -36,24 +35,10 @@ type Draft = {
 
 const EMPTY_DRAFT: Draft = {
   matterId: "",
-  type: "client",
+  type: "other",
   value: "",
   aliases: "",
   status: "approved",
-};
-
-const TYPE_LABELS: Record<ProtectedRegistryEntryType, string> = {
-  client: "Client",
-  counterparty: "Counterparty",
-  person: "Person",
-  matter: "Matter",
-  case: "Case",
-  contract: "Contract",
-  account: "Account",
-  project: "Project",
-  vendor: "Vendor",
-  custodian: "Custodian",
-  other: "Other",
 };
 
 const STATUS_LABELS: Record<ProtectedRegistryEntryStatus, string> = {
@@ -208,8 +193,8 @@ export function ProtectedRegistrySection({ showHeader = true }: { showHeader?: b
         <div className="pt-6 pb-1">
           <h3 className="text-sm font-semibold">Protected Registry</h3>
           <p className="pt-1 text-muted-foreground text-xs leading-relaxed">
-            Approved values become exact-match protection candidates for the proxy. Suggested rows stay review-only
-            until an admin approves them.
+            Approved values are protected by exact match across this workspace. Suggested rows stay review-only until an
+            admin approves them.
           </p>
         </div>
       ) : null}
@@ -385,67 +370,36 @@ function ManualEntryForm({
       <div>
         <h4 className="text-sm font-medium">{editing ? "Edit protected value" : "Protect a value"}</h4>
         <p className="mt-1 max-w-prose text-muted-foreground text-xs leading-relaxed">
-          Add the exact name, matter, account, or identifier ficta should redact before prompts leave this workspace.
+          Add the exact text ficta should redact before prompts leave this workspace.
         </p>
       </div>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <div className="sm:col-span-2">
-          <LabeledInput
-            label="Text to protect"
-            htmlFor="protected-registry-value"
-            hint="Use the exact spelling users are likely to paste into chat."
-          >
-            <Input
-              id="protected-registry-value"
-              value={draft.value}
-              placeholder="Northstar Biologics (Pty) Ltd"
-              onChange={(event) => onDraftChange({ ...draft, value: event.target.value })}
-            />
-          </LabeledInput>
-        </div>
-
-        <LabeledInput label="Category" htmlFor="protected-registry-type">
-          <Select
-            id="protected-registry-type"
-            value={draft.type}
-            onChange={(value) => onDraftChange({ ...draft, type: value as ProtectedRegistryEntryType })}
-          >
-            {PROTECTED_REGISTRY_ENTRY_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {TYPE_LABELS[type]}
-              </option>
-            ))}
-          </Select>
-        </LabeledInput>
-
+      <div className="mt-3 grid gap-3">
         <LabeledInput
-          label="Matter or scope"
-          htmlFor="protected-registry-matter-id"
-          hint="Optional. Leave blank to protect this value everywhere."
+          label="Text to protect"
+          htmlFor="protected-registry-value"
+          hint="Use the exact spelling users are likely to paste into chat."
         >
           <Input
-            id="protected-registry-matter-id"
-            value={draft.matterId}
-            placeholder="NSB-2026-0147"
-            onChange={(event) => onDraftChange({ ...draft, matterId: event.target.value })}
+            id="protected-registry-value"
+            value={draft.value}
+            placeholder="Northstar Biologics (Pty) Ltd"
+            onChange={(event) => onDraftChange({ ...draft, value: event.target.value })}
           />
         </LabeledInput>
 
-        <div className="sm:col-span-2">
-          <LabeledInput
-            label="Also protect"
-            htmlFor="protected-registry-aliases"
-            hint="Optional. Separate nicknames, abbreviations, or alternate spellings with semicolons."
-          >
-            <Input
-              id="protected-registry-aliases"
-              value={draft.aliases}
-              placeholder="Northstar; NBL"
-              onChange={(event) => onDraftChange({ ...draft, aliases: event.target.value })}
-            />
-          </LabeledInput>
-        </div>
+        <LabeledInput
+          label="Also protect"
+          htmlFor="protected-registry-aliases"
+          hint="Optional. Separate nicknames, abbreviations, or alternate spellings with semicolons."
+        >
+          <Input
+            id="protected-registry-aliases"
+            value={draft.aliases}
+            placeholder="Northstar; NBL"
+            onChange={(event) => onDraftChange({ ...draft, aliases: event.target.value })}
+          />
+        </LabeledInput>
 
         {editing ? (
           <LabeledInput
@@ -500,13 +454,13 @@ function ImportPanel({
     <div>
       <h4 className="text-sm font-medium">Import CSV</h4>
       <p className="mt-1 text-muted-foreground text-xs leading-relaxed">
-        Header row supported: <code className="font-mono">scope_id,type,value,aliases,status</code>.
+        Header row supported: <code className="font-mono">value,aliases,status</code>.
       </p>
       <textarea
         value={value}
         rows={8}
         className="mt-3 min-h-36 w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm leading-5 outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        placeholder={`scope_id,type,value,aliases,status\nPROJ-1049,project,Northstar Renewal,"Northstar; Renewal",approved`}
+        placeholder={`value,aliases,status\nNorthstar Renewal,"Northstar; Renewal",approved`}
         onChange={(event) => onChange(event.target.value)}
       />
       <div className="mt-3 flex items-center gap-2">
@@ -557,17 +511,11 @@ function ProtectedRegistryTable({
         <span className="text-muted-foreground text-xs">{entries ? `${entries.length} total` : "Loading..."}</span>
       </div>
       <div className="mt-3 overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[52rem] text-left text-sm">
+        <table className="w-full min-w-[36rem] text-left text-sm">
           <thead className="border-b border-border bg-muted/50 text-muted-foreground text-xs">
             <tr>
               <th scope="col" className="px-3 py-2 font-medium">
                 Value
-              </th>
-              <th scope="col" className="px-3 py-2 font-medium">
-                Scope
-              </th>
-              <th scope="col" className="px-3 py-2 font-medium">
-                Type
               </th>
               <th scope="col" className="px-3 py-2 font-medium">
                 Status
@@ -580,13 +528,13 @@ function ProtectedRegistryTable({
           <tbody>
             {entries === undefined ? (
               <tr>
-                <td className="px-3 py-4 text-muted-foreground" colSpan={5}>
+                <td className="px-3 py-4 text-muted-foreground" colSpan={3}>
                   Loading registry...
                 </td>
               </tr>
             ) : entries.length === 0 ? (
               <tr>
-                <td className="px-3 py-4 text-muted-foreground" colSpan={5}>
+                <td className="px-3 py-4 text-muted-foreground" colSpan={3}>
                   No registry entries yet.
                 </td>
               </tr>
@@ -601,8 +549,6 @@ function ProtectedRegistryTable({
                       </div>
                     ) : null}
                   </td>
-                  <td className="px-3 py-2 align-top text-muted-foreground">{entry.matterId || "All scopes"}</td>
-                  <td className="px-3 py-2 align-top">{TYPE_LABELS[entry.type]}</td>
                   <td className="px-3 py-2 align-top">
                     <StatusBadge status={entry.status} />
                   </td>

@@ -2,34 +2,63 @@ import { describe, expect, it } from "vitest";
 import { parseProtectedRegistryImport } from "@/lib/protected-registry-import";
 
 describe("protected registry import parser", () => {
-  it("parses headed CSV rows with aliases", () => {
+  it("parses the value-first CSV format with compatibility defaults", () => {
     const result = parseProtectedRegistryImport(
       [
-        "scope_id,type,value,aliases,status",
-        'NSB-2026-0147,client,Northstar Biologics (Pty) Ltd,"Northstar; NBL",approved',
-        "NSB-2026-0147,counterparty,Proxima Medical Supplies CC,Proxima,suggested",
+        "value,aliases,status",
+        'Northstar Biologics (Pty) Ltd,"Northstar; NBL",approved',
+        "Proxima Medical Supplies CC,Proxima,suggested",
       ].join("\n"),
     );
 
     expect(result.warnings).toEqual([]);
     expect(result.entries).toEqual([
       {
-        matterId: "NSB-2026-0147",
-        type: "client",
+        matterId: "",
+        type: "other",
         value: "Northstar Biologics (Pty) Ltd",
         aliases: ["Northstar", "NBL"],
         status: "approved",
         source: "csv",
       },
       {
-        matterId: "NSB-2026-0147",
-        type: "counterparty",
+        matterId: "",
+        type: "other",
         value: "Proxima Medical Supplies CC",
         aliases: ["Proxima"],
         status: "suggested",
         source: "csv",
       },
     ]);
+  });
+
+  it("parses value-first rows without a header", () => {
+    const result = parseProtectedRegistryImport('Northstar Biologics (Pty) Ltd,"Northstar; NBL",approved');
+
+    expect(result.warnings).toEqual([]);
+    expect(result.entries).toEqual([
+      {
+        matterId: "",
+        type: "other",
+        value: "Northstar Biologics (Pty) Ltd",
+        aliases: ["Northstar", "NBL"],
+        status: "approved",
+        source: "csv",
+      },
+    ]);
+  });
+
+  it("continues to accept legacy headed CSV rows", () => {
+    const result = parseProtectedRegistryImport(
+      "scope_id,type,value,aliases,status\nNSB-2026-0147,client,Northstar Biologics (Pty) Ltd,Northstar,approved",
+    );
+
+    expect(result.warnings).toEqual([]);
+    expect(result.entries[0]).toMatchObject({
+      matterId: "NSB-2026-0147",
+      type: "client",
+      value: "Northstar Biologics (Pty) Ltd",
+    });
   });
 
   it("skips rows with unsupported types or blank values", () => {
