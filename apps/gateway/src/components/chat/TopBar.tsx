@@ -5,6 +5,7 @@ import {
   CircleOff,
   Eye,
   EyeOff,
+  FileCheck2,
   ListChecks,
   ListTodo,
   Loader2,
@@ -37,6 +38,7 @@ export function TopBar({
   restoreDisplayMode = "values",
   restoreHighlightsAvailable = false,
   onToggleRestoreDisplay,
+  onOpenEvidence,
 }: {
   /** Sidebar state + toggle. Optional so TopBar still renders without the history sidebar. */
   sidebarOpen?: boolean;
@@ -54,6 +56,7 @@ export function TopBar({
   restoreDisplayMode?: RestoreHighlightDisplayMode;
   restoreHighlightsAvailable?: boolean;
   onToggleRestoreDisplay?: () => void;
+  onOpenEvidence?: () => void;
 }) {
   const { theme, toggle } = useTheme();
   const restoreToggle = restorePrivacyToggleLabels(restoreDisplayMode);
@@ -185,6 +188,16 @@ export function TopBar({
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{restoreToggle.tooltip}</TooltipContent>
+            </Tooltip>
+          ) : null}
+          {onOpenEvidence ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={onOpenEvidence} aria-label="View thread egress evidence">
+                  <FileCheck2 className="size-4" aria-hidden />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Thread egress evidence</TooltipContent>
             </Tooltip>
           ) : null}
           <Tooltip>

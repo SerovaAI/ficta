@@ -4,7 +4,10 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
+  FICTA_EGRESS_EVENT_HEADER,
+  FICTA_EGRESS_PROOF_PATH,
   FICTA_RESTORE_HIGHLIGHT_HEADER,
+  FICTA_SCOPE_HEADER,
   FICTA_TRACE_CAPTURE_HEADER,
   FICTA_TRACE_CAPTURE_PATH,
 } from "@serovaai/ficta-protocol";
@@ -62,6 +65,101 @@ function anthropicInputDelta(index: number, partial_json: string): string {
 }
 
 describe("proxy hardening", () => {
+  it("returns a values-free egress proof only to the matching trusted scope", async () => {
+    const originalEnv = {
+      FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,
+      FICTA_LOG_LEVEL: process.env.FICTA_LOG_LEVEL,
+      FICTA_LOG_DIR: process.env.FICTA_LOG_DIR,
+    };
+    let receivedBody = "";
+    let receivedHeaders: Record<string, string | string[] | undefined> = {};
+    const upstream = createServer((req, res) => {
+      receivedHeaders = req.headers;
+      req.setEncoding("utf8");
+      req.on("data", (chunk) => {
+        receivedBody += chunk;
+      });
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      });
+    });
+    const fixturePlugin: RegistrySourcePlugin = {
+      kind: "registry-source",
+      name: "egress-proof-fixture",
+      config: { bindings: [], sections: [], envDefaults: {} },
+      setup: { registrySources: () => [] },
+      discover: () => [],
+      loadValues: () => [
+        { name: "PROOF_SECRET", value: PROOF_SECRET, source: "fixture", kind: "secret", confidence: "exact" },
+      ],
+    };
+    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    try {
+      const upstreamPort = await listen(upstream);
+      process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
+      process.env.FICTA_LOG_LEVEL = "silent";
+      process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-egress-proof-"));
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0, plugins: [fixturePlugin] });
+
+      const scope = "thread-evidence-scope";
+      const eventId = "11111111-1111-4111-8111-111111111111";
+      const chat = await fetch(`http://127.0.0.1:${proxy.port}/v1/chat/completions`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          [FICTA_SCOPE_HEADER]: scope,
+          [FICTA_EGRESS_EVENT_HEADER]: eventId,
+        },
+        body: JSON.stringify({ model: "gpt-test", messages: [{ role: "user", content: PROOF_SECRET }] }),
+      });
+      expect(chat.status).toBe(200);
+      await chat.text();
+      expect(receivedBody).not.toContain(PROOF_SECRET);
+      expect(receivedHeaders[FICTA_SCOPE_HEADER]).toBeUndefined();
+      expect(receivedHeaders[FICTA_EGRESS_EVENT_HEADER]).toBeUndefined();
+
+      const proof = await fetch(`http://127.0.0.1:${proxy.port}${FICTA_EGRESS_PROOF_PATH}`, {
+        headers: { [FICTA_SCOPE_HEADER]: scope, [FICTA_EGRESS_EVENT_HEADER]: eventId },
+      });
+      const proofText = await proof.text();
+      expect(proof.status).toBe(200);
+      expect(proofText).not.toContain(PROOF_SECRET);
+      expect(JSON.parse(proofText)).toMatchObject({
+        ok: true,
+        proof: {
+          eventId,
+          outcome: "forwarded",
+          screening: "completed",
+          model: "gpt-test",
+          redactedValues: 1,
+          survivingValues: 0,
+          labels: [
+            expect.objectContaining({
+              name: "PROOF_SECRET",
+              source: "fixture",
+              redactedValues: 1,
+              survivingValues: 0,
+            }),
+          ],
+        },
+      });
+
+      const otherScope = await fetch(`http://127.0.0.1:${proxy.port}${FICTA_EGRESS_PROOF_PATH}`, {
+        headers: { [FICTA_SCOPE_HEADER]: "another-scope", [FICTA_EGRESS_EVENT_HEADER]: eventId },
+      });
+      expect(otherScope.status).toBe(404);
+    } finally {
+      proxy?.close();
+      await close(upstream);
+      for (const [key, value] of Object.entries(originalEnv)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   it("does not write protected literals into safe metadata logs", async () => {
     const originalEnv = {
       FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,

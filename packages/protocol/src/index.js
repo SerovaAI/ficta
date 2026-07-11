@@ -5,9 +5,13 @@ export const FICTA_TRACE_CAPTURE_PATH = "/__ficta/trace-capture";
 export const FICTA_REGISTRY_RELOAD_PATH = "/__ficta/registry/reload";
 export const FICTA_REGISTRY_REVISION_HEADER = "x-ficta-registry-revision";
 export const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
+/** Loopback-only, values-free proof for one provider-bound request. */
+export const FICTA_EGRESS_PROOF_PATH = "/__ficta/egress-proof";
 export const FICTA_PROTECTION_PREVIEW_PATH = "/__ficta/protection-preview";
 export const FICTA_PROTECTION_TICKET_HEADER = "x-ficta-protection-ticket";
 export const FICTA_SCOPE_HEADER = "x-ficta-scope";
+/** Correlates a Gateway audit record with one proxy request. Never forwarded upstream. */
+export const FICTA_EGRESS_EVENT_HEADER = "x-ficta-egress-event";
 export const FICTA_TRACE_CAPTURE_HEADER = "x-ficta-trace-capture";
 export const FICTA_RESTORE_HIGHLIGHT_HEADER = "x-ficta-restore-highlights";
 export const FICTA_RESTORE_HIGHLIGHT_START = "\u001eFICTA_RESTORE_START\u001e";
@@ -287,6 +291,34 @@ export function isProtectionStatsOk(value) {
   if (!isRecord(value)) return false;
   if (value.ok !== true || value.service !== "ficta") return false;
   return isStatsSnapshot(value.stats);
+}
+
+/** @param {unknown} value */
+export function isEgressProofOk(value) {
+  if (!isRecord(value) || value.ok !== true || value.service !== "ficta" || !isRecord(value.proof)) return false;
+  const proof = value.proof;
+  return (
+    typeof proof.eventId === "string" &&
+    typeof proof.at === "string" &&
+    (proof.outcome === "forwarded" || proof.outcome === "blocked" || proof.outcome === "upstream_error") &&
+    (proof.screening === "completed" ||
+      proof.screening === "detector_unavailable" ||
+      proof.screening === "not_configured") &&
+    typeof proof.model === "string" &&
+    typeof proof.redactedValues === "number" &&
+    typeof proof.survivingValues === "number" &&
+    Array.isArray(proof.labels) &&
+    proof.labels.every(isEgressProofLabel)
+  );
+}
+
+/** @param {unknown} value */
+function isEgressProofLabel(value) {
+  return (
+    isHit(value) &&
+    (value.redactedValues === undefined || isNonNegativeInteger(value.redactedValues)) &&
+    (value.survivingValues === undefined || isNonNegativeInteger(value.survivingValues))
+  );
 }
 
 /** @param {unknown} value */

@@ -5,7 +5,7 @@
  * these plain, JSON-serializable objects, which is also what keeps a future Convex backend a drop-in.
  */
 
-import type { ProtectionStatsSnapshot, ProtectionStatsTotals } from "@serovaai/ficta-protocol";
+import type { EgressProof, ProtectionStatsSnapshot, ProtectionStatsTotals } from "@serovaai/ficta-protocol";
 import type { Provider, ReasoningEffort } from "@/lib/models";
 
 /** Per-user preferences. All fields optional; reads merge over code defaults so a fresh user is valid. */
@@ -41,6 +41,24 @@ export type { ProtectionStatsSnapshot, ProtectionStatsTotals };
 export interface ProtectionStatsDailySummary extends ProtectionStatsTotals {
   day: string;
   updatedAt: string;
+}
+
+/** Values-free, append-only evidence for one provider-bound request in a chat thread. */
+export interface ThreadEgressEvent extends EgressProof {
+  threadId: string;
+  previousHash?: string;
+  eventHash: string;
+}
+
+/** A thread-level receipt is derived from its individual immutable egress events. */
+export interface ThreadEgressReceipt {
+  threadId: string;
+  events: ThreadEgressEvent[];
+  chainRoot?: string;
+  forwardedRequests: number;
+  blockedRequests: number;
+  tokenizedValues: number;
+  survivingValues: number;
 }
 
 /** Server-only encrypted provider key payload persisted by the storage backend. */

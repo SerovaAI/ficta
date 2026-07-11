@@ -5,9 +5,13 @@ export declare const FICTA_TRACE_CAPTURE_PATH = "/__ficta/trace-capture";
 export declare const FICTA_REGISTRY_RELOAD_PATH = "/__ficta/registry/reload";
 export declare const FICTA_REGISTRY_REVISION_HEADER = "x-ficta-registry-revision";
 export declare const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
+/** Loopback-only, values-free proof for one provider-bound request. */
+export declare const FICTA_EGRESS_PROOF_PATH = "/__ficta/egress-proof";
 export declare const FICTA_PROTECTION_PREVIEW_PATH = "/__ficta/protection-preview";
 export declare const FICTA_PROTECTION_TICKET_HEADER = "x-ficta-protection-ticket";
 export declare const FICTA_SCOPE_HEADER = "x-ficta-scope";
+/** Correlates a Gateway audit record with one proxy request. Never forwarded upstream. */
+export declare const FICTA_EGRESS_EVENT_HEADER = "x-ficta-egress-event";
 export declare const FICTA_TRACE_CAPTURE_HEADER = "x-ficta-trace-capture";
 export declare const FICTA_RESTORE_HIGHLIGHT_HEADER = "x-ficta-restore-highlights";
 export declare const FICTA_RESTORE_HIGHLIGHT_START = "\u001eFICTA_RESTORE_START\u001e";
@@ -198,6 +202,34 @@ export interface ProtectionStatsOk {
   service: "ficta";
   stats: ProtectionStatsSnapshot;
 }
+
+/** Values-free result for one Gateway-correlated provider request. */
+export interface EgressProofLabel extends ProtectionHit {
+  /** Distinct protected values tokenized under this label. Optional on receipts created before label counts. */
+  redactedValues?: number;
+  /** Known values under this label that survived redaction. Optional on older receipts. */
+  survivingValues?: number;
+}
+
+export interface EgressProof {
+  eventId: string;
+  at: string;
+  outcome: "forwarded" | "blocked" | "upstream_error";
+  screening: "completed" | "detector_unavailable" | "not_configured";
+  model: string;
+  redactedValues: number;
+  /** Registered or detected values that survived redaction; undetected PII is outside this proof. */
+  survivingValues: number;
+  labels: EgressProofLabel[];
+}
+
+export interface EgressProofOk {
+  ok: true;
+  service: "ficta";
+  proof: EgressProof;
+}
+
+export declare function isEgressProofOk(value: unknown): value is EgressProofOk;
 
 export interface ProxyConfigPosture {
   protection: {

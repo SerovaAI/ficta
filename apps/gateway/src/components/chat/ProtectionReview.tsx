@@ -250,7 +250,7 @@ export function ProtectionReview({
               ) : null}
             </div>
             <div>
-              <Button type="button" size="sm" onClick={onSend} disabled={busy}>
+              <Button type="button" size="sm" onClick={onSend} disabled={busy} autoFocus>
                 {busy ? (
                   <Loader2 className="size-4 animate-spin" aria-hidden />
                 ) : (

@@ -8,6 +8,8 @@ import type {
   ProtectionStatsSnapshot,
   ProviderKeySummary,
   StoredMessage,
+  ThreadEgressEvent,
+  ThreadEgressReceipt,
   ThreadSummary,
   UserSettings,
 } from "./types";
@@ -50,6 +52,13 @@ export interface Storage {
 
   ingestProtectionStatsSnapshot(orgId: string, proxyUrl: string, snapshot: ProtectionStatsSnapshot): Promise<void>;
   listProtectionStatsDaily(orgId: string, days?: number): Promise<ProtectionStatsDailySummary[]>;
+  appendThreadEgressEvent(
+    userId: string,
+    orgId: string,
+    threadId: string,
+    proof: Omit<ThreadEgressEvent, "threadId" | "previousHash" | "eventHash">,
+  ): Promise<void>;
+  getThreadEgressReceipt(userId: string, orgId: string, threadId: string): Promise<ThreadEgressReceipt>;
 
   listProtectedRegistryEntries(orgId: string): Promise<ProtectedRegistryEntry[]>;
   upsertProtectedRegistryEntry(

@@ -4,6 +4,7 @@ import type {
   ProtectedRegistryEntryStatus,
   ProtectedRegistryEntryType,
   ProtectionStatsTotals,
+  ThreadEgressEvent,
   UserSettings,
 } from "../types";
 
@@ -163,4 +164,28 @@ export const messages = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("messages_thread_idx").on(t.threadId, t.orderIdx)],
+);
+
+/**
+ * Values-free audit evidence, append-only by application contract. This deliberately has no foreign
+ * key to `threads`: deleting a chat transcript must not silently erase its egress evidence.
+ */
+export const threadEgressEvents = pgTable(
+  "thread_egress_events",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    orgId: text("org_id").notNull(),
+    threadId: text("thread_id").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    outcome: text("outcome").$type<ThreadEgressEvent["outcome"]>().notNull(),
+    screening: text("screening").$type<ThreadEgressEvent["screening"]>().notNull(),
+    model: text("model").notNull(),
+    redactedValues: integer("redacted_values").notNull(),
+    survivingValues: integer("surviving_values").notNull(),
+    labels: jsonb("labels").$type<ThreadEgressEvent["labels"]>().notNull().default([]),
+    previousHash: text("previous_hash"),
+    eventHash: text("event_hash").notNull(),
+  },
+  (t) => [index("thread_egress_events_scope_thread_idx").on(t.userId, t.orgId, t.threadId, t.occurredAt.desc())],
 );

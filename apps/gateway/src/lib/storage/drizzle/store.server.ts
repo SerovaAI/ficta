@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gte, inArray, lt, notInArray, sql } from "drizzle-orm";
 import type { Provider } from "@/lib/models";
 import { deriveThreadTitleFromText, THREAD_TITLE_MAX } from "@/lib/thread-title";
@@ -10,6 +10,8 @@ import type {
   ProtectionStatsTotals,
   ProviderKeySummary,
   StoredMessage,
+  ThreadEgressEvent,
+  ThreadEgressReceipt,
   ThreadSummary,
   UserSettings,
 } from "../types";
@@ -21,6 +23,7 @@ import {
   protectionStatsCheckpoints,
   protectionStatsDaily,
   providerKeys,
+  threadEgressEvents,
   threadProtectedValues,
   threads,
   userSettings,
@@ -216,6 +219,74 @@ export function createStorage(): Storage {
         .where(and(eq(protectionStatsDaily.orgId, orgId), gte(protectionStatsDaily.day, cutoffDay)))
         .orderBy(asc(protectionStatsDaily.day));
       return rows.map(toProtectionStatsDailySummary);
+    },
+
+    async appendThreadEgressEvent(userId, orgId, threadId, proof) {
+      const db = await getDb();
+      const occurredAt = new Date(proof.at);
+      if (Number.isNaN(occurredAt.valueOf())) throw new Error("invalid egress proof timestamp");
+      await db.transaction(async (tx) => {
+        const [existing] = await tx
+          .select({ id: threadEgressEvents.id })
+          .from(threadEgressEvents)
+          .where(eq(threadEgressEvents.id, proof.eventId));
+        if (existing) return; // The proxy proof can be read more than once; ledger insertion is idempotent.
+
+        const [previous] = await tx
+          .select({ eventHash: threadEgressEvents.eventHash })
+          .from(threadEgressEvents)
+          .where(
+            and(
+              eq(threadEgressEvents.userId, userId),
+              eq(threadEgressEvents.orgId, orgId),
+              eq(threadEgressEvents.threadId, threadId),
+            ),
+          )
+          .orderBy(desc(threadEgressEvents.occurredAt), desc(threadEgressEvents.id))
+          .limit(1);
+        const previousHash = previous?.eventHash;
+        const eventHash = egressEventHash({ threadId, proof, previousHash });
+        await tx.insert(threadEgressEvents).values({
+          id: proof.eventId,
+          userId,
+          orgId,
+          threadId,
+          occurredAt,
+          outcome: proof.outcome,
+          screening: proof.screening,
+          model: proof.model,
+          redactedValues: proof.redactedValues,
+          survivingValues: proof.survivingValues,
+          labels: proof.labels,
+          previousHash,
+          eventHash,
+        });
+      });
+    },
+
+    async getThreadEgressReceipt(userId, orgId, threadId) {
+      const db = await getDb();
+      const rows = await db
+        .select()
+        .from(threadEgressEvents)
+        .where(
+          and(
+            eq(threadEgressEvents.userId, userId),
+            eq(threadEgressEvents.orgId, orgId),
+            eq(threadEgressEvents.threadId, threadId),
+          ),
+        )
+        .orderBy(asc(threadEgressEvents.occurredAt), asc(threadEgressEvents.id));
+      const events = rows.map(toThreadEgressEvent);
+      return {
+        threadId,
+        events,
+        chainRoot: events.at(-1)?.eventHash,
+        forwardedRequests: events.filter((event) => event.outcome === "forwarded").length,
+        blockedRequests: events.filter((event) => event.outcome === "blocked").length,
+        tokenizedValues: events.reduce((total, event) => total + event.redactedValues, 0),
+        survivingValues: events.reduce((total, event) => total + event.survivingValues, 0),
+      } satisfies ThreadEgressReceipt;
     },
 
     async listProtectedRegistryEntries(orgId) {
@@ -584,6 +655,50 @@ function toProtectionStatsDailySummary(row: typeof protectionStatsDaily.$inferSe
     withheldFromToolsValues: row.withheldFromToolsValues,
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+function toThreadEgressEvent(row: typeof threadEgressEvents.$inferSelect): ThreadEgressEvent {
+  return {
+    eventId: row.id,
+    threadId: row.threadId,
+    at: row.occurredAt.toISOString(),
+    outcome: row.outcome,
+    screening: row.screening,
+    model: row.model,
+    redactedValues: row.redactedValues,
+    survivingValues: row.survivingValues,
+    labels: row.labels,
+    ...(row.previousHash ? { previousHash: row.previousHash } : {}),
+    eventHash: row.eventHash,
+  };
+}
+
+function egressEventHash({
+  threadId,
+  proof,
+  previousHash,
+}: {
+  threadId: string;
+  proof: Omit<ThreadEgressEvent, "threadId" | "previousHash" | "eventHash">;
+  previousHash: string | undefined;
+}): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        version: 1,
+        threadId,
+        eventId: proof.eventId,
+        at: proof.at,
+        outcome: proof.outcome,
+        screening: proof.screening,
+        model: proof.model,
+        redactedValues: proof.redactedValues,
+        survivingValues: proof.survivingValues,
+        labels: proof.labels,
+        previousHash: previousHash ?? null,
+      }),
+    )
+    .digest("hex");
 }
 
 function utcDay(input: string, fallback = new Date()): string {

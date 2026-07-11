@@ -3,7 +3,10 @@ import { argv } from "node:process";
 import { fileURLToPath } from "node:url";
 import { type HttpBindings, serve } from "@hono/node-server";
 import {
+  type EgressProof,
   FICTA_CONFIG_PATH,
+  FICTA_EGRESS_EVENT_HEADER,
+  FICTA_EGRESS_PROOF_PATH,
   FICTA_HEALTH_PATH,
   FICTA_PROTECTION_PREVIEW_PATH,
   FICTA_PROTECTION_STATS_PATH,
@@ -113,6 +116,7 @@ export async function startProxy(
   const engine: RedactionEngine = new ProtectionEngine({ plugins: opts.plugins ?? defaultRedactionPlugins });
   const stats = new ProtectionStats(protectionStatsPath, { captureDir: currentRunDir });
   const protectionTickets = new Map<string, ProtectionTicket>();
+  const egressProofs = new Map<string, EgressProof>();
   let runtimeTraceCaptureEnabled = false;
   const app = new Hono<{ Bindings: HttpBindings }>();
 
@@ -122,6 +126,24 @@ export async function startProxy(
     if (url.pathname === FICTA_HEALTH_PATH) return c.json({ ok: true, service: "ficta" });
     if (url.pathname === FICTA_STATUS_PATH) return c.json(await protectionStatus(engine, stats));
     if (url.pathname === FICTA_PROTECTION_STATS_PATH) return c.json(protectionStatsResponse(stats, url));
+    if (url.pathname === FICTA_EGRESS_PROOF_PATH) {
+      if (method !== "GET")
+        return c.json({ error: { type: "method_not_allowed", message: "Use GET for egress proof." } }, 405);
+      if (!isLoopbackAddress(c.env.incoming.socket.remoteAddress)) {
+        return c.json({ error: { type: "forbidden", message: "Egress proof is loopback-only." } }, 403);
+      }
+      const scopeKey = scopeKeyFrom(c);
+      const eventId = egressEventIdFrom(c);
+      if (!scopeKey || !eventId) {
+        return c.json(
+          { error: { type: "invalid_request", message: "A trusted scope and egress event id are required." } },
+          400,
+        );
+      }
+      const proof = egressProofs.get(egressProofKey(scopeKey, eventId));
+      if (!proof) return c.json({ error: { type: "not_found", message: "Egress proof is not available yet." } }, 404);
+      return c.json({ ok: true, service: "ficta", proof });
+    }
     if (url.pathname === FICTA_TRACE_CAPTURE_PATH) {
       if (!isLoopbackAddress(c.env.incoming.socket.remoteAddress)) {
         return c.json(
@@ -381,6 +403,12 @@ export async function startProxy(
     // via the internal scope header (see scopeKeyFrom); isolation then holds across keys instead.
     const scopeKey = scopeKeyFrom(c);
     const scope = engine.beginRequest(scopeKey);
+    const egressEvidence = createEgressEvidence({
+      scopeKey,
+      eventId: egressEventIdFrom(c),
+      protectedRequest: protect,
+      proofs: egressProofs,
+    });
     let preparedProtectionTicket: ProtectionTicket | undefined;
     if (requestedProtectionTicket) {
       const prepared = protectionTickets.get(requestedProtectionTicket);
@@ -425,6 +453,7 @@ export async function startProxy(
             captureRawBodies,
           });
           recordDetectorUnavailable(stats, scope, traceRedactions, {
+            evidence: egressEvidence,
             requestId: n,
             method,
             path: url.pathname,
@@ -449,6 +478,7 @@ export async function startProxy(
           captureRawBodies,
         });
         recordProtection(stats, scope, traceRedactions, {
+          evidence: egressEvidence,
           requestId: n,
           method,
           path: url.pathname,
@@ -469,6 +499,7 @@ export async function startProxy(
       const n = logRequest({ method, path: url.pathname, body: "", target: "<blocked>", route, captureRawBodies });
       if (queryRedaction) {
         recordProtection(stats, scope, traceRedactions, {
+          evidence: egressEvidence,
           requestId: n,
           method,
           path: url.pathname,
@@ -480,6 +511,7 @@ export async function startProxy(
         });
       }
       writeProtectionTraceAudit(n, traceRedactions, scope, "blocked", captureTraceAudit);
+      egressEvidence?.finish("blocked");
       return c.json({ error: { type: "ficta_upstream_policy", message: upstreamIssue } }, 403);
     }
 
@@ -488,6 +520,7 @@ export async function startProxy(
     headers.delete("content-length");
     headers.delete("accept-encoding");
     headers.delete(FICTA_SCOPE_HEADER); // internal routing metadata — must never reach the upstream vendor
+    headers.delete(FICTA_EGRESS_EVENT_HEADER); // internal audit metadata — must never reach the upstream vendor
     headers.delete(FICTA_TRACE_CAPTURE_HEADER); // internal trace/audit selector — must never reach upstream
     headers.delete(FICTA_RESTORE_HIGHLIGHT_HEADER); // trace-demo UI hint — must never reach the upstream vendor
     headers.delete(FICTA_PROTECTION_TICKET_HEADER); // opaque preflight capability — must never reach upstream
@@ -535,6 +568,7 @@ export async function startProxy(
           // than forwarding data it could not screen. The raw body has not left the process.
           if (err instanceof DetectorUnavailableError) {
             recordDetectorUnavailable(stats, scope, traceRedactions, {
+              evidence: egressEvidence,
               requestId: n,
               method,
               path: url.pathname,
@@ -553,6 +587,7 @@ export async function startProxy(
         requestModel = safeRequestModel(scope, originalModel, requestModelFromBody(redacted));
         if (queryRedaction) {
           recordProtection(stats, scope, traceRedactions, {
+            evidence: egressEvidence,
             requestId: n,
             method,
             path: url.pathname,
@@ -566,6 +601,7 @@ export async function startProxy(
         }
         if (redaction.leaks > 0 && cfg.failClosed) {
           recordProtection(stats, scope, traceRedactions, {
+            evidence: egressEvidence,
             requestId: n,
             method,
             path: url.pathname,
@@ -581,6 +617,7 @@ export async function startProxy(
         }
         if (redaction.count > 0 || redaction.leaks > 0) {
           recordProtection(stats, scope, traceRedactions, {
+            evidence: egressEvidence,
             requestId: n,
             method,
             path: url.pathname,
@@ -614,6 +651,7 @@ export async function startProxy(
       n = logRequest({ method, path: url.pathname, body: "", target, route, captureRawBodies });
       if (queryRedaction) {
         recordProtection(stats, scope, traceRedactions, {
+          evidence: egressEvidence,
           requestId: n,
           method,
           path: url.pathname,
@@ -633,6 +671,7 @@ export async function startProxy(
       } catch (err) {
         if (err instanceof DetectorUnavailableError) {
           recordDetectorUnavailable(stats, scope, traceRedactions, {
+            evidence: egressEvidence,
             requestId: n,
             method,
             path: url.pathname,
@@ -648,6 +687,7 @@ export async function startProxy(
       }
       if (redaction.leaks > 0 && cfg.failClosed) {
         recordProtection(stats, scope, traceRedactions, {
+          evidence: egressEvidence,
           requestId: n,
           method,
           path: url.pathname,
@@ -663,6 +703,7 @@ export async function startProxy(
       }
       if (redaction.count > 0 || redaction.leaks > 0) {
         recordProtection(stats, scope, traceRedactions, {
+          evidence: egressEvidence,
           requestId: n,
           method,
           path: url.pathname,
@@ -689,8 +730,10 @@ export async function startProxy(
     } catch (err) {
       log.error({ reqId: n, err: (err as Error).message }, `✗ upstream fetch failed: ${(err as Error).message}`);
       writeProtectionTraceAudit(n, traceRedactions, scope, "upstream-error", captureTraceAudit);
+      egressEvidence?.finish("upstream_error", requestModel);
       return c.json({ error: { type: "ficta_upstream_error", message: String(err) } }, 502);
     }
+    egressEvidence?.finish("forwarded", requestModel);
 
     const resHeaders = new Headers(upstreamRes.headers);
     resHeaders.delete("content-encoding");
@@ -1028,6 +1071,85 @@ interface ProtectionTicket {
   protectedValues: string[];
   textSha256: string;
   expiresAt: number;
+}
+
+/**
+ * A values-free, one-request proof held briefly by the proxy so Gateway can durably append it to the
+ * thread ledger after the streamed run finishes. This is intentionally not a transcript log.
+ */
+interface EgressEvidence {
+  record(redaction: SurfaceRedaction): void;
+  detectorUnavailable(): void;
+  finish(outcome: EgressProof["outcome"], model?: string): void;
+}
+
+function createEgressEvidence({
+  scopeKey,
+  eventId,
+  protectedRequest,
+  proofs,
+}: {
+  scopeKey: string | undefined;
+  eventId: string | undefined;
+  protectedRequest: boolean;
+  proofs: Map<string, EgressProof>;
+}): EgressEvidence | undefined {
+  if (!scopeKey || !eventId) return undefined;
+  let redactedValues = 0;
+  let survivingValues = 0;
+  let screening: EgressProof["screening"] = protectedRequest ? "completed" : "not_configured";
+  const labels = new Map<string, EgressProof["labels"][number]>();
+  let finished = false;
+  const addLabels = (hits: readonly ProtectionHit[], field: "redactedValues" | "survivingValues") => {
+    for (const hit of hits) {
+      const key = JSON.stringify([hit.name, hit.source, hit.plugin ?? "", hit.kind ?? "", hit.confidence ?? ""]);
+      const current = labels.get(key) ?? { ...hit, redactedValues: 0, survivingValues: 0 };
+      current[field] = (current[field] ?? 0) + 1;
+      labels.set(key, current);
+    }
+  };
+  return {
+    record(redaction) {
+      redactedValues += redaction.count;
+      survivingValues += redaction.leaks;
+      addLabels(redaction.hits, "redactedValues");
+      addLabels(redaction.leakHits, "survivingValues");
+    },
+    detectorUnavailable() {
+      screening = "detector_unavailable";
+    },
+    finish(outcome, model = "unknown") {
+      if (finished) return;
+      finished = true;
+      pruneEgressProofs(proofs);
+      proofs.set(egressProofKey(scopeKey, eventId), {
+        eventId,
+        at: new Date().toISOString(),
+        outcome,
+        screening,
+        model,
+        redactedValues,
+        survivingValues,
+        labels: [...labels.values()],
+      });
+    },
+  };
+}
+
+function egressEventIdFrom(c: Context): string | undefined {
+  const value = c.req.header(FICTA_EGRESS_EVENT_HEADER)?.trim();
+  return value && /^[0-9a-f]{8}-[0-9a-f-]{27,64}$/i.test(value) ? value : undefined;
+}
+
+function egressProofKey(scopeKey: string, eventId: string): string {
+  return `${scopeKey}\u0000${eventId}`;
+}
+
+function pruneEgressProofs(proofs: Map<string, EgressProof>): void {
+  const cutoff = Date.now() - 15 * 60_000;
+  for (const [key, proof] of proofs) {
+    if (Date.parse(proof.at) < cutoff) proofs.delete(key);
+  }
 }
 
 function validateProtectionPreviewRequest(value: unknown): ProtectionPreviewRequest {
@@ -1372,6 +1494,7 @@ function recordProtection(
   scope: RequestScope,
   traceRedactions: ProtectionTraceRedaction[],
   args: {
+    evidence?: EgressEvidence;
     requestId?: number;
     method: string;
     path: string;
@@ -1397,6 +1520,8 @@ function recordProtection(
     redactedHits: args.redaction.hits,
     survivingHits: args.redaction.leakHits,
   });
+  args.evidence?.record(args.redaction);
+  if (args.blocked) args.evidence?.finish("blocked", args.model);
   const redactedValues = args.redaction.traceValues ?? [];
   const survivingValues = args.redaction.traceLeakValues ?? [];
   if (redactedValues.length === 0 && survivingValues.length === 0) return;
@@ -1415,6 +1540,7 @@ function recordDetectorUnavailable(
   scope: RequestScope,
   traceRedactions: ProtectionTraceRedaction[],
   args: {
+    evidence?: EgressEvidence;
     requestId: number;
     method: string;
     path: string;
@@ -1438,6 +1564,8 @@ function recordDetectorUnavailable(
     blocked: true,
     blockReason: "detector_unavailable",
   });
+  args.evidence?.detectorUnavailable();
+  args.evidence?.finish("blocked", args.model);
   writeProtectionTraceAudit(args.requestId, traceRedactions, scope, "blocked", args.captureTraceAudit);
 }
 

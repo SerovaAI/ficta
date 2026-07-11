@@ -1,4 +1,5 @@
 import {
+  FICTA_EGRESS_EVENT_HEADER,
   FICTA_PROTECTION_TICKET_HEADER,
   FICTA_RESTORE_HIGHLIGHT_HEADER,
   FICTA_SCOPE_HEADER,
@@ -23,6 +24,8 @@ export interface ModelChoice {
   traceEnabled?: boolean;
   /** Opaque capability returned by the proxy's loopback-only pre-send protection preview. */
   protectionTicket?: string;
+  /** Gateway-generated correlation id for the values-free per-request egress proof. */
+  egressEventId?: string;
 }
 
 /**
@@ -39,6 +42,7 @@ export function createModelAdapter({
   fictaScope,
   traceEnabled = false,
   protectionTicket,
+  egressEventId,
 }: ModelChoice) {
   const defaultHeaders = {
     // Advertises that this client can render restore-highlight markers — a static capability (the UI
@@ -49,6 +53,7 @@ export function createModelAdapter({
     [FICTA_TRACE_CAPTURE_HEADER]: traceEnabled ? "1" : "0",
     ...(protectionTicket ? { [FICTA_PROTECTION_TICKET_HEADER]: protectionTicket } : {}),
     ...(fictaScope ? { [FICTA_SCOPE_HEADER]: fictaScope } : {}),
+    ...(egressEventId ? { [FICTA_EGRESS_EVENT_HEADER]: egressEventId } : {}),
   };
   if (provider === "anthropic") {
     // ficta routes `/v1/messages` → the Anthropic upstream; the Anthropic adapter emits that wire.

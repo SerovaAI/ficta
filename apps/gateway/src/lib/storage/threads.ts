@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireAdminScope, requireAuthState, requireScope, scopeFromAuth } from "@/lib/auth/guards.server";
 import { isAdmin } from "@/lib/auth/types";
 import { getStorage } from "./storage.server";
-import type { StoredMessage, ThreadSummary } from "./types";
+import type { StoredMessage, ThreadEgressReceipt, ThreadSummary } from "./types";
 
 /**
  * Server functions for chat history. Like settings.ts, each re-derives the caller's scope (userId + the
@@ -68,6 +68,14 @@ export const fetchThread = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<{ thread: ThreadSummary; messages: StoredMessage[] } | null> => {
     const { userId, orgId } = await requireScope();
     return (await getStorage()).getThread(userId, orgId, data.threadId);
+  });
+
+/** Values-free, per-thread provider-egress evidence. The transcript itself is never returned here. */
+export const fetchThreadEgressReceipt = createServerFn({ method: "GET" })
+  .validator(requireThreadId)
+  .handler(async ({ data }): Promise<ThreadEgressReceipt> => {
+    const { userId, orgId } = await requireScope();
+    return (await getStorage()).getThreadEgressReceipt(userId, orgId, data.threadId);
   });
 
 export const startThread = createServerFn({ method: "POST" })

@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { FICTA_PROTECTION_PREVIEW_PATH, FICTA_SCOPE_HEADER, isProtectionPreviewOk } from "@serovaai/ficta-protocol";
 import { chat, toServerSentEventsResponse } from "@tanstack/ai";
 import { createFileRoute } from "@tanstack/react-router";
 import { scopeFromAuth } from "../../lib/auth/guards.server";
 import { getActiveProvider } from "../../lib/auth/provider.server";
 import { isAdmin } from "../../lib/auth/types";
+import { persistThreadEgressEvidence } from "../../lib/egress-evidence.server";
 import { fictaScopeFor } from "../../lib/ficta-scope.server";
 import { createModelAdapter } from "../../lib/model-adapter";
 import {
@@ -95,6 +97,7 @@ export const Route = createFileRoute("/api/chat")({
             console.warn("Failed to ingest redaction proof trend.", err);
           });
           const fictaScope = threadId ? fictaScopeFor(orgId, userId, threadId) : undefined;
+          const egressEventId = threadId && fictaScope ? randomUUID() : undefined;
           if (!protectionTicket && threadId && fictaScope) {
             const protectedValues = await storage.listThreadProtectedValues(userId, orgId, threadId);
             if (protectedValues.length > 0) {
@@ -115,11 +118,26 @@ export const Route = createFileRoute("/api/chat")({
               model,
               apiKey,
               fictaScope,
+              egressEventId,
               traceEnabled,
               protectionTicket,
             }),
             messages,
             modelOptions: provider === "openai" ? { reasoning: { effort: reasoningEffort } } : undefined,
+            middleware:
+              threadId && fictaScope && egressEventId
+                ? [
+                    {
+                      name: "persist-egress-evidence",
+                      onFinish: () =>
+                        persistThreadEgressEvidence({ userId, orgId, threadId, fictaScope, eventId: egressEventId }),
+                      onAbort: () =>
+                        persistThreadEgressEvidence({ userId, orgId, threadId, fictaScope, eventId: egressEventId }),
+                      onError: () =>
+                        persistThreadEgressEvidence({ userId, orgId, threadId, fictaScope, eventId: egressEventId }),
+                    },
+                  ]
+                : undefined,
           });
         } catch (err) {
           if (err instanceof MissingKeyError || err instanceof ProviderKeyDecryptionError) {

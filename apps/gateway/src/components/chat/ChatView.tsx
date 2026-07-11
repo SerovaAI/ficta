@@ -64,6 +64,7 @@ import { MessageList } from "./MessageList";
 import { ProtectionNotice } from "./ProtectionNotice";
 import { ProtectionReview, ProtectionReviewLoading } from "./ProtectionReview";
 import { draftWithSuggestion } from "./suggestionDraft";
+import { ThreadEvidenceDialog } from "./ThreadEvidenceDialog";
 import { TopBar } from "./TopBar";
 
 /** Pick the model a new chat opens on: the user's default if the instance still allows it, else the first
@@ -107,6 +108,7 @@ export function ChatView({
   const [adminOpen, setAdminOpen] = useState(false);
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
   const [confirmSendOpen, setConfirmSendOpen] = useState(false);
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
   // Passthrough (unprotected but working) asks for consent once per chat, not on every send.
   const [passthroughAck, setPassthroughAck] = useState(false);
   const [input, setInput] = useState("");
@@ -639,6 +641,7 @@ export function ChatView({
             onToggleRestoreDisplay={() =>
               setRestoreDisplayMode((mode) => (mode === "values" ? "surrogates" : "values"))
             }
+            onOpenEvidence={() => setEvidenceOpen(true)}
           />
 
           <MessageList
@@ -714,6 +717,7 @@ export function ChatView({
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} userSettings={userSettings} />
         <AdminSettingsDialog open={adminOpen} onOpenChange={setAdminOpen} />
         <CreateWorkspaceDialog open={createWorkspaceOpen} onOpenChange={setCreateWorkspaceOpen} />
+        <ThreadEvidenceDialog open={evidenceOpen} onOpenChange={setEvidenceOpen} threadId={tid} />
 
         <Dialog open={confirmSendOpen} onOpenChange={setConfirmSendOpen}>
           <DialogContent showCloseButton={false} className="max-w-md">
