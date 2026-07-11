@@ -358,9 +358,9 @@ export function ChatView({
     else dispatchContent(messageWithAttachments(input.trim(), attachments));
   };
 
-  const protectSelections = async (rawValues: string[]) => {
-    const values = [...new Set(rawValues.map((value) => value.trim()).filter(Boolean))];
-    if (!protectionReview || values.length === 0) return;
+  const protectSelection = async (rawValue: string) => {
+    const value = rawValue.trim();
+    if (!protectionReview || !value) return;
     setProtectionReviewLoading(true);
     setProtectionReviewError("");
     setProtectionReviewNotice("");
@@ -369,7 +369,7 @@ export function ChatView({
       const preview = await previewProtection({
         threadId: tid,
         text: protectionReview.text,
-        addValues: values,
+        addValues: [value],
         signal: request.controller.signal,
       });
       if (!protectionPreviewIsCurrent(request.generation))
@@ -377,11 +377,11 @@ export function ChatView({
       setProtectionReview({
         ...protectionReview,
         preview,
-        newlyProtectedValues: [...new Set([...protectionReview.newlyProtectedValues, ...values])],
+        newlyProtectedValues: [...new Set([...protectionReview.newlyProtectedValues, value])],
       });
     } catch (err) {
       if (protectionPreviewIsCurrent(request.generation) && !isAbortError(err)) {
-        setProtectionReviewError(err instanceof Error ? err.message : "Those values could not be protected.");
+        setProtectionReviewError(err instanceof Error ? err.message : "That value could not be protected.");
       }
       throw err;
     } finally {
@@ -667,7 +667,7 @@ export function ChatView({
               error={protectionReviewError || undefined}
               notice={protectionReviewNotice || undefined}
               onBack={closeProtectionReview}
-              onProtect={protectSelections}
+              onProtect={protectSelection}
               onRemove={removeChatProtection}
               onSend={sendProtected}
               onSuggest={suggestForWorkspace}

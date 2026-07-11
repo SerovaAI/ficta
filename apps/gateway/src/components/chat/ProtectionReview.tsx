@@ -1,15 +1,10 @@
 import type { ProtectionPreviewFinding } from "@serovaai/ficta-protocol";
-import { AlertTriangle, ArrowLeft, Check, Loader2, Plus, ShieldCheck, Sparkles, X } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Plus, ShieldCheck, Sparkles, X } from "lucide-react";
 import { type FormEvent, type ReactNode, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { GatewayProtectionPreview } from "@/lib/protection-preview";
-import {
-  type PendingProtectionError,
-  PROTECTION_REVIEW_BATCH_MAX,
-  pendingProtectionRanges,
-  validatePendingProtection,
-} from "@/lib/protection-review-queue";
+import { type ProtectionValueError, validateProtectionValue } from "@/lib/protection-review-value";
 import { cn } from "@/lib/utils";
 
 type ReviewMode = "values" | "model";
@@ -33,7 +28,7 @@ export function ProtectionReview({
   error?: string;
   notice?: string;
   onBack: () => void;
-  onProtect: (values: string[]) => Promise<void>;
+  onProtect: (value: string) => Promise<void>;
   onRemove: (value: string) => Promise<void>;
   onSend: () => void;
   onSuggest: (values: string[]) => void;
@@ -42,10 +37,7 @@ export function ProtectionReview({
 }) {
   const [mode, setMode] = useState<ReviewMode>("values");
   const [draftValue, setDraftValue] = useState("");
-  const [pendingValues, setPendingValues] = useState<string[]>([]);
-  const [pendingError, setPendingError] = useState<PendingProtectionError>();
-  const pendingHelpError =
-    pendingError ?? (pendingValues.length >= PROTECTION_REVIEW_BATCH_MAX ? ("limit" as const) : undefined);
+  const [valueError, setValueError] = useState<ProtectionValueError>();
   const counts = useMemo(() => findingCounts(preview.findings), [preview.findings]);
   const confirmedValues = useMemo(
     () => [
@@ -57,46 +49,40 @@ export function ProtectionReview({
     [preview.findings, preview.protectedValues, text],
   );
 
-  const queueValue = (rawValue: string) => {
-    const result = validatePendingProtection({
+  const protectValue = async (rawValue: string) => {
+    if (busy) return false;
+    const result = validateProtectionValue({
       value: rawValue,
       originalText: text,
-      pendingValues,
       protectedValues: confirmedValues,
     });
     if (!result.ok) {
-      setPendingError(result.reason);
+      setValueError(result.reason);
       return false;
     }
-    setPendingValues((current) => [...current, result.value]);
-    setPendingError(undefined);
-    setDraftValue("");
-    return true;
+    try {
+      await onProtect(result.value);
+      setValueError(undefined);
+      return true;
+    } catch {
+      // ChatView owns the request error copy. Leave typed input intact so the user can retry it.
+      return false;
+    }
   };
 
   const captureSelection = (root: HTMLElement) => {
+    if (busy) return;
     const selected = window.getSelection();
     if (!selected || selected.rangeCount === 0 || selected.isCollapsed) return;
     const range = selected.getRangeAt(0);
     if (!root.contains(range.commonAncestorContainer)) return;
-    queueValue(range.toString());
+    void protectValue(range.toString());
     selected.removeAllRanges();
   };
 
-  const addDraftValue = (event: FormEvent<HTMLFormElement>) => {
+  const addDraftValue = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    queueValue(draftValue);
-  };
-
-  const applyPendingValues = async () => {
-    if (pendingValues.length === 0 || busy) return;
-    try {
-      await onProtect(pendingValues);
-      setPendingValues([]);
-      setPendingError(undefined);
-    } catch {
-      // ChatView owns the request error copy. Keep this batch intact so the user can retry it.
-    }
+    if (await protectValue(draftValue)) setDraftValue("");
   };
 
   return (
@@ -123,7 +109,7 @@ export function ProtectionReview({
               <ModeButton selected={mode === "values"} onClick={() => setMode("values")}>
                 Values
               </ModeButton>
-              <ModeButton selected={mode === "model"} stale={pendingValues.length > 0} onClick={() => setMode("model")}>
+              <ModeButton selected={mode === "model"} onClick={() => setMode("model")}>
                 Model will see
               </ModeButton>
             </div>
@@ -158,80 +144,25 @@ export function ProtectionReview({
                   // biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard selection capture in review text.
                   tabIndex={0}
                 >
-                  <HighlightedText text={text} findings={preview.findings} pendingValues={pendingValues} />
+                  <HighlightedText text={text} findings={preview.findings} />
                 </article>
               </>
             ) : (
-              <>
-                {pendingValues.length > 0 ? (
-                  <div
-                    className="mb-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-950 text-xs dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100"
-                    role="status"
-                  >
-                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                    Apply the pending values to refresh what the model will see.
-                  </div>
-                ) : null}
-                <article
-                  className="max-h-80 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-muted/55 px-3 py-3 text-[0.95rem] leading-6 selection:bg-amber-200 selection:text-amber-950 dark:selection:bg-amber-800 dark:selection:text-amber-50"
-                  aria-label="Text the model will see"
-                  onMouseUp={(event) => captureSelection(event.currentTarget)}
-                  onKeyUp={(event) => captureSelection(event.currentTarget)}
-                  // biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard selection capture in review text.
-                  tabIndex={0}
-                >
-                  <ModelText text={preview.redactedText} />
-                </article>
-              </>
-            )}
-
-            {pendingValues.length > 0 ? (
-              <section
-                className="mt-3 rounded-lg border border-amber-300 bg-amber-50/70 p-3 dark:border-amber-900/60 dark:bg-amber-950/20"
-                aria-labelledby="pending-protections-title"
+              <article
+                className="max-h-80 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-muted/55 px-3 py-3 text-[0.95rem] leading-6 selection:bg-amber-200 selection:text-amber-950 dark:selection:bg-amber-800 dark:selection:text-amber-50"
+                aria-label="Text the model will see"
+                onMouseUp={(event) => captureSelection(event.currentTarget)}
+                onKeyUp={(event) => captureSelection(event.currentTarget)}
+                // biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard selection capture in review text.
+                tabIndex={0}
               >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p id="pending-protections-title" className="font-medium text-xs">
-                    Ready to protect <span className="font-normal tabular-nums">{pendingValues.length}</span>
-                  </p>
-                  <Button type="button" size="sm" onClick={() => void applyPendingValues()} disabled={busy}>
-                    {busy ? (
-                      <Loader2 className="size-4 animate-spin" aria-hidden />
-                    ) : (
-                      <ShieldCheck className="size-4" aria-hidden />
-                    )}
-                    Protect {pendingValues.length} {pendingValues.length === 1 ? "value" : "values"}
-                  </Button>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {pendingValues.map((value) => (
-                    <span
-                      key={value}
-                      className="inline-flex min-h-7 max-w-full items-center gap-1 rounded-full border border-amber-400 bg-background py-0.5 pr-1 pl-2.5 text-xs dark:border-amber-700"
-                      title={value}
-                    >
-                      <span className="max-w-56 truncate">{value}</span>
-                      <button
-                        type="button"
-                        className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-amber-100 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-amber-900/40"
-                        onClick={() => {
-                          setPendingValues((current) => current.filter((entry) => entry !== value));
-                          setPendingError(undefined);
-                        }}
-                        disabled={busy}
-                        aria-label={`Remove ${value} from values ready to protect`}
-                      >
-                        <X className="size-3" aria-hidden />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </section>
-            ) : null}
+                <ModelText text={preview.redactedText} />
+              </article>
+            )}
 
             <form className="mt-3 flex min-h-9 flex-wrap items-center gap-2" onSubmit={addDraftValue}>
               <label htmlFor="protect-missed-phrase" className="sr-only">
-                Phrase to add to protection batch
+                Phrase to protect in this chat
               </label>
               <Input
                 id="protect-missed-phrase"
@@ -240,7 +171,7 @@ export function ProtectionReview({
                 placeholder="Type a phrase to protect"
                 onChange={(event) => {
                   setDraftValue(event.target.value);
-                  setPendingError(undefined);
+                  setValueError(undefined);
                 }}
                 aria-describedby="protected-selection-help"
               />
@@ -251,11 +182,11 @@ export function ProtectionReview({
             </form>
             <p
               id="protected-selection-help"
-              className={cn("mt-1.5 text-xs", pendingHelpError ? "text-destructive" : "text-muted-foreground")}
-              role={pendingHelpError ? "alert" : undefined}
+              className={cn("mt-1.5 text-xs", valueError ? "text-destructive" : "text-muted-foreground")}
+              role={valueError ? "alert" : undefined}
             >
-              {pendingHelpError
-                ? pendingProtectionErrorMessage(pendingHelpError)
+              {valueError
+                ? protectionValueErrorMessage(valueError)
                 : "Highlight text above, or type a phrase to add it."}
             </p>
 
@@ -318,14 +249,8 @@ export function ProtectionReview({
                 </Button>
               ) : null}
             </div>
-            <div className="flex flex-col items-end gap-1">
-              <Button
-                type="button"
-                size="sm"
-                onClick={onSend}
-                disabled={busy || pendingValues.length > 0}
-                aria-describedby={pendingValues.length > 0 ? "pending-send-help" : undefined}
-              >
+            <div>
+              <Button type="button" size="sm" onClick={onSend} disabled={busy}>
                 {busy ? (
                   <Loader2 className="size-4 animate-spin" aria-hidden />
                 ) : (
@@ -333,11 +258,6 @@ export function ProtectionReview({
                 )}
                 Send protected
               </Button>
-              {pendingValues.length > 0 ? (
-                <p id="pending-send-help" className="text-amber-800 text-xs dark:text-amber-200">
-                  Apply the pending values before sending.
-                </p>
-              ) : null}
             </div>
           </div>
         </div>
@@ -346,17 +266,7 @@ export function ProtectionReview({
   );
 }
 
-function ModeButton({
-  selected,
-  stale = false,
-  onClick,
-  children,
-}: {
-  selected: boolean;
-  stale?: boolean;
-  onClick: () => void;
-  children: string;
-}) {
+function ModeButton({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: string }) {
   return (
     <button
       type="button"
@@ -369,12 +279,6 @@ function ModeButton({
       onClick={onClick}
     >
       {children}
-      {stale ? (
-        <>
-          <span className="ml-1.5 inline-block size-1.5 rounded-full bg-amber-500" aria-hidden />
-          <span className="sr-only"> — refresh needed</span>
-        </>
-      ) : null}
     </button>
   );
 }
@@ -391,39 +295,14 @@ function Legend({ label, count, className }: { label: string; count: number; cla
   );
 }
 
-function HighlightedText({
-  text,
-  findings,
-  pendingValues,
-}: {
-  text: string;
-  findings: ProtectionPreviewFinding[];
-  pendingValues: string[];
-}) {
-  const pendingRanges = pendingProtectionRanges(text, pendingValues, findings);
-  if (findings.length === 0 && pendingRanges.length === 0) return text;
-  const ranges = [
-    ...findings.map((finding) => ({ ...finding, kind: "confirmed" as const })),
-    ...pendingRanges.map((range) => ({ ...range, kind: "pending" as const })),
-  ].sort((a, b) => a.start - b.start || a.end - b.end);
+function HighlightedText({ text, findings }: { text: string; findings: ProtectionPreviewFinding[] }) {
+  if (findings.length === 0) return text;
+  const ranges = [...findings].sort((a, b) => a.start - b.start || a.end - b.end);
   const parts: ReactNode[] = [];
   let cursor = 0;
   ranges.forEach((range) => {
     if (range.start < cursor || range.end > text.length) return;
     parts.push(text.slice(cursor, range.start));
-    if (range.kind === "pending") {
-      parts.push(
-        <mark
-          key={`${range.start}:${range.end}:pending`}
-          className="rounded-[3px] border-amber-500 border-b-2 bg-amber-100 px-0.5 text-foreground dark:bg-amber-950/60"
-          title="Ready to protect"
-        >
-          {text.slice(range.start, range.end)}
-        </mark>,
-      );
-      cursor = range.end;
-      return;
-    }
     parts.push(
       <mark
         key={`${range.start}:${range.end}:${range.origin}`}
@@ -472,20 +351,16 @@ function ModelText({ text }: { text: string }) {
   return parts;
 }
 
-function pendingProtectionErrorMessage(error: PendingProtectionError): string {
+function protectionValueErrorMessage(error: ProtectionValueError): string {
   switch (error) {
     case "empty":
       return "Select or type a phrase first.";
-    case "duplicate":
-      return "That phrase is already ready to protect.";
     case "protected":
       return "That phrase is already protected.";
     case "surrogate":
       return "FICTA tokens are already protected. Select ordinary text instead.";
     case "absent":
       return "That phrase does not appear in the original message.";
-    case "limit":
-      return `Apply these ${PROTECTION_REVIEW_BATCH_MAX} values before adding more.`;
   }
 }
 
