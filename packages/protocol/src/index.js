@@ -377,6 +377,7 @@ function isEvent(value) {
     typeof value.redactedValues === "number" &&
     typeof value.survivingValues === "number" &&
     typeof value.blocked === "boolean" &&
+    (value.blockReason === undefined || (value.blocked === true && value.blockReason === "detector_unavailable")) &&
     Array.isArray(value.redactedHits) &&
     value.redactedHits.every(isHit) &&
     Array.isArray(value.survivingHits) &&

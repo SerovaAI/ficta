@@ -9,7 +9,7 @@ import {
   FICTA_TRACE_CAPTURE_PATH,
 } from "@serovaai/ficta-protocol";
 import { describe, expect, it, vi } from "vitest";
-import type { RegistrySourcePlugin } from "../src/plugins/index.js";
+import type { DetectorPlugin, RegistrySourcePlugin } from "../src/plugins/index.js";
 
 const AWS = "AKIAIOSFODNN7EXAMPLE";
 const PROOF_SECRET = "proof-secret-value-12345";
@@ -1411,6 +1411,57 @@ describe("pii fail-closed backend", () => {
     "FICTA_PII_PRESIDIO_TIMEOUT_MS",
   ] as const;
 
+  it("records values-free detector outage proof for query and non-auth-header surfaces", async () => {
+    const originalUpstream = process.env.FICTA_UPSTREAM;
+    let upstreamHits = 0;
+    const upstream = createServer((_req, res) => {
+      upstreamHits++;
+      res.writeHead(200).end();
+    });
+    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+
+    try {
+      const upstreamPort = await listen(upstream);
+      process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
+      // Resolve the error class after any vi.resetModules() calls in earlier tests so the engine's
+      // instanceof check sees this exact module instance.
+      const { DetectorUnavailableError } = await import("../src/engine/redaction-engine.js");
+      const unavailable: DetectorPlugin = {
+        kind: "detector",
+        name: "surface-outage-fixture",
+        failClosed: () => true,
+        detectText: () => {
+          throw new DetectorUnavailableError("surface-outage-fixture", "sidecar down");
+        },
+      };
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0, plugins: [unavailable] });
+
+      const queryBlocked = await fetch(`http://127.0.0.1:${proxy.port}/v1/messages?contact=Jane%20Doe`);
+      expect(queryBlocked.status).toBe(503);
+      expect((await queryBlocked.json()).error.type).toBe("ficta_blocked");
+
+      const headerBlocked = await fetch(`http://127.0.0.1:${proxy.port}/v1/messages`, {
+        headers: { "x-contact": "Jane Doe" },
+      });
+      expect(headerBlocked.status).toBe(503);
+      expect((await headerBlocked.json()).error.type).toBe("ficta_blocked");
+      expect(upstreamHits).toBe(0);
+      expect(proxy.protectionStats()).toMatchObject({
+        totals: { events: 2, affectedRequests: 2, blockedRequests: 2, keptOutOfModelValues: 0 },
+        events: [
+          { blocked: true, blockReason: "detector_unavailable", surface: "query string" },
+          { blocked: true, blockReason: "detector_unavailable", surface: "non-auth headers" },
+        ],
+      });
+    } finally {
+      proxy?.close();
+      await close(upstream);
+      if (originalUpstream === undefined) delete process.env.FICTA_UPSTREAM;
+      else process.env.FICTA_UPSTREAM = originalUpstream;
+    }
+  });
+
   it("reports Presidio outage and fail-open/closed posture via status", async () => {
     const original = Object.fromEntries(PII_ENV.map((k) => [k, process.env[k]]));
     let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
@@ -1515,6 +1566,10 @@ describe("pii fail-closed backend", () => {
       expect(blocked.status).toBe(503);
       expect((await blocked.json()).error.type).toBe("ficta_blocked");
       expect(upstreamHits).toBe(0);
+      expect(proxy.protectionStats()).toMatchObject({
+        totals: { events: 1, affectedRequests: 1, blockedRequests: 1, keptOutOfModelValues: 0 },
+        events: [{ blocked: true, blockReason: "detector_unavailable" }],
+      });
 
       // flip to fail-open (default): the same down backend now skips detection and forwards.
       process.env.FICTA_PII_FAIL_CLOSED = "0";
@@ -1529,6 +1584,14 @@ describe("pii fail-closed backend", () => {
       const globalBlocked = await send();
       expect(globalBlocked.status).toBe(503);
       expect(upstreamHits).toBe(1); // unchanged — not forwarded
+
+      expect(proxy.protectionStats()).toMatchObject({
+        totals: { events: 2, affectedRequests: 2, blockedRequests: 2, keptOutOfModelValues: 0 },
+        events: [
+          { blocked: true, blockReason: "detector_unavailable" },
+          { blocked: true, blockReason: "detector_unavailable" },
+        ],
+      });
     } finally {
       proxy?.close();
       await close(upstream);

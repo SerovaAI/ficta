@@ -41,4 +41,37 @@ describe("protection stats label accounting", () => {
     );
     expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({ totals: { redactedValues: 4 } });
   });
+
+  it("records a values-free fail-closed detector outage with zero value counts", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "ficta-protection-stats-")), "stats.json");
+    const stats = new ProtectionStats(path);
+
+    stats.record({
+      requestId: 7,
+      method: "POST",
+      path: "/v1/responses",
+      wire: "openai-responses",
+      surface: "body",
+      redactedValues: 0,
+      survivingValues: 0,
+      blocked: true,
+      blockReason: "detector_unavailable",
+    });
+
+    expect(stats.snapshot()).toMatchObject({
+      totals: {
+        events: 1,
+        affectedRequests: 1,
+        blockedRequests: 1,
+        redactedValues: 0,
+        survivingValues: 0,
+        keptOutOfModelValues: 0,
+      },
+      events: [{ requestId: 7, blocked: true, blockReason: "detector_unavailable" }],
+    });
+    expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({
+      totals: { blockedRequests: 1 },
+      events: [{ blockReason: "detector_unavailable" }],
+    });
+  });
 });

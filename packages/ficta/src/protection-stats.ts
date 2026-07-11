@@ -2,6 +2,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
   ProtectionHit,
+  ProtectionStatsBlockReason,
   ProtectionStatsBucket,
   ProtectionStatsEvent,
   ProtectionStatsLabelBucket,
@@ -26,6 +27,7 @@ interface ProtectionStatsRecord {
   redactedValues: number;
   survivingValues: number;
   blocked: boolean;
+  blockReason?: ProtectionStatsBlockReason;
   redactedHits?: readonly ProtectionHit[];
   survivingHits?: readonly ProtectionHit[];
 }
@@ -82,7 +84,9 @@ export class ProtectionStats {
   }
 
   record(record: ProtectionStatsRecord): void {
-    if (record.redactedValues <= 0 && record.survivingValues <= 0) return;
+    // Detector outages have no value counts because screening could not run, but the fail-closed
+    // decision is still first-class protection proof and must survive in the stats stream.
+    if (record.redactedValues <= 0 && record.survivingValues <= 0 && record.blockReason === undefined) return;
     const event: ProtectionStatsEvent = {
       index: this.events.length + 1,
       at: new Date().toISOString(),
@@ -97,6 +101,7 @@ export class ProtectionStats {
       redactedHits: [...(record.redactedHits ?? [])],
       survivingHits: [...(record.survivingHits ?? [])],
     };
+    if (record.blockReason) event.blockReason = record.blockReason;
     if (record.requestId !== undefined) event.requestId = record.requestId;
     if (record.route) event.route = record.route;
     this.events.push(event);

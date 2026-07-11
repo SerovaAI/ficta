@@ -170,6 +170,12 @@ describe("runtime guards", () => {
   it("accepts valid config and protection-stats payloads", () => {
     assert.equal(isProxyConfigOk(configPayload()), true);
     assert.equal(isProtectionStatsOk(statsPayload()), true);
+
+    const detectorBlock = statsPayload();
+    detectorBlock.stats.events[0].blocked = true;
+    detectorBlock.stats.events[0].blockReason = "detector_unavailable";
+    detectorBlock.stats.events[0].redactedValues = 0;
+    assert.equal(isProtectionStatsOk(detectorBlock), true);
   });
 
   it("validates runtime trace capture status", () => {
@@ -192,6 +198,10 @@ describe("runtime guards", () => {
     const badStats = statsPayload();
     badStats.stats.events[0].surface = "headers";
     assert.equal(isProtectionStatsOk(badStats), false);
+
+    const badBlockReason = statsPayload();
+    badBlockReason.stats.events[0].blockReason = "unknown_reason";
+    assert.equal(isProtectionStatsOk(badBlockReason), false);
   });
 
   it("validates revision-aware registry reload payloads", () => {

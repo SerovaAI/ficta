@@ -248,4 +248,65 @@ describe("pre-send protection preview", () => {
       await close(upstream);
     }
   });
+
+  it("keeps concurrent same-scope tickets independent and evicts only the oldest at the bound", async () => {
+    let upstreamRequests = 0;
+    const upstream = createServer((req, res) => {
+      upstreamRequests++;
+      req.resume();
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      });
+    });
+    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+
+    try {
+      const upstreamPort = await listen(upstream);
+      process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0, plugins: [] });
+      const base = `http://127.0.0.1:${proxy.port}`;
+      const scope = "org-1:shared-thread";
+      const prepared: Array<{ text: string; ticket: string }> = [];
+
+      // The per-scope bound is eight: the ninth preview evicts only the oldest capability.
+      for (let index = 0; index < 9; index++) {
+        const protectedValue = `Private Ledger ${index}`;
+        const text = `Summarize ${protectedValue}`;
+        const response = await fetch(`${base}${FICTA_PROTECTION_PREVIEW_PATH}`, {
+          method: "POST",
+          headers: { "content-type": "application/json", [FICTA_SCOPE_HEADER]: scope },
+          body: JSON.stringify({ text, protectedValues: [protectedValue] }),
+        });
+        const preview = (await response.json()) as unknown;
+        expect(isProtectionPreviewOk(preview)).toBe(true);
+        if (!isProtectionPreviewOk(preview)) throw new Error("bounded preview guard failed");
+        prepared.push({ text, ticket: preview.ticket });
+      }
+
+      const send = ({ text, ticket }: { text: string; ticket: string }) =>
+        fetch(`${base}/v1/chat/completions`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            [FICTA_SCOPE_HEADER]: scope,
+            [FICTA_PROTECTION_TICKET_HEADER]: ticket,
+          },
+          body: JSON.stringify({ model: "test", messages: [{ role: "user", content: text }] }),
+        });
+
+      expect((await send(prepared[0] as { text: string; ticket: string })).status).toBe(409);
+      const second = await send(prepared[1] as { text: string; ticket: string });
+      expect(second.status).toBe(200);
+      await second.text();
+      const newest = await send(prepared[8] as { text: string; ticket: string });
+      expect(newest.status).toBe(200);
+      await newest.text();
+      expect(upstreamRequests).toBe(2);
+    } finally {
+      proxy?.close();
+      await close(upstream);
+    }
+  });
 });

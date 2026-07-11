@@ -122,6 +122,7 @@ export interface ProtectionPreviewError {
 
 export type ProtectionPreview = ProtectionPreviewOk | ProtectionPreviewError;
 export type ProtectionStatsSurface = "body" | "query string" | "non-auth headers";
+export type ProtectionStatsBlockReason = "detector_unavailable";
 
 export interface ProtectionHit {
   name: string;
@@ -173,6 +174,8 @@ export interface ProtectionStatsEvent {
   redactedValues: number;
   survivingValues: number;
   blocked: boolean;
+  /** Values-free reason for a request blocked before ordinary redaction proof was available. */
+  blockReason?: ProtectionStatsBlockReason;
   redactedHits: ProtectionHit[];
   survivingHits: ProtectionHit[];
 }

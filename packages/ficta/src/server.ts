@@ -411,7 +411,33 @@ export async function startProxy(
     let searchToSend = url.search;
     let queryRedaction: SurfaceRedaction | undefined;
     if (protect && searchToSend) {
-      const { search: redactedSearch, ...redaction } = await redactQueryString(scope, url, captureTraceAudit);
+      let redactedQuery: QueryRedaction;
+      try {
+        redactedQuery = await redactQueryString(scope, url, captureTraceAudit);
+      } catch (err) {
+        if (err instanceof DetectorUnavailableError) {
+          const n = logRequest({
+            method,
+            path: url.pathname,
+            body: "",
+            target: "<blocked>",
+            route: "blocked",
+            captureRawBodies,
+          });
+          recordDetectorUnavailable(stats, scope, traceRedactions, {
+            requestId: n,
+            method,
+            path: url.pathname,
+            wire,
+            route: "blocked",
+            surface: "query string",
+            captureTraceAudit,
+          });
+          return blockedDetectionResponse(c, err.plugin, n);
+        }
+        throw err;
+      }
+      const { search: redactedSearch, ...redaction } = redactedQuery;
       queryRedaction = redaction;
       if (redaction.leaks > 0 && cfg.failClosed) {
         const n = logRequest({
@@ -507,7 +533,19 @@ export async function startProxy(
         } catch (err) {
           // A fail-closed detector (e.g. Presidio required but unreachable) refuses the request rather
           // than forwarding data it could not screen. The raw body has not left the process.
-          if (err instanceof DetectorUnavailableError) return blockedDetectionResponse(c, err.plugin, n);
+          if (err instanceof DetectorUnavailableError) {
+            recordDetectorUnavailable(stats, scope, traceRedactions, {
+              requestId: n,
+              method,
+              path: url.pathname,
+              wire,
+              route,
+              model: safeRequestModel(scope, originalModel, undefined),
+              surface: "body",
+              captureTraceAudit,
+            });
+            return blockedDetectionResponse(c, err.plugin, n);
+          }
           if (err instanceof RedactionInvariantError) return blockedInvariantResponse(c, err.reason, n);
           throw err;
         }
@@ -589,7 +627,25 @@ export async function startProxy(
     }
 
     if (protect) {
-      const redaction = await redactNonAuthHeaders(scope, headers, captureTraceAudit);
+      let redaction: SurfaceRedaction;
+      try {
+        redaction = await redactNonAuthHeaders(scope, headers, captureTraceAudit);
+      } catch (err) {
+        if (err instanceof DetectorUnavailableError) {
+          recordDetectorUnavailable(stats, scope, traceRedactions, {
+            requestId: n,
+            method,
+            path: url.pathname,
+            wire,
+            route,
+            model: requestModel,
+            surface: "non-auth headers",
+            captureTraceAudit,
+          });
+          return blockedDetectionResponse(c, err.plugin, n);
+        }
+        throw err;
+      }
       if (redaction.leaks > 0 && cfg.failClosed) {
         recordProtection(stats, scope, traceRedactions, {
           requestId: n,
@@ -1352,6 +1408,37 @@ function recordProtection(
     redactedValues,
     survivingValues,
   });
+}
+
+function recordDetectorUnavailable(
+  stats: ProtectionStats,
+  scope: RequestScope,
+  traceRedactions: ProtectionTraceRedaction[],
+  args: {
+    requestId: number;
+    method: string;
+    path: string;
+    wire: Wire;
+    route?: string;
+    model?: string;
+    surface: ProtectionSurface;
+    captureTraceAudit: boolean;
+  },
+): void {
+  stats.record({
+    requestId: args.requestId,
+    method: args.method,
+    path: safeStatsMetadata(scope, args.path, "<redacted-path>"),
+    wire: args.wire,
+    route: args.route,
+    model: args.model,
+    surface: args.surface,
+    redactedValues: 0,
+    survivingValues: 0,
+    blocked: true,
+    blockReason: "detector_unavailable",
+  });
+  writeProtectionTraceAudit(args.requestId, traceRedactions, scope, "blocked", args.captureTraceAudit);
 }
 
 function writeProtectionTraceAudit(
