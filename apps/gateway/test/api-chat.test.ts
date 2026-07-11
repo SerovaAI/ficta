@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { latestUserText, requiresProtectionReviewTicket, resolveChatTraceEnabled } from "@/routes/api/chat";
+import {
+  latestUserText,
+  requiresProtectionReviewTicket,
+  resolveChatTraceEnabled,
+  resolveRequestedReasoningEffort,
+} from "@/routes/api/chat";
 
 describe("latestUserText", () => {
   it("prepares only the current user turn rather than serializing a large transcript", () => {
@@ -35,5 +40,20 @@ describe("resolveChatTraceEnabled", () => {
     expect(resolveChatTraceEnabled({ storedTraceEnabled: undefined, requestedTraceEnabled: true, admin: false })).toBe(
       false,
     );
+  });
+});
+
+describe("resolveRequestedReasoningEffort", () => {
+  it("clamps stale or forged effort values for known OpenAI models", () => {
+    expect(resolveRequestedReasoningEffort("openai", "gpt-5.6-sol", "minimal")).toBe("low");
+    expect(resolveRequestedReasoningEffort("openai", "gpt-5", "none")).toBe("minimal");
+    expect(resolveRequestedReasoningEffort("openai", "gpt-5-mini", "xhigh")).toBe("high");
+    expect(resolveRequestedReasoningEffort("openai", "gpt-5-nano", "max")).toBe("high");
+  });
+
+  it("preserves supported values and defaults malformed input", () => {
+    expect(resolveRequestedReasoningEffort("openai", "gpt-5.6-terra", "max")).toBe("max");
+    expect(resolveRequestedReasoningEffort("openai", "gpt-5.6-luna", "none")).toBe("none");
+    expect(resolveRequestedReasoningEffort("openai", "gpt-5.6-sol", "extreme")).toBe("medium");
   });
 });

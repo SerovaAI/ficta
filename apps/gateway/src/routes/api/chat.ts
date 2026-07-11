@@ -9,6 +9,7 @@ import { createModelAdapter } from "../../lib/model-adapter";
 import {
   DEFAULT_REASONING_EFFORT,
   isReasoningEffort,
+  normalizeReasoningEffort,
   PROVIDERS,
   type Provider,
   type ReasoningEffort,
@@ -52,9 +53,7 @@ export const Route = createFileRoute("/api/chat")({
           const body = await request.json();
           provider = body.forwardedProps?.provider ?? "openai";
           model = body.forwardedProps?.model ?? "gpt-5-mini";
-          reasoningEffort = isReasoningEffort(body.forwardedProps?.reasoningEffort)
-            ? body.forwardedProps.reasoningEffort
-            : DEFAULT_REASONING_EFFORT;
+          reasoningEffort = resolveRequestedReasoningEffort(provider, model, body.forwardedProps?.reasoningEffort);
           requestedTraceEnabled = body.forwardedProps?.traceEnabled === true;
           protectionTicket = cleanProtectionTicket(body.forwardedProps?.protectionTicket);
           messages = stripRestoreHighlightMarkers(body.messages);
@@ -147,6 +146,12 @@ function errorResponse(status: number, message: string): Response {
 function reason(err: unknown, fallback: string): string {
   const message = err instanceof Error ? err.message.trim() : "";
   return message || fallback;
+}
+
+/** Normalize untrusted/stale client effort values before building the upstream OpenAI request. */
+export function resolveRequestedReasoningEffort(provider: string, model: string, value: unknown): ReasoningEffort {
+  const effort = isReasoningEffort(value) ? value : DEFAULT_REASONING_EFFORT;
+  return normalizeReasoningEffort({ provider, model }, effort);
 }
 
 function cleanProtectionTicket(value: unknown): string | undefined {

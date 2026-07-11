@@ -28,7 +28,13 @@ import {
   type TextAttachment,
   textAttachmentFromFile,
 } from "@/lib/file-attachments";
-import { DEFAULT_REASONING_EFFORT, MODELS, type ModelChoice, type ReasoningEffort } from "@/lib/models";
+import {
+  DEFAULT_REASONING_EFFORT,
+  MODELS,
+  type ModelChoice,
+  normalizeReasoningEffort,
+  type ReasoningEffort,
+} from "@/lib/models";
 import { withOneShotProtectionTicket } from "@/lib/protection-connection";
 import { type GatewayProtectionPreview, previewProtection } from "@/lib/protection-preview";
 import type { ProtectionStatus } from "@/lib/protection-status";
@@ -69,8 +75,8 @@ function initialModel(userSettings: UserSettings | undefined, instance: Instance
   return preferred ?? allowed[0] ?? MODELS[0];
 }
 
-function initialReasoningEffort(userSettings: UserSettings | undefined): ReasoningEffort {
-  return userSettings?.defaultReasoningEffort ?? DEFAULT_REASONING_EFFORT;
+function initialReasoningEffort(userSettings: UserSettings | undefined, model: ModelChoice): ReasoningEffort {
+  return normalizeReasoningEffort(model, userSettings?.defaultReasoningEffort ?? DEFAULT_REASONING_EFFORT);
 }
 
 /**
@@ -105,7 +111,9 @@ export function ChatView({
   const [passthroughAck, setPassthroughAck] = useState(false);
   const [input, setInput] = useState("");
   const [model, setModel] = useState<ModelChoice>(() => initialModel(userSettings, instance));
-  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(() => initialReasoningEffort(userSettings));
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(() =>
+    initialReasoningEffort(userSettings, initialModel(userSettings, instance)),
+  );
   const [restoreDisplayMode, setRestoreDisplayMode] = useState<RestoreHighlightDisplayMode>("values");
   const [attachments, setAttachments] = useState<TextAttachment[]>([]);
   const [uploadWarning, setUploadWarning] = useState<string[]>();
@@ -179,6 +187,11 @@ export function ChatView({
   const protectionPreviewIsCurrent = (generation: number) =>
     protectionPreviewRequest.current.generation === generation &&
     protectionPreviewRequest.current.controller?.signal.aborted === false;
+
+  const chooseModel = (choice: ModelChoice) => {
+    setModel(choice);
+    setReasoningEffort((current) => normalizeReasoningEffort(choice, current));
+  };
 
   useEffect(() => {
     setThreadTraceEnabledState(initialThreadTraceEnabled ?? false);
@@ -682,7 +695,7 @@ export function ChatView({
                 isExtracting={isExtracting}
                 disabledReason={posture.kind === "blocked" ? posture.reason : undefined}
                 model={model}
-                onModelChange={setModel}
+                onModelChange={chooseModel}
                 reasoningEffort={reasoningEffort}
                 onReasoningEffortChange={setReasoningEffort}
                 attachments={attachments}
