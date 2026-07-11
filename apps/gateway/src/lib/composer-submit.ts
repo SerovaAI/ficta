@@ -11,6 +11,9 @@ export function canSubmitComposerDraft({
   isExtracting?: boolean;
   disabledReason?: string;
 }): boolean {
-  const draftKind = value.trim().length > 0 ? "instructions" : attachmentCount > 0 ? "attachment-only" : "empty";
-  return draftKind === "instructions" && !isLoading && !isExtracting && !disabledReason;
+  return hasComposerDraft(value, attachmentCount) && !isLoading && !isExtracting && !disabledReason;
+}
+
+export function hasComposerDraft(value: string, attachmentCount = 0): boolean {
+  return value.trim().length > 0 || attachmentCount > 0;
 }

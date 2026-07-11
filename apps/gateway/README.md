@@ -205,7 +205,8 @@ and counterparty names still belong in the exact-match registry.
 
 Plain text attachments are read in the browser and inlined into the chat request. PDF/DOCX uploads go
 through the document-converter sidecar (`FICTA_DOC_CONVERTER_URL`) via `POST /api/extract`, then the
-extracted Markdown is inlined and redacted through the same path.
+extracted Markdown is inlined and redacted through the same path. A prompt is optional: an attachment-only
+draft uses a generic review instruction and follows the chat's **Review before send** setting.
 
 In a source checkout, root `pnpm dev` starts/reuses the default converter on `http://127.0.0.1:5003`.
 Outside that wrapper, use `pnpm sidecars` or run `apps/gateway/sidecars/document-converter` yourself.

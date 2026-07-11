@@ -17,6 +17,7 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { isAdmin } from "@/lib/auth/types";
 import { useAuthState } from "@/lib/auth/useAuthState";
+import { hasComposerDraft } from "@/lib/composer-submit";
 import {
   extractDocumentAttachment,
   formatBytes,
@@ -298,8 +299,8 @@ export function ChatView({
 
   const beginProtectionReview = async (text: string, action: "send" | "reload" = "send") => {
     const trimmed = text.trim();
-    if (!trimmed || isLoading || isExtracting || protectionReviewLoading || startingThread.current) return;
     const content = action === "send" ? messageWithAttachments(trimmed, attachments) : trimmed;
+    if (!content.trim() || isLoading || isExtracting || protectionReviewLoading || startingThread.current) return;
     setProtectionReview(undefined);
     setProtectionReviewError("");
     setProtectionReviewNotice("");
@@ -322,7 +323,7 @@ export function ChatView({
   const send = (text: string) => {
     if (posture.kind === "blocked") return;
     if (posture.kind === "passthrough" && !passthroughAck) {
-      if (!text.trim()) return;
+      if (!hasComposerDraft(text, attachments.length)) return;
       setConfirmSendOpen(true);
       return;
     }
