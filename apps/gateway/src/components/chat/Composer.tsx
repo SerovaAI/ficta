@@ -16,7 +16,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { canSubmitComposerDraft } from "@/lib/composer-submit";
 import { ATTACHMENT_ACCEPT, formatBytes, type TextAttachment } from "@/lib/file-attachments";
-import { MODELS, type ModelChoice, REASONING_EFFORTS, type ReasoningEffort } from "@/lib/models";
+import {
+  isReasoningEffort,
+  MODELS,
+  type ModelChoice,
+  REASONING_EFFORTS,
+  type ReasoningEffort,
+  reasoningEffortsForModel,
+} from "@/lib/models";
 import { isModelAllowed, modelKey } from "@/lib/storage/types";
 import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
 
@@ -255,8 +262,9 @@ function ComposerModelControl({
 }) {
   const instance = useInstanceSettings();
   const models = MODELS.filter((m) => isModelAllowed(instance, modelKey(m)));
+  const reasoningEfforts = reasoningEffortsForModel(model);
   const selectedReasoning = REASONING_EFFORTS.find((effort) => effort.value === reasoningEffort);
-  const reasoningDisabled = model.provider !== "openai";
+  const reasoningDisabled = reasoningEfforts.length === 0;
   const reasoningLabel = selectedReasoning?.label ?? "Medium";
   const selectedModelKey = modelKey(model);
   const controlLabel = reasoningDisabled
@@ -310,10 +318,10 @@ function ComposerModelControl({
               <DropdownMenuRadioGroup
                 value={reasoningEffort}
                 onValueChange={(value) => {
-                  if (isReasoningValue(value)) onReasoningEffortChange(value);
+                  if (isReasoningEffort(value) && reasoningEfforts.includes(value)) onReasoningEffortChange(value);
                 }}
               >
-                {REASONING_EFFORTS.map((effort) => (
+                {REASONING_EFFORTS.filter((effort) => reasoningEfforts.includes(effort.value)).map((effort) => (
                   <DropdownMenuRadioItem key={effort.value} value={effort.value}>
                     {effort.label}
                   </DropdownMenuRadioItem>
@@ -325,8 +333,4 @@ function ComposerModelControl({
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
-
-function isReasoningValue(value: string): value is ReasoningEffort {
-  return REASONING_EFFORTS.some((effort) => effort.value === value);
 }
