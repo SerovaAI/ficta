@@ -1,19 +1,27 @@
 import {
   FICTA_RESTORE_HIGHLIGHT_END,
   FICTA_RESTORE_HIGHLIGHT_METADATA,
+  FICTA_RESTORE_HIGHLIGHT_ORIGIN,
   FICTA_RESTORE_HIGHLIGHT_START,
+  type ProtectionPreviewOrigin,
 } from "@serovaai/ficta-protocol";
 
 export const RESTORE_HIGHLIGHT_TAG = "ficta-restore";
 
+export function restoreHighlightTag(origin: ProtectionPreviewOrigin): string {
+  return `${RESTORE_HIGHLIGHT_TAG}-${origin}`;
+}
+
 export type RestoreHighlightDisplayMode = "values" | "surrogates";
 
-/** One restored PII span the proxy highlighted: its real `value` and (optionally) the `surrogate` the
+/** One restored PII span the proxy highlighted: its real `value`, the `surrogate` the
  * model actually saw. This is the structured, in-memory display metadata — the delimiter markers it is
  * parsed from never live past {@link parseRestoreHighlightText}. */
 export interface RestoreHighlight {
   value: string;
-  surrogate?: string;
+  surrogate: string;
+  /** Protection source selected by the proxy's winning vault layer. */
+  origin: ProtectionPreviewOrigin;
 }
 
 /** The result of parsing marker-bearing streamed text into display metadata: the clean text to show and
@@ -37,7 +45,7 @@ export function hasRestoreHighlightMarkers(content: string): boolean {
 /**
  * Parse marker-bearing streamed assistant text into a structured sidecar: the clean `visibleText` (real
  * values substituted, markers removed — identical to what {@link stripRestoreHighlightMarkers} produces)
- * plus the ordered, de-duplicated list of `{ value, surrogate }` restorations. This is the single client
+ * plus the ordered, de-duplicated list of `{ value, surrogate, origin }` restorations. This is the single client
  * boundary where the in-band delimiter format is consumed; nothing downstream sees markers.
  *
  * Incomplete markers mid-stream are handled like the strip path — a trailing partial marker or an
@@ -60,15 +68,19 @@ export function parseRestoreHighlightText(content: string): ParsedRestoreText {
     const valueStart = start + FICTA_RESTORE_HIGHLIGHT_START.length;
     const end = content.indexOf(FICTA_RESTORE_HIGHLIGHT_END, valueStart);
     const payload = end === -1 ? stripTrailingMarkerPrefix(content.slice(valueStart)) : content.slice(valueStart, end);
-    const parsed = parseHighlightPayload(payload, end !== -1);
+    const parsed = parseHighlightPayload(payload);
     visibleText += parsed.value;
 
     // Only complete markers (END seen) with a non-empty value are real restorations; a partial marker at
     // the stream tail is left for the next chunk. De-dupe by value so a value repeated in one turn is
     // located once and highlighted at every occurrence at render time.
-    if (end !== -1 && parsed.value && !seen.has(parsed.value)) {
+    if (end !== -1 && parsed.value && parsed.surrogate && parsed.origin && !seen.has(parsed.value)) {
       seen.add(parsed.value);
-      restorations.push({ value: parsed.value, surrogate: parsed.surrogate });
+      restorations.push({
+        value: parsed.value,
+        surrogate: parsed.surrogate,
+        origin: parsed.origin,
+      });
     }
 
     if (end === -1) return { visibleText, restorations };
@@ -124,7 +136,7 @@ export function hasVisibleRestorations(visibleText: string, restorations: readon
 }
 
 /**
- * Render `visibleText` to markdown with each located restoration wrapped in a `<ficta-restore>` tag
+ * Render `visibleText` to markdown with each located restoration wrapped in an origin-specific custom tag
  * (value in `values` mode, surrogate in `surrogates` mode). This is the ONLY place the tag/sentinel
  * format exists, derived per render from the structured sidecar — never stored. Returns `highlighted:
  * false` (and the raw text) when no restoration is present so callers can skip the custom-tag plumbing.
@@ -142,7 +154,8 @@ export function renderVisibleHighlights(
   for (const { start, end, restoration } of spans) {
     out += visibleText.slice(cursor, start);
     const visible = displayMode === "surrogates" && restoration.surrogate ? restoration.surrogate : restoration.value;
-    out += `<${RESTORE_HIGHLIGHT_TAG}>${escapeHtml(visible)}</${RESTORE_HIGHLIGHT_TAG}>`;
+    const tag = restoreHighlightTag(restoration.origin);
+    out += `<${tag}>${escapeHtml(visible)}</${tag}>`;
     cursor = end;
   }
   out += visibleText.slice(cursor);
@@ -185,36 +198,48 @@ function stripRestoreHighlightMarkersFromString(content: string): string {
   return parseRestoreHighlightText(content).visibleText;
 }
 
-function parseHighlightPayload(payload: string, complete: boolean): { value: string; surrogate?: string } {
+interface ParsedHighlightPayload {
+  value: string;
+  surrogate?: string;
+  origin?: ProtectionPreviewOrigin;
+}
+
+function parseHighlightPayload(payload: string): ParsedHighlightPayload {
   const metadata = payload.indexOf(FICTA_RESTORE_HIGHLIGHT_METADATA);
-  if (metadata > 0) {
-    const maybeSurrogate = payload.slice(0, metadata);
-    if (isSurrogateToken(maybeSurrogate)) {
-      return {
-        surrogate: maybeSurrogate,
-        value: stripTrailingMarkerPrefix(payload.slice(metadata + FICTA_RESTORE_HIGHLIGHT_METADATA.length)),
-      };
-    }
-  }
-
-  // During streaming, a new-format marker can arrive as START + partial surrogate before the metadata
-  // separator. Hide that incomplete metadata so the UI never flashes marker internals.
-  if (!complete && isPotentialSurrogateMetadataPrefix(payload)) return { value: "" };
-
-  return { value: stripTrailingMarkerPrefix(payload) };
+  if (metadata <= 0) return { value: "" };
+  const prefix = payload.slice(0, metadata);
+  const originDelimiter = prefix.indexOf(FICTA_RESTORE_HIGHLIGHT_ORIGIN);
+  if (originDelimiter <= 0) return { value: "" };
+  const surrogate = prefix.slice(0, originDelimiter);
+  const origin = prefix.slice(originDelimiter + FICTA_RESTORE_HIGHLIGHT_ORIGIN.length);
+  if (!isSurrogateToken(surrogate) || !isProtectionOrigin(origin)) return { value: "" };
+  return {
+    surrogate,
+    origin,
+    value: stripTrailingMarkerPrefix(payload.slice(metadata + FICTA_RESTORE_HIGHLIGHT_METADATA.length)),
+  };
 }
 
 function isSurrogateToken(value: string): boolean {
   return /^FICTA_(?:[0-9a-f]{32}|[A-Z0-9]{1,12}_[0-9a-f]{32})$/.test(value);
 }
 
-function isPotentialSurrogateMetadataPrefix(value: string): boolean {
-  return /^FICTA_[A-Z0-9a-f_]*$/.test(value) || "FICTA_".startsWith(value);
+function isProtectionOrigin(value: string | undefined): value is ProtectionPreviewOrigin {
+  return value === "registry" || value === "detected" || value === "user";
 }
 
 function stripTrailingMarkerPrefix(content: string): string {
   let trim = 0;
-  for (const marker of [FICTA_RESTORE_HIGHLIGHT_START, FICTA_RESTORE_HIGHLIGHT_METADATA, FICTA_RESTORE_HIGHLIGHT_END]) {
+  const markers = [
+    FICTA_RESTORE_HIGHLIGHT_START,
+    FICTA_RESTORE_HIGHLIGHT_ORIGIN,
+    FICTA_RESTORE_HIGHLIGHT_METADATA,
+    FICTA_RESTORE_HIGHLIGHT_END,
+  ];
+  // Every delimiter begins and ends with the same record-separator byte. A complete delimiter therefore
+  // also looks like the one-byte prefix of every other delimiter; never trim when a full one is present.
+  if (markers.some((marker) => content.endsWith(marker))) return content;
+  for (const marker of markers) {
     for (let length = 1; length < marker.length; length += 1) {
       if (content.endsWith(marker.slice(0, length))) trim = Math.max(trim, length);
     }

@@ -499,7 +499,7 @@ describe("proxy hardening", () => {
     }
   });
 
-  it("requires both the runtime grant and an explicit per-request trace selector", async () => {
+  it("gates trace capture independently from client-requested restore highlights", async () => {
     const originalEnv = {
       FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,
       FICTA_LOG_LEVEL: process.env.FICTA_LOG_LEVEL,
@@ -573,14 +573,14 @@ describe("proxy hardening", () => {
       await setRuntimeTraceCapture(proxy.port, false);
       const disabledAgain = await send("1");
       expect(globallyDisabled).toContain(PROOF_SECRET);
-      expect(globallyDisabled).not.toContain("FICTA_RESTORE_START");
+      expect(globallyDisabled).toContain("FICTA_RESTORE_START");
       expect(unselected).toContain(PROOF_SECRET);
-      expect(unselected).not.toContain("FICTA_RESTORE_START");
+      expect(unselected).toContain("FICTA_RESTORE_START");
       expect(suppressed).toContain(PROOF_SECRET);
-      expect(suppressed).not.toContain("FICTA_RESTORE_START");
+      expect(suppressed).toContain("FICTA_RESTORE_START");
       expect(explicit).toContain("FICTA_RESTORE_START");
       expect(disabledAgain).toContain(PROOF_SECRET);
-      expect(disabledAgain).not.toContain("FICTA_RESTORE_START");
+      expect(disabledAgain).toContain("FICTA_RESTORE_START");
       expect(upstreamTraceHeaders).toEqual([undefined, undefined, undefined, undefined, undefined]);
       expect(upstreamRestoreHeaders).toEqual([undefined, undefined, undefined, undefined, undefined]);
 

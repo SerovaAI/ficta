@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import {
   FICTA_RESTORE_HIGHLIGHT_END,
   FICTA_RESTORE_HIGHLIGHT_METADATA,
+  FICTA_RESTORE_HIGHLIGHT_ORIGIN,
   FICTA_RESTORE_HIGHLIGHT_START,
 } from "@serovaai/ficta-protocol";
 import { afterEach, describe, expect, it } from "vitest";
@@ -31,6 +32,36 @@ describe("vault", () => {
 
   it("loads the registry", () => {
     expect(v.size).toBeGreaterThanOrEqual(3);
+  });
+
+  it("marks restorations with the winning registry, detected, or user origin", () => {
+    const strategy = hexSurrogateStrategy("restore-origin-key");
+    const registryValue = "registry-secret-value";
+    const detectedValue = "detected-person-value";
+    const userValue = "user-selected-value";
+    const permanent = new SurrogateTable(strategy, "permanent");
+    permanent.register([{ value: registryValue }]);
+    const scope = new ScopedVault(permanent);
+    scope.register([{ value: detectedValue }]);
+    const userToken = scope.registerUserProtectedSurface({ value: userValue }, true);
+    const markers = {
+      start: FICTA_RESTORE_HIGHLIGHT_START,
+      origin: FICTA_RESTORE_HIGHLIGHT_ORIGIN,
+      metadata: FICTA_RESTORE_HIGHLIGHT_METADATA,
+      end: FICTA_RESTORE_HIGHLIGHT_END,
+    };
+    const registryToken = scope.redactText(registryValue, false).text;
+    const detectedToken = scope.redactText(detectedValue, false).text;
+
+    expect(scope.restoreText(registryToken, { markers })).toContain(
+      `${FICTA_RESTORE_HIGHLIGHT_ORIGIN}registry${FICTA_RESTORE_HIGHLIGHT_METADATA}${registryValue}`,
+    );
+    expect(scope.restoreText(detectedToken, { markers })).toContain(
+      `${FICTA_RESTORE_HIGHLIGHT_ORIGIN}detected${FICTA_RESTORE_HIGHLIGHT_METADATA}${detectedValue}`,
+    );
+    expect(scope.restoreText(userToken, { markers })).toContain(
+      `${FICTA_RESTORE_HIGHLIGHT_ORIGIN}user${FICTA_RESTORE_HIGHLIGHT_METADATA}${userValue}`,
+    );
   });
 
   it("separates token-only restore mappings from future match forms", () => {

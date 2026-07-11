@@ -15,6 +15,7 @@ export const FICTA_EGRESS_EVENT_HEADER = "x-ficta-egress-event";
 export const FICTA_TRACE_CAPTURE_HEADER = "x-ficta-trace-capture";
 export const FICTA_RESTORE_HIGHLIGHT_HEADER = "x-ficta-restore-highlights";
 export const FICTA_RESTORE_HIGHLIGHT_START = "\u001eFICTA_RESTORE_START\u001e";
+export const FICTA_RESTORE_HIGHLIGHT_ORIGIN = "\u001eFICTA_RESTORE_ORIGIN\u001e";
 export const FICTA_RESTORE_HIGHLIGHT_METADATA = "\u001eFICTA_RESTORE_SURROGATE\u001e";
 export const FICTA_RESTORE_HIGHLIGHT_END = "\u001eFICTA_RESTORE_END\u001e";
 export const FICTA_MANAGED_REGISTRY_SCHEMA = "ficta.managed-registry.v1";

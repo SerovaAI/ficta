@@ -1,6 +1,7 @@
 import {
   FICTA_RESTORE_HIGHLIGHT_END,
   FICTA_RESTORE_HIGHLIGHT_METADATA,
+  FICTA_RESTORE_HIGHLIGHT_ORIGIN,
   FICTA_RESTORE_HIGHLIGHT_START,
 } from "@serovaai/ficta-protocol";
 import type { UIMessage } from "@tanstack/ai-react";
@@ -43,7 +44,7 @@ describe("message mapping", () => {
 
   it("strips restore highlight markers before storage", () => {
     const surrogate = "FICTA_EMAIL_1234567890abcdef1234567890abcdef";
-    const marked = `${FICTA_RESTORE_HIGHLIGHT_START}${surrogate}${FICTA_RESTORE_HIGHLIGHT_METADATA}jane.doe@example.com${FICTA_RESTORE_HIGHLIGHT_END}`;
+    const marked = `${FICTA_RESTORE_HIGHLIGHT_START}${surrogate}${FICTA_RESTORE_HIGHLIGHT_ORIGIN}detected${FICTA_RESTORE_HIGHLIGHT_METADATA}jane.doe@example.com${FICTA_RESTORE_HIGHLIGHT_END}`;
     const stored = uiToStored({
       id: "m2",
       role: "assistant",

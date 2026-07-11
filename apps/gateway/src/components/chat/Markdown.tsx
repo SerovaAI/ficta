@@ -1,14 +1,17 @@
+import type { ProtectionPreviewOrigin } from "@serovaai/ficta-protocol";
 import { memo, type ReactNode, useMemo } from "react";
 import { Streamdown } from "streamdown";
 import {
-  RESTORE_HIGHLIGHT_TAG,
   type RestoreHighlight,
   type RestoreHighlightDisplayMode,
   renderVisibleHighlights,
+  restoreHighlightTag,
 } from "@/lib/restore-highlights";
 
-const RESTORE_ALLOWED_TAGS = { [RESTORE_HIGHLIGHT_TAG]: [] };
-const RESTORE_LITERAL_TAGS = [RESTORE_HIGHLIGHT_TAG];
+const RESTORE_ORIGINS = ["registry", "detected", "user"] as const;
+const RESTORE_TAGS = RESTORE_ORIGINS.map(restoreHighlightTag);
+const RESTORE_ALLOWED_TAGS = Object.fromEntries(RESTORE_TAGS.map((tag) => [tag, []]));
+const RESTORE_LITERAL_TAGS = RESTORE_TAGS;
 
 /**
  * The markdown seam. Streamdown renders GFM markdown and gracefully tolerates the unterminated
@@ -44,16 +47,64 @@ const Markdown = memo(function Markdown({
 export default Markdown;
 
 function restoreHighlightComponents(displayMode: RestoreHighlightDisplayMode) {
-  return {
-    [RESTORE_HIGHLIGHT_TAG]: ({ children }: { children?: ReactNode }) =>
-      displayMode === "surrogates" ? (
-        <mark className="rounded-[3px] bg-muted px-1 font-mono text-[0.86em] text-foreground ring-1 ring-border dark:bg-muted/70">
+  return Object.fromEntries(
+    RESTORE_ORIGINS.map((origin) => [
+      restoreHighlightTag(origin),
+      ({ children }: { children?: ReactNode }) => (
+        <RestoreMark displayMode={displayMode} origin={origin}>
           {children}
-        </mark>
-      ) : (
-        <mark className="rounded-[3px] bg-amber-100 px-0.5 text-amber-950 ring-1 ring-amber-300 dark:bg-amber-300/20 dark:text-amber-100 dark:ring-amber-400/30">
-          {children}
-        </mark>
+        </RestoreMark>
       ),
-  };
+    ]),
+  );
+}
+
+function RestoreMark({
+  children,
+  displayMode,
+  origin,
+}: {
+  children?: ReactNode;
+  displayMode: RestoreHighlightDisplayMode;
+  origin: ProtectionPreviewOrigin;
+}) {
+  if (displayMode === "surrogates") {
+    return (
+      <mark className="rounded-[3px] bg-muted px-1 font-mono text-[0.86em] text-foreground ring-1 ring-border dark:bg-muted/70">
+        {children}
+      </mark>
+    );
+  }
+
+  const { title, borderClass } = restoreHighlightPresentation(origin);
+
+  return (
+    <mark
+      className={`rounded-[3px] border-b-2 bg-emerald-100 px-0.5 text-foreground dark:bg-emerald-950/60 ${borderClass}`}
+      title={title}
+    >
+      {children}
+    </mark>
+  );
+}
+
+/** Mirrors ProtectionReview's three-way key for restored assistant values. */
+export function restoreHighlightPresentation(origin: ProtectionPreviewOrigin): {
+  title: string;
+  borderClass: string;
+} {
+  const title =
+    origin === "user"
+      ? "Protected by you — restored locally"
+      : origin === "registry"
+        ? "Protected Registry — restored locally"
+        : "Detected PII — restored locally";
+  const borderClass =
+    origin === "user"
+      ? "border-foreground"
+      : origin === "detected"
+        ? "border-emerald-600 border-dashed"
+        : "border-emerald-600";
+
+  return { title, borderClass };
 }

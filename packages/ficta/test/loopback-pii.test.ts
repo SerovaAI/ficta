@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readdirSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -7,9 +7,8 @@ import {
   FICTA_RESTORE_HIGHLIGHT_END,
   FICTA_RESTORE_HIGHLIGHT_HEADER,
   FICTA_RESTORE_HIGHLIGHT_METADATA,
+  FICTA_RESTORE_HIGHLIGHT_ORIGIN,
   FICTA_RESTORE_HIGHLIGHT_START,
-  FICTA_TRACE_CAPTURE_HEADER,
-  FICTA_TRACE_CAPTURE_PATH,
 } from "@serovaai/ficta-protocol";
 import { describe, expect, it, vi } from "vitest";
 import { piiPlugin } from "../src/plugins/index.js";
@@ -207,7 +206,7 @@ describe("loopback PII round-trip through the real proxy", () => {
     }
   });
 
-  it("SSE stream: marks restored values for gateway trace demos only", async () => {
+  it("SSE stream: marks restored values without enabling trace capture or audit", async () => {
     const saved = snapshotEnv();
     let upstreamSawHighlightHeader: string | string[] | undefined;
     const upstream = createServer((req, res) => {
@@ -233,25 +232,19 @@ describe("loopback PII round-trip through the real proxy", () => {
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
       process.env.FICTA_PII_ENABLED = "1";
       process.env.FICTA_PII_RECOGNIZERS = "regex";
-      process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-loopback-highlight-"));
-      process.env.FICTA_LOG_LEVEL = "trace";
-      process.env.FICTA_TRACE_AUDIT = "1";
+      const logRoot = mkdtempSync(join(tmpdir(), "ficta-loopback-highlight-"));
+      process.env.FICTA_LOG_DIR = logRoot;
+      process.env.FICTA_LOG_LEVEL = "silent";
+      delete process.env.FICTA_TRACE_AUDIT;
 
       const { startProxy } = await import("../src/server.js");
       proxy = await startProxy({ port: 0, plugins: [piiPlugin] });
-      const enableRes = await fetch(`http://127.0.0.1:${proxy.port}${FICTA_TRACE_CAPTURE_PATH}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enabled: true }),
-      });
-      expect(enableRes.status).toBe(200);
 
       const res = await fetch(`http://127.0.0.1:${proxy.port}/v1/chat/completions`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
           [FICTA_RESTORE_HIGHLIGHT_HEADER]: "1",
-          [FICTA_TRACE_CAPTURE_HEADER]: "1",
         },
         body: JSON.stringify({ model: "gpt-4", messages: [{ role: "user", content: `Contact ${EMAIL}` }] }),
       });
@@ -272,11 +265,16 @@ describe("loopback PII round-trip through the real proxy", () => {
       const markerStart = delta.indexOf(FICTA_RESTORE_HIGHLIGHT_START);
       const markerEnd = delta.indexOf(FICTA_RESTORE_HIGHLIGHT_END, markerStart);
       const payload = delta.slice(markerStart + FICTA_RESTORE_HIGHLIGHT_START.length, markerEnd);
-      const [surrogate, value] = payload.split(FICTA_RESTORE_HIGHLIGHT_METADATA);
+      const [provenance, value] = payload.split(FICTA_RESTORE_HIGHLIGHT_METADATA);
+      const [surrogate, origin] = provenance?.split(FICTA_RESTORE_HIGHLIGHT_ORIGIN) ?? [];
       expect(markerStart).toBeGreaterThanOrEqual(0);
       expect(markerEnd).toBeGreaterThan(markerStart);
       expect(surrogate).toMatch(SURROGATE);
+      expect(origin).toBe("detected");
       expect(value).toBe(EMAIL);
+      expect(readdirSync(logRoot, { recursive: true }).some((path) => String(path).endsWith(".trace.json"))).toBe(
+        false,
+      );
     } finally {
       proxy?.close();
       await close(upstream);
