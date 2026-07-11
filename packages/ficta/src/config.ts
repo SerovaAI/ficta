@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { defaultLogDir } from "./defaults.js";
 import { envFlag } from "./engine/env-flags.js";
-import { type LogLevel, levelEnabled, parseLogLevel } from "./log-level.js";
+import { type LogLevel, parseLogLevel } from "./log-level.js";
 import { loadUserConfig, wasLoadedFromUserConfig } from "./user-config.js";
 
 loadUserConfig();
@@ -34,7 +34,6 @@ export interface Config {
 
 export function loadConfig(): Config {
   const logLevel = parseLogLevel(process.env.FICTA_LOG_LEVEL);
-  const logBodies = levelEnabled(logLevel, "trace");
   return {
     // Bind loopback by default. Overriding to a non-loopback host (0.0.0.0, a LAN IP) exposes the
     // proxy — and the provider auth headers it forwards — to the network, so it is opt-in only.
@@ -52,12 +51,12 @@ export function loadConfig(): Config {
     // Single verbosity knob. Standalone default is "info"; the wrapper sets "silent" so proxy
     // output never garbles the agent TUI (cli.ts). "debug" adds unknown-wire (non-model) traffic.
     logLevel,
-    // "trace" writes REAL request/response bodies to disk — that is why it is the top tier and
-    // env-only (never persisted to config.toml).
-    logBodies,
-    // Raw-value audit sidecars are more compact and sensitive than body traces, so they need a second
-    // explicit opt-in in addition to the trace tier.
-    traceAudit: logBodies && envFlag(process.env.FICTA_TRACE_AUDIT),
+    // Raw body capture is granted only through the ephemeral runtime admin control. Keep this field
+    // false so lower-level logging helpers never capture unless the request handler passes the grant.
+    logBodies: false,
+    // Audit sidecars remain an operator capability, but are written only while the runtime grant and
+    // per-request selector are both active.
+    traceAudit: envFlag(process.env.FICTA_TRACE_AUDIT),
     logMaxBytes: boundedInt(process.env.FICTA_LOG_MAX_BYTES, DEFAULT_LOG_MAX_BYTES, 1024, 16 * 1024 * 1024),
     // Privacy boundary: refuse to forward if a registered value survived redaction. Default ON.
     // FICTA_FAIL_CLOSED=0 to fall back to forwarding (lab/debug only).

@@ -3,14 +3,17 @@ import {
   type EditableProxyConfigKey,
   type EditableProxyConfigValues,
   FICTA_CONFIG_PATH,
+  FICTA_TRACE_CAPTURE_PATH,
   isProxyConfigOk,
   isProxyConfigUpdateOk,
+  isRuntimeTraceCaptureOk,
   normalizePiiBackends,
   normalizeRestoreIntoToolsPolicy,
   PII_BACKEND_NAMES,
   type PiiBackendName,
   type ProxyConfigOk,
   type ProxyConfigUpdateOk,
+  type RuntimeTraceCaptureOk,
 } from "@serovaai/ficta-protocol";
 import { createServerFn } from "@tanstack/react-start";
 import { requireAdmin } from "@/lib/auth/guards.server";
@@ -19,6 +22,7 @@ import type { ProxyCallResult } from "@/lib/proxy-result";
 export type EditableProxyConfigPatch = Partial<EditableProxyConfigValues>;
 export type ProxyConfig = ProxyCallResult<ProxyConfigOk>;
 export type ProxyConfigUpdate = ProxyCallResult<ProxyConfigUpdateOk>;
+export type RuntimeTraceCaptureUpdate = ProxyCallResult<RuntimeTraceCaptureOk>;
 export type { EditableProxyConfigKey, EditableProxyConfigValues, PiiBackendName };
 export { isProxyConfigOk, isProxyConfigUpdateOk, PII_BACKEND_NAMES };
 
@@ -117,6 +121,52 @@ export const updateProxyConfig = createServerFn({ method: "POST" })
         proxyUrl,
         status: "unreachable",
         message: `ficta proxy is unreachable at ${proxyUrl}; start it to edit its configuration.`,
+        detail: isAbortError(err) ? `timeout after ${CONFIG_TIMEOUT_MS}ms` : errorMessage(err),
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+
+export const updateRuntimeTraceCapture = createServerFn({ method: "POST" })
+  .validator((input: unknown): { enabled: boolean } => {
+    if (!isRecord(input) || typeof input.enabled !== "boolean" || Object.keys(input).length !== 1) {
+      throw new Error("invalid runtime trace capture update");
+    }
+    return { enabled: input.enabled };
+  })
+  .handler(async ({ data }): Promise<RuntimeTraceCaptureUpdate> => {
+    await requireAdmin();
+
+    const { proxyBaseUrl } = await import("@/lib/proxy-base.server");
+    const proxyUrl = proxyBaseUrl();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), CONFIG_TIMEOUT_MS);
+
+    try {
+      const res = await fetch(`${proxyUrl}${FICTA_TRACE_CAPTURE_PATH}`, {
+        method: "PATCH",
+        headers: { accept: "application/json", "content-type": "application/json" },
+        body: JSON.stringify(data),
+        signal: controller.signal,
+      });
+      const json = (await res.json()) as unknown;
+      if (!res.ok || !isRuntimeTraceCaptureOk(json)) {
+        return {
+          ok: false,
+          proxyUrl,
+          status: "bad_response",
+          message:
+            isRecord(json) && typeof json.message === "string" ? json.message : "Could not update trace capture.",
+        };
+      }
+      return json;
+    } catch (err) {
+      return {
+        ok: false,
+        proxyUrl,
+        status: "unreachable",
+        message: `ficta proxy is unreachable at ${proxyUrl}; start it to manage trace capture.`,
         detail: isAbortError(err) ? `timeout after ${CONFIG_TIMEOUT_MS}ms` : errorMessage(err),
       };
     } finally {

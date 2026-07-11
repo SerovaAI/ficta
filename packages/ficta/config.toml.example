@@ -87,7 +87,7 @@ entities = [] # empty = all labels; otherwise a canonical-label allowlist applie
 timeout_ms = 2500
 
 [logging]
-# Raw body logging is runtime-only (FICTA_LOG_LEVEL=trace); it is never persisted here.
+# Raw body logging uses the ephemeral runtime admin control; it is never persisted here.
 max_bytes = 262144
 # Root for per-role subtrees (`gateway/` and `agents/<agent>/<instance>/`).
 log_root = "~/.ficta/logs"

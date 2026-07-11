@@ -17,6 +17,7 @@ import {
   FICTA_SCOPE_HEADER,
   FICTA_STATUS_PATH,
   FICTA_TRACE_CAPTURE_HEADER,
+  FICTA_TRACE_CAPTURE_PATH,
   type ProtectionPreviewFinding,
   type ProtectionPreviewOk,
   type ProtectionPreviewRequest,
@@ -26,6 +27,8 @@ import {
   type ProxyConfigPatchError,
   type RegistryReloadError,
   type RegistryReloadOk,
+  type RuntimeTraceCaptureError,
+  type RuntimeTraceCaptureOk,
 } from "@serovaai/ficta-protocol";
 import { type Context, Hono } from "hono";
 import { loadConfig, resolveTarget, upstreamPolicyIssue } from "./config.js";
@@ -82,6 +85,7 @@ import {
   proxyConfigEditState,
   proxyConfigLockedFields,
 } from "./proxy-config-edit.js";
+import { RuntimeTraceCapture } from "./runtime-trace-capture.js";
 
 export interface ProxyHandle {
   port: number;
@@ -110,6 +114,7 @@ export async function startProxy(
   const engine: RedactionEngine = new ProtectionEngine({ plugins: opts.plugins ?? defaultRedactionPlugins });
   const stats = new ProtectionStats(protectionStatsPath, { captureDir: currentRunDir });
   const protectionTickets = new Map<string, ProtectionTicket>();
+  const runtimeTraceCapture = new RuntimeTraceCapture();
   const app = new Hono<{ Bindings: HttpBindings }>();
 
   app.all("*", async (c) => {
@@ -118,6 +123,54 @@ export async function startProxy(
     if (url.pathname === FICTA_HEALTH_PATH) return c.json({ ok: true, service: "ficta" });
     if (url.pathname === FICTA_STATUS_PATH) return c.json(await protectionStatus(engine, stats));
     if (url.pathname === FICTA_PROTECTION_STATS_PATH) return c.json(protectionStatsResponse(stats, url));
+    if (url.pathname === FICTA_TRACE_CAPTURE_PATH) {
+      if (!isLoopbackAddress(c.env.incoming.socket.remoteAddress)) {
+        return c.json(
+          {
+            ok: false,
+            service: "ficta",
+            status: "forbidden",
+            message: "Runtime trace capture can be administered only from loopback clients.",
+          } satisfies RuntimeTraceCaptureError,
+          403,
+        );
+      }
+      if (method === "GET") {
+        return c.json({
+          ok: true,
+          service: "ficta",
+          traceCapture: runtimeTraceCapture.state(),
+        } satisfies RuntimeTraceCaptureOk);
+      }
+      if (method === "PATCH") {
+        let patch: unknown;
+        try {
+          patch = await c.req.json();
+        } catch {
+          patch = undefined;
+        }
+        if (!isRuntimeTraceCapturePatch(patch)) {
+          return c.json(
+            {
+              ok: false,
+              service: "ficta",
+              status: "invalid_patch",
+              message: "Trace capture patch must contain only an enabled boolean.",
+            } satisfies RuntimeTraceCaptureError,
+            400,
+          );
+        }
+        const traceCapture = runtimeTraceCapture.set(patch.enabled);
+        log.warn(
+          { traceCaptureEnabled: traceCapture.enabled, expiresAt: traceCapture.expiresAt },
+          traceCapture.enabled
+            ? "Sensitive runtime trace capture enabled by a server administrator"
+            : "Sensitive runtime trace capture disabled by a server administrator",
+        );
+        return c.json({ ok: true, service: "ficta", traceCapture } satisfies RuntimeTraceCaptureOk);
+      }
+      return c.json({ error: { type: "method_not_allowed", message: "Use GET or PATCH for trace capture." } }, 405);
+    }
     if (url.pathname === FICTA_PROTECTION_PREVIEW_PATH) {
       if (method !== "POST") {
         return c.json({ error: { type: "method_not_allowed", message: "Use POST for protection preview." } }, 405);
@@ -211,7 +264,7 @@ export async function startProxy(
         const response: ProxyConfigOk = {
           ok: true,
           service: "ficta",
-          config: configPosture(cfg),
+          config: configPosture(cfg, process.env, { traceCapture: runtimeTraceCapture.state() }),
           edit: proxyConfigEditState(cfg, configEditLocks),
         };
         return c.json(response);
@@ -309,7 +362,7 @@ export async function startProxy(
     const requestedProtectionTicket = c.req.header(FICTA_PROTECTION_TICKET_HEADER)?.trim();
     const protect = engine.protecting || Boolean(requestedProtectionTicket);
     const wire = wireOf(url.pathname);
-    const captureRawBodies = traceCaptureFrom(c, cfg.logBodies);
+    const captureRawBodies = traceCaptureFrom(c, runtimeTraceCapture.enabled());
     const captureTraceAudit = captureRawBodies && cfg.traceAudit;
     const restoreHighlightMarkers =
       captureTraceAudit && c.req.header(FICTA_RESTORE_HIGHLIGHT_HEADER) === "1"
@@ -700,8 +753,8 @@ export async function startProxy(
           failClosed: cfg.failClosed,
           logDir,
           runDir: currentRunDir(),
-          rawBodies: cfg.logBodies,
-          rawValueAudit: cfg.traceAudit,
+          rawBodies: false,
+          rawValueAuditCapable: cfg.traceAudit,
         },
         engine.protecting
           ? `🔒 ficta listening on http://${bindHost}:${info.port} — ${engine.size} value(s), redacting up / restoring back`
@@ -759,7 +812,17 @@ function scopeKeyFrom(c: Context): string | undefined {
 const MAX_SCOPE_KEY_LENGTH = 256;
 
 function traceCaptureFrom(c: Context, globallyEnabled: boolean): boolean {
-  return globallyEnabled && c.req.header(FICTA_TRACE_CAPTURE_HEADER)?.trim() !== "0";
+  return globallyEnabled && c.req.header(FICTA_TRACE_CAPTURE_HEADER)?.trim() === "1";
+}
+
+function isRuntimeTraceCapturePatch(value: unknown): value is { enabled: boolean } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 1 &&
+    typeof (value as { enabled?: unknown }).enabled === "boolean"
+  );
 }
 
 /** Safe runtime status for first-party UIs. Contains only counts/config/health metadata — never values. */

@@ -1,6 +1,7 @@
 export const FICTA_HEALTH_PATH = "/__ficta/health";
 export const FICTA_STATUS_PATH = "/__ficta/status";
 export const FICTA_CONFIG_PATH = "/__ficta/config";
+export const FICTA_TRACE_CAPTURE_PATH = "/__ficta/trace-capture";
 export const FICTA_REGISTRY_RELOAD_PATH = "/__ficta/registry/reload";
 export const FICTA_REGISTRY_REVISION_HEADER = "x-ficta-registry-revision";
 export const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
@@ -45,7 +46,13 @@ export function isProxyConfigOk(value) {
   if (!isRecord(value.config)) return false;
   const { protection, detection, transport } = value.config;
   if (!isRecord(protection) || !isRecord(detection) || !isRecord(transport)) return false;
-  if (!isRecord(detection.pii) || !isRecord(detection.secretShapes) || !isRecord(transport.upstreams)) return false;
+  if (
+    !isRecord(detection.pii) ||
+    !isRecord(detection.secretShapes) ||
+    !isRecord(transport.upstreams) ||
+    !isRuntimeTraceCaptureState(transport.traceCapture)
+  )
+    return false;
   return (
     typeof protection.failClosed === "boolean" &&
     typeof protection.requireRegistry === "boolean" &&
@@ -72,6 +79,25 @@ export function isProxyConfigOk(value) {
     typeof transport.traceAudit === "boolean" &&
     typeof transport.logDir === "string" &&
     isProxyConfigEditState(value.edit)
+  );
+}
+
+/** @param {unknown} value */
+export function isRuntimeTraceCaptureOk(value) {
+  return (
+    isRecord(value) && value.ok === true && value.service === "ficta" && isRuntimeTraceCaptureState(value.traceCapture)
+  );
+}
+
+/** @param {unknown} value */
+export function isRuntimeTraceCaptureState(value) {
+  return (
+    isRecord(value) &&
+    typeof value.enabled === "boolean" &&
+    typeof value.ttlSeconds === "number" &&
+    Number.isInteger(value.ttlSeconds) &&
+    value.ttlSeconds > 0 &&
+    (value.expiresAt === undefined || typeof value.expiresAt === "string")
   );
 }
 

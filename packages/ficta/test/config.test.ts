@@ -53,9 +53,9 @@ describe("config hardening", () => {
     expect(loadConfig().host).toBe("0.0.0.0");
   });
 
-  it("only writes raw bodies at the trace level", () => {
+  it("keeps raw body logging off regardless of log verbosity", () => {
     process.env.FICTA_LOG_LEVEL = "trace";
-    expect(loadConfig().logBodies).toBe(true);
+    expect(loadConfig().logBodies).toBe(false);
 
     for (const level of ["debug", "info", "warn", "error", "silent"]) {
       process.env.FICTA_LOG_LEVEL = level;
@@ -63,14 +63,14 @@ describe("config hardening", () => {
     }
   });
 
-  it("requires trace level and FICTA_TRACE_AUDIT=1 for raw value audit sidecars", () => {
+  it("treats FICTA_TRACE_AUDIT as a capability independent of log verbosity", () => {
     process.env.FICTA_TRACE_AUDIT = "1";
 
     process.env.FICTA_LOG_LEVEL = "trace";
     expect(loadConfig().traceAudit).toBe(true);
 
     process.env.FICTA_LOG_LEVEL = "debug";
-    expect(loadConfig().traceAudit).toBe(false);
+    expect(loadConfig().traceAudit).toBe(true);
 
     delete process.env.FICTA_TRACE_AUDIT;
     process.env.FICTA_LOG_LEVEL = "trace";

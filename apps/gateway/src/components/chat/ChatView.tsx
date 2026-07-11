@@ -205,8 +205,15 @@ export function ChatView({
 
   useEffect(() => {
     let alive = true;
+    let expiryTimer: number | undefined;
     if (!admin) {
       setTraceCapture({ loaded: true, rawBodies: false, traceAudit: false });
+      return () => {
+        alive = false;
+      };
+    }
+    // Refresh when the admin dialog closes so a runtime grant changed there becomes usable in chat.
+    if (adminOpen) {
       return () => {
         alive = false;
       };
@@ -215,19 +222,31 @@ export function ChatView({
     fetchProxyConfig()
       .then((config) => {
         if (!alive) return;
+        const traceCapture = config.ok ? config.config.transport.traceCapture : undefined;
         setTraceCapture({
           loaded: true,
-          rawBodies: config.ok ? config.config.transport.logBodies : false,
+          rawBodies: traceCapture?.enabled ?? false,
           traceAudit: config.ok ? config.config.transport.traceAudit : false,
         });
+        if (traceCapture?.expiresAt) {
+          const delay = Date.parse(traceCapture.expiresAt) - Date.now();
+          if (delay <= 0) setTraceCapture({ loaded: true, rawBodies: false, traceAudit: false });
+          else {
+            expiryTimer = window.setTimeout(
+              () => setTraceCapture({ loaded: true, rawBodies: false, traceAudit: false }),
+              delay,
+            );
+          }
+        }
       })
       .catch(() => {
         if (alive) setTraceCapture({ loaded: true, rawBodies: false, traceAudit: false });
       });
     return () => {
       alive = false;
+      if (expiryTimer !== undefined) window.clearTimeout(expiryTimer);
     };
-  }, [admin]);
+  }, [admin, adminOpen]);
 
   const syncNewThreadUrl = () => {
     if (threadId || urlSynced.current) return;
@@ -439,7 +458,11 @@ export function ChatView({
   };
 
   const toggleThreadTrace = () => {
-    if (!admin || !traceCapture.rawBodies) return;
+    if (!admin || !traceCapture.loaded) return;
+    if (!traceCapture.rawBodies) {
+      setAdminOpen(true);
+      return;
+    }
     setThreadTraceError(false);
     const persistedThreadId = activeThreadId;
     const next = !threadTraceEnabled;

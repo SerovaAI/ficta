@@ -71,7 +71,7 @@ export function logRequest(args: {
     },
     `→ ${args.method} ${args.path} → ${args.target}${route}`,
   );
-  // Raw message/tool content only at trace (the raw-body tier).
+  // Raw message/tool content only under the request's runtime trace grant.
   if (captureRawBodies && parseOk) logRequestBodyPreviews(wire, parsed, n);
 
   writeMeta("req", n, {
@@ -179,7 +179,7 @@ export async function logResponse(args: {
     },
     `← ${args.status} ${args.contentType} (${raw.length} bytes)`,
   );
-  // Reassembled message/tool content only at trace (the raw-body tier).
+  // Reassembled message/tool content only under the request's runtime trace grant.
   if (captureRawBodies) {
     if (isSse) {
       const s = summarizeSSE(wire, raw);
@@ -208,7 +208,7 @@ export async function logResponse(args: {
 }
 
 /**
- * Buffered twin of the streaming `restoredBodyTap`: at trace, persist the client-bound (post-restore)
+ * Buffered twin of the streaming `restoredBodyTap`: when capture is granted, persist the client-bound (post-restore)
  * body to res-XXXX.restored.txt. Pairs with the pre-restore res-XXXX.txt so an operator can diff
  * exactly which surrogates reached the client vs which were withheld from tool arguments.
  */
@@ -220,7 +220,7 @@ export function writeRestoredBody(n: number, body: string, captureRawBodies = cf
 
 /**
  * Trace-only structured audit sidecar. Unlike protection-stats.json, this may include raw protected
- * values, so it is emitted only when FICTA_LOG_LEVEL=trace and FICTA_TRACE_AUDIT=1, using the same
+ * values, so it is emitted only when runtime capture and FICTA_TRACE_AUDIT=1 are active, using the same
  * private-file permissions as raw body logs.
  */
 export function writeTraceAudit(n: number, audit: unknown, captureTraceAudit = cfg.traceAudit): void {
@@ -229,7 +229,7 @@ export function writeTraceAudit(n: number, audit: unknown, captureTraceAudit = c
 }
 
 /**
- * Pass-through tap that (at trace) accumulates the client-bound, post-restore stream into
+ * Pass-through tap that (when capture is granted) accumulates the client-bound, post-restore stream into
  * res-XXXX.restored.txt, capped at logMaxBytes, then runs `onFlush` once the stream drains. Replaces
  * a bare flush tap on the streaming restore paths so the restored bytes are captured for forensics.
  */

@@ -46,4 +46,4 @@ The following are expected limitations, not vulnerabilities by themselves:
 
 ## Logs and diagnostics
 
-`FICTA_LOG_LEVEL=trace` can write raw request/response bodies for debugging. Those logs may contain real secrets and should not be shared publicly. It is runtime-only (never persisted to `config.toml`); keep the level at `info` or below for normal use.
+The loopback-only runtime trace control can write raw request/response bodies for debugging. Those captures may contain real secrets and should not be shared publicly. It defaults off, expires after 30 minutes, resets on proxy restart, and requires an explicit per-request selector. `FICTA_LOG_LEVEL` controls structured log verbosity and does not grant raw capture.

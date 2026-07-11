@@ -230,7 +230,7 @@ export function threadTraceToggleLabels({
   if (disabled) {
     return {
       ariaLabel: "Trace capture unavailable",
-      tooltip: "Trace capture: Unavailable · Enable FICTA_LOG_LEVEL=trace on the proxy",
+      tooltip: "Trace capture: Disabled by your server administrator · Click to open admin settings",
     };
   }
   if (enabled) {

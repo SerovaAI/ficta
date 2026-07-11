@@ -61,6 +61,7 @@ describe("configPosture", () => {
         logLevel: "info",
         logBodies: false,
         traceAudit: false,
+        traceCapture: { enabled: false, ttlSeconds: 1800 },
         logDir: "/tmp/ficta-logs",
       },
     });
@@ -80,7 +81,10 @@ describe("configPosture", () => {
         FICTA_PII_FAIL_CLOSED: "1",
         FICTA_SECRET_SHAPES_ENABLED: "1",
       },
-      { globallyDisabled: true },
+      {
+        globallyDisabled: true,
+        traceCapture: { enabled: true, expiresAt: "2026-07-11T12:30:00.000Z", ttlSeconds: 1800 },
+      },
     );
 
     expect(posture.protection).toEqual({
@@ -103,6 +107,7 @@ describe("configPosture", () => {
     expect(posture.transport.logLevel).toBe("trace");
     expect(posture.transport.logBodies).toBe(true);
     expect(posture.transport.traceAudit).toBe(true);
+    expect(posture.transport.traceCapture.enabled).toBe(true);
   });
 
   it("gates agent detection on both enabled and agents flags", () => {

@@ -79,7 +79,7 @@ describe("ficta doctor", () => {
     expect(rendered).toContain("protected values loaded");
   });
 
-  it("warns and reports the level when FICTA_LOG_LEVEL=trace would write raw bodies", async () => {
+  it("reports trace verbosity without enabling raw body capture", async () => {
     const bin = tempDir("ficta-doctor-bin-");
     executable(join(bin, "claude"));
     process.env.PATH = bin;
@@ -89,13 +89,12 @@ describe("ficta doctor", () => {
     const rendered = renderDoctorReport(report);
 
     expect(report.config.logLevel).toBe("trace");
-    expect(report.config.logBodies).toBe(true);
-    expect(report.issues).toContainEqual({
-      severity: "warning",
-      message: "FICTA_LOG_LEVEL=trace is set; raw model bodies may be written to disk",
-    });
+    expect(report.config.logBodies).toBe(false);
+    expect(report.issues).not.toContainEqual(
+      expect.objectContaining({ message: expect.stringContaining("raw model bodies") }),
+    );
     expect(rendered).toContain("log level: trace");
-    expect(rendered).toContain("raw body logs: ON");
+    expect(rendered).toContain("raw body logs: off (runtime admin control)");
     expect(rendered).toContain("raw value audit: off");
   });
 

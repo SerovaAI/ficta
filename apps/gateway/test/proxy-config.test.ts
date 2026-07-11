@@ -36,6 +36,7 @@ function validPayload() {
         logLevel: "info",
         logBodies: false,
         traceAudit: false,
+        traceCapture: { enabled: false, ttlSeconds: 1800 },
         logDir: "/home/user/.ficta/logs",
       },
     },

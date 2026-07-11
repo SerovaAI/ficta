@@ -12,6 +12,7 @@ import {
   type PiiBackendName,
   type ProxyConfig,
   updateProxyConfig,
+  updateRuntimeTraceCapture,
 } from "@/lib/proxy-config";
 import { useProtectionStatus } from "@/lib/use-protection-status";
 import { cn } from "@/lib/utils";
@@ -46,6 +47,8 @@ export function ProxyConfigSection() {
   const [draft, setDraft] = useState<EditableProxyConfigValues>();
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [saveError, setSaveError] = useState("Could not save proxy configuration.");
+  const [traceSaveStatus, setTraceSaveStatus] = useState<SaveStatus>("idle");
+  const [traceSaveError, setTraceSaveError] = useState("Could not update trace capture.");
   const saveSeq = useRef(0);
   const textTimers = useRef<Partial<Record<TextConfigKey, number>>>({});
   const pendingTextValues = useRef<Partial<Record<TextConfigKey, string>>>({});
@@ -73,6 +76,19 @@ export function ProxyConfigSection() {
       alive = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!config?.ok || !config.config.transport.traceCapture.expiresAt) return;
+    const delay = Date.parse(config.config.transport.traceCapture.expiresAt) - Date.now();
+    if (delay <= 0) {
+      setConfig(withExpiredTraceCapture(config));
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setConfig((current) => (current?.ok ? withExpiredTraceCapture(current) : current));
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [config]);
 
   useEffect(() => {
     return () => {
@@ -160,13 +176,45 @@ export function ProxyConfigSection() {
     void savePatch({ [key]: value } as EditableProxyConfigPatch, { revert: { key, value: previous } });
   };
 
+  const changeRuntimeTraceCapture = async (enabled: boolean) => {
+    setTraceSaveStatus("saving");
+    setTraceSaveError("Could not update trace capture.");
+    try {
+      const result = await updateRuntimeTraceCapture({ data: { enabled } });
+      if (!result.ok) {
+        setTraceSaveStatus("error");
+        setTraceSaveError(result.message);
+        return;
+      }
+      setConfig((current) =>
+        current?.ok
+          ? {
+              ...current,
+              config: {
+                ...current.config,
+                transport: {
+                  ...current.config.transport,
+                  logBodies: result.traceCapture.enabled,
+                  traceCapture: result.traceCapture,
+                },
+              },
+            }
+          : current,
+      );
+      setTraceSaveStatus("saved");
+    } catch (err) {
+      setTraceSaveStatus("error");
+      setTraceSaveError(err instanceof Error ? err.message : "Could not update trace capture.");
+    }
+  };
+
   return (
     <section aria-label="Proxy configuration">
       <div className="pt-6 pb-1">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Proxy configuration</h3>
         <p className="pt-1 text-xs text-muted-foreground leading-relaxed">
-          Safety settings are written to <code className="font-mono">config.toml</code>. Restart the proxy to apply
-          saved changes.
+          Persistent safety settings are written to <code className="font-mono">config.toml</code> and require a proxy
+          restart. Runtime trace capture applies immediately.
         </p>
       </div>
 
@@ -184,6 +232,9 @@ export function ProxyConfigSection() {
           piiHealth={live}
           saveStatus={saveStatus}
           saveError={saveError}
+          traceSaveStatus={traceSaveStatus}
+          traceSaveError={traceSaveError}
+          onTraceCaptureChange={changeRuntimeTraceCapture}
         />
       )}
     </section>
@@ -197,6 +248,9 @@ function ConfigEditor({
   piiHealth,
   saveStatus,
   saveError,
+  traceSaveStatus,
+  traceSaveError,
+  onTraceCaptureChange,
 }: {
   config: Extract<ProxyConfig, { ok: true }>;
   draft: EditableProxyConfigValues;
@@ -208,6 +262,9 @@ function ConfigEditor({
   piiHealth: ReturnType<typeof useProtectionStatus>;
   saveStatus: SaveStatus;
   saveError: string;
+  traceSaveStatus: SaveStatus;
+  traceSaveError: string;
+  onTraceCaptureChange: (enabled: boolean) => void;
 }) {
   const { detection, transport } = config.config;
   const edit = config.edit;
@@ -367,6 +424,31 @@ function ConfigEditor({
       <InlineStatus status={saveStatus} error={saveError} />
 
       <GroupHeading>Transport</GroupHeading>
+      <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-800 dark:text-amber-200">
+        Raw trace capture can contain credentials, personal information, prompts, tool arguments, and restored values.
+        Enable it only while actively debugging and keep the capture directory private.
+      </div>
+      <SettingRow
+        label="Runtime trace capture"
+        description={
+          transport.traceCapture.enabled && transport.traceCapture.expiresAt
+            ? `Active until ${formatExpiry(transport.traceCapture.expiresAt)}. It will also turn off when the proxy restarts.`
+            : "Disabled. When enabled, it automatically turns off after 30 minutes or when the proxy restarts."
+        }
+      >
+        <BooleanControl
+          id="proxy-runtime-trace-capture"
+          checked={transport.traceCapture.enabled}
+          disabled={traceSaveStatus === "saving"}
+          onChange={onTraceCaptureChange}
+        />
+      </SettingRow>
+      <RuntimeTraceStatus status={traceSaveStatus} error={traceSaveError} enabled={transport.traceCapture.enabled} />
+      <SettingRow label="Trace capture directory">
+        <Value mono warn={transport.traceCapture.enabled}>
+          {transport.logDir}
+        </Value>
+      </SettingRow>
       <SettingRow label="Listen address" description="Where the proxy accepts local traffic.">
         <Value mono>
           {transport.host}:{transport.port}
@@ -391,7 +473,7 @@ function ConfigEditor({
       <SettingRow label="Log level">
         <Value>{transport.logLevel}</Value>
       </SettingRow>
-      <SettingRow label="Raw body logging" description="Trace level writes real request/response bodies to disk.">
+      <SettingRow label="Raw body logging" description="Effective runtime state for new, explicitly selected chats.">
         <Value warn={transport.logBodies}>{onOff(transport.logBodies)}</Value>
       </SettingRow>
       <SettingRow label="Log directory">
@@ -409,6 +491,22 @@ function InlineStatus({ status, error }: { status: SaveStatus; error: string }) 
   return (
     <p className={cn("py-4 text-right text-xs", status === "error" ? "text-destructive" : "text-muted-foreground")}>
       {status === "saving" ? "Saving…" : error}
+    </p>
+  );
+}
+
+function RuntimeTraceStatus({ status, error, enabled }: { status: SaveStatus; error: string; enabled: boolean }) {
+  if (status === "idle") return null;
+  if (status === "saved") {
+    return (
+      <p className="py-4 text-right text-xs text-muted-foreground">
+        {enabled ? "Enabled immediately for 30 minutes." : "Disabled immediately for new requests."}
+      </p>
+    );
+  }
+  return (
+    <p className={cn("py-4 text-right text-xs", status === "error" ? "text-destructive" : "text-muted-foreground")}>
+      {status === "saving" ? "Updating…" : error}
     </p>
   );
 }
@@ -553,6 +651,24 @@ function Value({ children, warn, mono }: { children: React.ReactNode; warn?: boo
 
 function onOff(value: boolean): string {
   return value ? "On" : "Off";
+}
+
+function formatExpiry(value: string): string {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function withExpiredTraceCapture(config: Extract<ProxyConfig, { ok: true }>): Extract<ProxyConfig, { ok: true }> {
+  return {
+    ...config,
+    config: {
+      ...config.config,
+      transport: {
+        ...config.config.transport,
+        logBodies: false,
+        traceCapture: { ...config.config.transport.traceCapture, enabled: false, expiresAt: undefined },
+      },
+    },
+  };
 }
 
 function orderedBackends(backends: Set<PiiBackendName>): PiiBackendName[] {

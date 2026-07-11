@@ -1,6 +1,7 @@
 export declare const FICTA_HEALTH_PATH = "/__ficta/health";
 export declare const FICTA_STATUS_PATH = "/__ficta/status";
 export declare const FICTA_CONFIG_PATH = "/__ficta/config";
+export declare const FICTA_TRACE_CAPTURE_PATH = "/__ficta/trace-capture";
 export declare const FICTA_REGISTRY_RELOAD_PATH = "/__ficta/registry/reload";
 export declare const FICTA_REGISTRY_REVISION_HEADER = "x-ficta-registry-revision";
 export declare const FICTA_PROTECTION_STATS_PATH = "/__ficta/protection-stats";
@@ -18,6 +19,28 @@ export type DetectorFailureMode = "fail-open" | "fail-closed";
 export type PiiStatusState = "off" | "ok" | "degraded" | "blocking";
 export type PiiBackendName = "regex" | "presidio" | "openmed";
 export type ProxyLogLevel = "silent" | "error" | "warn" | "info" | "debug" | "trace";
+
+export interface RuntimeTraceCaptureState {
+  enabled: boolean;
+  /** Present only while capture is enabled. */
+  expiresAt?: string;
+  ttlSeconds: number;
+}
+
+export interface RuntimeTraceCaptureOk {
+  ok: true;
+  service: "ficta";
+  traceCapture: RuntimeTraceCaptureState;
+}
+
+export interface RuntimeTraceCaptureError {
+  ok: false;
+  service: "ficta";
+  status: "forbidden" | "invalid_patch";
+  message: string;
+}
+
+export type RuntimeTraceCaptureResponse = RuntimeTraceCaptureOk | RuntimeTraceCaptureError;
 
 /**
  * How surrogates the model emits into a tool-call argument are restored on the way back:
@@ -206,7 +229,9 @@ export interface ProxyConfigPosture {
     allowCustomUpstream: boolean;
     logLevel: ProxyLogLevel;
     logBodies: boolean;
+    /** Operator-enabled capability; files still require active runtime and per-request capture grants. */
     traceAudit: boolean;
+    traceCapture: RuntimeTraceCaptureState;
     logDir: string;
   };
 }
@@ -323,6 +348,8 @@ export declare function isProtectionStatusOk(value: unknown): value is Protectio
 export declare function isProtectionPreviewOk(value: unknown): value is ProtectionPreviewOk;
 export declare function isProtectionStatsOk(value: unknown): value is ProtectionStatsOk;
 export declare function isProxyConfigOk(value: unknown): value is ProxyConfigOk;
+export declare function isRuntimeTraceCaptureOk(value: unknown): value is RuntimeTraceCaptureOk;
+export declare function isRuntimeTraceCaptureState(value: unknown): value is RuntimeTraceCaptureState;
 export declare function isProxyConfigUpdateOk(value: unknown): value is ProxyConfigUpdateOk;
 export declare function isRegistryReloadOk(value: unknown): value is RegistryReloadOk;
 export declare function isRegistryReloadError(value: unknown): value is RegistryReloadError;

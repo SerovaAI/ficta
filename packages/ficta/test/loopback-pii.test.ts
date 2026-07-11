@@ -8,6 +8,8 @@ import {
   FICTA_RESTORE_HIGHLIGHT_HEADER,
   FICTA_RESTORE_HIGHLIGHT_METADATA,
   FICTA_RESTORE_HIGHLIGHT_START,
+  FICTA_TRACE_CAPTURE_HEADER,
+  FICTA_TRACE_CAPTURE_PATH,
 } from "@serovaai/ficta-protocol";
 import { describe, expect, it, vi } from "vitest";
 import { piiPlugin } from "../src/plugins/index.js";
@@ -237,10 +239,20 @@ describe("loopback PII round-trip through the real proxy", () => {
 
       const { startProxy } = await import("../src/server.js");
       proxy = await startProxy({ port: 0, plugins: [piiPlugin] });
+      const enableRes = await fetch(`http://127.0.0.1:${proxy.port}${FICTA_TRACE_CAPTURE_PATH}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: true }),
+      });
+      expect(enableRes.status).toBe(200);
 
       const res = await fetch(`http://127.0.0.1:${proxy.port}/v1/chat/completions`, {
         method: "POST",
-        headers: { "content-type": "application/json", [FICTA_RESTORE_HIGHLIGHT_HEADER]: "1" },
+        headers: {
+          "content-type": "application/json",
+          [FICTA_RESTORE_HIGHLIGHT_HEADER]: "1",
+          [FICTA_TRACE_CAPTURE_HEADER]: "1",
+        },
         body: JSON.stringify({ model: "gpt-4", messages: [{ role: "user", content: `Contact ${EMAIL}` }] }),
       });
       const clientText = await res.text();

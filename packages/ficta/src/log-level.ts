@@ -1,6 +1,6 @@
 // The single verbosity knob for the proxy: FICTA_LOG_LEVEL. Ordered least→most output.
-// `trace` is the raw-body tier (secrets may be written to disk / printed), so it is env-only —
-// deliberately never persisted to config.toml (see user-config.ts). Zero imports here so the
+// `trace` is the most verbose structured-log tier; sensitive raw-body capture is controlled by a
+// separate ephemeral runtime admin grant. Zero imports here so the
 // pii plugin can gate on it without pulling in the config→user-config→plugins→pii cycle.
 export const LOG_LEVELS = ["silent", "error", "warn", "info", "debug", "trace"] as const;
 export type LogLevel = (typeof LOG_LEVELS)[number];

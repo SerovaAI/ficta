@@ -25,7 +25,10 @@ export type ConfigPosture = ProxyConfigPosture;
 export function configPosture(
   cfg: Config,
   env: NodeJS.ProcessEnv = process.env,
-  opts: { globallyDisabled?: boolean } = {},
+  opts: {
+    globallyDisabled?: boolean;
+    traceCapture?: ProxyConfigPosture["transport"]["traceCapture"];
+  } = {},
 ): ConfigPosture {
   return {
     protection: {
@@ -64,8 +67,9 @@ export function configPosture(
       forcedUpstream: cfg.forcedUpstream === undefined ? undefined : stripUserinfo(cfg.forcedUpstream),
       allowCustomUpstream: cfg.allowCustomUpstream,
       logLevel: cfg.logLevel,
-      logBodies: cfg.logBodies,
+      logBodies: opts.traceCapture?.enabled ?? false,
       traceAudit: cfg.traceAudit,
+      traceCapture: opts.traceCapture ?? { enabled: false, ttlSeconds: 30 * 60 },
       logDir: cfg.logDir,
     },
   };
