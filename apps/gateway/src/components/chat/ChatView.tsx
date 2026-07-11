@@ -345,8 +345,9 @@ export function ChatView({
     else dispatchContent(messageWithAttachments(input.trim(), attachments));
   };
 
-  const protectSelection = async (value: string) => {
-    if (!protectionReview || !value.trim()) return;
+  const protectSelections = async (rawValues: string[]) => {
+    const values = [...new Set(rawValues.map((value) => value.trim()).filter(Boolean))];
+    if (!protectionReview || values.length === 0) return;
     setProtectionReviewLoading(true);
     setProtectionReviewError("");
     setProtectionReviewNotice("");
@@ -355,18 +356,21 @@ export function ChatView({
       const preview = await previewProtection({
         threadId: tid,
         text: protectionReview.text,
-        addValues: [value],
+        addValues: values,
         signal: request.controller.signal,
       });
-      if (!protectionPreviewIsCurrent(request.generation)) return;
+      if (!protectionPreviewIsCurrent(request.generation))
+        throw new DOMException("Protection preview replaced", "AbortError");
       setProtectionReview({
         ...protectionReview,
         preview,
-        newlyProtectedValues: [...new Set([...protectionReview.newlyProtectedValues, value.trim()])],
+        newlyProtectedValues: [...new Set([...protectionReview.newlyProtectedValues, ...values])],
       });
     } catch (err) {
-      if (!protectionPreviewIsCurrent(request.generation) || isAbortError(err)) return;
-      setProtectionReviewError(err instanceof Error ? err.message : "That selection could not be protected.");
+      if (protectionPreviewIsCurrent(request.generation) && !isAbortError(err)) {
+        setProtectionReviewError(err instanceof Error ? err.message : "Those values could not be protected.");
+      }
+      throw err;
     } finally {
       if (protectionPreviewIsCurrent(request.generation)) setProtectionReviewLoading(false);
     }
@@ -650,7 +654,7 @@ export function ChatView({
               error={protectionReviewError || undefined}
               notice={protectionReviewNotice || undefined}
               onBack={closeProtectionReview}
-              onProtect={protectSelection}
+              onProtect={protectSelections}
               onRemove={removeChatProtection}
               onSend={sendProtected}
               onSuggest={suggestForWorkspace}
