@@ -85,7 +85,6 @@ import {
   proxyConfigEditState,
   proxyConfigLockedFields,
 } from "./proxy-config-edit.js";
-import { RuntimeTraceCapture } from "./runtime-trace-capture.js";
 
 export interface ProxyHandle {
   port: number;
@@ -114,7 +113,7 @@ export async function startProxy(
   const engine: RedactionEngine = new ProtectionEngine({ plugins: opts.plugins ?? defaultRedactionPlugins });
   const stats = new ProtectionStats(protectionStatsPath, { captureDir: currentRunDir });
   const protectionTickets = new Map<string, ProtectionTicket>();
-  const runtimeTraceCapture = new RuntimeTraceCapture();
+  let runtimeTraceCaptureEnabled = false;
   const app = new Hono<{ Bindings: HttpBindings }>();
 
   app.all("*", async (c) => {
@@ -139,7 +138,7 @@ export async function startProxy(
         return c.json({
           ok: true,
           service: "ficta",
-          traceCapture: runtimeTraceCapture.state(),
+          traceCapture: { enabled: runtimeTraceCaptureEnabled },
         } satisfies RuntimeTraceCaptureOk);
       }
       if (method === "PATCH") {
@@ -160,9 +159,10 @@ export async function startProxy(
             400,
           );
         }
-        const traceCapture = runtimeTraceCapture.set(patch.enabled);
+        runtimeTraceCaptureEnabled = patch.enabled;
+        const traceCapture = { enabled: runtimeTraceCaptureEnabled };
         log.warn(
-          { traceCaptureEnabled: traceCapture.enabled, expiresAt: traceCapture.expiresAt },
+          { traceCaptureEnabled: traceCapture.enabled },
           traceCapture.enabled
             ? "Sensitive runtime trace capture enabled by a server administrator"
             : "Sensitive runtime trace capture disabled by a server administrator",
@@ -264,7 +264,7 @@ export async function startProxy(
         const response: ProxyConfigOk = {
           ok: true,
           service: "ficta",
-          config: configPosture(cfg, process.env, { traceCapture: runtimeTraceCapture.state() }),
+          config: configPosture(cfg, process.env, { traceCapture: { enabled: runtimeTraceCaptureEnabled } }),
           edit: proxyConfigEditState(cfg, configEditLocks),
         };
         return c.json(response);
@@ -362,7 +362,7 @@ export async function startProxy(
     const requestedProtectionTicket = c.req.header(FICTA_PROTECTION_TICKET_HEADER)?.trim();
     const protect = engine.protecting || Boolean(requestedProtectionTicket);
     const wire = wireOf(url.pathname);
-    const captureRawBodies = traceCaptureFrom(c, runtimeTraceCapture.enabled());
+    const captureRawBodies = traceCaptureFrom(c, runtimeTraceCaptureEnabled);
     const captureTraceAudit = captureRawBodies && cfg.traceAudit;
     const restoreHighlightMarkers =
       captureTraceAudit && c.req.header(FICTA_RESTORE_HIGHLIGHT_HEADER) === "1"

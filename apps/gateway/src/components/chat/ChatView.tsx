@@ -205,7 +205,6 @@ export function ChatView({
 
   useEffect(() => {
     let alive = true;
-    let expiryTimer: number | undefined;
     if (!admin) {
       setTraceCapture({ loaded: true, rawBodies: false, traceAudit: false });
       return () => {
@@ -228,23 +227,12 @@ export function ChatView({
           rawBodies: traceCapture?.enabled ?? false,
           traceAudit: config.ok ? config.config.transport.traceAudit : false,
         });
-        if (traceCapture?.expiresAt) {
-          const delay = Date.parse(traceCapture.expiresAt) - Date.now();
-          if (delay <= 0) setTraceCapture({ loaded: true, rawBodies: false, traceAudit: false });
-          else {
-            expiryTimer = window.setTimeout(
-              () => setTraceCapture({ loaded: true, rawBodies: false, traceAudit: false }),
-              delay,
-            );
-          }
-        }
       })
       .catch(() => {
         if (alive) setTraceCapture({ loaded: true, rawBodies: false, traceAudit: false });
       });
     return () => {
       alive = false;
-      if (expiryTimer !== undefined) window.clearTimeout(expiryTimer);
     };
   }, [admin, adminOpen]);
 

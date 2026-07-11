@@ -22,9 +22,6 @@ export type ProxyLogLevel = "silent" | "error" | "warn" | "info" | "debug" | "tr
 
 export interface RuntimeTraceCaptureState {
   enabled: boolean;
-  /** Present only while capture is enabled. */
-  expiresAt?: string;
-  ttlSeconds: number;
 }
 
 export interface RuntimeTraceCaptureOk {

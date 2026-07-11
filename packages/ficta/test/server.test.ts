@@ -1623,7 +1623,7 @@ describe("config posture endpoint", () => {
             logLevel: "silent",
             logBodies: false,
             traceAudit: false,
-            traceCapture: { enabled: false, ttlSeconds: 1800 },
+            traceCapture: { enabled: false },
           },
         },
         edit: {
@@ -1654,7 +1654,7 @@ describe("config posture endpoint", () => {
       const active = await fetch(`http://127.0.0.1:${proxy.port}/__ficta/config`).then((response) => response.json());
       expect(active.config.transport).toMatchObject({
         logBodies: true,
-        traceCapture: { enabled: true, expiresAt: expect.any(String), ttlSeconds: 1800 },
+        traceCapture: { enabled: true },
       });
 
       await setRuntimeTraceCapture(proxy.port, false);
@@ -1664,7 +1664,7 @@ describe("config posture endpoint", () => {
       expect(disabled).toEqual({
         ok: true,
         service: "ficta",
-        traceCapture: { enabled: false, ttlSeconds: 1800 },
+        traceCapture: { enabled: false },
       });
     } finally {
       proxy?.close();

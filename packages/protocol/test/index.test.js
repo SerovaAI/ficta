@@ -99,7 +99,7 @@ function configPayload() {
         logLevel: "info",
         logBodies: false,
         traceAudit: false,
-        traceCapture: { enabled: false, ttlSeconds: 1800 },
+        traceCapture: { enabled: false },
         logDir: "/home/user/.ficta/logs",
       },
     },
@@ -177,14 +177,11 @@ describe("runtime guards", () => {
       isRuntimeTraceCaptureOk({
         ok: true,
         service: "ficta",
-        traceCapture: { enabled: true, expiresAt: "2026-07-11T12:30:00.000Z", ttlSeconds: 1800 },
+        traceCapture: { enabled: true },
       }),
       true,
     );
-    assert.equal(
-      isRuntimeTraceCaptureOk({ ok: true, service: "ficta", traceCapture: { enabled: true, ttlSeconds: 0 } }),
-      false,
-    );
+    assert.equal(isRuntimeTraceCaptureOk({ ok: true, service: "ficta", traceCapture: { enabled: "yes" } }), false);
   });
 
   it("rejects malformed config and protection-stats payloads", () => {

@@ -154,9 +154,9 @@ standalone, `silent` under a wrapped agent) controls structured log verbosity on
 agents, leave it unset/`silent` to keep TUIs clean; set `info`/`debug`/`trace` only when you
 intentionally want proxy logs in the terminal.
 
-Raw request/response capture is a separate, process-local admin control. It defaults off, expires
-after 30 minutes, resets on proxy restart, and still requires an explicit per-request
-`x-ficta-trace-capture: 1` selector. Gateway administrators can enable it from Admin settings; a
+Raw request/response capture is a separate, process-local admin control. It defaults off, remains
+active until an administrator disables it or the proxy restarts, and still requires an explicit
+per-request `x-ficta-trace-capture: 1` selector. Gateway administrators can enable it from Admin settings; a
 standalone loopback operator can use `PATCH /__ficta/trace-capture` with `{ "enabled": true }`.
 
 ## Commands

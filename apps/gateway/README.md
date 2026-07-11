@@ -137,7 +137,7 @@ the proxy's `config.toml`; restart the proxy before treating the saved settings 
 by explicit `FICTA_*` environment variables remain read-only in the UI.
 
 Raw trace capture is a separate runtime-only admin control. It applies immediately to newly selected
-chat requests, expires after 30 minutes, and resets to off whenever the proxy restarts.
+chat requests and remains active until an administrator disables it or the proxy restarts.
 
 Gateway admins can also maintain the Protected Registry from **Admin > Protected Registry**. Approved
 registry entries can be published to a private managed-registry JSON file and loaded by the running

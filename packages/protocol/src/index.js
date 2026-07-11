@@ -91,14 +91,7 @@ export function isRuntimeTraceCaptureOk(value) {
 
 /** @param {unknown} value */
 export function isRuntimeTraceCaptureState(value) {
-  return (
-    isRecord(value) &&
-    typeof value.enabled === "boolean" &&
-    typeof value.ttlSeconds === "number" &&
-    Number.isInteger(value.ttlSeconds) &&
-    value.ttlSeconds > 0 &&
-    (value.expiresAt === undefined || typeof value.expiresAt === "string")
-  );
+  return isRecord(value) && typeof value.enabled === "boolean";
 }
 
 /** @param {unknown} value */

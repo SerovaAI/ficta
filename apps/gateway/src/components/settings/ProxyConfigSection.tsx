@@ -78,19 +78,6 @@ export function ProxyConfigSection() {
   }, []);
 
   useEffect(() => {
-    if (!config?.ok || !config.config.transport.traceCapture.expiresAt) return;
-    const delay = Date.parse(config.config.transport.traceCapture.expiresAt) - Date.now();
-    if (delay <= 0) {
-      setConfig(withExpiredTraceCapture(config));
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      setConfig((current) => (current?.ok ? withExpiredTraceCapture(current) : current));
-    }, delay);
-    return () => window.clearTimeout(timer);
-  }, [config]);
-
-  useEffect(() => {
     return () => {
       for (const timer of Object.values(textTimers.current)) {
         if (timer !== undefined) window.clearTimeout(timer);
@@ -431,9 +418,9 @@ function ConfigEditor({
       <SettingRow
         label="Runtime trace capture"
         description={
-          transport.traceCapture.enabled && transport.traceCapture.expiresAt
-            ? `Active until ${formatExpiry(transport.traceCapture.expiresAt)}. It will also turn off when the proxy restarts.`
-            : "Disabled. When enabled, it automatically turns off after 30 minutes or when the proxy restarts."
+          transport.traceCapture.enabled
+            ? "Active until an administrator disables it or the proxy restarts."
+            : "Disabled. When enabled, it remains active until an administrator disables it or the proxy restarts."
         }
       >
         <BooleanControl
@@ -500,7 +487,9 @@ function RuntimeTraceStatus({ status, error, enabled }: { status: SaveStatus; er
   if (status === "saved") {
     return (
       <p className="py-4 text-right text-xs text-muted-foreground">
-        {enabled ? "Enabled immediately for 30 minutes." : "Disabled immediately for new requests."}
+        {enabled
+          ? "Enabled immediately until disabled or the proxy restarts."
+          : "Disabled immediately for new requests."}
       </p>
     );
   }
@@ -651,24 +640,6 @@ function Value({ children, warn, mono }: { children: React.ReactNode; warn?: boo
 
 function onOff(value: boolean): string {
   return value ? "On" : "Off";
-}
-
-function formatExpiry(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
-}
-
-function withExpiredTraceCapture(config: Extract<ProxyConfig, { ok: true }>): Extract<ProxyConfig, { ok: true }> {
-  return {
-    ...config,
-    config: {
-      ...config.config,
-      transport: {
-        ...config.config.transport,
-        logBodies: false,
-        traceCapture: { ...config.config.transport.traceCapture, enabled: false, expiresAt: undefined },
-      },
-    },
-  };
 }
 
 function orderedBackends(backends: Set<PiiBackendName>): PiiBackendName[] {

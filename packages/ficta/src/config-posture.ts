@@ -69,7 +69,7 @@ export function configPosture(
       logLevel: cfg.logLevel,
       logBodies: opts.traceCapture?.enabled ?? false,
       traceAudit: cfg.traceAudit,
-      traceCapture: opts.traceCapture ?? { enabled: false, ttlSeconds: 30 * 60 },
+      traceCapture: opts.traceCapture ?? { enabled: false },
       logDir: cfg.logDir,
     },
   };
