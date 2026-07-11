@@ -124,7 +124,7 @@ Minimum production-like posture:
 - Load a firm-specific exact-match registry for client names, matter IDs, patient IDs, account numbers,
   project names, or other high-value identifiers. Lead demos with this strong layer, not only best-effort
   NER.
-- Keep `FICTA_LOG_LEVEL` below `trace`; trace writes raw request/response bodies to disk.
+- Keep the runtime trace-capture grant off except during active debugging; captures can contain raw request/response bodies.
 - Decide which provider/deployment is approved for the data class. For medical workflows, redaction
   does not remove the need for the right HIPAA/BAA posture if ePHI can reach a vendor.
 - Consider egress allow-listing so the gateway host can reach only the approved model provider,
@@ -135,6 +135,9 @@ registered-secret fail-closed behavior, PII/secret-shape detection, PII backend 
 surrogate style, tool-call restore policy, and custom-upstream allowance. These edits are written to
 the proxy's `config.toml`; restart the proxy before treating the saved settings as active. Fields set
 by explicit `FICTA_*` environment variables remain read-only in the UI.
+
+Raw trace capture is a separate runtime-only admin control. It applies immediately to newly selected
+chat requests and remains active until an administrator disables it or the proxy restarts.
 
 Gateway admins can also maintain the Protected Registry from **Admin > Protected Registry**. Approved
 registry entries can be published to a private managed-registry JSON file and loaded by the running
@@ -248,7 +251,7 @@ Proxy-side env commonly used with the gateway:
 | `FICTA_PII_OPENMED_URL` | OpenMed service URL when using the `openmed` backend | local service URL |
 | `FICTA_RESTORE_INTO_TOOLS` | Tool-call restore policy: `detected` restores locally-read detector values while withholding registry secrets; `all` or `none` force either extreme | `detected` |
 | `FICTA_ALLOW_CUSTOM_UPSTREAM` | Permit forwarding provider auth headers to trusted non-default upstreams | `0` |
-| `FICTA_LOG_LEVEL` | Runtime logging level; `trace` writes raw bodies | `info` standalone |
+| `FICTA_LOG_LEVEL` | Structured proxy logging level | `info` standalone |
 
 ## Verification
 

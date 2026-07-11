@@ -7,12 +7,14 @@ import {
   FICTA_REGISTRY_REVISION_HEADER,
   FICTA_SCOPE_HEADER,
   FICTA_TRACE_CAPTURE_HEADER,
+  FICTA_TRACE_CAPTURE_PATH,
   isManagedRegistryFile,
   isProtectionPreviewOk,
   isProtectionStatsOk,
   isProxyConfigOk,
   isRegistryReloadError,
   isRegistryReloadOk,
+  isRuntimeTraceCaptureOk,
   normalizePiiBackends,
   normalizeRestoreIntoToolsPolicy,
 } from "../src/index.js";
@@ -97,6 +99,7 @@ function configPayload() {
         logLevel: "info",
         logBodies: false,
         traceAudit: false,
+        traceCapture: { enabled: false },
         logDir: "/home/user/.ficta/logs",
       },
     },
@@ -139,6 +142,7 @@ describe("protocol constants", () => {
 
   it("exports the shared trace capture header", () => {
     assert.equal(FICTA_TRACE_CAPTURE_HEADER, "x-ficta-trace-capture");
+    assert.equal(FICTA_TRACE_CAPTURE_PATH, "/__ficta/trace-capture");
   });
 
   it("exports the registry revision acknowledgement header", () => {
@@ -166,6 +170,18 @@ describe("runtime guards", () => {
   it("accepts valid config and protection-stats payloads", () => {
     assert.equal(isProxyConfigOk(configPayload()), true);
     assert.equal(isProtectionStatsOk(statsPayload()), true);
+  });
+
+  it("validates runtime trace capture status", () => {
+    assert.equal(
+      isRuntimeTraceCaptureOk({
+        ok: true,
+        service: "ficta",
+        traceCapture: { enabled: true },
+      }),
+      true,
+    );
+    assert.equal(isRuntimeTraceCaptureOk({ ok: true, service: "ficta", traceCapture: { enabled: "yes" } }), false);
   });
 
   it("rejects malformed config and protection-stats payloads", () => {

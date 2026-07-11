@@ -212,13 +212,20 @@ export function ChatView({
         alive = false;
       };
     }
+    // Refresh when the admin dialog closes so a runtime grant changed there becomes usable in chat.
+    if (adminOpen) {
+      return () => {
+        alive = false;
+      };
+    }
     setTraceCapture((current) => ({ ...current, loaded: false }));
     fetchProxyConfig()
       .then((config) => {
         if (!alive) return;
+        const traceCapture = config.ok ? config.config.transport.traceCapture : undefined;
         setTraceCapture({
           loaded: true,
-          rawBodies: config.ok ? config.config.transport.logBodies : false,
+          rawBodies: traceCapture?.enabled ?? false,
           traceAudit: config.ok ? config.config.transport.traceAudit : false,
         });
       })
@@ -228,7 +235,7 @@ export function ChatView({
     return () => {
       alive = false;
     };
-  }, [admin]);
+  }, [admin, adminOpen]);
 
   const syncNewThreadUrl = () => {
     if (threadId || urlSynced.current) return;
@@ -440,7 +447,11 @@ export function ChatView({
   };
 
   const toggleThreadTrace = () => {
-    if (!admin || !traceCapture.rawBodies) return;
+    if (!admin || !traceCapture.loaded) return;
+    if (!traceCapture.rawBodies) {
+      setAdminOpen(true);
+      return;
+    }
     setThreadTraceError(false);
     const persistedThreadId = activeThreadId;
     const next = !threadTraceEnabled;

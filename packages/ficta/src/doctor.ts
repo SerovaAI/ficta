@@ -129,12 +129,6 @@ export async function collectDoctorReport(opts: DoctorOptions = {}): Promise<Doc
   for (const upstreamIssue of configuredUpstreamPolicyIssues(cfg)) {
     issues.push({ severity: "error", message: upstreamIssue });
   }
-  if (cfg.logBodies) {
-    issues.push({
-      severity: "warning",
-      message: "FICTA_LOG_LEVEL=trace is set; raw model bodies may be written to disk",
-    });
-  }
   if (cfg.traceAudit) {
     issues.push({
       severity: "warning",
@@ -201,7 +195,7 @@ export async function collectDoctorReport(opts: DoctorOptions = {}): Promise<Doc
       failClosed: posture.protection.failClosed,
       logLevel: posture.transport.logLevel,
       logBodies: posture.transport.logBodies,
-      traceAudit: posture.transport.traceAudit,
+      traceAudit: cfg.traceAudit,
       redactPaths: posture.protection.redactPaths,
       requireRegistry: posture.protection.requireRegistry,
       globallyDisabled,
@@ -244,7 +238,7 @@ export function renderDoctorReport(report: DoctorReport): string {
   }
   lines.push(`  ${report.config.failClosed ? "✓" : "!"} fail-closed: ${report.config.failClosed ? "on" : "OFF"}`);
   lines.push(`  - log level: ${report.config.logLevel}`);
-  lines.push(`  ${report.config.logBodies ? "!" : "✓"} raw body logs: ${report.config.logBodies ? "ON" : "off"}`);
+  lines.push("  ✓ raw body logs: off (runtime admin control)");
   lines.push(`  ${report.config.traceAudit ? "!" : "✓"} raw value audit: ${report.config.traceAudit ? "ON" : "off"}`);
   lines.push(
     `  ${report.config.redactPaths ? "!" : "-"} path-like tokens: ${

@@ -138,8 +138,8 @@ export interface RequestScope {
 
   /**
    * Raw restore audit for explicit trace/debug runs. This includes protected values and must only be
-   * written when raw-value auditing is explicitly enabled (`FICTA_LOG_LEVEL=trace` and
-   * `FICTA_TRACE_AUDIT=1`), never surfaced in normal stats.
+   * written when runtime capture and raw-value auditing (`FICTA_TRACE_AUDIT=1`) are enabled, never
+   * surfaced in normal stats.
    */
   traceRestoreDetails(): RestoreTraceDetails;
 }

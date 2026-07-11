@@ -3,7 +3,11 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { FICTA_RESTORE_HIGHLIGHT_HEADER, FICTA_TRACE_CAPTURE_HEADER } from "@serovaai/ficta-protocol";
+import {
+  FICTA_RESTORE_HIGHLIGHT_HEADER,
+  FICTA_TRACE_CAPTURE_HEADER,
+  FICTA_TRACE_CAPTURE_PATH,
+} from "@serovaai/ficta-protocol";
 import { describe, expect, it, vi } from "vitest";
 import type { RegistrySourcePlugin } from "../src/plugins/index.js";
 
@@ -38,6 +42,15 @@ function onlyCaptureRunDir(statsPath: string): string {
   const runs = readdirSync(runsDir).filter((name) => name.startsWith("run-"));
   expect(runs).toHaveLength(1);
   return join(runsDir, runs[0] ?? "");
+}
+
+async function setRuntimeTraceCapture(port: number, enabled: boolean): Promise<void> {
+  const res = await fetch(`http://127.0.0.1:${port}${FICTA_TRACE_CAPTURE_PATH}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  expect(res.status).toBe(200);
 }
 
 function anthropicInputDelta(index: number, partial_json: string): string {
@@ -342,10 +355,11 @@ describe("proxy hardening", () => {
 
         const { startProxy } = await import("../src/server.js");
         proxy = await startProxy({ port: 0, plugins: [fixturePlugin] });
+        await setRuntimeTraceCapture(proxy.port, true);
 
         const res = await fetch(`http://127.0.0.1:${proxy.port}/v1/messages`, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", [FICTA_TRACE_CAPTURE_HEADER]: "1" },
           body: JSON.stringify({ model: "claude-test", messages: [{ role: "user", content: PROOF_SECRET }] }),
         });
         const text = await res.text();
@@ -387,7 +401,7 @@ describe("proxy hardening", () => {
     }
   });
 
-  it("honors per-request trace capture while preserving legacy trace behavior", async () => {
+  it("requires both the runtime grant and an explicit per-request trace selector", async () => {
     const originalEnv = {
       FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,
       FICTA_LOG_LEVEL: process.env.FICTA_LOG_LEVEL,
@@ -453,33 +467,43 @@ describe("proxy hardening", () => {
         return res.text();
       }
 
-      const legacy = await send();
+      const globallyDisabled = await send("1");
+      await setRuntimeTraceCapture(proxy.port, true);
+      const unselected = await send();
       const suppressed = await send("0");
       const explicit = await send("1");
-      expect(legacy).toContain("FICTA_RESTORE_START");
+      await setRuntimeTraceCapture(proxy.port, false);
+      const disabledAgain = await send("1");
+      expect(globallyDisabled).toContain(PROOF_SECRET);
+      expect(globallyDisabled).not.toContain("FICTA_RESTORE_START");
+      expect(unselected).toContain(PROOF_SECRET);
+      expect(unselected).not.toContain("FICTA_RESTORE_START");
       expect(suppressed).toContain(PROOF_SECRET);
       expect(suppressed).not.toContain("FICTA_RESTORE_START");
       expect(explicit).toContain("FICTA_RESTORE_START");
-      expect(upstreamTraceHeaders).toEqual([undefined, undefined, undefined]);
-      expect(upstreamRestoreHeaders).toEqual([undefined, undefined, undefined]);
+      expect(disabledAgain).toContain(PROOF_SECRET);
+      expect(disabledAgain).not.toContain("FICTA_RESTORE_START");
+      expect(upstreamTraceHeaders).toEqual([undefined, undefined, undefined, undefined, undefined]);
+      expect(upstreamRestoreHeaders).toEqual([undefined, undefined, undefined, undefined, undefined]);
 
       const runDir = onlyCaptureRunDir(proxy.protectionStats().path);
-      const files = await waitForFiles(runDir, (names) => names.includes("audit-0003.trace.json"));
-      expect(files).toContain("req-0001.json");
-      expect(files).toContain("req-0001.sent.json");
-      expect(files).toContain("res-0001.txt");
-      expect(files).toContain("res-0001.restored.txt");
-      expect(files).toContain("audit-0001.trace.json");
+      const files = await waitForFiles(runDir, (names) => names.includes("audit-0004.trace.json"));
+      expect(files).not.toContain("req-0001.json");
+      expect(files).not.toContain("audit-0001.trace.json");
       expect(files).not.toContain("req-0002.json");
       expect(files).not.toContain("req-0002.sent.json");
       expect(files).not.toContain("res-0002.txt");
       expect(files).not.toContain("res-0002.restored.txt");
       expect(files).not.toContain("audit-0002.trace.json");
-      expect(files).toContain("req-0003.json");
-      expect(files).toContain("req-0003.sent.json");
-      expect(files).toContain("res-0003.txt");
-      expect(files).toContain("res-0003.restored.txt");
-      expect(files).toContain("audit-0003.trace.json");
+      expect(files).not.toContain("req-0003.json");
+      expect(files).not.toContain("audit-0003.trace.json");
+      expect(files).toContain("req-0004.json");
+      expect(files).toContain("req-0004.sent.json");
+      expect(files).toContain("res-0004.txt");
+      expect(files).toContain("res-0004.restored.txt");
+      expect(files).toContain("audit-0004.trace.json");
+      expect(files).not.toContain("req-0005.json");
+      expect(files).not.toContain("audit-0005.trace.json");
     } finally {
       proxy?.close();
       await close(upstream);
@@ -524,9 +548,11 @@ describe("proxy hardening", () => {
 
       const { startProxy } = await import("../src/server.js");
       proxy = await startProxy({ port: 0, plugins: [fixturePlugin] });
+      await setRuntimeTraceCapture(proxy.port, true);
 
       const res = await fetch(`http://127.0.0.1:${proxy.port}/v1/messages?proof=${encodeURIComponent(PROOF_SECRET)}`, {
         method: "GET",
+        headers: { [FICTA_TRACE_CAPTURE_HEADER]: "1" },
       });
       expect(res.status).toBe(403);
 
@@ -1597,6 +1623,7 @@ describe("config posture endpoint", () => {
             logLevel: "silent",
             logBodies: false,
             traceAudit: false,
+            traceCapture: { enabled: false },
           },
         },
         edit: {
@@ -1622,6 +1649,23 @@ describe("config posture endpoint", () => {
       const raw = JSON.stringify(body);
       expect(raw).not.toContain(REGISTERED_SECRET);
       expect(raw).not.toContain(SURROGATE_KEY_FIXTURE);
+
+      await setRuntimeTraceCapture(proxy.port, true);
+      const active = await fetch(`http://127.0.0.1:${proxy.port}/__ficta/config`).then((response) => response.json());
+      expect(active.config.transport).toMatchObject({
+        logBodies: true,
+        traceCapture: { enabled: true },
+      });
+
+      await setRuntimeTraceCapture(proxy.port, false);
+      const disabled = await fetch(`http://127.0.0.1:${proxy.port}${FICTA_TRACE_CAPTURE_PATH}`).then((response) =>
+        response.json(),
+      );
+      expect(disabled).toEqual({
+        ok: true,
+        service: "ficta",
+        traceCapture: { enabled: false },
+      });
     } finally {
       proxy?.close();
       for (const [k, v] of Object.entries(original)) {

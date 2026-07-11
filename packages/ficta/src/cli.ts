@@ -359,8 +359,8 @@ function printHelp(exitCode: number): never {
     "Environment:",
     renderHelpRows([
       ["FICTA_DISABLE=1", "Bypass ficta for one agent launch"],
-      ["FICTA_LOG_LEVEL=<level>", "silent|error|warn|info|debug|trace (trace writes raw bodies to disk)"],
-      ["FICTA_TRACE_AUDIT=1", "With trace logging, also write raw protected-value audit sidecars"],
+      ["FICTA_LOG_LEVEL=<level>", "silent|error|warn|info|debug|trace (structured log verbosity)"],
+      ["FICTA_TRACE_AUDIT=1", "With runtime trace capture, also write raw protected-value audit sidecars"],
       ["FICTA_REQUIRE_REGISTRY=1", "Refuse to launch if no protected values load"],
     ]),
     "",

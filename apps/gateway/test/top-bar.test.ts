@@ -21,7 +21,7 @@ describe("thread trace toggle labels", () => {
   it("explains unavailable capture when global trace is off", () => {
     expect(threadTraceToggleLabels({ enabled: false, disabled: true })).toEqual({
       ariaLabel: "Trace capture unavailable",
-      tooltip: "Trace capture: Unavailable · Enable FICTA_LOG_LEVEL=trace on the proxy",
+      tooltip: "Trace capture: Disabled by your server administrator · Click to open admin settings",
     });
   });
 

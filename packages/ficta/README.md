@@ -140,7 +140,7 @@ for the request-time secret-shape detector's web/agent surfaces and pattern-base
 ```sh
 FICTA_REQUIRE_REGISTRY=1 claude   # refuse to launch if nothing loads
 FICTA_REDACT_PATHS=1 claude       # also redact path-like tokens on every surface this run
-FICTA_LOG_LEVEL=trace claude      # verbose logs incl. raw bodies (debug only)
+FICTA_LOG_LEVEL=trace claude      # most verbose structured proxy logs
 FICTA_PRESERVE_LITERALS=1 claude  # ask the model to preserve exact surrogate tokens for restore
 FICTA_SECRET_SHAPES_ENABLED=1 ficta claude # force secret-shape detection for this agent run
 FICTA_PII_ENABLED=1 claude        # force PII detection for this one agent run
@@ -150,10 +150,14 @@ ficta disable                     # bypass all shims until `ficta enable`
 ```
 
 `FICTA_LOG_LEVEL` (`silent` < `error` < `warn` < `info` < `debug` < `trace`; default `info`
-standalone, `silent` under a wrapped agent) is runtime-only by design and is **not** persisted to
-`config.toml` — `trace` writes raw request/response bodies to disk, so it must be an explicit
-per-run choice, never a saved default. Under wrapped agents, leave it unset/`silent` to keep TUIs
-clean; set `info`/`debug`/`trace` only when you intentionally want proxy logs in the terminal.
+standalone, `silent` under a wrapped agent) controls structured log verbosity only. Under wrapped
+agents, leave it unset/`silent` to keep TUIs clean; set `info`/`debug`/`trace` only when you
+intentionally want proxy logs in the terminal.
+
+Raw request/response capture is a separate, process-local admin control. It defaults off, remains
+active until an administrator disables it or the proxy restarts, and still requires an explicit
+per-request `x-ficta-trace-capture: 1` selector. Gateway administrators can enable it from Admin settings; a
+standalone loopback operator can use `PATCH /__ficta/trace-capture` with `{ "enabled": true }`.
 
 ## Commands
 
