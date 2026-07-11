@@ -136,6 +136,7 @@ describe("config hardening", () => {
           FICTA_REGISTRY_MIN_LEN: "12",
           FICTA_REQUIRE_REGISTRY: "1",
           FICTA_LOG_MAX_BYTES: "12345",
+          FICTA_LOG_ROOT: "/var/log/ficta",
           FICTA_ALLOW_CUSTOM_UPSTREAM: "1",
         },
         path,
@@ -155,6 +156,7 @@ describe("config hardening", () => {
         FICTA_REGISTRY_MIN_LEN: "12",
         FICTA_REQUIRE_REGISTRY: "1",
         FICTA_LOG_MAX_BYTES: "12345",
+        FICTA_LOG_ROOT: "/var/log/ficta",
         FICTA_ALLOW_CUSTOM_UPSTREAM: "1",
       });
     } finally {

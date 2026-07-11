@@ -15,7 +15,9 @@ const SIGNAL_EXIT_CODES = {
 const DEFAULT_PRESIDIO_URL = "http://127.0.0.1:5002";
 const DEFAULT_PRESIDIO_IMAGE = "ghcr.io/data-privacy-stack/presidio-analyzer:latest";
 const DEFAULT_PRESIDIO_CONFIG = resolve(rootDir, "packages/ficta/presidio/default_recognizers.za.yaml");
+const DEFAULT_PRESIDIO_NLP_CONFIG = resolve(rootDir, "packages/ficta/presidio/nlp_engine.za.yaml");
 const CONTAINER_CONFIG_PATH = "/app/ficta-presidio-recognizers.yaml";
+const CONTAINER_NLP_CONFIG_PATH = "/app/ficta-nlp-engine.yaml";
 const DEFAULT_STARTUP_TIMEOUT_MS = 60_000;
 
 const DEFAULT_DOC_CONVERTER_URL = "http://127.0.0.1:5003";
@@ -80,6 +82,13 @@ async function maybeStartPresidio(env) {
   if (!existsSync(configPath)) {
     throw new Error(`Presidio registry config not found: ${configPath}`);
   }
+  const nlpConfigPath = resolve(
+    rootDir,
+    env.FICTA_PII_PRESIDIO_NLP_CONFIG_FILE ?? DEFAULT_PRESIDIO_NLP_CONFIG,
+  );
+  if (!existsSync(nlpConfigPath)) {
+    throw new Error(`Presidio NLP config not found: ${nlpConfigPath}`);
+  }
 
   const image = env.FICTA_PII_PRESIDIO_IMAGE?.trim() || DEFAULT_PRESIDIO_IMAGE;
   const containerName = env.FICTA_PII_PRESIDIO_CONTAINER_NAME?.trim() || `ficta-presidio-${process.pid}`;
@@ -87,6 +96,7 @@ async function maybeStartPresidio(env) {
 
   console.log(`[dev] starting Presidio analyzer sidecar at ${url}`);
   console.log(`[dev] Presidio registry: ${configPath}`);
+  console.log(`[dev] Presidio NLP config: ${nlpConfigPath}`);
 
   const child = spawn(
     "docker",
@@ -99,8 +109,12 @@ async function maybeStartPresidio(env) {
       `127.0.0.1:${parsed.port}:3000`,
       "-v",
       `${configPath}:${CONTAINER_CONFIG_PATH}:ro`,
+      "-v",
+      `${nlpConfigPath}:${CONTAINER_NLP_CONFIG_PATH}:ro`,
       "-e",
       `RECOGNIZER_REGISTRY_CONF_FILE=${CONTAINER_CONFIG_PATH}`,
+      "-e",
+      `NLP_CONF_FILE=${CONTAINER_NLP_CONFIG_PATH}`,
       image,
     ],
     {

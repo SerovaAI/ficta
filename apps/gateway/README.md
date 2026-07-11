@@ -99,7 +99,8 @@ document-converter sidecar by default so PDF/DOCX uploads work in dev; set
 `FICTA_DOC_CONVERTER_MANAGED=0` to opt out. When the effective env selects
 `FICTA_PII_BACKEND=presidio`, the dev wrapper can also start or reuse a local Docker
 `presidio-analyzer` sidecar and mount
-`../../packages/ficta/presidio/default_recognizers.za.yaml`.
+`../../packages/ficta/presidio/default_recognizers.za.yaml` plus
+`../../packages/ficta/presidio/nlp_engine.za.yaml`.
 
 ## Production-Like Gateway Setup
 
@@ -189,12 +190,16 @@ Run the Presidio sidecar explicitly, for example:
 ```sh
 docker run --rm -p 5002:3000 \
   -v "$PWD/packages/ficta/presidio/default_recognizers.za.yaml:/app/ficta-presidio-recognizers.yaml:ro" \
+  -v "$PWD/packages/ficta/presidio/nlp_engine.za.yaml:/app/ficta-nlp-engine.yaml:ro" \
   -e RECOGNIZER_REGISTRY_CONF_FILE=/app/ficta-presidio-recognizers.yaml \
+  -e NLP_CONF_FILE=/app/ficta-nlp-engine.yaml \
   ghcr.io/data-privacy-stack/presidio-analyzer:latest
 ```
 
 The shipped recognizer registry keeps Presidio's defaults, enables South African ID numbers, and adds
-a South African company registration number recognizer.
+South African company registration, legal-document identifier, Mauritius phone, and ordinal-date
+recognizers. The separate NLP configuration enables noisy, best-effort organization NER; known client
+and counterparty names still belong in the exact-match registry.
 
 ## Document Conversion
 
@@ -240,7 +245,7 @@ Proxy-side env commonly used with the gateway:
 | `FICTA_PII_FAIL_CLOSED` | PII detector outage policy: block instead of skip detection | `0` |
 | `FICTA_PII_PRESIDIO_URL` | Presidio analyzer URL when using the `presidio` backend | local sidecar URL |
 | `FICTA_PII_OPENMED_URL` | OpenMed service URL when using the `openmed` backend | local service URL |
-| `FICTA_RESTORE_INTO_TOOLS` | Restore real values into model tool-call arguments instead of withholding them | `0` |
+| `FICTA_RESTORE_INTO_TOOLS` | Tool-call restore policy: `detected` restores locally-read detector values while withholding registry secrets; `all` or `none` force either extreme | `detected` |
 | `FICTA_ALLOW_CUSTOM_UPSTREAM` | Permit forwarding provider auth headers to trusted non-default upstreams | `0` |
 | `FICTA_LOG_LEVEL` | Runtime logging level; `trace` writes raw bodies | `info` standalone |
 

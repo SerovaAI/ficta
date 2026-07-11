@@ -367,7 +367,7 @@ function GatewayHeroArt() {
               <div className="mb-4 flex min-w-0 items-center justify-between gap-3">
                 <div>
                   <p className="font-mono text-[0.64rem] text-primary uppercase tracking-[0.14em]">sent to model</p>
-                  <p className="mt-1 text-muted-foreground text-xs">Only local surrogates cross the boundary.</p>
+                  <p className="mt-1 text-muted-foreground text-xs">Protected values cross as local surrogates.</p>
                 </div>
                 <span className="rounded-full border border-primary/40 px-2.5 py-1 font-mono text-[0.65rem] text-primary">
                   egress

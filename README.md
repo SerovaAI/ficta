@@ -139,6 +139,9 @@ fake secret-shaped tokens before sensitive workflows.
 
 ## Development
 
+The monorepo toolchain requires Node.js 22.13 or newer. The published CLI and protocol packages keep
+their own Node.js `>=20` runtime support.
+
 ```sh
 pnpm install
 pnpm dev             # proxy + Gateway; auto-uses Doppler when configured, otherwise local .env

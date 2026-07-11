@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Workspace root for ficta (packages/ficta) and its chat UI (apps/gateway). Not published.",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "scripts": {
     "//turbo": "Turbo-managed: cached, parallel across all packages. See turbo.json",

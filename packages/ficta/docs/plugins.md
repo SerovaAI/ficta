@@ -263,11 +263,12 @@ custom general PII, while OpenMed adds medical/PHI-style learned detection.
 ### The `presidio` backend
 
 ficta calls [`presidio-analyzer`](https://microsoft.github.io/presidio/) at the configured URL. Two
-managed ways to run it (both mount `packages/ficta/presidio/default_recognizers.za.yaml`, which
-keeps Presidio's default recognizers, enables South African ID numbers, and adds a South African
-company registration number pattern recognizer). Ficta also ships context-aware patterns for
-confidential document identifiers, Mauritius international telephone numbers, and ordinal long-form
-dates observed in legal-document traffic:
+managed ways to run it both mount `packages/ficta/presidio/default_recognizers.za.yaml` and
+`packages/ficta/presidio/nlp_engine.za.yaml`. The registry keeps Presidio's default recognizers,
+enables South African ID numbers, and adds a South African company registration number pattern
+recognizer. Ficta also ships context-aware patterns for confidential document identifiers, Mauritius
+international telephone numbers, and ordinal long-form dates observed in legal-document traffic;
+the NLP configuration enables noisy, best-effort organization NER:
 
 - **`pnpm sidecars`** (repo root, ↔ `docker-compose.sidecars.yml`) starts the shared sidecar stack
   detached with health-gated `--wait`: the Gateway document converter plus both PII sidecars.

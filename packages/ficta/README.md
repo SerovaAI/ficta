@@ -67,6 +67,7 @@ every option. The table below is just a quick tour of the most useful knobs:
 | `pii.presidio.url` | `FICTA_PII_PRESIDIO_URL` | local Presidio sidecar URL | Analyzer URL when the backend set includes `presidio`. |
 | `pii.openmed.url` | `FICTA_PII_OPENMED_URL` | local OpenMed service URL | Service URL when the backend set includes `openmed`. |
 | `surrogate.style` | `FICTA_SURROGATE_STYLE` | `opaque` | Token style: `opaque` (`FICTA_<hex>`) or `typed` (`FICTA_PERSON_…`, `FICTA_SSN_…`) for model fluency; reversibility unchanged. |
+| - | `FICTA_PRESERVE_LITERALS` | `false` | Runtime-only opt-in that asks the model to reproduce the exact surrogate tokens already present in the request, improving restore reliability without adding raw values. |
 | `logging.log_root` | `FICTA_LOG_ROOT` | `~/.ficta/logs` | Root for capture logs. Each proxy writes to a per-role subtree so concurrent instances never collide: the standalone/web server under `gateway/`, and every `ficta claude\|codex\|pi` shim under `agents/<agent>/<instance>/` (one per process). Each subtree holds its own `ficta.log`, `protection-stats.json`, and lazy `runs/run-*` captures. |
 | `logging.log_dir` | `FICTA_LOG_DIR` | unset | Full override of the exact capture-log path (bypasses the root+role split for all roles). |
 | `upstreams.anthropic` | `FICTA_ANTHROPIC_UPSTREAM` | Anthropic API | Override the Anthropic upstream (also `..._OPENAI_...` / `..._CHATGPT_...`). |
@@ -140,6 +141,7 @@ for the request-time secret-shape detector's web/agent surfaces and pattern-base
 FICTA_REQUIRE_REGISTRY=1 claude   # refuse to launch if nothing loads
 FICTA_REDACT_PATHS=1 claude       # also redact path-like tokens on every surface this run
 FICTA_LOG_LEVEL=trace claude      # verbose logs incl. raw bodies (debug only)
+FICTA_PRESERVE_LITERALS=1 claude  # ask the model to preserve exact surrogate tokens for restore
 FICTA_SECRET_SHAPES_ENABLED=1 ficta claude # force secret-shape detection for this agent run
 FICTA_PII_ENABLED=1 claude        # force PII detection for this one agent run
 FICTA_PII_BACKEND=presidio FICTA_PII_ENABLED=1 ficta claude # use Presidio for this agent run
