@@ -140,8 +140,9 @@ Raw trace capture is a separate runtime-only admin control. It applies immediate
 chat requests and remains active until an administrator disables it or the proxy restarts.
 
 Gateway admins can also maintain the Protected Registry from **Admin > Protected Registry**. Approved
-registry entries can be published to a private managed-registry JSON file and loaded by the running
-proxy without a restart. Gateway writes the file atomically and confirms that the proxy parsed that
+registry entries apply by exact match across the workspace and can be published to a private
+managed-registry JSON file loaded by the running proxy without a restart. Gateway writes the file
+atomically and confirms that the proxy parsed that
 exact revision; a path, shared-volume, or source error is reported as partial success rather than active
 protection. Configure the same absolute path with `FICTA_GATEWAY_MANAGED_REGISTRY_PATH` in Gateway and
 `FICTA_REGISTRY_MANAGED_FILE_PATHS` in the proxy. Suggested and ignored rows are review workflow only.

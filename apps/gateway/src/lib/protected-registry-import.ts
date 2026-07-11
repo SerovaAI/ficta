@@ -13,7 +13,7 @@ export interface ProtectedRegistryImportParseResult {
 
 type Column = "matterId" | "type" | "value" | "aliases" | "status";
 
-const DEFAULT_COLUMNS: Column[] = ["matterId", "type", "value", "aliases", "status"];
+const DEFAULT_COLUMNS: Column[] = ["value", "aliases", "status"];
 const HEADER_ALIASES: Record<string, Column> = {
   scope: "matterId",
   scopeid: "matterId",
