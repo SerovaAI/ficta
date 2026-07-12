@@ -175,7 +175,7 @@ ficta claude       # launch an agent through ficta without shims
 
 | Agent | Status | Notes |
 | --- | --- | --- |
-| Claude Code | Verified | Anthropic base-URL routing. |
+| Claude Code | Verified | Anthropic base-URL routing. Point the anthropic route at a local proxy to run alt models — see [`docs/anthropic-upstream-proxy.md`](./docs/anthropic-upstream-proxy.md). |
 | Codex | Verified | API-key and ChatGPT/OAuth flows — see [`docs/codex-oauth-intercept.md`](./docs/codex-oauth-intercept.md). |
 | Pi | Verified | Built-in `anthropic`/`openai`/`openai-codex` providers via ephemeral `PI_CODING_AGENT_DIR` + `models.json` base-URL override. |
 
@@ -190,6 +190,7 @@ Cursor are not — their agentic features bypass a custom base URL. See the
 - [`docs/plugins.md`](./docs/plugins.md) — registry-source, detector, and agent-integration plugins
 - [`docs/plugins.md#built-in-detector-plugin-pii`](./docs/plugins.md#built-in-detector-plugin-pii) — PII detector surfaces, backends, and failure policy
 - [`docs/codex-oauth-intercept.md`](./docs/codex-oauth-intercept.md) — Codex ChatGPT/OAuth routing
+- [`docs/anthropic-upstream-proxy.md`](./docs/anthropic-upstream-proxy.md) — route `ficta claude` through a local Anthropic-compatible proxy to run alt models (e.g. sol via CLIProxyAPI)
 - [`docs/benchmarks.md`](./docs/benchmarks.md) — performance notes
 - [`CONTRIBUTING.md`](./CONTRIBUTING.md) · [`SECURITY.md`](./SECURITY.md)
 
