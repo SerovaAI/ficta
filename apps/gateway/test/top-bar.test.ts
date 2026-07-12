@@ -4,8 +4,9 @@ import { restorePrivacyToggleLabels, threadTraceToggleLabels } from "@/component
 describe("restore privacy toggle labels", () => {
   it("describes the next action from values mode", () => {
     expect(restorePrivacyToggleLabels("values")).toEqual({
-      ariaLabel: "Show surrogates",
-      tooltip: "Show surrogates",
+      ariaLabel: "Show protected tokens",
+      tooltip: "Show protected tokens",
+      menuLabel: "Show protected tokens",
     });
   });
 
@@ -13,6 +14,7 @@ describe("restore privacy toggle labels", () => {
     expect(restorePrivacyToggleLabels("surrogates")).toEqual({
       ariaLabel: "Show restored values",
       tooltip: "Show restored values",
+      menuLabel: "Show restored values",
     });
   });
 });

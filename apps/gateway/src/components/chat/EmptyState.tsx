@@ -1,6 +1,16 @@
 import { ShieldCheck } from "lucide-react";
+import { emptyStateProtectionCopy } from "@/lib/protection-copy";
+import type { ProtectionStatus } from "@/lib/protection-status";
 
-export function EmptyState({ suggestions, onPick }: { suggestions: string[]; onPick: (prompt: string) => void }) {
+export function EmptyState({
+  suggestions,
+  onPick,
+  protectionStatus,
+}: {
+  suggestions: string[];
+  onPick: (prompt: string) => void;
+  protectionStatus?: ProtectionStatus;
+}) {
   return (
     // No horizontal padding here: the parent (MessageList) already applies `px-4`, and the composer +
     // protection notice share that same `max-w-3xl` measure. The suggestion grid below fills it so its
@@ -11,8 +21,7 @@ export function EmptyState({ suggestions, onPick }: { suggestions: string[]; onP
       </div>
       <h1 className="text-2xl font-semibold tracking-tight">How can I help?</h1>
       <p className="mt-2 max-w-md text-sm text-muted-foreground">
-        Paste a document or ask a question. Sensitive details are redacted before they ever reach the AI provider — and
-        restored in the answer.
+        Paste a document or ask a question. {emptyStateProtectionCopy(protectionStatus)}
       </p>
       {suggestions.length ? (
         <div className="mt-8 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">

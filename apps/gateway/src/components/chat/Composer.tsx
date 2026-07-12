@@ -1,5 +1,5 @@
 import { AlertTriangle, ArrowUp, Check, ChevronDown, FileText, Loader2, Paperclip, Square, X } from "lucide-react";
-import { forwardRef, useImperativeHandle, useLayoutEffect, useRef } from "react";
+import { Fragment, forwardRef, type ReactNode, useImperativeHandle, useLayoutEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -51,6 +51,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     onFilesSelected,
     onRemoveAttachment,
     onDismissUploadWarning,
+    review,
+    defaultModel,
+    defaultReasoningEffort,
   },
   forwardedRef,
 ) {
@@ -132,8 +135,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 <span className="shrink-0 text-muted-foreground">{formatBytes(attachment.size)}</span>
                 <button
                   type="button"
-                  className="flex size-6 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [@media(pointer:coarse)]:size-11"
+                  className="flex size-6 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 [@media(pointer:coarse)]:size-11"
                   onClick={() => onRemoveAttachment(attachment.id)}
+                  disabled={Boolean(review)}
+                  title={review ? "Return to editing to remove this attachment" : undefined}
                   aria-label={`Remove ${attachment.name}`}
                 >
                   <X className="size-3" aria-hidden />
@@ -150,76 +155,84 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           </div>
         ) : null}
 
-        <div className="flex items-end gap-1.5 rounded-2xl border border-border bg-card p-1.5 shadow-sm focus-within:ring-1 focus-within:ring-ring">
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept={ATTACHMENT_ACCEPT}
-            className="hidden"
-            onChange={(e) => {
-              const files = Array.from(e.currentTarget.files ?? []);
-              if (files.length > 0) onFilesSelected(files);
-              e.currentTarget.value = "";
-            }}
-          />
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="size-8 shrink-0 rounded-lg"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isLoading || isExtracting}
-            aria-label="Attach a file"
-          >
-            <Paperclip className="size-4" aria-hidden />
-          </Button>
-          <textarea
-            ref={ref}
-            value={value}
-            rows={1}
-            aria-label="Message"
-            placeholder="Paste a document, attach a text file, or ask a question…"
-            onChange={(e) => onChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                if (canSend) onSubmit();
-              }
-            }}
-            className="max-h-[200px] flex-1 resize-none bg-transparent px-1.5 py-1 text-[0.95rem] leading-6 outline-none placeholder:text-muted-foreground"
-          />
-          <ComposerModelControl
-            model={model}
-            onModelChange={onModelChange}
-            reasoningEffort={reasoningEffort}
-            onReasoningEffortChange={onReasoningEffortChange}
-            disabled={isLoading || isExtracting}
-          />
-          {isLoading ? (
+        {review ? (
+          <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">{review}</div>
+        ) : (
+          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-end gap-1.5 rounded-2xl border border-border bg-card p-1.5 shadow-sm focus-within:ring-1 focus-within:ring-ring sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={ATTACHMENT_ACCEPT}
+              className="hidden"
+              onChange={(e) => {
+                const files = Array.from(e.currentTarget.files ?? []);
+                if (files.length > 0) onFilesSelected(files);
+                e.currentTarget.value = "";
+              }}
+            />
             <Button
               type="button"
               size="icon"
-              variant="secondary"
-              className="size-8 shrink-0 rounded-lg"
-              onClick={onStop}
-              aria-label="Stop"
+              variant="ghost"
+              className="col-start-1 row-start-1 size-8 rounded-lg"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isLoading || isExtracting}
+              aria-label="Attach a file"
             >
-              <Square className="size-4 fill-current" aria-hidden />
+              <Paperclip className="size-4" aria-hidden />
             </Button>
-          ) : (
-            <Button
-              type="button"
-              size="icon"
-              className="size-8 shrink-0 rounded-lg"
-              onClick={onSubmit}
-              disabled={!canSend}
-              aria-label="Send"
-            >
-              <ArrowUp className="size-4" aria-hidden />
-            </Button>
-          )}
-        </div>
+            <textarea
+              ref={ref}
+              value={value}
+              rows={1}
+              aria-label="Message"
+              placeholder="Paste a document, attach a text file, or ask a question…"
+              onChange={(e) => onChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  if (canSend) onSubmit();
+                }
+              }}
+              className="col-start-2 row-start-1 max-h-[200px] min-w-0 resize-none bg-transparent px-1.5 py-1 text-[0.95rem] leading-6 outline-none placeholder:text-muted-foreground"
+            />
+            <div className="col-span-3 row-start-2 flex min-w-0 items-center border-t border-border/70 pt-1 sm:contents">
+              <ComposerModelControl
+                model={model}
+                onModelChange={onModelChange}
+                reasoningEffort={reasoningEffort}
+                onReasoningEffortChange={onReasoningEffortChange}
+                defaultModel={defaultModel}
+                defaultReasoningEffort={defaultReasoningEffort}
+                disabled={isLoading || isExtracting}
+              />
+            </div>
+            {isLoading ? (
+              <Button
+                type="button"
+                size="icon"
+                variant="secondary"
+                className="col-start-3 row-start-1 size-8 rounded-lg sm:col-start-4"
+                onClick={onStop}
+                aria-label="Stop"
+              >
+                <Square className="size-4 fill-current" aria-hidden />
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="icon"
+                className="col-start-3 row-start-1 size-8 rounded-lg sm:col-start-4"
+                onClick={onSubmit}
+                disabled={!canSend}
+                aria-label="Send"
+              >
+                <ArrowUp className="size-4" aria-hidden />
+              </Button>
+            )}
+          </div>
+        )}
         {disabledReason ? <p className="mt-2 text-center text-xs text-muted-foreground">{disabledReason}</p> : null}
       </div>
     </div>
@@ -245,6 +258,10 @@ type ComposerProps = {
   onFilesSelected: (files: File[]) => void;
   onRemoveAttachment: (id: string) => void;
   onDismissUploadWarning: () => void;
+  /** When present, replaces the editable row inside the same composer surface. */
+  review?: ReactNode;
+  defaultModel?: { provider: string; model: string };
+  defaultReasoningEffort?: ReasoningEffort;
 };
 
 function ComposerModelControl({
@@ -253,12 +270,16 @@ function ComposerModelControl({
   reasoningEffort,
   onReasoningEffortChange,
   disabled,
+  defaultModel,
+  defaultReasoningEffort,
 }: {
   model: ModelChoice;
   onModelChange: (choice: ModelChoice) => void;
   reasoningEffort: ReasoningEffort;
   onReasoningEffortChange: (effort: ReasoningEffort) => void;
   disabled?: boolean;
+  defaultModel?: { provider: string; model: string };
+  defaultReasoningEffort?: ReasoningEffort;
 }) {
   const instance = useInstanceSettings();
   const models = MODELS.filter((m) => isModelAllowed(instance, modelKey(m)));
@@ -267,6 +288,12 @@ function ComposerModelControl({
   const reasoningDisabled = reasoningEfforts.length === 0;
   const reasoningLabel = selectedReasoning?.label ?? "Medium";
   const selectedModelKey = modelKey(model);
+  const defaultModelKey = defaultModel ? modelKey(defaultModel) : undefined;
+  const effectiveDefaultModelKey =
+    defaultModelKey && models.some((candidate) => modelKey(candidate) === defaultModelKey)
+      ? defaultModelKey
+      : modelKey(models[0] ?? model);
+  const providerGroups = [...new Set(models.map((candidate) => candidate.label))];
   const controlLabel = reasoningDisabled
     ? `Choose model and reasoning settings. Current model: ${model.sublabel}. Reasoning is available for OpenAI models only.`
     : `Choose model and reasoning settings. Current model: ${model.sublabel}. Current reasoning: ${reasoningLabel}.`;
@@ -278,29 +305,45 @@ function ComposerModelControl({
           type="button"
           variant="secondary"
           size="sm"
-          className="h-8 max-w-[9.5rem] shrink-0 gap-1.5 rounded-lg px-2.5 sm:max-w-[14rem]"
+          className="h-8 max-w-full min-w-0 gap-1.5 rounded-lg px-2.5 sm:col-start-3 sm:row-start-1 sm:max-w-[14rem]"
           disabled={disabled}
           aria-label={controlLabel}
           title={model.sublabel}
         >
           <span className="min-w-0 truncate font-medium">{model.sublabel}</span>
+          {!reasoningDisabled ? (
+            <span className="shrink-0 text-muted-foreground text-xs">· {reasoningLabel}</span>
+          ) : null}
           <ChevronDown className="size-3.5 opacity-60" aria-hidden />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={8} className="w-64">
-        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Model</DropdownMenuLabel>
-        {models.map((m) => (
-          <DropdownMenuItem
-            key={modelKey(m)}
-            onSelect={() => onModelChange(m)}
-            className="flex items-center justify-between gap-2"
-          >
-            <span className="flex min-w-0 flex-col">
-              <span className="font-medium">{m.label}</span>
-              <span className="truncate text-xs text-muted-foreground">{m.sublabel}</span>
-            </span>
-            {modelKey(m) === selectedModelKey ? <Check className="size-4" aria-hidden /> : null}
-          </DropdownMenuItem>
+      <DropdownMenuContent align="end" sideOffset={8} className="w-72">
+        <DropdownMenuLabel>Model</DropdownMenuLabel>
+        {providerGroups.map((provider, providerIndex) => (
+          <Fragment key={provider}>
+            {providerIndex > 0 ? <DropdownMenuSeparator /> : null}
+            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{provider}</DropdownMenuLabel>
+            {models
+              .filter((candidate) => candidate.label === provider)
+              .map((candidate) => {
+                const candidateKey = modelKey(candidate);
+                return (
+                  <DropdownMenuItem
+                    key={candidateKey}
+                    onSelect={() => onModelChange(candidate)}
+                    className="flex items-center justify-between gap-2"
+                  >
+                    <span className="min-w-0 flex-1 truncate">{candidate.sublabel}</span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      {candidateKey === effectiveDefaultModelKey ? (
+                        <span className="text-muted-foreground text-xs">Default</span>
+                      ) : null}
+                      {candidateKey === selectedModelKey ? <Check className="size-4" aria-hidden /> : null}
+                    </span>
+                  </DropdownMenuItem>
+                );
+              })}
+          </Fragment>
         ))}
         <DropdownMenuSeparator />
         {reasoningDisabled ? (
@@ -311,7 +354,7 @@ function ComposerModelControl({
         ) : (
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
-              <span className="min-w-0 flex-1 truncate">Reasoning</span>
+              <span className="min-w-0 flex-1 truncate">Reasoning level</span>
               <span className="max-w-24 truncate text-muted-foreground">{reasoningLabel}</span>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="w-40">
@@ -323,7 +366,10 @@ function ComposerModelControl({
               >
                 {REASONING_EFFORTS.filter((effort) => reasoningEfforts.includes(effort.value)).map((effort) => (
                   <DropdownMenuRadioItem key={effort.value} value={effort.value}>
-                    {effort.label}
+                    <span className="min-w-0 flex-1">{effort.label}</span>
+                    {effort.value === defaultReasoningEffort ? (
+                      <span className="text-muted-foreground text-xs">Default</span>
+                    ) : null}
                   </DropdownMenuRadioItem>
                 ))}
               </DropdownMenuRadioGroup>

@@ -33,6 +33,7 @@ import {
   MODELS,
   type ModelChoice,
   normalizeReasoningEffort,
+  REASONING_EFFORTS,
   type ReasoningEffort,
 } from "@/lib/models";
 import { withOneShotProtectionTicket } from "@/lib/protection-connection";
@@ -606,6 +607,27 @@ export function ChatView({
     void reload();
   };
 
+  const reasoningLabel = REASONING_EFFORTS.find((effort) => effort.value === reasoningEffort)?.label;
+  const reviewModelSummary = `${model.label} · ${model.sublabel}${model.reasoningEfforts.length > 0 && reasoningLabel ? ` · ${reasoningLabel} reasoning` : ""}`;
+  const reviewContent = protectionReview ? (
+    <ProtectionReview
+      text={protectionReview.text}
+      preview={protectionReview.preview}
+      busy={protectionReviewLoading}
+      error={protectionReviewError || undefined}
+      notice={protectionReviewNotice || undefined}
+      onBack={closeProtectionReview}
+      onProtect={protectSelection}
+      onRemove={removeChatProtection}
+      onSend={sendProtected}
+      onSuggest={suggestForWorkspace}
+      suggestValues={protectionReview.newlyProtectedValues}
+      modelSummary={reviewModelSummary}
+    />
+  ) : protectionReviewLoading ? (
+    <ProtectionReviewLoading onBack={closeProtectionReview} />
+  ) : undefined;
+
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex h-dvh overflow-hidden bg-background text-foreground">
@@ -650,6 +672,7 @@ export function ChatView({
             onRegenerate={regenerate}
             onPickSuggestion={pickSuggestion}
             restoreDisplayMode={restoreDisplayMode}
+            protectionStatus={protectionStatus}
           />
 
           {error ? (
@@ -662,56 +685,39 @@ export function ChatView({
 
           <ProtectionNotice status={protectionStatus} />
 
-          {protectionReview ? (
-            <ProtectionReview
-              text={protectionReview.text}
-              preview={protectionReview.preview}
-              busy={protectionReviewLoading}
-              error={protectionReviewError || undefined}
-              notice={protectionReviewNotice || undefined}
-              onBack={closeProtectionReview}
-              onProtect={protectSelection}
-              onRemove={removeChatProtection}
-              onSend={sendProtected}
-              onSuggest={suggestForWorkspace}
-              suggestValues={protectionReview.newlyProtectedValues}
-            />
-          ) : protectionReviewLoading ? (
-            <ProtectionReviewLoading onBack={closeProtectionReview} />
-          ) : (
-            <>
-              {protectionReviewError ? (
-                <div className="pb-2">
-                  <ErrorBanner message={protectionReviewError} onRetry={() => void beginProtectionReview(input)} />
-                </div>
-              ) : null}
-              <Composer
-                ref={composerRef}
-                value={input}
-                onChange={(value) => {
-                  setInput(value);
-                  setProtectionReviewError("");
-                }}
-                onSubmit={() => send(input)}
-                onStop={stop}
-                isLoading={isLoading}
-                isExtracting={isExtracting}
-                disabledReason={posture.kind === "blocked" ? posture.reason : undefined}
-                model={model}
-                onModelChange={chooseModel}
-                reasoningEffort={reasoningEffort}
-                onReasoningEffortChange={setReasoningEffort}
-                attachments={attachments}
-                uploadWarning={uploadWarning}
-                autoFocus={!threadId && messages.length === 0}
-                onFilesSelected={handleFilesSelected}
-                onRemoveAttachment={(id) =>
-                  setAttachments((current) => current.filter((attachment) => attachment.id !== id))
-                }
-                onDismissUploadWarning={() => setUploadWarning(undefined)}
-              />
-            </>
-          )}
+          {protectionReviewError && !reviewContent ? (
+            <div className="pb-2">
+              <ErrorBanner message={protectionReviewError} onRetry={() => void beginProtectionReview(input)} />
+            </div>
+          ) : null}
+          <Composer
+            ref={composerRef}
+            value={input}
+            onChange={(value) => {
+              setInput(value);
+              setProtectionReviewError("");
+            }}
+            onSubmit={() => send(input)}
+            onStop={stop}
+            isLoading={isLoading}
+            isExtracting={isExtracting}
+            disabledReason={posture.kind === "blocked" ? posture.reason : undefined}
+            model={model}
+            onModelChange={chooseModel}
+            reasoningEffort={reasoningEffort}
+            onReasoningEffortChange={setReasoningEffort}
+            defaultModel={userSettings?.defaultModel}
+            defaultReasoningEffort={userSettings?.defaultReasoningEffort ?? DEFAULT_REASONING_EFFORT}
+            attachments={attachments}
+            uploadWarning={uploadWarning}
+            autoFocus={!threadId && messages.length === 0}
+            onFilesSelected={handleFilesSelected}
+            onRemoveAttachment={(id) =>
+              setAttachments((current) => current.filter((attachment) => attachment.id !== id))
+            }
+            onDismissUploadWarning={() => setUploadWarning(undefined)}
+            review={reviewContent}
+          />
         </div>
 
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} userSettings={userSettings} />

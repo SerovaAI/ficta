@@ -1,4 +1,6 @@
 import {
+  AlertTriangle,
+  ChevronDown,
   Circle,
   CircleAlert,
   CircleDot,
@@ -12,15 +14,23 @@ import {
   LockKeyhole,
   Moon,
   PanelLeft,
+  ShieldCheck,
   Sun,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { type ProtectionTone, protectionPresentation } from "@/lib/protection-copy";
 import type { ProtectionStatus } from "@/lib/protection-status";
 import type { RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
 import { useTheme } from "@/lib/use-theme";
-import { cn } from "@/lib/utils";
-import { ProtectionBadge } from "./ProtectionBadge";
 
 export function TopBar({
   sidebarOpen,
@@ -60,6 +70,8 @@ export function TopBar({
 }) {
   const { theme, toggle } = useTheme();
   const restoreToggle = restorePrivacyToggleLabels(restoreDisplayMode);
+  const protection = protectionPresentation(protectionStatus);
+  const ProtectionIcon = protection.tone === "good" ? ShieldCheck : AlertTriangle;
   const traceToggle = threadTraceToggleLabels({
     enabled: threadTraceEnabled,
     disabled: threadTraceControlDisabled,
@@ -88,68 +100,52 @@ export function TopBar({
               <TooltipContent>{sidebarOpen ? "Hide history" : "Show history"}</TooltipContent>
             </Tooltip>
           ) : null}
-          {/* Brand now lives in the sidebar header; the top bar carries only the protection status. It
-              stays visible on every viewport — an always-on trust cue — collapsing to icon-only on phones. */}
-          <ProtectionBadge status={protectionStatus} labelClassName="hidden sm:inline" />
-        </div>
-        <div className="flex items-center gap-2">
-          {onToggleReviewBeforeSend ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={reviewBeforeSend ? "secondary" : "ghost"}
-                  size="icon"
-                  className={cn(
-                    reviewBeforeSend ? "text-foreground shadow-xs" : "text-muted-foreground",
-                    reviewBeforeSendRequired && "cursor-default",
-                  )}
-                  onClick={onToggleReviewBeforeSend}
-                  aria-disabled={reviewBeforeSendRequired}
-                  aria-label={
-                    reviewBeforeSendRequired
-                      ? "Review before sending is required by your workspace"
-                      : `${reviewBeforeSend ? "Disable" : "Enable"} review before sending for this chat`
-                  }
-                  aria-pressed={reviewBeforeSend}
-                >
-                  {reviewBeforeSendRequired ? (
-                    <LockKeyhole className="size-4" aria-hidden />
-                  ) : reviewBeforeSend ? (
-                    <ListChecks className="size-4" aria-hidden />
-                  ) : (
-                    <ListTodo className="size-4" aria-hidden />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {reviewBeforeSendRequired
-                  ? "Review before send is required by your workspace"
-                  : reviewBeforeSend
-                    ? "Review before send is on · Click to turn off"
-                    : "Review before send is off · Click to turn on"}
-              </TooltipContent>
-            </Tooltip>
-          ) : null}
-          {threadTraceControlVisible && onToggleThreadTrace ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={threadTraceEnabled ? "secondary" : "ghost"}
-                  size="icon"
-                  className={cn(
-                    threadTraceEnabled ? "text-foreground shadow-xs" : "text-muted-foreground",
-                    threadTraceError && "text-destructive",
-                    (threadTraceControlDisabled || threadTraceControlLoading) && "cursor-default opacity-70",
-                  )}
-                  onClick={onToggleThreadTrace}
-                  aria-disabled={threadTraceControlDisabled || threadTraceControlLoading}
-                  aria-label={traceToggle.ariaLabel}
-                  aria-pressed={threadTraceEnabled}
-                >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className={protectionTriggerClass(protection.tone)}
+                aria-label={`${protection.label}. Open protection controls`}
+              >
+                <ProtectionIcon className={protectionIconClass(protection.tone)} aria-hidden />
+                <span className="max-w-36 truncate">{protection.label}</span>
+                <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" sideOffset={8} className="w-[min(21rem,calc(100vw-2rem))]">
+              <DropdownMenuLabel className="px-2 py-2">
+                <span className="block text-sm font-medium">Protection</span>
+                <span className="mt-1 block text-xs font-normal leading-5 text-muted-foreground">
+                  {protection.description}
+                </span>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {onToggleReviewBeforeSend ? (
+                reviewBeforeSendRequired ? (
+                  <DropdownMenuLabel className="flex items-center gap-2 font-normal">
+                    <LockKeyhole className="size-4 text-muted-foreground" aria-hidden />
+                    <span className="min-w-0 flex-1">Review before sending</span>
+                    <span className="text-xs text-muted-foreground">Required</span>
+                  </DropdownMenuLabel>
+                ) : (
+                  <DropdownMenuItem onSelect={onToggleReviewBeforeSend}>
+                    {reviewBeforeSend ? (
+                      <ListChecks className="size-4" aria-hidden />
+                    ) : (
+                      <ListTodo className="size-4" aria-hidden />
+                    )}
+                    <span className="min-w-0 flex-1">Review before sending</span>
+                    <span className="text-xs text-muted-foreground">{reviewBeforeSend ? "On" : "Off"}</span>
+                  </DropdownMenuItem>
+                )
+              ) : null}
+              {threadTraceControlVisible && onToggleThreadTrace ? (
+                <DropdownMenuItem onSelect={onToggleThreadTrace} disabled={threadTraceControlLoading}>
                   {threadTraceControlLoading ? (
                     <Loader2 className="size-4 animate-spin" aria-hidden />
                   ) : threadTraceError ? (
-                    <CircleAlert className="size-4" aria-hidden />
+                    <CircleAlert className="size-4 text-destructive" aria-hidden />
                   ) : threadTraceControlDisabled ? (
                     <CircleOff className="size-4" aria-hidden />
                   ) : threadTraceEnabled ? (
@@ -157,49 +153,38 @@ export function TopBar({
                   ) : (
                     <Circle className="size-4" aria-hidden />
                   )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{traceToggle.tooltip}</TooltipContent>
+                  <span className="min-w-0 flex-1">Diagnostic trace</span>
+                  <span className="text-xs text-muted-foreground">{traceMenuStatus(traceToggle.tooltip)}</span>
+                </DropdownMenuItem>
+              ) : null}
               {threadTraceError ? (
                 <span className="sr-only" role="status" aria-live="polite">
                   Trace capture setting wasn't saved.
                 </span>
               ) : null}
-            </Tooltip>
-          ) : null}
-          {onToggleReviewBeforeSend || (threadTraceControlVisible && onToggleThreadTrace) ? (
-            <span className="h-4 w-px bg-border" aria-hidden />
-          ) : null}
-          {restoreHighlightsAvailable && onToggleRestoreDisplay ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={restoreDisplayMode === "surrogates" ? "secondary" : "ghost"}
-                  size="icon"
-                  onClick={onToggleRestoreDisplay}
-                  aria-label={restoreToggle.ariaLabel}
-                  aria-pressed={restoreDisplayMode === "surrogates"}
-                >
+              {(restoreHighlightsAvailable && onToggleRestoreDisplay) || onOpenEvidence ? (
+                <DropdownMenuSeparator />
+              ) : null}
+              {restoreHighlightsAvailable && onToggleRestoreDisplay ? (
+                <DropdownMenuItem onSelect={onToggleRestoreDisplay}>
                   {restoreDisplayMode === "surrogates" ? (
-                    <EyeOff className="size-4" aria-hidden />
-                  ) : (
                     <Eye className="size-4" aria-hidden />
+                  ) : (
+                    <EyeOff className="size-4" aria-hidden />
                   )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{restoreToggle.tooltip}</TooltipContent>
-            </Tooltip>
-          ) : null}
-          {onOpenEvidence ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={onOpenEvidence} aria-label="View thread egress evidence">
+                  {restoreToggle.menuLabel}
+                </DropdownMenuItem>
+              ) : null}
+              {onOpenEvidence ? (
+                <DropdownMenuItem onSelect={onOpenEvidence}>
                   <FileCheck2 className="size-4" aria-hidden />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Thread egress evidence</TooltipContent>
-            </Tooltip>
-          ) : null}
+                  View protection record
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        <div className="flex items-center">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" onClick={toggle} aria-label="Toggle theme">
@@ -261,8 +246,40 @@ export function threadTraceToggleLabels({
 export function restorePrivacyToggleLabels(mode: RestoreHighlightDisplayMode): {
   ariaLabel: string;
   tooltip: string;
+  menuLabel: string;
 } {
   return mode === "surrogates"
-    ? { ariaLabel: "Show restored values", tooltip: "Show restored values" }
-    : { ariaLabel: "Show surrogates", tooltip: "Show surrogates" };
+    ? {
+        ariaLabel: "Show restored values",
+        tooltip: "Show restored values",
+        menuLabel: "Show restored values",
+      }
+    : {
+        ariaLabel: "Show protected tokens",
+        tooltip: "Show protected tokens",
+        menuLabel: "Show protected tokens",
+      };
+}
+
+function traceMenuStatus(tooltip: string): string {
+  if (tooltip.includes("Checking")) return "Checking…";
+  if (tooltip.includes("wasn't saved")) return "Retry";
+  if (tooltip.includes("Disabled")) return "Set up";
+  if (tooltip.includes("On for")) return "On";
+  return "Off";
+}
+
+function protectionTriggerClass(tone: ProtectionTone): string {
+  if (tone === "warning")
+    return "border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100 dark:hover:bg-amber-950/50";
+  if (tone === "danger")
+    return "border-red-300 bg-red-50 text-red-900 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100 dark:hover:bg-red-950/50";
+  return "border-border bg-secondary text-secondary-foreground hover:bg-secondary/80";
+}
+
+function protectionIconClass(tone: ProtectionTone): string {
+  if (tone === "good") return "size-4 text-emerald-600 dark:text-emerald-400";
+  if (tone === "warning") return "size-4 text-amber-700 dark:text-amber-300";
+  if (tone === "danger") return "size-4 text-red-700 dark:text-red-300";
+  return "size-4 text-muted-foreground";
 }

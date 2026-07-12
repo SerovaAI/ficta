@@ -623,7 +623,7 @@ function GroupHeading({ children }: { children: React.ReactNode }) {
   return <h4 className="pt-5 text-sm font-medium">{children}</h4>;
 }
 
-/** Read-only value cell. `warn` uses the app's amber "needs attention" tone (see ProtectionBadge). */
+/** Read-only value cell. `warn` uses the app's amber "needs attention" protection tone. */
 function Value({ children, warn, mono }: { children: React.ReactNode; warn?: boolean; mono?: boolean }) {
   return (
     <span

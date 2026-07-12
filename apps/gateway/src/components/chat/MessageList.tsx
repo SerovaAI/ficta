@@ -1,5 +1,6 @@
 import type { UIMessage } from "@tanstack/ai-react";
 import { useEffect, useRef, useState } from "react";
+import type { ProtectionStatus } from "@/lib/protection-status";
 import type { RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
 import { resolveSuggestedPrompts } from "@/lib/storage/types";
 import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
@@ -13,12 +14,14 @@ export function MessageList({
   onRegenerate,
   onPickSuggestion,
   restoreDisplayMode,
+  protectionStatus,
 }: {
   messages: UIMessage[];
   isLoading: boolean;
   onRegenerate: () => void;
   onPickSuggestion: (prompt: string) => void;
   restoreDisplayMode: RestoreHighlightDisplayMode;
+  protectionStatus?: ProtectionStatus;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -59,7 +62,7 @@ export function MessageList({
     return (
       <div ref={scrollRef} className="flex flex-1 flex-col overflow-y-auto">
         <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4">
-          <EmptyState suggestions={suggestions} onPick={onPickSuggestion} />
+          <EmptyState suggestions={suggestions} onPick={onPickSuggestion} protectionStatus={protectionStatus} />
         </div>
       </div>
     );
