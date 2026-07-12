@@ -138,11 +138,18 @@ describe("renderVisibleHighlights", () => {
 
 describe("restore highlight presentation", () => {
   it("matches the send-review registry, detected, and user underline key", () => {
-    expect(restoreHighlightPresentation("registry")).toMatchObject({ borderClass: "border-emerald-600" });
+    expect(restoreHighlightPresentation("registry")).toEqual({
+      tooltipLabel: "Protected Registry · restored locally",
+      borderClass: "border-emerald-600",
+    });
     expect(restoreHighlightPresentation("detected")).toMatchObject({
+      tooltipLabel: "Detected PII · restored locally",
       borderClass: "border-emerald-600 border-dashed",
     });
-    expect(restoreHighlightPresentation("user")).toMatchObject({ borderClass: "border-foreground" });
+    expect(restoreHighlightPresentation("user")).toEqual({
+      tooltipLabel: "Protected by you · restored locally",
+      borderClass: "border-foreground",
+    });
   });
 });
 

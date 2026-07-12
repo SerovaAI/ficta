@@ -1,6 +1,7 @@
 import type { ProtectionPreviewOrigin } from "@serovaai/ficta-protocol";
 import { memo, type ReactNode, useMemo } from "react";
 import { Streamdown } from "streamdown";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   type RestoreHighlight,
   type RestoreHighlightDisplayMode,
@@ -76,29 +77,40 @@ function RestoreMark({
     );
   }
 
-  const { title, borderClass } = restoreHighlightPresentation(origin);
+  const { tooltipLabel, borderClass } = restoreHighlightPresentation(origin);
 
   return (
-    <mark
-      className={`rounded-[3px] border-b-2 bg-emerald-100 px-0.5 text-foreground dark:bg-emerald-950/60 ${borderClass}`}
-      title={title}
-    >
-      {children}
-    </mark>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <mark
+          className={`cursor-help rounded-[3px] border-b-2 bg-emerald-100 px-0.5 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-emerald-950/60 ${borderClass}`}
+          // The tooltip annotates arbitrary inline markdown, where an interactive element could create
+          // invalid nesting. A focusable mark keeps the explanation keyboard-accessible without doing so.
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: focus is the keyboard trigger for this tooltip
+          tabIndex={0}
+        >
+          {children}
+        </mark>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-64" sideOffset={6}>
+        <span className="block font-medium">{tooltipLabel}</span>
+        <span className="mt-0.5 block opacity-80">Replaced with a protected token before reaching the model.</span>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
 /** Mirrors ProtectionReview's three-way key for restored assistant values. */
 export function restoreHighlightPresentation(origin: ProtectionPreviewOrigin): {
-  title: string;
+  tooltipLabel: string;
   borderClass: string;
 } {
-  const title =
+  const tooltipLabel =
     origin === "user"
-      ? "Protected by you — restored locally"
+      ? "Protected by you · restored locally"
       : origin === "registry"
-        ? "Protected Registry — restored locally"
-        : "Detected PII — restored locally";
+        ? "Protected Registry · restored locally"
+        : "Detected PII · restored locally";
   const borderClass =
     origin === "user"
       ? "border-foreground"
@@ -106,5 +118,5 @@ export function restoreHighlightPresentation(origin: ProtectionPreviewOrigin): {
         ? "border-emerald-600 border-dashed"
         : "border-emerald-600";
 
-  return { title, borderClass };
+  return { tooltipLabel, borderClass };
 }
