@@ -18,8 +18,8 @@ importers:
         specifier: ^26.1.1
         version: 26.1.1
       knip:
-        specifier: ^6.25.0
-        version: 6.25.0
+        specifier: ^6.26.0
+        version: 6.26.0
       turbo:
         specifier: ^2.10.4
         version: 2.10.4
@@ -216,13 +216,13 @@ importers:
         version: 1.7.0
       '@hono/node-server':
         specifier: ^2.0.6
-        version: 2.0.8(hono@4.12.28)
+        version: 2.0.8(hono@4.12.29)
       '@serovaai/ficta-protocol':
         specifier: workspace:^
         version: link:../protocol
       hono:
-        specifier: ^4.12.28
-        version: 4.12.28
+        specifier: ^4.12.29
+        version: 4.12.29
       pino:
         specifier: ^10.3.1
         version: 10.3.1
@@ -3521,8 +3521,8 @@ packages:
   help-me@5.0.0:
     resolution: {integrity: sha512-7xgomUX6ADmcYzFik0HzAxh/73YlKR9bmFzf51CZwR+b6YtzU2m0u49hQCqV6SvlqIqsaxovfwdvbnsw3b/zpg==}
 
-  hono@4.12.28:
-    resolution: {integrity: sha512-YwUvVpSF7m1yOblFPrU3Hbo8XhPheBoiyfGuII6z19LnOr6JpDnyyp7LFNrfV56wS8tpvtBFGRISHN02pDdLOA==}
+  hono@4.12.29:
+    resolution: {integrity: sha512-1hNiRjawYrLq/4m3DQQjPGFg0VZkk4RjQJDff/excI6Dm9BiL75qxGrd7/c6YOxPdq6AscP3LiXhQ6fKFC1Waw==}
     engines: {node: '>=16.9.0'}
 
   html-url-attributes@3.0.1:
@@ -3656,8 +3656,8 @@ packages:
     resolution: {integrity: sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ==}
     engines: {node: '>=6'}
 
-  knip@6.25.0:
-    resolution: {integrity: sha512-Q3n41VjOOB/aqsbxb8kallAcFKrUz3b2S5fD5pTODljVpP01t+rvAgy2x3j0Cq8yEpRRHNdar1vHuqFfGuIakQ==}
+  knip@6.26.0:
+    resolution: {integrity: sha512-e9eELEEpBpGTd4H4HB7818/DYj9dMzMyUqAddfYwUN/EbSkgIjOuWEF96W/xHsmV0SDrsdXjIM+oZ2xpPzPsBA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
@@ -5479,9 +5479,9 @@ snapshots:
 
   '@fontsource/fragment-mono@5.2.8': {}
 
-  '@hono/node-server@2.0.8(hono@4.12.28)':
+  '@hono/node-server@2.0.8(hono@4.12.29)':
     dependencies:
-      hono: 4.12.28
+      hono: 4.12.29
 
   '@iconify/types@2.0.0': {}
 
@@ -8063,7 +8063,7 @@ snapshots:
 
   help-me@5.0.0: {}
 
-  hono@4.12.28: {}
+  hono@4.12.29: {}
 
   html-url-attributes@3.0.1: {}
 
@@ -8162,7 +8162,7 @@ snapshots:
 
   kleur@4.1.5: {}
 
-  knip@6.25.0:
+  knip@6.26.0:
     dependencies:
       fdir: 6.5.0(picomatch@4.0.5)
       formatly: 0.3.0
