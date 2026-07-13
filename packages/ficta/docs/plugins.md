@@ -268,7 +268,10 @@ managed ways to run it both mount `packages/ficta/presidio/default_recognizers.z
 enables South African ID numbers, and adds a South African company registration number pattern
 recognizer. Ficta also ships context-aware patterns for confidential document identifiers, Mauritius
 international telephone numbers, and ordinal long-form dates observed in legal-document traffic;
-the NLP configuration enables noisy, best-effort organization NER:
+the NLP configuration enables noisy, best-effort organization NER. On the client side, Ficta also
+uses transaction-table structure and stems of organizations already found in the document to recover
+conservative business-name candidates, while rejecting generic name spans which cross tab-separated
+fields or contain no letters:
 
 - **`pnpm sidecars`** (repo root, ↔ `docker-compose.sidecars.yml`) starts the shared sidecar stack
   detached with health-gated `--wait`: the Gateway document converter plus both PII sidecars.

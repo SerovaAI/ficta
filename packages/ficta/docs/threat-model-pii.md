@@ -46,6 +46,14 @@ privacy tool, but a usability cost. For higher precision, layer a HuggingFace OR
 specific client/counterparty/matter entities, register them in the value registry so they get the
 strong exact-match promise rather than relying on probabilistic NER.
 
+The Presidio client applies a conservative accounting-text supplement after NER: a title-cased
+business name in a date-led transaction/payee column can be inferred from the table structure, and
+a business-name variant can be inferred when it shares a stem with an organization already found in
+the same document. Generic NER name spans crossing tab-separated fields, or containing no letters,
+are discarded. These rules reduce common statement misses and table-header/amount false positives;
+they remain heuristics, do not learn across requests, and do not turn organization detection into an
+exact guarantee.
+
 **Explicit user selections:** Gateway's pre-send review lets a user mark a phrase the configured detectors
 missed. That phrase receives exact-match, registry-strength treatment inside the user's current chat and is
 re-applied on later sends from Gateway's private thread storage. This improves the request the user actually

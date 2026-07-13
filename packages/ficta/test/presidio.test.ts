@@ -97,6 +97,60 @@ describe("presidio recognizer", () => {
     });
   });
 
+  it("supplements organization NER from transaction structure and known document stems", async () => {
+    const header = "Code\tType\tTax\tOn Dashboard\tIn Expense Claims\tPayments Enabled\tJul-26";
+    const text = [
+      "Chart of Accounts › Account: Loan Account - LSD OPEN Limited",
+      header,
+      "Transaction\tDebit\tCredit",
+      "20 Sep 2022\tExclusible Investment\t\t50,764.00",
+      "26 Jan 2023\tLSD OPEN Limited\t22,779.04\t",
+      "do I owe lsd open limited money? lsd capital?",
+    ].join("\n");
+    const { result } = await withStub(
+      {
+        analyze: () => [
+          span(text, "LSD OPEN Limited", "ORGANIZATION", 0.85),
+          span(text, header, "ORGANIZATION", 0.85),
+          span(text, "50,764.00", "LOCATION", 0.85),
+        ],
+      },
+      () => presidioRecognizer.detect(text, BODY),
+    );
+
+    expect(result.map((value) => value.value)).toEqual(["LSD OPEN Limited", "Exclusible Investment", "lsd capital"]);
+    expect(result.some((value) => value.value === header)).toBe(false);
+    expect(result.some((value) => value.value === "50,764.00")).toBe(false);
+    expect(result.find((value) => value.value === "Exclusible Investment")).toMatchObject({
+      name: "organization",
+      source: "pii-presidio-organization-inference",
+      confidence: "probabilistic",
+      spans: [
+        {
+          start: text.indexOf("Exclusible Investment"),
+          end: text.indexOf("Exclusible Investment") + "Exclusible Investment".length,
+        },
+      ],
+    });
+    expect(result.find((value) => value.value === "lsd capital")?.spans).toEqual([
+      {
+        start: text.indexOf("lsd capital"),
+        end: text.indexOf("lsd capital") + "lsd capital".length,
+      },
+    ]);
+  });
+
+  it("does not treat ordinary finance prose or generic transaction descriptions as organizations", async () => {
+    const text = [
+      "Investment performance improved while working capital remained stable.",
+      "Transaction\tDebit\tCredit",
+      "20 Sep 2022\tOpening Balance\t\t50,764.00",
+      "21 Sep 2022\tBank transfer\t200.00\t",
+    ].join("\n");
+    const { result } = await withStub({ analyze: () => [] }, () => presidioRecognizer.detect(text, BODY));
+    expect(result).toEqual([]);
+  });
+
   it("sends {text, language, score_threshold} and omits entities unless configured", async () => {
     const text = "contact John Smith";
     const { requests } = await withStub({ analyze: () => [] }, () => presidioRecognizer.detect(text, BODY));

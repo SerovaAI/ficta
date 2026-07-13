@@ -1,5 +1,10 @@
 import { isRecord } from "../../json.js";
 import type { ProtectedValue } from "../types.js";
+import {
+  inferOrganizations,
+  isInvalidNamedEntitySpan,
+  ORGANIZATION_INFERENCE_SCORE,
+} from "./organization-inference.js";
 import type { PiiRecognizer } from "./recognizer.js";
 
 /**
@@ -100,7 +105,14 @@ export async function detectWithPresidioCompatibleAnalyzer(
     const perChunk = await mapConcurrent(chunks, MAX_CONCURRENCY, (chunk) =>
       detectChunk(config, chunk, controller.signal, sourceLabel),
     );
-    return dedupeByValue(perChunk.flat());
+    const detected = dedupeByValue(perChunk.flat());
+    const allowOrganization =
+      config.entities.length === 0 || config.entities.some((entity) => entity.toUpperCase() === "ORGANIZATION");
+    const inferred =
+      allowOrganization && config.scoreThreshold <= ORGANIZATION_INFERENCE_SCORE
+        ? inferOrganizations(text, detected)
+        : [];
+    return dedupeByValue([...detected, ...inferred]);
   } catch (err) {
     controller.abort(); // cancel any still-in-flight sibling requests before surfacing the failure
     throw asPresidioError(err, config);
@@ -211,6 +223,7 @@ function spansToValues(
     const trailing = raw.length - raw.trimEnd().length;
     const value = raw.trim();
     if (value.length < MIN_PII_VALUE_LENGTH) continue;
+    if (isInvalidNamedEntitySpan(span.entity_type, value)) continue;
 
     out.push({
       name: categoryOf(span.entity_type),
