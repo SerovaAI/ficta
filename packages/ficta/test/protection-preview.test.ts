@@ -38,7 +38,7 @@ afterEach(() => {
 
 describe("pre-send protection preview", () => {
   it("returns the occurrence resolver's exact spans when the detected canonical value is not a literal substring", async () => {
-    const raw = "LSD **Open** FZCO";
+    const raw = "Blue **Lantern** FZCO";
     const detector: DetectorPlugin = {
       kind: "detector",
       name: "preview-span-fixture",
@@ -48,7 +48,7 @@ describe("pre-send protection preview", () => {
           ? [
               {
                 name: "organization",
-                value: "LSD Open FZCO",
+                value: "Blue Lantern FZCO",
                 source: "fixture-detector",
                 kind: "pii",
                 confidence: "high",

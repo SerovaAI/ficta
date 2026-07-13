@@ -3,8 +3,9 @@ supported_languages:
 global_regex_flags: 26
 
 # Ficta's local Presidio registry. This starts from Presidio's default registry, enables
-# South African ID recognition, and adds context-weighted company, legal-document ID, Mauritius
-# phone, and ordinal-date recognizers. Keep this file as a complete registry config; Presidio's Docker
+# South African ID recognition, and adds context-weighted legal-document ID and Mauritius phone
+# recognizers. Company-registration, contextual date/address, alias, and OCR handling live in the
+# Ficta recognizer registered by the derived Presidio image. Keep this file as a complete registry config; Presidio's Docker
 # RECOGNIZER_REGISTRY_CONF_FILE replaces the default registry rather than overlaying it.
 
 # To restrict the loaded predefined recognizers to a subset of countries
@@ -218,27 +219,6 @@ recognizers:
     enabled: true
     country_code: za
 
-  - name: ZaCompanyRegistrationRecognizer
-    supported_languages:
-    - language: en
-      context:
-      - CIPC
-      - company registration
-      - company reg
-      - company number
-      - enterprise number
-      - registration number
-      - registration no
-      - reg no
-    type: custom
-    enabled: true
-    supported_entity: ZA_COMPANY_REGISTRATION
-    patterns:
-    - name: South African company registration number
-      regex: "\\b(?:19|20)\\d{2}/\\d{6}/\\d{2}\\b"
-      score: 0.6
-    country_code: za
-
   # High-value document shapes observed in invitation/legal-document traffic. These deliberately use
   # locale-agnostic entity names: a case/matter/reference number is still confidential even when the
   # exact issuing jurisdiction is unknown. Scoped `(?-i:...)` groups keep identifier letters uppercase
@@ -278,18 +258,6 @@ recognizers:
       regex: "(?<!\\d)\\+230(?:[ .-]?\\d){8}\\b"
       score: 0.85
 
-  - name: FictaOrdinalDateRecognizer
-    supported_languages:
-    - language: en
-      context: [date, from, until, through, stay, visit, signed]
-    type: custom
-    enabled: true
-    supported_entity: DATE_TIME
-    patterns:
-    - name: Ordinal day of month and four-digit year
-      regex: "\\b(?:[12]?\\d|3[01])(?:st|nd|rd|th)\\s+of\\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\\s+\\d{4}\\b"
-      score: 0.85
-
   - name: HuggingFaceNerRecognizer
     supported_languages:
     - en
@@ -301,6 +269,7 @@ recognizers:
 
   - name: DateRecognizer
     type: predefined
+    enabled: false
 
   - name: EmailRecognizer
     type: predefined

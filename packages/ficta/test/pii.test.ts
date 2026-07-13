@@ -206,7 +206,7 @@ describe("pii backend selection", () => {
     expect(activeBackends().backends.map((backend) => backend.name)).toEqual(["regex"]);
   });
 
-  it("keeps the legacy single backend selection behavior", async () => {
+  it("keeps structured regex protection when a network backend is selected", async () => {
     const person = "Jonathan Q Appleseed";
     const { server, port } = await start((text) => {
       const idx = text.indexOf(person);
@@ -221,11 +221,11 @@ describe("pii backend selection", () => {
       const body = JSON.stringify({ content: `email ${EMAIL} for ${person}` });
       const redacted = await engine.redactBodyDetailed(body);
 
-      // Exclusive: presidio caught the name; regex did NOT run, so the email is left untouched.
-      expect(redacted.count).toBe(1);
+      expect(redacted.count).toBe(2);
       expect(redacted.body).not.toContain(person);
-      expect(redacted.body).toContain(EMAIL);
+      expect(redacted.body).not.toContain(EMAIL);
       expect(engine.restoreText(redacted.body)).toContain(person);
+      expect(engine.restoreText(redacted.body)).toContain(EMAIL);
     } finally {
       await close(server);
     }
@@ -327,9 +327,9 @@ describe("pii backend selection", () => {
     const body = JSON.stringify({ content: `email ${EMAIL}` });
     const run = () => new ProtectionEngine({ plugins: [piiPlugin] }).redactBodyDetailed(body);
 
-    // global off + no per-plugin override → fail-open (skip, no throw).
+    // global off + no per-plugin override → fail-open; the local regex floor still protects email.
     const openDefault = await run();
-    expect(openDefault.count).toBe(0);
+    expect(openDefault.count).toBe(1);
 
     // per-plugin override on → block, regardless of the global default.
     process.env.FICTA_PII_FAIL_CLOSED = "1";
@@ -340,10 +340,10 @@ describe("pii backend selection", () => {
     process.env.FICTA_FAIL_CLOSED_DETECTION = "1";
     await expect(run()).rejects.toBeInstanceOf(DetectorUnavailableError);
 
-    // per-plugin override off beats global on → fail-open (skip).
+    // per-plugin override off beats global on → fail-open with the regex floor still active.
     process.env.FICTA_PII_FAIL_CLOSED = "0";
     const overrideOpen = await run();
-    expect(overrideOpen.count).toBe(0);
+    expect(overrideOpen.count).toBe(1);
   });
 
   it("falls back to regex for an unknown backend name and surfaces it in discover()", () => {

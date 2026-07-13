@@ -41,6 +41,7 @@ export function TopBar({
   threadTraceControlDisabled = true,
   threadTraceControlLoading = false,
   threadTraceError = false,
+  traceAuditEnabled = false,
   onToggleThreadTrace,
   reviewBeforeSend = true,
   reviewBeforeSendRequired = false,
@@ -59,6 +60,7 @@ export function TopBar({
   threadTraceControlDisabled?: boolean;
   threadTraceControlLoading?: boolean;
   threadTraceError?: boolean;
+  traceAuditEnabled?: boolean;
   onToggleThreadTrace?: () => void;
   reviewBeforeSend?: boolean;
   reviewBeforeSendRequired?: boolean;
@@ -77,11 +79,12 @@ export function TopBar({
     disabled: threadTraceControlDisabled,
     loading: threadTraceControlLoading,
     error: threadTraceError,
+    valueAudit: traceAuditEnabled,
   });
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
       <div className="mx-auto flex h-14 w-full max-w-3xl items-center justify-between gap-3 px-4">
-        <div className="flex items-center gap-2.5">
+        <div className="flex min-w-0 items-center gap-2.5">
           {onToggleSidebar ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -109,7 +112,7 @@ export function TopBar({
                 aria-label={`${protection.label}. Open protection controls`}
               >
                 <ProtectionIcon className={protectionIconClass(protection.tone)} aria-hidden />
-                <span className="max-w-36 truncate">{protection.label}</span>
+                <span className="hidden max-w-36 truncate sm:inline">{protection.label}</span>
                 <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden />
               </Button>
             </DropdownMenuTrigger>
@@ -140,23 +143,6 @@ export function TopBar({
                   </DropdownMenuItem>
                 )
               ) : null}
-              {threadTraceControlVisible && onToggleThreadTrace ? (
-                <DropdownMenuItem onSelect={onToggleThreadTrace} disabled={threadTraceControlLoading}>
-                  {threadTraceControlLoading ? (
-                    <Loader2 className="size-4 animate-spin" aria-hidden />
-                  ) : threadTraceError ? (
-                    <CircleAlert className="size-4 text-destructive" aria-hidden />
-                  ) : threadTraceControlDisabled ? (
-                    <CircleOff className="size-4" aria-hidden />
-                  ) : threadTraceEnabled ? (
-                    <CircleDot className="size-4" aria-hidden />
-                  ) : (
-                    <Circle className="size-4" aria-hidden />
-                  )}
-                  <span className="min-w-0 flex-1">Diagnostic trace</span>
-                  <span className="text-xs text-muted-foreground">{traceMenuStatus(traceToggle.tooltip)}</span>
-                </DropdownMenuItem>
-              ) : null}
               {threadTraceError ? (
                 <span className="sr-only" role="status" aria-live="polite">
                   Trace capture setting wasn't saved.
@@ -183,6 +169,38 @@ export function TopBar({
               ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
+          {threadTraceControlVisible && onToggleThreadTrace ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onToggleThreadTrace}
+                  disabled={threadTraceControlLoading}
+                  aria-label={traceToggle.ariaLabel}
+                  className={traceTriggerClass({
+                    enabled: threadTraceEnabled,
+                    disabled: threadTraceControlDisabled,
+                    error: threadTraceError,
+                  })}
+                >
+                  {threadTraceControlLoading ? (
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                  ) : threadTraceError ? (
+                    <CircleAlert className="size-3.5" aria-hidden />
+                  ) : threadTraceControlDisabled ? (
+                    <CircleOff className="size-3.5" aria-hidden />
+                  ) : threadTraceEnabled ? (
+                    <CircleDot className="size-3.5" aria-hidden />
+                  ) : (
+                    <Circle className="size-3.5" aria-hidden />
+                  )}
+                  <span className="hidden max-w-40 truncate text-xs min-[360px]:inline">{traceToggle.label}</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{traceToggle.tooltip}</TooltipContent>
+            </Tooltip>
+          ) : null}
         </div>
         <div className="flex items-center">
           <Tooltip>
@@ -204,42 +222,52 @@ export function threadTraceToggleLabels({
   disabled,
   loading = false,
   error = false,
+  valueAudit = false,
 }: {
   enabled: boolean;
   disabled: boolean;
   loading?: boolean;
   error?: boolean;
+  valueAudit?: boolean;
 }): {
   ariaLabel: string;
+  label: string;
   tooltip: string;
 } {
   if (loading) {
     return {
       ariaLabel: "Checking trace capture availability",
+      label: "Checking trace",
       tooltip: "Trace capture: Checking availability…",
     };
   }
   if (error) {
     return {
       ariaLabel: "Retry changing trace capture",
+      label: "Trace error",
       tooltip: "Trace capture setting wasn't saved · Click to try again",
     };
   }
   if (disabled) {
     return {
-      ariaLabel: "Trace capture unavailable",
-      tooltip: "Trace capture: Disabled by your server administrator · Click to open admin settings",
+      ariaLabel: "Trace disabled; open administrator settings",
+      label: "Trace disabled",
+      tooltip: "Runtime trace capture is disabled · Click to open admin settings",
     };
   }
   if (enabled) {
     return {
       ariaLabel: "Stop trace capture for this chat",
-      tooltip: "Trace capture: On for this chat · Click to stop",
+      label: valueAudit ? "Tracing bodies + values" : "Tracing bodies",
+      tooltip: valueAudit
+        ? "This chat is capturing raw bodies and protected values · Click to stop"
+        : "This chat is capturing raw bodies · Click to stop",
     };
   }
   return {
     ariaLabel: "Start trace capture for this chat",
-    tooltip: "Trace capture: Off for this chat · Click to start",
+    label: "Trace ready",
+    tooltip: "Runtime capture is available, but this chat is not opted in · Click to start",
   };
 }
 
@@ -261,19 +289,27 @@ export function restorePrivacyToggleLabels(mode: RestoreHighlightDisplayMode): {
       };
 }
 
-function traceMenuStatus(tooltip: string): string {
-  if (tooltip.includes("Checking")) return "Checking…";
-  if (tooltip.includes("wasn't saved")) return "Retry";
-  if (tooltip.includes("Disabled")) return "Set up";
-  if (tooltip.includes("On for")) return "On";
-  return "Off";
-}
-
 function protectionTriggerClass(tone: ProtectionTone): string {
   if (tone === "warning")
     return "border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100 dark:hover:bg-amber-950/50";
   if (tone === "danger")
     return "border-red-300 bg-red-50 text-red-900 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100 dark:hover:bg-red-950/50";
+  return "border-border bg-secondary text-secondary-foreground hover:bg-secondary/80";
+}
+
+function traceTriggerClass({
+  enabled,
+  disabled,
+  error,
+}: {
+  enabled: boolean;
+  disabled: boolean;
+  error: boolean;
+}): string {
+  if (error) return "border-destructive/50 text-destructive hover:bg-destructive/10";
+  if (enabled)
+    return "border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100 dark:hover:bg-amber-950/50";
+  if (disabled) return "border-border text-muted-foreground hover:bg-secondary";
   return "border-border bg-secondary text-secondary-foreground hover:bg-secondary/80";
 }
 

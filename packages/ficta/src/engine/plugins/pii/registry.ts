@@ -8,13 +8,13 @@ export const ENV_BACKEND = "FICTA_PII_BACKEND";
 /** Env selecting one or more PII detection backends (TOML: [pii] backends). */
 export const ENV_BACKENDS = "FICTA_PII_BACKENDS";
 
-/** Always-available in-process default; also the safety floor if a networked backend is unreachable. */
+/** Always-available in-process default and structured-identity safety floor. */
 export const DEFAULT_BACKEND = "regex";
 
 /**
  * PII detection backends, keyed by config name — the plugin registry behind the `pii` feature.
- * Exactly one is selected at a time ([pii] backend); adding a backend (AWS Comprehend, Azure, spaCy)
- * is one entry here + its {@link PiiRecognizer} module.
+ * Network recognizers augment the in-process structured detector; adding a backend (AWS Comprehend,
+ * Azure, spaCy) is one entry here + its {@link PiiRecognizer} module.
  */
 const BUILT_IN: Readonly<Record<string, PiiRecognizer>> = {
   regex: regexRecognizer,
@@ -78,7 +78,7 @@ export function activeBackend(env: NodeJS.ProcessEnv = process.env): BackendSele
   return { name: DEFAULT_BACKEND, backend: regexRecognizer, unknown: name };
 }
 
-/** Resolve all configured backends; unknown names are reported and skipped unless all names are unknown. */
+/** Resolve configured backends and always retain regex as the structured-identity safety floor. */
 export function activeBackends(env: NodeJS.ProcessEnv = process.env): BackendSetSelection {
   const configured = selectedBackendNames(env);
   const backends: Array<{ name: string; backend: PiiRecognizer }> = [];
@@ -90,7 +90,12 @@ export function activeBackends(env: NodeJS.ProcessEnv = process.env): BackendSet
     else unknown.push(name);
   }
 
-  if (backends.length > 0) return { backends, unknown, configured };
+  if (backends.length > 0) {
+    if (!backends.some(({ name }) => name === DEFAULT_BACKEND)) {
+      backends.unshift({ name: DEFAULT_BACKEND, backend: regexRecognizer });
+    }
+    return { backends, unknown, configured };
+  }
   return { backends: [{ name: DEFAULT_BACKEND, backend: regexRecognizer }], unknown, configured };
 }
 

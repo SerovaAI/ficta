@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { protectionReviewShortcut } from "@/components/chat/ProtectionReview";
+import {
+  PROTECTION_REVIEW_ADD_COPY,
+  PROTECTION_REVIEW_SCOPE_COPY,
+  protectionReviewShortcut,
+} from "@/components/chat/ProtectionReview";
+
+describe("protection review scope", () => {
+  it("distinguishes detected identity from manually protected business terms", () => {
+    expect(PROTECTION_REVIEW_SCOPE_COPY).toContain("identity and attribution");
+    expect(PROTECTION_REVIEW_SCOPE_COPY).toContain("not every confidential business term");
+    expect(PROTECTION_REVIEW_ADD_COPY).toContain("amount");
+    expect(PROTECTION_REVIEW_ADD_COPY).toContain("clause");
+  });
+});
 
 describe("protection review shortcuts", () => {
   it("returns to editing on Escape", () => {

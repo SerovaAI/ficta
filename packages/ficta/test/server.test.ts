@@ -476,9 +476,21 @@ describe("proxy hardening", () => {
     try {
       const withoutFlag = await run(false);
       expect(withoutFlag.auditFiles).toEqual([]);
+      expect(JSON.parse(readFileSync(join(withoutFlag.runDir, "req-0001.meta.json"), "utf8"))).toMatchObject({
+        globalEnabled: true,
+        requestedForChat: true,
+        bodyLogged: true,
+        valueAuditLogged: false,
+      });
 
       const withFlag = await run(true);
       expect(withFlag.auditFiles).toHaveLength(1);
+      expect(JSON.parse(readFileSync(join(withFlag.runDir, "req-0001.meta.json"), "utf8"))).toMatchObject({
+        globalEnabled: true,
+        requestedForChat: true,
+        bodyLogged: true,
+        valueAuditLogged: true,
+      });
       const audit = JSON.parse(readFileSync(join(withFlag.runDir, withFlag.auditFiles[0] ?? ""), "utf8")) as {
         outcome: string;
         redactions: Array<{ surface: string; redactedValues: Array<{ value: string; surrogate?: string }> }>;
@@ -602,6 +614,48 @@ describe("proxy hardening", () => {
       expect(files).toContain("audit-0004.trace.json");
       expect(files).not.toContain("req-0005.json");
       expect(files).not.toContain("audit-0005.trace.json");
+
+      const captureDecisions = [1, 2, 3, 4, 5].map((requestId) => {
+        const name = `req-${String(requestId).padStart(4, "0")}.meta.json`;
+        return JSON.parse(readFileSync(join(runDir, name), "utf8")) as {
+          globalEnabled: boolean;
+          requestedForChat: boolean;
+          bodyLogged: boolean;
+          valueAuditLogged: boolean;
+        };
+      });
+      expect(captureDecisions).toEqual([
+        expect.objectContaining({
+          globalEnabled: false,
+          requestedForChat: true,
+          bodyLogged: false,
+          valueAuditLogged: false,
+        }),
+        expect.objectContaining({
+          globalEnabled: true,
+          requestedForChat: false,
+          bodyLogged: false,
+          valueAuditLogged: false,
+        }),
+        expect.objectContaining({
+          globalEnabled: true,
+          requestedForChat: false,
+          bodyLogged: false,
+          valueAuditLogged: false,
+        }),
+        expect.objectContaining({
+          globalEnabled: true,
+          requestedForChat: true,
+          bodyLogged: true,
+          valueAuditLogged: true,
+        }),
+        expect.objectContaining({
+          globalEnabled: false,
+          requestedForChat: true,
+          bodyLogged: false,
+          valueAuditLogged: false,
+        }),
+      ]);
     } finally {
       proxy?.close();
       await close(upstream);
@@ -1592,7 +1646,7 @@ describe("pii fail-closed backend", () => {
         service: "ficta",
         protection: { protecting: true },
         secretShapes: { enabled: true, status: "ok" },
-        pii: { enabled: true, backend: "presidio", status: "degraded", failureMode: "fail-open" },
+        pii: { enabled: true, backend: "regex,presidio", status: "degraded", failureMode: "fail-open" },
       });
       expect(openBody.pii.message).toContain("fail-open");
 
@@ -1600,7 +1654,7 @@ describe("pii fail-closed backend", () => {
       const failClosed = await fetch(`http://127.0.0.1:${proxy.port}/__ficta/status`);
       const closedBody = await failClosed.json();
       expect(closedBody).toMatchObject({
-        pii: { enabled: true, backend: "presidio", status: "blocking", failureMode: "fail-closed" },
+        pii: { enabled: true, backend: "regex,presidio", status: "blocking", failureMode: "fail-closed" },
       });
       expect(closedBody.pii.message).toContain("fail-closed");
     } finally {

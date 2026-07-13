@@ -60,6 +60,7 @@ import {
 } from "@/lib/storage/types";
 import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
 import { deriveThreadTitleFromText } from "@/lib/thread-title";
+import { shouldClearThreadTrace } from "@/lib/trace-capture";
 import { useProtectionStatus } from "@/lib/use-protection-status";
 import { clearRestoreHighlightDisplay, useRestoreHighlightDisplay } from "@/lib/use-restore-highlight-display";
 import { useSidebar } from "@/lib/use-sidebar";
@@ -130,7 +131,12 @@ export function ChatView({
   const [threadTraceEnabled, setThreadTraceEnabledState] = useState(initialThreadTraceEnabled ?? false);
   const [threadTraceError, setThreadTraceError] = useState(false);
   const [reviewBeforeSend, setReviewBeforeSend] = useState(true);
-  const [traceCapture, setTraceCapture] = useState({ loaded: false, rawBodies: false, traceAudit: false });
+  const [traceCapture, setTraceCapture] = useState({
+    loaded: false,
+    known: false,
+    rawBodies: false,
+    traceAudit: false,
+  });
   const [saveWarning, setSaveWarning] = useState(false);
   const pendingProtectionTicket = useRef<string | undefined>(undefined);
   const protectionPreviewRequest = useRef<{ generation: number; controller?: AbortController }>({ generation: 0 });
@@ -233,7 +239,7 @@ export function ChatView({
   useEffect(() => {
     let alive = true;
     if (!admin) {
-      setTraceCapture({ loaded: true, rawBodies: false, traceAudit: false });
+      setTraceCapture({ loaded: true, known: false, rawBodies: false, traceAudit: false });
       return () => {
         alive = false;
       };
@@ -251,17 +257,35 @@ export function ChatView({
         const traceCapture = config.ok ? config.config.transport.traceCapture : undefined;
         setTraceCapture({
           loaded: true,
+          known: config.ok,
           rawBodies: traceCapture?.enabled ?? false,
           traceAudit: config.ok ? config.config.transport.traceAudit : false,
         });
       })
       .catch(() => {
-        if (alive) setTraceCapture({ loaded: true, rawBodies: false, traceAudit: false });
+        if (alive) setTraceCapture({ loaded: true, known: false, rawBodies: false, traceAudit: false });
       });
     return () => {
       alive = false;
     };
   }, [admin, adminOpen]);
+
+  // Runtime capture is one half of the dual opt-in. If an administrator turns that capability off,
+  // clear this chat's selector too so turning the capability on later cannot silently resume capture.
+  useEffect(() => {
+    if (!shouldClearThreadTrace(admin, traceCapture, threadTraceEnabled)) return;
+    setThreadTraceEnabledState(false);
+    if (!activeThreadId) return;
+    queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) =>
+      current?.map((thread) => (thread.id === activeThreadId ? { ...thread, traceEnabled: false } : thread)),
+    );
+    void setThreadTraceEnabled({ data: { threadId: activeThreadId, traceEnabled: false } })
+      .then(() => invalidateThreads(queryClient))
+      .catch((err) => {
+        console.warn("Failed to clear thread trace capture after runtime capture was disabled", err);
+        setThreadTraceError(true);
+      });
+  }, [activeThreadId, admin, queryClient, threadTraceEnabled, traceCapture]);
 
   const syncNewThreadUrl = () => {
     if (threadId || urlSynced.current) return;
@@ -683,6 +707,7 @@ export function ChatView({
             threadTraceControlDisabled={!traceCapture.loaded || !traceCapture.rawBodies}
             threadTraceControlLoading={!traceCapture.loaded}
             threadTraceError={threadTraceError}
+            traceAuditEnabled={traceCapture.traceAudit}
             onToggleThreadTrace={toggleThreadTrace}
             reviewBeforeSend={reviewBeforeSendEnabled}
             reviewBeforeSendRequired={protectionReviewRequired}

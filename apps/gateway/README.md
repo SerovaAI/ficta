@@ -100,7 +100,8 @@ document-converter sidecar by default so PDF/DOCX uploads work in dev; set
 `FICTA_PII_BACKEND=presidio`, the dev wrapper can also start or reuse a local Docker
 `presidio-analyzer` sidecar and mount
 `../../packages/ficta/presidio/default_recognizers.za.yaml` plus
-`../../packages/ficta/presidio/nlp_engine.za.yaml`.
+`../../packages/ficta/presidio/nlp_engine.za.yaml`; it builds the Ficta-derived Presidio image so
+contextual identity policy runs inside the analyzer.
 
 ## Production-Like Gateway Setup
 
@@ -136,8 +137,13 @@ surrogate style, tool-call restore policy, and custom-upstream allowance. These 
 the proxy's `config.toml`; restart the proxy before treating the saved settings as active. Fields set
 by explicit `FICTA_*` environment variables remain read-only in the UI.
 
-Raw trace capture is a separate runtime-only admin control. It applies immediately to newly selected
-chat requests and remains active until an administrator disables it or the proxy restarts.
+Raw trace capture is a separate runtime-only admin capability and every chat remains opted out by
+default. An admin must enable the runtime capability and then explicitly enable tracing for a chat;
+enabling the capability never starts capture silently. The chat top bar distinguishes disabled,
+ready, body-capture, and body-plus-value-audit states. Values are included only when
+`FICTA_TRACE_AUDIT=1` is also set. Request metadata records the values-free decision fields
+`globalEnabled`, `requestedForChat`, `bodyLogged`, and `valueAuditLogged` so missing captures can be
+diagnosed without exposing content.
 
 Gateway admins can also maintain the Protected Registry from **Admin > Protected Registry**. Approved
 registry entries apply by exact match across the workspace and can be published to a private
@@ -155,6 +161,9 @@ missed phrase to protect throughout that chat. Chat selections remain user/threa
 change workspace policy. **Suggest for workspace** adds review-only rows to the existing Protected Registry;
 an admin may edit, approve, and publish them. Stored chat selections are treated as sensitive
 application data alongside the restored transcript and are deleted with the thread.
+
+Automatic review findings cover identity and attribution, not every confidential business term.
+Users can select or type an amount, project name, code, or clause when it also needs exact protection.
 
 Each confirmation is a short-lived, single-use capability bound to the authenticated user, workspace, chat,
 and exact current message. The proxy rejects edited content, replayed confirmations, and confirmations from a
@@ -192,18 +201,19 @@ FICTA_LOG_LEVEL=info
 Run the Presidio sidecar explicitly, for example:
 
 ```sh
+docker build -t ficta-presidio packages/ficta/presidio
 docker run --rm -p 5002:3000 \
   -v "$PWD/packages/ficta/presidio/default_recognizers.za.yaml:/app/ficta-presidio-recognizers.yaml:ro" \
   -v "$PWD/packages/ficta/presidio/nlp_engine.za.yaml:/app/ficta-nlp-engine.yaml:ro" \
   -e RECOGNIZER_REGISTRY_CONF_FILE=/app/ficta-presidio-recognizers.yaml \
   -e NLP_CONF_FILE=/app/ficta-nlp-engine.yaml \
-  ghcr.io/data-privacy-stack/presidio-analyzer:latest
+  ficta-presidio
 ```
 
-The shipped recognizer registry keeps Presidio's defaults, enables South African ID numbers, and adds
-South African company registration, legal-document identifier, Mauritius phone, and ordinal-date
-recognizers. The separate NLP configuration enables noisy, best-effort organization NER; known client
-and counterparty names still belong in the exact-match registry.
+The derived image keeps Presidio's structured recognizers and replaces raw spaCy results with a
+contextual identity recognizer for people, organizations and aliases, registration numbers,
+birth/address fields, transaction organizations, and cue-scoped OCR. Known client and counterparty
+names still belong in the exact-match registry.
 
 ## Document Conversion
 

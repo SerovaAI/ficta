@@ -227,6 +227,24 @@ enabled = true   # web / standalone proxy
 agents = false   # coding-agent launches — opt in with true
 ```
 
+### Identity protection boundary
+
+The shipped Presidio sidecar protects structured identity/contact/account values plus
+context-qualified people, organizations, company registration numbers, birth dates, and personal
+addresses. Organization aliases require an organization accepted in the same document; cue-scoped
+OCR spacing is handled without globally registering a bare company-name stem.
+
+It deliberately keeps amounts, rates, percentages, contract durations, notice and cure periods,
+court names, jurisdictions, nationality labels, and ordinary business dates visible.
+Those terms often carry the reasoning the model needs and are not identifying without attribution.
+Use the exact registry or Gateway's pre-send selection for commercially confidential values such as
+deal amounts, project codes, or clauses.
+
+This behavior belongs to the reference Presidio deployment, not a Ficta engine profile. If you point
+Ficta at another Presidio-compatible analyzer, that analyzer owns its recognizers and candidate
+policy; Ficta applies its configured entity allowlist, minimum-length safeguard, and tokenization but
+does not reinterpret raw PERSON/ORGANIZATION results.
+
 **Precedence for a coding-agent launch**, highest first: (1) an explicit shell `FICTA_PII_ENABLED`
 wins either way — the "flip it for a single run" escape hatch (`FICTA_PII_ENABLED=1 ficta claude`
 turns it on for that run; `=0` forces it off); (2) otherwise PII is on for the agent iff **both**
@@ -255,28 +273,28 @@ Equivalently `FICTA_PII_BACKENDS=presidio,openmed`. `ficta setup` prompts for th
 URLs for selected sidecars. Unknown names are skipped and reported by `ficta doctor` and the startup
 banner; if all configured names are unknown, Ficta falls back to `regex`.
 
-Ficta coordinates selected backends natively: it calls each selected recognizer, deduplicates exact
-matches, and resolves substring overlaps by confidence, medical specificity, then longer value. For
+Ficta always runs its local structured regex recognizer, then calls each selected network recognizer,
+deduplicates exact matches, and resolves substring overlaps by confidence, medical specificity, then longer value. For
 medical workflows, prefer `["presidio", "openmed"]`: Presidio remains stronger for deterministic and
 custom general PII, while OpenMed adds medical/PHI-style learned detection.
 
 ### The `presidio` backend
 
 ficta calls [`presidio-analyzer`](https://microsoft.github.io/presidio/) at the configured URL. Two
-managed ways to run it both mount `packages/ficta/presidio/default_recognizers.za.yaml` and
-`packages/ficta/presidio/nlp_engine.za.yaml`. The registry keeps Presidio's default recognizers,
-enables South African ID numbers, and adds a South African company registration number pattern
-recognizer. Ficta also ships context-aware patterns for confidential document identifiers, Mauritius
-international telephone numbers, and ordinal long-form dates observed in legal-document traffic;
-the NLP configuration enables noisy, best-effort organization NER. On the client side, Ficta also
-uses transaction-table structure and stems of organizations already found in the document to recover
-conservative business-name candidates, while rejecting generic name spans which cross tab-separated
-fields or contain no letters:
+managed ways to run it build `packages/ficta/presidio/Dockerfile` and mount
+`packages/ficta/presidio/default_recognizers.za.yaml` plus `nlp_engine.za.yaml`. The image is pinned to
+a known Presidio base and registers `FictaSpacyIdentityRecognizer`: raw spaCy NER remains internal to
+Presidio, while contextual admission, international registration numbers, aliases, transaction-table
+organizations, and cue-scoped OCR fields are returned as final candidates. General date recognition
+is disabled; birth-date recognition is context-bound. The registry retains structured recognizers
+such as South African IDs, document identifiers, and Mauritius phones.
 
 - **`pnpm sidecars`** (repo root, ↔ `docker-compose.sidecars.yml`) starts the shared sidecar stack
-  detached with health-gated `--wait`: the Gateway document converter plus both PII sidecars.
+  detached with health-gated `--wait` and `--build`: the Gateway document converter plus both PII sidecars.
   `pnpm sidecars:down` stops them. This is the way to run them outside the dev wrapper — a server, a
-  teammate's machine, a POC box.
+  teammate's machine, a POC box. After pulling recognizer code or Presidio configuration changes,
+  rerun `pnpm sidecars` so the local `ficta-presidio:dev` image is rebuilt and the analyzer is
+  recreated; a plain Compose `up` can reuse the stale local image.
 - **Root `pnpm dev`** auto-manages the sidecars for whichever backends `FICTA_PII_BACKENDS` /
   `FICTA_PII_BACKEND` selects (force per-sidecar with `FICTA_PII_PRESIDIO_MANAGED` /
   `FICTA_PII_OPENMED_MANAGED`). It reuses anything already healthy at the configured URL — including
@@ -286,19 +304,20 @@ ficta calls `POST {url}/analyze` for each request **body** (header/query surface
 to avoid one request fanning out into many sidecar calls). To run the container by hand instead:
 
 ```sh
+docker build -t ficta-presidio packages/ficta/presidio
 docker run -d --name presidio-analyzer -p 5002:3000 \
   -v "$PWD/packages/ficta/presidio/default_recognizers.za.yaml:/app/ficta-presidio-recognizers.yaml:ro" \
   -v "$PWD/packages/ficta/presidio/nlp_engine.za.yaml:/app/ficta-nlp-engine.yaml:ro" \
   -e RECOGNIZER_REGISTRY_CONF_FILE=/app/ficta-presidio-recognizers.yaml \
   -e NLP_CONF_FILE=/app/ficta-nlp-engine.yaml \
-  ghcr.io/data-privacy-stack/presidio-analyzer:latest
+  ficta-presidio
 curl http://127.0.0.1:5002/health   # {"status":"..."} once ready
 ```
 
-After changing or deploying the recognizer/NLP configuration, run the synthetic invitation-document
-gate against the live sidecar. It verifies full names plus later standalone names, document IDs,
-Mauritius phone, ordinal dates, email, reflowed locations, typed surrogates, zero known survivors, and
-exact restoration:
+After changing or deploying the recognizer/NLP configuration, run the fully synthetic legal-identity
+regression against the live sidecar. It verifies people, organizations and aliases, IDs, contact details and
+international registrations while asserting that amounts, rates, dates, jurisdictions and timing
+terms remain model-visible, with zero known survivors and exact restoration:
 
 ```sh
 pnpm --filter @serovaai/ficta verify:presidio
@@ -317,11 +336,20 @@ Config (`[pii.presidio]` ↔ `FICTA_PII_PRESIDIO_*`):
 (The fail-open/fail-closed behavior when Presidio is unreachable is `[pii] fail_closed`, covered in
 [Failure policy](#failure-policy--core-enforced-global-default--per-detector-override) below.)
 
-A registered value replaces **every** occurrence of that string in the body, so recommend an
-allowlist tuned for coding-agent traffic rather than the full entity set — e.g.
+A detected value replaces **every** eligible occurrence of that string in the body. The Presidio
+entity allowlist remains the final category gate. For coding-agent traffic, use an allowlist tuned to
+the workload rather than every available structured recognizer — e.g.
 `entities = ["PERSON", "PHONE_NUMBER", "LOCATION", "EMAIL_ADDRESS"]`. Legal-document deployments
-should also include `DOCUMENT_ID` and `DATE_TIME`; leaving `entities = []` enables every configured
-recognizer. Values shorter than 4 chars are dropped regardless, to avoid shredding normal prose.
+should also include `DOCUMENT_ID`, `COMPANY_REGISTRATION`, and `DATE_TIME`; leaving `entities = []`
+enables every configured recognizer. Values shorter than 4 chars are dropped regardless, to avoid
+shredding normal prose.
+
+GLiNER is an evaluation option inside the same Presidio image, not a Ficta backend or default. In a
+source checkout, build with `--build-arg INSTALL_GLINER=1`, run it with
+`FICTA_PRESIDIO_NER=gliner`, and compare analyzer URLs using
+`pnpm --filter @serovaai/ficta bench:pii-ner -- --spacy-url=... --gliner-url=...`. The
+checked-in legal corpus recommends GLiNER only when it improves both identity recall and legal-text
+precision by at least two percentage points; the current corpus keeps spaCy.
 
 ### The `openmed` backend
 

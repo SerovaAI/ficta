@@ -9,7 +9,7 @@ export interface MarkdownDetectionView {
 
 /**
  * Remove unambiguous Markdown syntax for NLP while retaining an exact normalized→raw boundary map.
- * The compact view closes internal-formatting gaps (`LSD **Open** FZCO` → `LSD Open FZCO`).
+ * The compact view closes internal-formatting gaps (`Blue **Lantern** FZCO` → `Blue Lantern FZCO`).
  */
 export function normalizeMarkdownForDetection(text: string): MarkdownDetectionView {
   if (!text) return identityView(text);

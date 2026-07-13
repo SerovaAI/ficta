@@ -14,7 +14,7 @@ import type { DetectorPlugin } from "../src/plugins/index.js";
 // it re-introduced the value inside its own surrogate — tripping the fail-closed leak gate with a
 // 403 on every follow-up turn. The fix skips surrogate-token spans in redaction and leak scanning.
 
-const EMAIL = "stef@lsd.example.za";
+const EMAIL = "avery@example.com";
 const PHONE = "+23057054725";
 const SURROGATE = /FICTA_[0-9a-f]{32}/;
 

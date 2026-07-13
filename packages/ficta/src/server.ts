@@ -385,8 +385,9 @@ export async function startProxy(
     const requestedProtectionTicket = c.req.header(FICTA_PROTECTION_TICKET_HEADER)?.trim();
     const protect = engine.protecting || Boolean(requestedProtectionTicket);
     const wire = wireOf(url.pathname);
-    const captureRawBodies = traceCaptureFrom(c, runtimeTraceCaptureEnabled);
-    const captureTraceAudit = captureRawBodies && cfg.traceAudit;
+    const traceCapture = traceCaptureDecisionFrom(c, runtimeTraceCaptureEnabled, cfg.traceAudit);
+    const captureRawBodies = traceCapture.bodyLogged;
+    const captureTraceAudit = traceCapture.valueAuditLogged;
     const restoreHighlightMarkers =
       c.req.header(FICTA_RESTORE_HIGHLIGHT_HEADER) === "1"
         ? {
@@ -453,6 +454,7 @@ export async function startProxy(
             target: "<blocked>",
             route: "blocked",
             captureRawBodies,
+            traceCapture,
           });
           recordDetectorUnavailable(stats, scope, traceRedactions, {
             evidence: egressEvidence,
@@ -478,6 +480,7 @@ export async function startProxy(
           target: "<blocked>",
           route: "blocked",
           captureRawBodies,
+          traceCapture,
         });
         recordProtection(stats, scope, traceRedactions, {
           evidence: egressEvidence,
@@ -498,7 +501,15 @@ export async function startProxy(
     const { url: target, note: route } = resolveTarget(cfg, url.pathname, searchToSend, c.req.raw.headers);
     const upstreamIssue = upstreamPolicyIssue(cfg, target);
     if (upstreamIssue) {
-      const n = logRequest({ method, path: url.pathname, body: "", target: "<blocked>", route, captureRawBodies });
+      const n = logRequest({
+        method,
+        path: url.pathname,
+        body: "",
+        target: "<blocked>",
+        route,
+        captureRawBodies,
+        traceCapture,
+      });
       if (queryRedaction) {
         recordProtection(stats, scope, traceRedactions, {
           evidence: egressEvidence,
@@ -556,7 +567,7 @@ export async function startProxy(
         scope.registerProtectedValues(preparedProtectionTicket.protectedValues.map(userProtectedValue));
       }
       const originalModel = requestModelFromBody(bodyText);
-      n = logRequest({ method, path: url.pathname, body: bodyText, target, route, captureRawBodies });
+      n = logRequest({ method, path: url.pathname, body: bodyText, target, route, captureRawBodies, traceCapture });
 
       if (protect) {
         let redaction: Awaited<ReturnType<typeof scope.redactBodyDetailed>>;
@@ -650,7 +661,7 @@ export async function startProxy(
         bodyToSend = bodyText;
       }
     } else {
-      n = logRequest({ method, path: url.pathname, body: "", target, route, captureRawBodies });
+      n = logRequest({ method, path: url.pathname, body: "", target, route, captureRawBodies, traceCapture });
       if (queryRedaction) {
         recordProtection(stats, scope, traceRedactions, {
           evidence: egressEvidence,
@@ -912,8 +923,24 @@ function scopeKeyFrom(c: Context): string | undefined {
 
 const MAX_SCOPE_KEY_LENGTH = 256;
 
-function traceCaptureFrom(c: Context, globallyEnabled: boolean): boolean {
-  return globallyEnabled && c.req.header(FICTA_TRACE_CAPTURE_HEADER)?.trim() === "1";
+function traceCaptureDecisionFrom(
+  c: Context,
+  globallyEnabled: boolean,
+  valueAuditEnabled: boolean,
+): {
+  globalEnabled: boolean;
+  requestedForChat: boolean;
+  bodyLogged: boolean;
+  valueAuditLogged: boolean;
+} {
+  const requestedForChat = c.req.header(FICTA_TRACE_CAPTURE_HEADER)?.trim() === "1";
+  const bodyLogged = globallyEnabled && requestedForChat;
+  return {
+    globalEnabled: globallyEnabled,
+    requestedForChat,
+    bodyLogged,
+    valueAuditLogged: bodyLogged && valueAuditEnabled,
+  };
 }
 
 function isRuntimeTraceCapturePatch(value: unknown): value is { enabled: boolean } {

@@ -4,16 +4,16 @@ import type { Entity } from "../src/engine/occurrence.js";
 
 describe("expansionSpans", () => {
   it("returns re-anchored UTF-16 ranges for case and single-line whitespace variants", () => {
-    const text = "🎉 Viven Bhowani / VIVEN\nBHOWANI / viven\r\n  bhowani";
-    const spans = expansionSpans(text, "Viven Bhowani", { caseInsensitive: true, wordBounded: true });
+    const text = "🎉 Avery Example / AVERY\nEXAMPLE / avery\r\n  example";
+    const spans = expansionSpans(text, "Avery Example", { caseInsensitive: true, wordBounded: true });
 
-    expect(spans.map((span) => span.surface)).toEqual(["Viven Bhowani", "VIVEN\nBHOWANI", "viven\r\n  bhowani"]);
+    expect(spans.map((span) => span.surface)).toEqual(["Avery Example", "AVERY\nEXAMPLE", "avery\r\n  example"]);
     for (const span of spans) expect(text.slice(span.start, span.end)).toBe(span.surface);
-    expect(spans[0]?.start).toBe(text.indexOf("Viven Bhowani"));
+    expect(spans[0]?.start).toBe(text.indexOf("Avery Example"));
   });
 
   it("does not bridge paragraphs and enforces Unicode-aware token boundaries for short aliases", () => {
-    expect(expansionSpans("Viven\n\nBhowani", "Viven Bhowani", { caseInsensitive: true })).toEqual([]);
+    expect(expansionSpans("Avery\n\nExample", "Avery Example", { caseInsensitive: true })).toEqual([]);
 
     const text = "AH signed; ah approved; AHEAD, XAH, AH_ and AHé do not qualify.";
     expect(
@@ -22,8 +22,10 @@ describe("expansionSpans", () => {
   });
 
   it("escapes regex punctuation in entity forms", () => {
-    const text = "LSD Open (Pty) Ltd and LSD Open Pty Ltd";
-    expect(expansionSpans(text, "LSD Open (Pty) Ltd").map((span) => span.surface)).toEqual(["LSD Open (Pty) Ltd"]);
+    const text = "Blue Lantern (Pty) Ltd and Blue Lantern Pty Ltd";
+    expect(expansionSpans(text, "Blue Lantern (Pty) Ltd").map((span) => span.surface)).toEqual([
+      "Blue Lantern (Pty) Ltd",
+    ]);
   });
 });
 
@@ -65,19 +67,19 @@ describe("expandEntities", () => {
     const will = fixtureEntity({ id: "detected:will", canonical: "Will", forms: [], authority: "detected" });
     const person = fixtureEntity({
       id: "detected:person",
-      canonical: "Viven Bhowani",
+      canonical: "Avery Example",
       forms: [],
       authority: "detected",
     });
     const surfaces = expandEntities(
-      ["Will signed; we will proceed; WILL approved; viven bhowani signed."],
+      ["Will signed; we will proceed; WILL approved; avery example signed."],
       [will, person],
     ).map((occurrence) => occurrence.surface);
 
     expect(surfaces).toContain("Will");
     expect(surfaces).toContain("WILL");
     expect(surfaces).not.toContain("will");
-    expect(surfaces).toContain("viven bhowani");
+    expect(surfaces).toContain("avery example");
   });
 });
 

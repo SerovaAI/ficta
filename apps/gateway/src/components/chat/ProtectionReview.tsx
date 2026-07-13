@@ -11,6 +11,11 @@ import { ProtectionMark } from "./ProtectionMark";
 
 type ReviewMode = "values" | "model";
 
+export const PROTECTION_REVIEW_SCOPE_COPY =
+  "Automatic protection covers identity and attribution, not every confidential business term.";
+export const PROTECTION_REVIEW_ADD_COPY =
+  "Highlight text above, or add an amount, project name, code, or clause you also want protected.";
+
 export function ProtectionReview({
   text,
   preview,
@@ -119,6 +124,7 @@ export function ProtectionReview({
           <p className="mt-1 text-muted-foreground text-xs">
             Nothing is sent to the model until you choose Send protected.
           </p>
+          <p className="mt-1 max-w-[65ch] text-muted-foreground text-xs">{PROTECTION_REVIEW_SCOPE_COPY}</p>
           <p className="mt-1 truncate text-muted-foreground text-xs">{modelSummary}</p>
         </div>
         <div className="flex rounded-lg bg-muted p-0.5" role="tablist" aria-label="Protection preview view">
@@ -140,7 +146,7 @@ export function ProtectionReview({
                   <legend className="sr-only">Protection legend</legend>
                   <Legend label="Registry · Exact" count={counts.registry} className="border-emerald-600" />
                   <Legend
-                    label="Detected PII · Best effort"
+                    label="Detected identity · best effort"
                     count={counts.detected}
                     className="border-emerald-600 border-dashed"
                   />
@@ -211,7 +217,7 @@ export function ProtectionReview({
           className={cn("mt-1.5 text-xs", valueError ? "text-destructive" : "text-muted-foreground")}
           role={valueError ? "alert" : undefined}
         >
-          {valueError ? protectionValueErrorMessage(valueError) : "Highlight text above, or type a phrase to add it."}
+          {valueError ? protectionValueErrorMessage(valueError) : PROTECTION_REVIEW_ADD_COPY}
         </p>
 
         {preview.protectedValues.length > 0 ? (

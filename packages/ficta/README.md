@@ -102,12 +102,13 @@ already running. For coding-agent or installed use, you can
 also run the analyzer sidecar explicitly before launching the agent:
 
 ```sh
+docker build -t ficta-presidio packages/ficta/presidio
 docker run --rm -p 5002:3000 \
   -v "$PWD/packages/ficta/presidio/default_recognizers.za.yaml:/app/ficta-presidio-recognizers.yaml:ro" \
   -v "$PWD/packages/ficta/presidio/nlp_engine.za.yaml:/app/ficta-nlp-engine.yaml:ro" \
   -e RECOGNIZER_REGISTRY_CONF_FILE=/app/ficta-presidio-recognizers.yaml \
   -e NLP_CONF_FILE=/app/ficta-nlp-engine.yaml \
-  ghcr.io/data-privacy-stack/presidio-analyzer:latest
+  ficta-presidio
 
 FICTA_PII_ENABLED=1 \
 FICTA_PII_BACKEND=presidio \
@@ -115,8 +116,11 @@ FICTA_PII_PRESIDIO_URL=http://127.0.0.1:5002 \
 ficta claude
 ```
 
-The committed registry config keeps Presidio's default recognizers, enables `ZA_ID_NUMBER`, and adds
-`ZA_COMPANY_REGISTRATION` plus legal-document identifier, Mauritius phone, and ordinal-date patterns.
+The derived sidecar keeps Presidio's structured recognizers and replaces raw generic NER output with
+a legal-identity recognizer. It admits contextual people and organizations, document-local aliases,
+company registration numbers, birth dates, personal addresses, and cue-scoped OCR fields while
+leaving contract mechanics visible. The in-process regex detector remains active as a safety floor
+for email, US SSN, and Luhn-validated card values even when a network backend is selected.
 With the sidecar running, validate the complete detector→resolver→typed-surrogate→restore path using
 `pnpm --filter @serovaai/ficta verify:presidio`.
 

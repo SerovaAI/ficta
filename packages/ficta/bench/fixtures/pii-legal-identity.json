@@ -1,0 +1,87 @@
+[
+  {
+    "name": "synthetic-legal-loan",
+    "text": "SYNTHETIC LOAN AGREEMENT\nBetween COPPER KITE FINANCE LIMITED (Lender) and NORTHSTAR ORCHARD PTY LTD (Borrower).\nCompany Registration Number Seychelles TEST-654321\nRegistration No: 2099/000001/07\nThe Borrower is also known as The Northstar Orchard and Northstar Orchard Ltd.\nRepresented by Alice Johnson, identity number 9001015009086, alice@example.com.\nSigned by Robert Williams, identity number 9102020055088, robert@example.com.\nCapital Sum: ZAR 800 000 at 8% interest for 3 months.\nAuthorisations must be delivered within 10 business days.\nSecurity Interest disputes go to a Supreme Court in South Africa.\nNotice is deemed received after three days; cure is seven days; arbitration begins in two months.",
+    "expected": [
+      { "value": "COPPER KITE FINANCE LIMITED", "entity": "ORGANIZATION" },
+      { "value": "NORTHSTAR ORCHARD PTY LTD", "entity": "ORGANIZATION" },
+      { "value": "The Northstar Orchard", "entity": "ORGANIZATION" },
+      { "value": "Northstar Orchard Ltd", "entity": "ORGANIZATION" },
+      { "value": "Alice Johnson", "entity": "PERSON" },
+      { "value": "Robert Williams", "entity": "PERSON" },
+      { "value": "9001015009086", "entity": "ZA_ID_NUMBER" },
+      { "value": "9102020055088", "entity": "ZA_ID_NUMBER" },
+      { "value": "alice@example.com", "entity": "EMAIL_ADDRESS" },
+      { "value": "robert@example.com", "entity": "EMAIL_ADDRESS" },
+      { "value": "TEST-654321", "entity": "COMPANY_REGISTRATION" },
+      { "value": "2099/000001/07", "entity": "COMPANY_REGISTRATION" }
+    ],
+    "mustRemainVisible": [
+      "Borrower",
+      "Authorisations",
+      "Capital Sum",
+      "Security Interest",
+      "Supreme Court",
+      "South Africa",
+      "ZAR 800 000",
+      "8% interest",
+      "3 months",
+      "10 business days",
+      "three days",
+      "seven days",
+      "two months"
+    ]
+  },
+  {
+    "name": "context-bound-dates-and-addresses",
+    "text": "Employee name: Jane Example. Date of birth: 12 May 1980. Agreement date: 12 May 2025. Residential address: Cape Town. Governing law: Seychelles.",
+    "expected": [
+      { "value": "Jane Example", "entity": "PERSON" },
+      { "value": "12 May 1980", "entity": "DATE_TIME" },
+      { "value": "Cape Town", "entity": "LOCATION" }
+    ],
+    "mustRemainVisible": ["12 May 2025", "Seychelles"]
+  },
+  {
+    "name": "accounting-organizations",
+    "text": "Account: Loan Account - BLUE LANTERN FINANCE LIMITED\nTransaction\tDebit\tCredit\n20 Sep 2022\tHarbor View Investment\t\t50,764.00\ndo I owe blue lantern capital?",
+    "expected": [
+      { "value": "BLUE LANTERN FINANCE LIMITED", "entity": "ORGANIZATION" },
+      { "value": "Harbor View Investment", "entity": "ORGANIZATION" },
+      { "value": "blue lantern capital", "entity": "ORGANIZATION" }
+    ],
+    "mustRemainVisible": ["Loan Account", "Transaction", "Debit", "Credit", "20 Sep 2022", "50,764.00"]
+  },
+  {
+    "name": "identity-versus-commercial-confidentiality-boundary",
+    "text": "Vendor: Northstar Security Ltd. Custodian: Capital Harbor Trust PLC. Project name: Copper Kite. Access code: BLUE-ORCHID-42. Facility Alpha carries a Minimum EBITDA Covenant and a fee of ZAR 125 000.",
+    "expected": [
+      { "value": "Northstar Security Ltd", "entity": "ORGANIZATION" },
+      { "value": "Capital Harbor Trust PLC", "entity": "ORGANIZATION" }
+    ],
+    "mustRemainVisible": [
+      "Project name",
+      "Copper Kite",
+      "Access code",
+      "BLUE-ORCHID-42",
+      "Facility Alpha",
+      "Minimum EBITDA Covenant",
+      "ZAR 125 000"
+    ]
+  },
+  {
+    "name": "legal-negative-controls",
+    "text": "The Borrower grants a Security Interest. Authorisations are due within 10 business days. Capital Sum is ZAR 800 000. The Supreme Court has jurisdiction and arbitration starts after two months.",
+    "expected": [],
+    "mustRemainVisible": [
+      "Borrower",
+      "Security Interest",
+      "Authorisations",
+      "10 business days",
+      "Capital Sum",
+      "ZAR 800 000",
+      "Supreme Court",
+      "two months"
+    ]
+  }
+]
