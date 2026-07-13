@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { GatewayProtectionPreview } from "@/lib/protection-preview";
 import { type ProtectionValueError, validateProtectionValue } from "@/lib/protection-review-value";
+import { previewFindingsToAnnotations, protectionTextSegments } from "@/lib/restore-highlights";
 import { cn } from "@/lib/utils";
+import { ProtectionMark } from "./ProtectionMark";
 
 type ReviewMode = "values" | "model";
 
@@ -328,37 +330,21 @@ function Legend({ label, count, className }: { label: string; count: number; cla
 }
 
 function HighlightedText({ text, findings }: { text: string; findings: ProtectionPreviewFinding[] }) {
-  if (findings.length === 0) return text;
-  const ranges = [...findings].sort((a, b) => a.start - b.start || a.end - b.end);
-  const parts: ReactNode[] = [];
-  let cursor = 0;
-  ranges.forEach((range) => {
-    if (range.start < cursor || range.end > text.length) return;
-    parts.push(text.slice(cursor, range.start));
-    parts.push(
-      <mark
-        key={`${range.start}:${range.end}:${range.origin}`}
-        className={cn(
-          "rounded-[3px] border-b-2 bg-emerald-100 px-0.5 text-foreground dark:bg-emerald-950/60",
-          range.origin === "registry" && "border-emerald-600",
-          range.origin === "detected" && "border-emerald-600 border-dashed",
-          range.origin === "user" && "border-foreground",
-        )}
-        title={
-          range.origin === "user"
-            ? "Protected by you"
-            : range.origin === "registry"
-              ? "Protected Registry"
-              : "Detected PII"
-        }
+  const annotations = previewFindingsToAnnotations(text, findings);
+  return protectionTextSegments(text, annotations).map((segment, index) =>
+    segment.annotation ? (
+      <ProtectionMark
+        key={`${segment.annotation.start}:${segment.annotation.end}:${segment.annotation.origin}`}
+        direction="redacted"
+        origin={segment.annotation.origin}
       >
-        {text.slice(range.start, range.end)}
-      </mark>,
-    );
-    cursor = range.end;
-  });
-  parts.push(text.slice(cursor));
-  return parts;
+        {segment.text}
+      </ProtectionMark>
+    ) : (
+      // biome-ignore lint/suspicious/noArrayIndexKey: plain segments are stable between authoritative findings
+      <span key={index}>{segment.text}</span>
+    ),
+  );
 }
 
 function ModelText({ text }: { text: string }) {

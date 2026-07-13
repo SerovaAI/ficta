@@ -53,4 +53,28 @@ describe("message mapping", () => {
 
     expect(stored.parts).toEqual([{ type: "text", content: "Email: jane.doe@example.com" }]);
   });
+
+  it("round-trips namespaced protection annotations through stored history", () => {
+    const annotation = {
+      start: 7,
+      end: 27,
+      surrogate: "FICTA_EMAIL_1234567890abcdef1234567890abcdef",
+      origin: "detected",
+      direction: "restored",
+    };
+    const stored = uiToStored({
+      id: "m3",
+      role: "assistant",
+      parts: [
+        {
+          type: "text",
+          content: "Email: jane.doe@example.com",
+          metadata: { fictaProtection: [annotation] },
+        },
+      ] as UIMessage["parts"],
+    });
+
+    expect(storedToUi(stored).parts).toEqual(stored.parts);
+    expect(stored.parts[0]?.metadata?.fictaProtection).toEqual([annotation]);
+  });
 });

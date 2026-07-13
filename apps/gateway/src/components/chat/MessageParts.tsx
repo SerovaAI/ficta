@@ -2,8 +2,8 @@ import type { UIMessage } from "@tanstack/ai-react";
 import { ChevronRight } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
 import {
+  protectionAnnotationsFromPart,
   type RestoreHighlightDisplayMode,
-  type RestoreHighlightPart,
   stripRestoreHighlightMarkers,
 } from "@/lib/restore-highlights";
 
@@ -30,7 +30,7 @@ export function MessageParts({
               <Suspense key={i} fallback={<MarkdownFallback content={part.content} />}>
                 <Markdown
                   content={part.content}
-                  restorations={(part as RestoreHighlightPart).restorations}
+                  annotations={protectionAnnotationsFromPart(part, "restored")}
                   restoreDisplayMode={restoreDisplayMode}
                 />
               </Suspense>
