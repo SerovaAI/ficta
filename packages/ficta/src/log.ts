@@ -37,6 +37,11 @@ export function logRequest(args: {
   target: string;
   route?: string;
   captureRawBodies?: boolean;
+  traceCapture?: {
+    globalEnabled: boolean;
+    requestedForChat: boolean;
+    valueAuditLogged: boolean;
+  };
 }): number {
   const n = ++seq;
   const captureRawBodies = args.captureRawBodies ?? cfg.logBodies;
@@ -84,6 +89,13 @@ export function logRequest(args: {
     wire,
     bodyBytes: byteLen(args.body),
     bodyLogged: captureRawBodies,
+    ...(args.traceCapture
+      ? {
+          globalEnabled: args.traceCapture.globalEnabled,
+          requestedForChat: args.traceCapture.requestedForChat,
+          valueAuditLogged: args.traceCapture.valueAuditLogged,
+        }
+      : {}),
     registeredValues: registeredValueCount(),
     summary: parseOk ? requestMeta(wire, parsed) : undefined,
     inspection,

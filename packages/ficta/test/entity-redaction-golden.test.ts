@@ -35,7 +35,7 @@ describe("entity redaction golden fixtures", () => {
 
   it("protects every markitdown party shape, including internal Markdown", async () => {
     const hoa = fixture("markitdown-hoa.md");
-    const detected = ["Viven Bhowani", "Elton Lau", "LSD LIMITED SEYCHELLES", "LSD Open FZCO"];
+    const detected = ["Avery Example", "Morgan Example", "BLUE LANTERN LIMITED SEYCHELLES", "Blue Lantern FZCO"];
     const engine = new ProtectionEngine({
       plugins: [normalizedFixtureDetector(detected)],
       values: [
@@ -46,10 +46,10 @@ describe("entity redaction golden fixtures", () => {
     const redacted = await engine.redactBodyDetailed(JSON.stringify({ content: hoa }));
 
     expect(redacted.leaks).toBe(0);
-    for (const value of [...detected, "VIVEN BHOWANI", "ELTON LAU", "MAURITIUS", "UAE"]) {
+    for (const value of [...detected, "AVERY EXAMPLE", "MORGAN EXAMPLE", "MAURITIUS", "UAE"]) {
       expect(redacted.body).not.toContain(value);
     }
-    expect(redacted.body).not.toContain("LSD **Open** FZCO");
+    expect(redacted.body).not.toContain("Blue **Lantern** FZCO");
   });
 });
 

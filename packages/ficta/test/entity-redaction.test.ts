@@ -87,14 +87,14 @@ describe("occurrence-based body redaction", () => {
     const detector: DetectorPlugin = {
       kind: "detector",
       name: "spanless-detector",
-      detectText: () => [pii("person", "Viven Bhowani")],
+      detectText: () => [pii("person", "Avery Example")],
     };
     const engine = new ProtectionEngine({ plugins: [detector] });
-    const body = JSON.stringify({ content: "Viven Bhowani signed; VIVEN BHOWANI approved." });
+    const body = JSON.stringify({ content: "Avery Example signed; AVERY EXAMPLE approved." });
     const redacted = await engine.redactBodyDetailed(body);
     expect(redacted.count).toBe(2);
-    expect(redacted.body).not.toContain("Viven Bhowani");
-    expect(redacted.body).not.toContain("VIVEN BHOWANI");
+    expect(redacted.body).not.toContain("Avery Example");
+    expect(redacted.body).not.toContain("AVERY EXAMPLE");
     expect(redacted.leaks).toBe(0);
   });
 

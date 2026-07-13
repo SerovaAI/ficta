@@ -1,10 +1,5 @@
 import { isRecord } from "../../json.js";
 import type { ProtectedValue } from "../types.js";
-import {
-  inferOrganizations,
-  isInvalidNamedEntitySpan,
-  ORGANIZATION_INFERENCE_SCORE,
-} from "./organization-inference.js";
 import type { PiiRecognizer } from "./recognizer.js";
 
 /**
@@ -34,6 +29,11 @@ export const HIGH_CONFIDENCE_SCORE = 0.85;
 const MAX_CHUNK_CHARS = 20_000;
 const CHUNK_OVERLAP_CHARS = 128;
 export const MAX_CONCURRENCY = 4;
+
+/** Tabs delimit independent fields, and generic name entities must contain at least one letter. */
+function isInvalidNamedEntitySpan(entityType: string, value: string): boolean {
+  return /^(?:LOCATION|ORGANIZATION|PERSON)$/iu.test(entityType) && (value.includes("\t") || !/\p{L}/u.test(value));
+}
 
 export interface PresidioConfig {
   url: string;
@@ -105,14 +105,7 @@ export async function detectWithPresidioCompatibleAnalyzer(
     const perChunk = await mapConcurrent(chunks, MAX_CONCURRENCY, (chunk) =>
       detectChunk(config, chunk, controller.signal, sourceLabel),
     );
-    const detected = dedupeByValue(perChunk.flat());
-    const allowOrganization =
-      config.entities.length === 0 || config.entities.some((entity) => entity.toUpperCase() === "ORGANIZATION");
-    const inferred =
-      allowOrganization && config.scoreThreshold <= ORGANIZATION_INFERENCE_SCORE
-        ? inferOrganizations(text, detected)
-        : [];
-    return dedupeByValue([...detected, ...inferred]);
+    return dedupeByValue(perChunk.flat());
   } catch (err) {
     controller.abort(); // cancel any still-in-flight sibling requests before surfacing the failure
     throw asPresidioError(err, config);

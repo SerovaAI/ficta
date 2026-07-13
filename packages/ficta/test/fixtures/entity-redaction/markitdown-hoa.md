@@ -1,12 +1,12 @@
-### **VIVEN BHOWANI**
+### **AVERY EXAMPLE**
 
-Viven Bhowani signed for Arcadia Holdings.
+Avery Example signed for Arcadia Holdings.
 
-### **ELTON LAU**
+### **MORGAN EXAMPLE**
 
-Elton Lau approved the transfer to LSD LIMITED SEYCHELLES.
+Morgan Example approved the transfer to BLUE LANTERN LIMITED SEYCHELLES.
 
-The remaining counterparty is LSD **Open** FZCO.
+The remaining counterparty is Blue **Lantern** FZCO.
 
 The agreement applies in MAURITIUS and the UAE.
 

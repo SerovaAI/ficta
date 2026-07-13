@@ -8,7 +8,7 @@ import { piiPlugin } from "../src/plugins/index.js";
 
 describe("normalizeMarkdownForDetection", () => {
   it("removes emphasis/heading/list/strike/escape formatting and maps offsets back to raw text", () => {
-    const raw = "### **VIVEN BHOWANI**\n- **Reviewed by** ~~Neil White~~ \\_\\_\\_\\_";
+    const raw = "### **AVERY EXAMPLE**\n- **Reviewed by** ~~Neil White~~ \\_\\_\\_\\_";
     const view = normalizeMarkdownForDetection(raw);
     const out = view.text;
     expect(out.length).toBeLessThan(raw.length);
@@ -17,57 +17,59 @@ describe("normalizeMarkdownForDetection", () => {
     expect(out).not.toContain("~");
     expect(out).not.toContain("\\");
     // Entities remain as contiguous substrings so value-based redaction still finds them in the original.
-    expect(out).toContain("VIVEN BHOWANI");
+    expect(out).toContain("AVERY EXAMPLE");
     expect(out).toContain("Neil White");
-    const start = out.indexOf("VIVEN BHOWANI");
+    const start = out.indexOf("AVERY EXAMPLE");
     const rawStart = view.toRaw(start, "start");
-    const rawEnd = view.toRaw(start + "VIVEN BHOWANI".length, "end");
-    expect(raw.slice(rawStart, rawEnd)).toBe("VIVEN BHOWANI");
+    const rawEnd = view.toRaw(start + "AVERY EXAMPLE".length, "end");
+    expect(raw.slice(rawStart, rawEnd)).toBe("AVERY EXAMPLE");
   });
 
   it("leaves content punctuation that appears inside real entities untouched", () => {
-    const raw = "shareholder of **LSD Open (Pty) Ltd (South Africa)** and LSD Open FZCO (UAE)";
+    const raw = "shareholder of **Blue Lantern (Pty) Ltd (South Africa)** and Blue Lantern FZCO (UAE)";
     const out = normalizeMarkdownForDetection(raw).text;
-    expect(out).toContain("LSD Open (Pty) Ltd (South Africa)"); // parens, spaces preserved
-    expect(out).toContain("LSD Open FZCO (UAE)");
+    expect(out).toContain("Blue Lantern (Pty) Ltd (South Africa)"); // parens, spaces preserved
+    expect(out).toContain("Blue Lantern FZCO (UAE)");
     expect(out).not.toContain("**");
   });
 
   it("keeps a bolded whole entity as a substring of the original after trimming", () => {
-    const raw = "**LSD LIMITED SEYCHELLES**";
+    const raw = "**BLUE LANTERN LIMITED SEYCHELLES**";
     const out = normalizeMarkdownForDetection(raw).text;
-    // A NER span over the masked text slices "LSD LIMITED SEYCHELLES" (± space edges); trimmed, it is a
+    // A NER span over the masked text slices "BLUE LANTERN LIMITED SEYCHELLES" (± space edges); trimmed, it is a
     // substring of the raw text, so redaction on the original finds it.
     expect(raw).toContain(out.trim());
-    expect(out.trim()).toBe("LSD LIMITED SEYCHELLES");
+    expect(out.trim()).toBe("BLUE LANTERN LIMITED SEYCHELLES");
   });
 
   it("closes internal-markdown gaps and maps the compact span back to raw text", () => {
-    const raw = "LSD **Open** FZCO";
+    const raw = "Blue **Lantern** FZCO";
     const compact = normalizeMarkdownForDetection(raw);
-    expect(compact.text).toBe("LSD Open FZCO");
-    const start = compact.text.indexOf("LSD Open FZCO");
-    expect(raw.slice(compact.toRaw(start, "start"), compact.toRaw(start + "LSD Open FZCO".length, "end"))).toBe(raw);
+    expect(compact.text).toBe("Blue Lantern FZCO");
+    const start = compact.text.indexOf("Blue Lantern FZCO");
+    expect(raw.slice(compact.toRaw(start, "start"), compact.toRaw(start + "Blue Lantern FZCO".length, "end"))).toBe(
+      raw,
+    );
   });
 });
 
 describe("flexibleOccurrences", () => {
-  const doc = "CFO Viven Bhowani signed; see **VIVEN BHOWANI** and viven\nbhowani in the annex.";
+  const doc = "CFO Avery Example signed; see **AVERY EXAMPLE** and avery\nexample in the annex.";
 
   it("finds every distinct case-form present when caseInsensitive", () => {
-    const forms = flexibleOccurrences(doc, "Viven Bhowani", { caseInsensitive: true });
-    expect(forms).toContain("Viven Bhowani");
-    expect(forms).toContain("VIVEN BHOWANI");
-    expect(forms).toContain("viven\nbhowani"); // whitespace-flex still applies (single line break)
+    const forms = flexibleOccurrences(doc, "Avery Example", { caseInsensitive: true });
+    expect(forms).toContain("Avery Example");
+    expect(forms).toContain("AVERY EXAMPLE");
+    expect(forms).toContain("avery\nexample"); // whitespace-flex still applies (single line break)
   });
 
   it("is case-sensitive by default", () => {
-    const forms = flexibleOccurrences(doc, "Viven Bhowani");
-    expect(forms).toEqual(["Viven Bhowani"]);
+    const forms = flexibleOccurrences(doc, "Avery Example");
+    expect(forms).toEqual(["Avery Example"]);
   });
 
   it("does not bridge a paragraph break (mirrors the redaction matcher)", () => {
-    expect(flexibleOccurrences("Viven\n\nBhowani", "Viven Bhowani", { caseInsensitive: true })).toEqual([]);
+    expect(flexibleOccurrences("Avery\n\nExample", "Avery Example", { caseInsensitive: true })).toEqual([]);
   });
 
   it("can require token boundaries for word-like values", () => {
@@ -100,13 +102,13 @@ describe("piiPlugin.detectText — markdown + case coverage", () => {
 
   it("feeds NER normalized text and recovers the ALL-CAPS twin of a title-case detection", async () => {
     // Body has the name in title-case prose and ALL-CAPS bold heading — the class that leaked upstream.
-    const body = "Represented by Viven Bhowani.\n### **VIVEN BHOWANI**\nAlso shareholder LSD Open (Pty) Ltd.";
+    const body = "Represented by Avery Example.\n### **AVERY EXAMPLE**\nAlso shareholder Blue Lantern (Pty) Ltd.";
     let sawText = "";
     const { server, port } = await startAnalyzeStub((req) => {
       sawText = req.text;
       // Presidio detects the title-case form (as spaCy would in clean prose). Return its span.
-      const start = req.text.indexOf("Viven Bhowani");
-      return start === -1 ? [] : [{ entity_type: "PERSON", start, end: start + "Viven Bhowani".length, score: 0.95 }];
+      const start = req.text.indexOf("Avery Example");
+      return start === -1 ? [] : [{ entity_type: "PERSON", start, end: start + "Avery Example".length, score: 0.95 }];
     });
 
     process.env.FICTA_PII_ENABLED = "1";
@@ -119,9 +121,9 @@ describe("piiPlugin.detectText — markdown + case coverage", () => {
       // NER saw Markdown-normalized text (no `**`/`#`), which is why the heading name is detectable.
       expect(sawText).not.toContain("**");
       expect(sawText).not.toContain("#");
-      expect(redacted.body).not.toContain("Viven Bhowani");
-      expect(redacted.body).not.toContain("VIVEN BHOWANI");
-      expect(engine.restoreText(redacted.body)).toContain("VIVEN BHOWANI");
+      expect(redacted.body).not.toContain("Avery Example");
+      expect(redacted.body).not.toContain("AVERY EXAMPLE");
+      expect(engine.restoreText(redacted.body)).toContain("AVERY EXAMPLE");
     } finally {
       await close(server);
     }
@@ -177,8 +179,8 @@ describe("piiPlugin.detectText — markdown + case coverage", () => {
   });
 
   it("maps a compact internal-Markdown NER span back to the exact raw body range", async () => {
-    const party = "LSD Open FZCO";
-    const body = "The counterparty is LSD **Open** FZCO.";
+    const party = "Blue Lantern FZCO";
+    const body = "The counterparty is Blue **Lantern** FZCO.";
     let analyzerText = "";
     const { server, port } = await startAnalyzeStub((req) => {
       analyzerText = req.text;
@@ -192,9 +194,9 @@ describe("piiPlugin.detectText — markdown + case coverage", () => {
       const engine = new ProtectionEngine({ plugins: [piiPlugin] });
       const redacted = await engine.redactBodyDetailed(JSON.stringify({ content: body }));
       expect(analyzerText).toContain(party);
-      expect(redacted.body).not.toContain("LSD **Open** FZCO");
+      expect(redacted.body).not.toContain("Blue **Lantern** FZCO");
       expect(redacted.leaks).toBe(0);
-      expect(engine.restoreJson(redacted.body)).toContain("LSD **Open** FZCO");
+      expect(engine.restoreJson(redacted.body)).toContain("Blue **Lantern** FZCO");
     } finally {
       await close(server);
     }

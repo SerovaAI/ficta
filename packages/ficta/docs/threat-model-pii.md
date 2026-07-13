@@ -37,22 +37,27 @@ dates, and configured document-ID shapes). NER is probabilistic: it will miss en
 unusual names, partial identifiers, and firm-specific shapes not registered or added as
 recognizers/deny-lists. Detection is only as good as the configured backend.
 
-**Organization detection is enabled but noisy.** `ORGANIZATION` NER is un-suppressed via
-`presidio/nlp_engine.za.yaml` (upstream ignores it — "Has many false positives"), so unregistered
-client/counterparty/company names get a best-effort catch from spaCy `en_core_web_lg`. Expect
-**over-redaction** (headings, common capitalized nouns tokenized as orgs) — the safe failure for a
-privacy tool, but a usability cost. For higher precision, layer a HuggingFace ORG recognizer in
-`presidio/default_recognizers.za.yaml` (real per-span confidence). For exact confidentiality of
-specific client/counterparty/matter entities, register them in the value registry so they get the
-strong exact-match promise rather than relying on probabilistic NER.
+**The shipped Presidio policy is identity and attribution, not general document confidentiality.**
+Its custom recognizer applies context and entity-shape gates inside Presidio before candidates reach
+Ficta. It protects structured identifiers and contact/account values, plus qualified people,
+organizations and aliases, company registration numbers, birth dates, and personal addresses. It
+suppresses common NER false positives such as legal roles, headings, courts, durations, ordinary
+dates, jurisdictions, and nationality labels. Another Presidio-compatible deployment may implement
+a different policy; Ficta does not claim these semantics for arbitrary analyzer URLs.
 
-The Presidio client applies a conservative accounting-text supplement after NER: a title-cased
-business name in a date-led transaction/payee column can be inferred from the table structure, and
-a business-name variant can be inferred when it shares a stem with an organization already found in
-the same document. Generic NER name spans crossing tab-separated fields, or containing no letters,
-are discarded. These rules reduce common statement misses and table-header/amount false positives;
-they remain heuristics, do not learn across requests, and do not turn organization detection into an
-exact guarantee.
+Amounts, rates, percentages, contract periods, project terms, and other commercial facts are not
+automatically protected by the PII detector. Users must select them in pre-send review or admins
+must register them when they are confidential. For exact confidentiality of a specific
+client/counterparty/matter entity, register it so it receives the strong exact-match promise rather
+than relying on probabilistic NER.
+
+The shipped Presidio recognizer applies a conservative accounting-text supplement around NER: a
+title-cased business name in a date-led transaction/payee column can be inferred from the table
+structure, and a business-name variant can be inferred when it shares the full non-designator stem
+with an organization already found in the same document. Generic NER name spans crossing
+tab-separated fields, or containing no letters, are discarded. These rules reduce common statement
+misses and table-header/amount false positives; they remain heuristics, do not learn across requests,
+and do not turn organization detection into an exact guarantee.
 
 **Explicit user selections:** Gateway's pre-send review lets a user mark a phrase the configured detectors
 missed. That phrase receives exact-match, registry-strength treatment inside the user's current chat and is
@@ -84,7 +89,9 @@ This is the load-bearing caveat and must not be blurred:
 - **Response-side PII the model itself emits.** The concern is egress; there is nothing local to
   restore for content the model generates. The vendor still authored it.
 - **What the vendor legitimately sees:** the tokenized transcript, its structure, timing, and all
-  non-PII text of the conversation. Redaction removes detected identifiers, not the prompt itself.
+  non-PII text of the conversation. With the shipped Presidio recognizer this includes amounts, rates,
+  durations, jurisdictions, ordinary dates, and unselected business terms. Redaction removes
+  detected identifiers, not the prompt itself.
 - **Document ingestion gaps.** PDF/DOC/DOCX are converted to text before detection; anything the
   converter drops or garbles (scanned images without OCR, complex tables) is detected imperfectly or
   not at all.

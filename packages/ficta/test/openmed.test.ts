@@ -159,8 +159,8 @@ describe("openmed recognizer", () => {
   });
 
   it("re-anchors the spanless API value through the compact Markdown view in the PII coordinator", async () => {
-    const party = "LSD Open FZCO";
-    const raw = "Counterparty LSD **Open** FZCO signed.";
+    const party = "Blue Lantern FZCO";
+    const raw = "Counterparty Blue **Lantern** FZCO signed.";
     process.env.FICTA_PII_ENABLED = "1";
     process.env.FICTA_PII_BACKEND = "openmed";
     const { value, requests } = await withStub(
@@ -173,7 +173,10 @@ describe("openmed recognizer", () => {
     expect(requests[0]?.text).toContain(party);
     expect(detected?.value).toBe(party);
     expect(detected?.spans).toEqual([
-      { start: raw.indexOf("LSD **Open** FZCO"), end: raw.indexOf("LSD **Open** FZCO") + "LSD **Open** FZCO".length },
+      {
+        start: raw.indexOf("Blue **Lantern** FZCO"),
+        end: raw.indexOf("Blue **Lantern** FZCO") + "Blue **Lantern** FZCO".length,
+      },
     ]);
   });
 

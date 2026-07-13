@@ -4,15 +4,10 @@
 #
 #   ORGANIZATION is removed from ner_model_configuration.labels_to_ignore.
 #
-# Upstream ignores ORGANIZATION ("Has many false positives"), which silently drops every spaCy ORG
-# span AND excludes ORGANIZATION from the engine's supported-entities set — so client/counterparty/
-# company names that aren't pre-registered leak to the vendor. Un-ignoring it lets the (auto-injected)
-# SpacyRecognizer emit ORGANIZATION from the already-bundled en_core_web_lg model, at the default
-# score ~0.85. This is a probabilistic, noisy net (that is exactly why upstream disabled it); exact
-# confidentiality still comes from the registered-secrets registry. If ORG precision proves
-# unacceptable, layer a HuggingFace ORG recognizer in default_recognizers.za.yaml instead (see
-# docs/threat-model-pii.md). The NLP engine is loaded separately from the recognizer registry, so this
-# is the only place ORGANIZATION suppression can be reached.
+# Upstream ignores ORGANIZATION ("Has many false positives"), which drops spaCy ORG evidence before
+# a recognizer can inspect it. Ficta's derived Presidio image disables the raw SpacyRecognizer and
+# feeds these NLP artifacts through FictaSpacyIdentityRecognizer instead. The custom recognizer applies
+# document context and entity-shape gates before a PERSON/ORGANIZATION span leaves Presidio.
 nlp_engine_name: spacy
 models:
   -

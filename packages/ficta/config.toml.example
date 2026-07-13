@@ -49,7 +49,6 @@ fail_closed = false
 enabled = true
 # Coding-agent launches stay off unless this is also true (or FICTA_SECRET_SHAPES_ENABLED is set for one run).
 agents = false
-
 [pii]
 # Web / standalone proxy PII detection. `ficta setup` prompts for this and defaults it on;
 # an unconfigured proxy remains off.

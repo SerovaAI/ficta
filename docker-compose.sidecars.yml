@@ -4,8 +4,8 @@
 #   pnpm sidecars        # docker compose -f docker-compose.sidecars.yml up -d --wait
 #   pnpm sidecars:down
 #
-# The document converter is built from the source checkout. The PII images are pulled from their
-# upstream registries. Set OPENMED_IMAGE to pin a tag or use a locally built (patched) image instead.
+# The document converter and Presidio analyzer are built from the source checkout. OpenMed is pulled
+# from its upstream registry. Set OPENMED_IMAGE to pin a tag or use a locally built image instead.
 #
 # Ports bind loopback only, matching ficta's default backend URLs (document converter 5003,
 # presidio 5002, openmed 5004). A deployment that needs network exposure must change that deliberately.
@@ -34,17 +34,20 @@ services:
     restart: unless-stopped
 
   presidio-analyzer:
-    image: ghcr.io/data-privacy-stack/presidio-analyzer:latest
+    image: ficta-presidio:dev
+    build:
+      context: ./packages/ficta/presidio
     ports:
       - "127.0.0.1:5002:3000"
     volumes:
       - ./packages/ficta/presidio/default_recognizers.za.yaml:/app/ficta-presidio-recognizers.yaml:ro
-      # NLP-engine config: un-ignores ORGANIZATION so spaCy ORG spans surface (see the file's header).
-      # The NLP engine is loaded separately from the recognizer registry, so ORG can only be enabled here.
+      # The NLP engine still emits raw NER spans internally; the Ficta Presidio recognizer applies the
+      # legal-identity admission rules before any span leaves the sidecar.
       - ./packages/ficta/presidio/nlp_engine.za.yaml:/app/ficta-nlp-engine.yaml:ro
     environment:
       RECOGNIZER_REGISTRY_CONF_FILE: /app/ficta-presidio-recognizers.yaml
       NLP_CONF_FILE: /app/ficta-nlp-engine.yaml
+      FICTA_PRESIDIO_NER: spacy
     healthcheck:
       test:
         [
