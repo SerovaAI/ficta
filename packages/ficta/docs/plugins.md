@@ -290,9 +290,11 @@ is disabled; birth-date recognition is context-bound. The registry retains struc
 such as South African IDs, document identifiers, and Mauritius phones.
 
 - **`pnpm sidecars`** (repo root, ↔ `docker-compose.sidecars.yml`) starts the shared sidecar stack
-  detached with health-gated `--wait`: the Gateway document converter plus both PII sidecars.
+  detached with health-gated `--wait` and `--build`: the Gateway document converter plus both PII sidecars.
   `pnpm sidecars:down` stops them. This is the way to run them outside the dev wrapper — a server, a
-  teammate's machine, a POC box.
+  teammate's machine, a POC box. After pulling recognizer code or Presidio configuration changes,
+  rerun `pnpm sidecars` so the local `ficta-presidio:dev` image is rebuilt and the analyzer is
+  recreated; a plain Compose `up` can reuse the stale local image.
 - **Root `pnpm dev`** auto-manages the sidecars for whichever backends `FICTA_PII_BACKENDS` /
   `FICTA_PII_BACKEND` selects (force per-sidecar with `FICTA_PII_PRESIDIO_MANAGED` /
   `FICTA_PII_OPENMED_MANAGED`). It reuses anything already healthy at the configured URL — including

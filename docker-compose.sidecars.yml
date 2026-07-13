@@ -1,11 +1,13 @@
 # Gateway/document and PII detection sidecars ficta's networked backends talk to. This file is the way
 # to run them outside `pnpm dev` (which can manage them itself and reuses anything already healthy here):
 #
-#   pnpm sidecars        # docker compose -f docker-compose.sidecars.yml up -d --wait
+#   pnpm sidecars        # docker compose -f docker-compose.sidecars.yml up -d --wait --build
 #   pnpm sidecars:down
 #
 # The document converter and Presidio analyzer are built from the source checkout. OpenMed is pulled
 # from its upstream registry. Set OPENMED_IMAGE to pin a tag or use a locally built image instead.
+# After pulling changes under packages/ficta/presidio, rerun `pnpm sidecars`: `--build` refreshes the
+# baked Ficta recognizer, and Compose recreates the analyzer so mounted recognizer/NLP config reloads.
 #
 # Ports bind loopback only, matching ficta's default backend URLs (document converter 5003,
 # presidio 5002, openmed 5004). A deployment that needs network exposure must change that deliberately.

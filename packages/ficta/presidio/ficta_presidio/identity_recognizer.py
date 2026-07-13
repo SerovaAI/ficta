@@ -251,8 +251,6 @@ def _accepts_person(text: str, candidate: Candidate, value: str) -> bool:
         return False
     if PERSON_CUE.search(context):
         return len(words) <= 7
-    if len(words) == 1 and re.match(r"\s+[^\W\d_][\w'’.-]{1,40}\b", text[candidate.end : candidate.end + 48]):
-        return True
     return 2 <= len(words) <= 6 and all(_is_name_word(word) for word in words)
 
 

@@ -387,7 +387,7 @@ export async function startProxy(
     const wire = wireOf(url.pathname);
     const traceCapture = traceCaptureDecisionFrom(c, runtimeTraceCaptureEnabled, cfg.traceAudit);
     const captureRawBodies = traceCapture.bodyLogged;
-    const captureTraceAudit = captureRawBodies && cfg.traceAudit;
+    const captureTraceAudit = traceCapture.valueAuditLogged;
     const restoreHighlightMarkers =
       c.req.header(FICTA_RESTORE_HIGHLIGHT_HEADER) === "1"
         ? {

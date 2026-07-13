@@ -7,12 +7,12 @@ class IdentityRecognizerTest(unittest.TestCase):
     def setUp(self):
         self.recognizer = FictaSpacyIdentityRecognizer()
 
-    def finalize(self, text, values):
+    def finalize(self, text, values, entities=None):
         candidates = [
             Candidate(entity_type, text.index(value), text.index(value) + len(value), 0.85)
             for value, entity_type in values
         ]
-        results = self.recognizer._finalize(text, candidates, [])
+        results = self.recognizer._finalize(text, candidates, entities or [])
         return {(result.entity_type, text[result.start : result.end]) for result in results}
 
     def test_synthetic_legal_identity_and_contract_boundary(self):
@@ -67,6 +67,22 @@ class IdentityRecognizerTest(unittest.TestCase):
             ("DATE_TIME", "10 business days"),
         ]:
             self.assertNotIn(visible, found)
+
+    def test_singleton_person_candidate_does_not_expand_into_a_legal_phrase(self):
+        text = "Capital Sum remains a visible contract term."
+        found = self.finalize(text, [("Capital", "PERSON"), ("Capital Sum", "PERSON")])
+        self.assertNotIn(("PERSON", "Capital"), found)
+        self.assertNotIn(("PERSON", "Capital Sum"), found)
+
+    def test_requested_entities_filter_other_candidate_types(self):
+        text = "Signed by Alice Johnson for Blue Lantern Ltd."
+        found = self.finalize(
+            text,
+            [("Alice Johnson", "PERSON"), ("Blue Lantern Ltd", "ORGANIZATION")],
+            entities=["ORGANIZATION"],
+        )
+        self.assertIn(("ORGANIZATION", "Blue Lantern Ltd"), found)
+        self.assertTrue(all(entity_type == "ORGANIZATION" for entity_type, _ in found))
 
     def test_explicit_company_identity_wins_without_protecting_commercial_fields(self):
         text = (

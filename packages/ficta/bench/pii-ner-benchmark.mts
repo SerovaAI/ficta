@@ -31,6 +31,8 @@ interface BenchmarkResult {
   falsePositives: Array<{ fixture: string; value: string }>;
 }
 
+const ANALYZER_TIMEOUT_MS = 30_000;
+
 const fixtureUrl = new URL("./fixtures/pii-legal-identity.json", import.meta.url);
 const fixtures = JSON.parse(await readFile(fixtureUrl, "utf8")) as Fixture[];
 const targets = parseTargets(process.argv.slice(2));
@@ -66,7 +68,7 @@ async function benchmark(label: string, url: string): Promise<BenchmarkResult> {
   const falsePositives: BenchmarkResult["falsePositives"] = [];
 
   for (const fixture of fixtures) {
-    const findings = await analyze(url, fixture.text);
+    const findings = await analyze(label, url, fixture.text);
     const values = findings.map((finding) => ({
       entity: finding.entity_type,
       value: fixture.text.slice(finding.start, finding.end),
@@ -129,16 +131,40 @@ function literalSpans(text: string, value: string): Array<{ start: number; end: 
   return spans;
 }
 
-async function analyze(url: string, text: string): Promise<AnalyzerFinding[]> {
-  const response = await fetch(`${url.replace(/\/+$/u, "")}/analyze`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text, language: "en", score_threshold: 0.5 }),
-  });
-  if (!response.ok) throw new Error(`${url}/analyze returned HTTP ${response.status}`);
-  const value: unknown = await response.json();
-  if (!Array.isArray(value)) throw new Error(`${url}/analyze did not return an array`);
-  return value as AnalyzerFinding[];
+async function analyze(label: string, url: string, text: string): Promise<AnalyzerFinding[]> {
+  const endpoint = `${url.replace(/\/+$/u, "")}/analyze`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ANALYZER_TIMEOUT_MS);
+  try {
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text, language: "en", score_threshold: 0.5 }),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      throw new Error(`${label} analyzer request to ${endpoint} failed: ${errorMessage(error)}`, { cause: error });
+    }
+    if (!response.ok) throw new Error(`${label} analyzer ${endpoint} returned HTTP ${response.status}`);
+    let value: unknown;
+    try {
+      value = await response.json();
+    } catch (error) {
+      throw new Error(`${label} analyzer ${endpoint} returned an unreadable response: ${errorMessage(error)}`, {
+        cause: error,
+      });
+    }
+    if (!Array.isArray(value)) throw new Error(`${label} analyzer ${endpoint} did not return an array`);
+    return value as AnalyzerFinding[];
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function parseTargets(args: string[]): Array<{ label: string; url: string }> {
