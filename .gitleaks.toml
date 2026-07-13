@@ -14,8 +14,18 @@ title = "ficta gitleaks config"
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
 description = "Synthetic, secret-shaped fixtures in tests."
 paths = [
   '''(^|.*/)test/.*''',                 # all test dirs (root test/ pre-migration, packages/ficta/test/ after)
+]
+
+[[allowlists]]
+description = "Synthetic commercial-code boundary value outside conventional test directories."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexes = ['''BLUE-ORCHID-42''']
+paths = [
+  '''(^|.*/)packages/ficta/bench/fixtures/pii-legal-identity\.json$''',
+  '''(^|.*/)packages/ficta/presidio/ficta_presidio/test_identity_recognizer\.py$''',
 ]
