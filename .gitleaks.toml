@@ -1,13 +1,8 @@
 # gitleaks config for ficta.
 #
-# ficta is a secret-redaction tool, so its own test suite legitimately contains secret-SHAPED
-# fixtures (JWTs, private keys, API-key-looking strings). These are synthetic by design.
-# Allowlisting these paths keeps CI meaningful — a real secret
-# committed anywhere OUTSIDE these paths still fails the scan.
-#
-# Trade-off, stated plainly: this suppresses detection inside test/, so a real secret accidentally
-# pasted into a test fixture would not be caught. Given the tests are inherently secret-shaped, that
-# is an accepted, scoped exception — not a blanket disable.
+# ficta is a secret-redaction tool, so some fixtures legitimately contain synthetic, secret-shaped
+# values (JWTs, private keys, API-key-looking strings). Allowlist only those explicit values and
+# locations so all other source and test content remains scanned.
 
 title = "ficta gitleaks config"
 
@@ -15,10 +10,36 @@ title = "ficta gitleaks config"
 useDefault = true
 
 [[allowlists]]
-description = "Synthetic, secret-shaped fixtures in tests."
+description = "Synthetic surrogate tokens used to test restoration and token-boundary handling."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexes = ['''FICTA_(?:PERSON_)?[0-9a-f]{32}''']
 paths = [
-  '''(^|.*/)test/.*''',                 # all test dirs (root test/ pre-migration, packages/ficta/test/ after)
+  '''(^|.*/)apps/gateway/test/restore-validation\.test\.ts$''',
+  '''(^|.*/)packages/ficta/test/scope\.test\.ts$''',
 ]
+
+[[allowlists]]
+description = "Fixed synthetic surrogate key used by server and diagnostic tests."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexes = ['''0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef''']
+paths = [
+  '''(^|.*/)packages/ficta/test/doctor\.test\.ts$''',
+  '''(^|.*/)packages/ficta/test/server\.test\.ts$''',
+]
+
+[[allowlists]]
+description = "Synthetic detector inputs in the dedicated secret-shape test."
+targetRules = ["generic-api-key", "jwt", "private-key"]
+condition = "AND"
+regexes = [
+  '''aB3dE5fG7hJ9kLmN2pQr''',
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIiwiaWF0IjoxNTE2MjM5MDIyfQ\.KMUFsIDTnFmyG3nMiGM6H9FNFUROf3wh7SmqJp-QV30''',
+  '''-----BEGIN PRIVATE KEY-----''',
+  '''MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCu''',
+]
+paths = ['''(^|.*/)packages/ficta/test/secret-shapes\.test\.ts$''']
 
 [[allowlists]]
 description = "Synthetic commercial-code boundary value outside conventional test directories."
