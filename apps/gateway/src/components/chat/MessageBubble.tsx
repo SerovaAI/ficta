@@ -1,8 +1,13 @@
 import type { UIMessage } from "@tanstack/ai-react";
-import type { RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
+import {
+  protectionAnnotationsFromPart,
+  protectionTextSegments,
+  type RestoreHighlightDisplayMode,
+} from "@/lib/restore-highlights";
 import { cn } from "@/lib/utils";
 import { MessageActions } from "./MessageActions";
 import { MessageParts } from "./MessageParts";
+import { ProtectionMark } from "./ProtectionMark";
 import { StreamingIndicator } from "./StreamingIndicator";
 
 // The display transcript already carries marker-free visible text (see use-restore-highlight-display),
@@ -35,7 +40,7 @@ export function MessageBubble({
     return (
       <div className="flex justify-end">
         <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-secondary px-4 py-2.5 text-secondary-foreground">
-          {text}
+          <UserMessageText message={message} restoreDisplayMode={restoreDisplayMode} />
         </div>
       </div>
     );
@@ -55,4 +60,41 @@ export function MessageBubble({
       ) : null}
     </div>
   );
+}
+
+function UserMessageText({
+  message,
+  restoreDisplayMode,
+}: {
+  message: UIMessage;
+  restoreDisplayMode: RestoreHighlightDisplayMode;
+}) {
+  return message.parts.map((part, partIndex) => {
+    if (part.type !== "text") return null;
+    const segments = protectionTextSegments(
+      part.content,
+      protectionAnnotationsFromPart(part, "redacted"),
+      restoreDisplayMode,
+    );
+    return segments.map((segment, segmentIndex) =>
+      segment.annotation ? (
+        <ProtectionMark
+          // biome-ignore lint/suspicious/noArrayIndexKey: annotations are immutable within a persisted message part
+          key={`${partIndex}:${segmentIndex}`}
+          direction={segment.annotation.direction}
+          displayMode={restoreDisplayMode}
+          origin={segment.annotation.origin}
+        >
+          {segment.text}
+        </ProtectionMark>
+      ) : (
+        <span
+          // biome-ignore lint/suspicious/noArrayIndexKey: annotations are immutable within a persisted message part
+          key={`${partIndex}:${segmentIndex}`}
+        >
+          {segment.text}
+        </span>
+      ),
+    );
+  });
 }

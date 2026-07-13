@@ -3,13 +3,33 @@ import {
   FICTA_RESTORE_HIGHLIGHT_METADATA,
   FICTA_RESTORE_HIGHLIGHT_ORIGIN,
   FICTA_RESTORE_HIGHLIGHT_START,
+  type ProtectionPreviewFinding,
   type ProtectionPreviewOrigin,
 } from "@serovaai/ficta-protocol";
 
-export const RESTORE_HIGHLIGHT_TAG = "ficta-restore";
+export const FICTA_PROTECTION_METADATA_KEY = "fictaProtection";
 
-export function restoreHighlightTag(origin: ProtectionPreviewOrigin): string {
-  return `${RESTORE_HIGHLIGHT_TAG}-${origin}`;
+export type ProtectionHighlightDirection = "redacted" | "restored";
+
+/** Durable, values-free display evidence attached to a TanStack text part. Coordinates are UTF-16. */
+export interface ProtectionHighlightAnnotation {
+  start: number;
+  end: number;
+  surrogate: string;
+  origin: ProtectionPreviewOrigin;
+  direction: ProtectionHighlightDirection;
+}
+
+export interface ProtectionTextSegment {
+  text: string;
+  annotation?: ProtectionHighlightAnnotation;
+}
+
+export function protectionHighlightTag(
+  direction: ProtectionHighlightDirection,
+  origin: ProtectionPreviewOrigin,
+): string {
+  return `ficta-protection-${direction}-${origin}`;
 }
 
 export type RestoreHighlightDisplayMode = "values" | "surrogates";
@@ -32,10 +52,137 @@ export interface ParsedRestoreText {
   restorations: RestoreHighlight[];
 }
 
-/** A message part carrying parsed restore-highlight metadata for display. Rides on the derived display
- * transcript only — never on `messages`, storage, or replay. */
-export interface RestoreHighlightPart {
-  restorations?: RestoreHighlight[];
+/** Convert authoritative outbound preview findings into the minimal metadata persisted with a user turn. */
+export function previewFindingsToAnnotations(
+  text: string,
+  findings: readonly ProtectionPreviewFinding[],
+): ProtectionHighlightAnnotation[] {
+  return normalizeProtectionAnnotations(
+    text,
+    findings.map(({ start, end, surrogate, origin }) => ({
+      start,
+      end,
+      surrogate,
+      origin,
+      direction: "redacted",
+    })),
+  );
+}
+
+/** Convert ephemeral restore values into values-free coordinates for display/persistence. */
+export function restorationsToAnnotations(
+  visibleText: string,
+  restorations: readonly RestoreHighlight[],
+): ProtectionHighlightAnnotation[] {
+  return normalizeProtectionAnnotations(
+    visibleText,
+    locateRestorationSpans(visibleText, restorations).map(({ start, end, restoration }) => ({
+      start,
+      end,
+      surrogate: restoration.surrogate,
+      origin: restoration.origin,
+      direction: "restored",
+    })),
+  );
+}
+
+/** Read and validate the namespaced display metadata on a text part. Invalid evidence is ignored. */
+export function protectionAnnotationsFromPart(
+  part: unknown,
+  expectedDirection?: ProtectionHighlightDirection,
+): ProtectionHighlightAnnotation[] {
+  const record = asRecord(part);
+  if (record?.type !== "text" || typeof record.content !== "string") return [];
+  const metadata = asRecord(record.metadata);
+  const annotations = normalizeProtectionAnnotations(record.content, metadata?.[FICTA_PROTECTION_METADATA_KEY]);
+  return expectedDirection
+    ? annotations.filter((annotation) => annotation.direction === expectedDirection)
+    : annotations;
+}
+
+/** Attach validated annotations while preserving unrelated TanStack/provider metadata. */
+export function withProtectionAnnotations<T>(part: T, annotations: readonly ProtectionHighlightAnnotation[]): T {
+  const record = asRecord(part);
+  if (record?.type !== "text" || typeof record.content !== "string") return part;
+  const normalized = normalizeProtectionAnnotations(record.content, annotations);
+  const existingMetadata = asRecord(record.metadata) ?? {};
+  if (normalized.length === 0 && !(FICTA_PROTECTION_METADATA_KEY in existingMetadata)) return part;
+
+  const metadata = { ...existingMetadata };
+  if (normalized.length > 0) metadata[FICTA_PROTECTION_METADATA_KEY] = normalized;
+  else delete metadata[FICTA_PROTECTION_METADATA_KEY];
+
+  const next = { ...record };
+  if (Object.keys(metadata).length > 0) next.metadata = metadata;
+  else delete next.metadata;
+  return next as T;
+}
+
+/** Stable visible segments for plain-text user bubbles and the send-review preview. */
+export function protectionTextSegments(
+  text: string,
+  annotations: readonly ProtectionHighlightAnnotation[],
+  displayMode: RestoreHighlightDisplayMode = "values",
+): ProtectionTextSegment[] {
+  const normalized = normalizeProtectionAnnotations(text, annotations);
+  if (normalized.length === 0) return [{ text }];
+  const segments: ProtectionTextSegment[] = [];
+  let cursor = 0;
+  for (const annotation of normalized) {
+    if (annotation.start > cursor) segments.push({ text: text.slice(cursor, annotation.start) });
+    segments.push({
+      text: displayMode === "surrogates" ? annotation.surrogate : text.slice(annotation.start, annotation.end),
+      annotation,
+    });
+    cursor = annotation.end;
+  }
+  if (cursor < text.length) segments.push({ text: text.slice(cursor) });
+  return segments;
+}
+
+/**
+ * Validate untrusted/hydrated annotations against the current text. Sorting and overlap rejection mirror
+ * the preview renderer: for equal starts, the longest authoritative span wins.
+ */
+export function normalizeProtectionAnnotations(text: string, input: unknown): ProtectionHighlightAnnotation[] {
+  if (!Array.isArray(input)) return [];
+  const candidates: ProtectionHighlightAnnotation[] = [];
+  for (const entry of input) {
+    const value = asRecord(entry);
+    if (!value) continue;
+    const { start, end, surrogate, origin, direction } = value;
+    const normalizedOrigin = typeof origin === "string" && isProtectionOrigin(origin) ? origin : undefined;
+    if (
+      !Number.isInteger(start) ||
+      !Number.isInteger(end) ||
+      (start as number) < 0 ||
+      (end as number) <= (start as number) ||
+      (end as number) > text.length ||
+      typeof surrogate !== "string" ||
+      !isSurrogateToken(surrogate) ||
+      !normalizedOrigin ||
+      (direction !== "redacted" && direction !== "restored")
+    ) {
+      continue;
+    }
+    candidates.push({
+      start: start as number,
+      end: end as number,
+      surrogate,
+      origin: normalizedOrigin,
+      direction,
+    });
+  }
+
+  candidates.sort((a, b) => a.start - b.start || b.end - a.end);
+  const normalized: ProtectionHighlightAnnotation[] = [];
+  let cursor = 0;
+  for (const annotation of candidates) {
+    if (annotation.start < cursor) continue;
+    normalized.push(annotation);
+    cursor = annotation.end;
+  }
+  return normalized;
 }
 
 export function hasRestoreHighlightMarkers(content: string): boolean {
@@ -146,15 +293,25 @@ export function renderVisibleHighlights(
   restorations: readonly RestoreHighlight[],
   displayMode: RestoreHighlightDisplayMode = "values",
 ): { html: string; highlighted: boolean } {
-  const spans = locateRestorationSpans(visibleText, restorations);
+  return renderProtectionHighlights(visibleText, restorationsToAnnotations(visibleText, restorations), displayMode);
+}
+
+/** Render validated durable annotations as safe custom tags for Streamdown. */
+export function renderProtectionHighlights(
+  visibleText: string,
+  annotations: readonly ProtectionHighlightAnnotation[],
+  displayMode: RestoreHighlightDisplayMode = "values",
+): { html: string; highlighted: boolean } {
+  const spans = normalizeProtectionAnnotations(visibleText, annotations);
   if (spans.length === 0) return { html: visibleText, highlighted: false };
 
   let out = "";
   let cursor = 0;
-  for (const { start, end, restoration } of spans) {
+  for (const annotation of spans) {
+    const { start, end, surrogate, origin, direction } = annotation;
     out += visibleText.slice(cursor, start);
-    const visible = displayMode === "surrogates" && restoration.surrogate ? restoration.surrogate : restoration.value;
-    const tag = restoreHighlightTag(restoration.origin);
+    const visible = displayMode === "surrogates" ? surrogate : visibleText.slice(start, end);
+    const tag = protectionHighlightTag(direction, origin);
     out += `<${tag}>${escapeHtml(visible)}</${tag}>`;
     cursor = end;
   }
@@ -168,6 +325,46 @@ export function stripRestoreHighlightMarkers<T>(value: T): T {
   // so the common case skips the deep clone + per-string rewrite this used to do on every call.
   if (!containsRestoreHighlightMarkersDeep(value)) return value;
   return cloneWithoutRestoreHighlightMarkers(value);
+}
+
+/**
+ * Browser messages carry Ficta's durable UI metadata over the TanStack wire. This is the mandatory
+ * model boundary: remove that namespace (and any in-band restore markers) before `chat()` conversion.
+ */
+export function stripProtectionDisplayMetadata<T>(value: T): T {
+  const markerFree = stripRestoreHighlightMarkers(value);
+  if (!containsProtectionMetadataDeep(markerFree)) return markerFree;
+  return cloneWithoutProtectionMetadata(markerFree);
+}
+
+function containsProtectionMetadataDeep(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(containsProtectionMetadataDeep);
+  const record = asRecord(value);
+  if (!record) return false;
+  const metadata = asRecord(record.metadata);
+  if (metadata && FICTA_PROTECTION_METADATA_KEY in metadata) return true;
+  return Object.values(record).some(containsProtectionMetadataDeep);
+}
+
+function cloneWithoutProtectionMetadata<T>(value: T): T {
+  if (Array.isArray(value)) return value.map((entry) => cloneWithoutProtectionMetadata(entry)) as T;
+  const record = asRecord(value);
+  if (!record) return value;
+
+  const out: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(record)) {
+    if (key === "metadata") {
+      const metadata = asRecord(entry);
+      if (metadata && FICTA_PROTECTION_METADATA_KEY in metadata) {
+        const cleanMetadata = { ...metadata };
+        delete cleanMetadata[FICTA_PROTECTION_METADATA_KEY];
+        if (Object.keys(cleanMetadata).length > 0) out.metadata = cloneWithoutProtectionMetadata(cleanMetadata);
+        continue;
+      }
+    }
+    out[key] = cloneWithoutProtectionMetadata(entry);
+  }
+  return out as T;
 }
 
 function containsRestoreHighlightMarkersDeep(value: unknown): boolean {
@@ -249,4 +446,8 @@ function stripTrailingMarkerPrefix(content: string): string {
 
 function escapeHtml(content: string): string {
   return content.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : undefined;
 }

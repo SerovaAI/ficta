@@ -12,9 +12,9 @@ describe("restore privacy toggle labels", () => {
 
   it("describes the next action from surrogate mode", () => {
     expect(restorePrivacyToggleLabels("surrogates")).toEqual({
-      ariaLabel: "Show restored values",
-      tooltip: "Show restored values",
-      menuLabel: "Show restored values",
+      ariaLabel: "Show original values",
+      tooltip: "Show original values",
+      menuLabel: "Show original values",
     });
   });
 });

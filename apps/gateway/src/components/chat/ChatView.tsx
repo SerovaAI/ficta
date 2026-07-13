@@ -40,7 +40,12 @@ import { withOneShotProtectionTicket } from "@/lib/protection-connection";
 import { type GatewayProtectionPreview, previewProtection } from "@/lib/protection-preview";
 import type { ProtectionStatus } from "@/lib/protection-status";
 import { fetchProxyConfig } from "@/lib/proxy-config";
-import type { RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
+import {
+  type ProtectionHighlightAnnotation,
+  previewFindingsToAnnotations,
+  type RestoreHighlightDisplayMode,
+  withProtectionAnnotations,
+} from "@/lib/restore-highlights";
 import { reportRestoreValidation } from "@/lib/restore-validation";
 import { uiToStored } from "@/lib/storage/messages";
 import { suggestProtectedRegistryEntries } from "@/lib/storage/protected-registry";
@@ -155,7 +160,7 @@ export function ChatView({
     [],
   );
 
-  const { messages, sendMessage, isLoading, error, stop, reload, clear } = useChat({
+  const { messages, sendMessage, isLoading, error, stop, reload, clear, setMessages } = useChat({
     connection: chatConnection,
     forwardedProps,
     id: tid,
@@ -172,7 +177,12 @@ export function ChatView({
   messagesRef.current = messages;
   const urlSynced = useRef(false);
   const startingThread = useRef(false);
-  const { displayMessages, restoreHighlightsAvailable } = useRestoreHighlightDisplay(tid, messages);
+  const {
+    displayMessages,
+    restoreHighlightsAvailable,
+    prepareMessagesForPersistence,
+    clearRestoreHighlightsAtPosition,
+  } = useRestoreHighlightDisplay(tid, messages);
 
   const cancelProtectionPreview = () => {
     protectionPreviewRequest.current.controller?.abort();
@@ -264,9 +274,12 @@ export function ChatView({
 
   const persistSnapshot = async (snapshot: UIMessage[]) => {
     if (snapshot.length === 0) return;
-    queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) => upsertThreadSummary(current, tid, snapshot));
+    const persistable = prepareMessagesForPersistence(snapshot);
+    queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) =>
+      upsertThreadSummary(current, tid, persistable),
+    );
     try {
-      await saveThread({ data: { threadId: tid, messages: snapshot.map(uiToStored) } });
+      await saveThread({ data: { threadId: tid, messages: persistable.map(uiToStored) } });
       void invalidateThreads(queryClient);
       setSaveWarning(false);
     } catch (err) {
@@ -300,16 +313,25 @@ export function ChatView({
   const protectionReviewRequired = instance.protectionReviewRequired === true;
   const reviewBeforeSendEnabled = protectionReviewRequired || reviewBeforeSend;
 
-  const dispatchContent = (content: string, protectionTicket?: string) => {
+  const dispatchContent = (
+    content: string,
+    protectionTicket?: string,
+    annotations: readonly ProtectionHighlightAnnotation[] = [],
+  ) => {
     if (!content.trim() || isLoading || isExtracting || startingThread.current) return;
-    const startedMessage = messagesRef.current.length === 0 ? userMessage(content) : undefined;
+    const outgoingMessage = userMessage(content, annotations);
+    const startedMessage = messagesRef.current.length === 0 ? outgoingMessage : undefined;
     setInput("");
     setAttachments([]);
     setUploadWarning(undefined);
 
     startingThread.current = true;
     pendingProtectionTicket.current = protectionTicket;
-    const sendPromise = sendMessage(content);
+    const textPart = outgoingMessage.parts[0];
+    const sendPromise = sendMessage({
+      content: textPart?.type === "text" ? [textPart] : content,
+      id: outgoingMessage.id,
+    });
     // `sendMessage()` awaits TanStack AI's internal onResponse hook before it starts `connection.send()`.
     // A microtask can still run inside that gap, so schedule thread/sidebar/URL work as a macrotask to avoid
     // perturbing the first stream startup path.
@@ -442,13 +464,20 @@ export function ChatView({
     if (!protectionReview || protectionReviewLoading) return;
     const content = protectionReview.text;
     const ticket = protectionReview.preview.ticket;
+    const annotations = previewFindingsToAnnotations(content, protectionReview.preview.findings);
+    const action = protectionReview.action;
     setProtectionReview(undefined);
     setProtectionReviewError("");
     setProtectionReviewNotice("");
-    if (protectionReview.action === "send") {
-      dispatchContent(content, ticket);
+    if (action === "send") {
+      dispatchContent(content, ticket, annotations);
       return;
     }
+    const updatedMessages = replaceLatestUserProtectionAnnotations(messagesRef.current, annotations);
+    messagesRef.current = updatedMessages;
+    setMessages(updatedMessages);
+    const assistantPosition = latestAssistantPosition(updatedMessages);
+    if (assistantPosition !== -1) clearRestoreHighlightsAtPosition(assistantPosition);
     pendingProtectionTicket.current = ticket;
     const reloadPromise = reload();
     void reloadPromise.finally(() => {
@@ -604,6 +633,8 @@ export function ChatView({
       void beginProtectionReview(latestUserText, "reload");
       return;
     }
+    const assistantPosition = latestAssistantPosition(messagesRef.current);
+    if (assistantPosition !== -1) clearRestoreHighlightsAtPosition(assistantPosition);
     void reload();
   };
 
@@ -799,13 +830,42 @@ function sendPosture(status: ProtectionStatus | undefined): SendPosture {
   return { kind: "ok" };
 }
 
-function userMessage(content: string): UIMessage {
+function userMessage(content: string, annotations: readonly ProtectionHighlightAnnotation[] = []): UIMessage {
   return {
     id: crypto.randomUUID(),
     role: "user",
-    parts: [{ type: "text", content }],
+    parts: [withProtectionAnnotations({ type: "text" as const, content }, annotations)],
     createdAt: new Date(),
   };
+}
+
+function replaceLatestUserProtectionAnnotations(
+  messages: UIMessage[],
+  annotations: readonly ProtectionHighlightAnnotation[],
+): UIMessage[] {
+  const position = latestMessagePosition(messages, "user");
+  if (position === -1) return messages;
+  return messages.map((message, messagePosition) => {
+    if (messagePosition !== position) return message;
+    let applied = false;
+    const parts = message.parts.map((part) => {
+      if (applied || part.type !== "text") return part;
+      applied = true;
+      return withProtectionAnnotations(part, annotations);
+    });
+    return applied ? { ...message, parts } : message;
+  });
+}
+
+function latestAssistantPosition(messages: UIMessage[]): number {
+  return latestMessagePosition(messages, "assistant");
+}
+
+function latestMessagePosition(messages: UIMessage[], role: UIMessage["role"]): number {
+  for (let position = messages.length - 1; position >= 0; position -= 1) {
+    if (messages[position]?.role === role) return position;
+  }
+  return -1;
 }
 
 function snapshotWithFinishedMessage(messages: UIMessage[], finishedMessage: UIMessage | undefined): UIMessage[] {

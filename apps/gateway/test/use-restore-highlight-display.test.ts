@@ -6,7 +6,7 @@ import {
 } from "@serovaai/ficta-protocol";
 import type { UIMessage } from "@tanstack/ai-react";
 import { describe, expect, it } from "vitest";
-import type { RestoreHighlight } from "@/lib/restore-highlights";
+import { protectionAnnotationsFromPart, withProtectionAnnotations } from "@/lib/restore-highlights";
 import { createRestoreHighlightStore, deriveRestoreHighlightDisplay } from "@/lib/use-restore-highlight-display";
 
 const SURROGATE = "FICTA_EMAIL_1234567890abcdef1234567890abcdef";
@@ -20,11 +20,12 @@ function user(content: string, id = "user-1"): UIMessage {
   return { id, role: "user", parts: [{ type: "text", content }] } as UIMessage;
 }
 
-function partOf(
-  message: UIMessage | undefined,
-  partIndex: number,
-): { content?: string; restorations?: RestoreHighlight[] } {
-  return (message?.parts[partIndex] ?? {}) as { content?: string; restorations?: RestoreHighlight[] };
+function partOf(message: UIMessage | undefined, partIndex: number): { content?: string } {
+  return (message?.parts[partIndex] ?? {}) as { content?: string };
+}
+
+function annotationsOf(message: UIMessage | undefined, partIndex = 0) {
+  return protectionAnnotationsFromPart(message?.parts[partIndex]);
 }
 
 describe("deriveRestoreHighlightDisplay", () => {
@@ -36,8 +37,8 @@ describe("deriveRestoreHighlightDisplay", () => {
     );
 
     expect(partOf(displayMessages[1], 0).content).toBe("Email: jane.doe@example.com");
-    expect(partOf(displayMessages[1], 0).restorations).toEqual([
-      { value: "jane.doe@example.com", surrogate: SURROGATE, origin: "detected" },
+    expect(annotationsOf(displayMessages[1])).toEqual([
+      { start: 7, end: 27, surrogate: SURROGATE, origin: "detected", direction: "restored" },
     ]);
     expect(restoreHighlightsAvailable).toBe(true);
     expect(store.get(1)?.get(0)).toEqual([{ value: "jane.doe@example.com", surrogate: SURROGATE, origin: "detected" }]);
@@ -52,8 +53,8 @@ describe("deriveRestoreHighlightDisplay", () => {
     const finished = [user("hi"), assistant("Email: jane.doe@example.com\n")];
     const { displayMessages, restoreHighlightsAvailable } = deriveRestoreHighlightDisplay(finished, store);
 
-    expect(partOf(displayMessages[1], 0).restorations).toEqual([
-      { value: "jane.doe@example.com", surrogate: SURROGATE, origin: "detected" },
+    expect(annotationsOf(displayMessages[1])).toEqual([
+      { start: 7, end: 27, surrogate: SURROGATE, origin: "detected", direction: "restored" },
     ]);
     expect(partOf(displayMessages[1], 0).content).toBe("Email: jane.doe@example.com\n");
     expect(restoreHighlightsAvailable).toBe(true);
@@ -66,8 +67,8 @@ describe("deriveRestoreHighlightDisplay", () => {
     const finished = [user("hi"), assistant("Email: jane.doe@example.com", "final-id")];
     const { displayMessages } = deriveRestoreHighlightDisplay(finished, store);
 
-    expect(partOf(displayMessages[1], 0).restorations).toEqual([
-      { value: "jane.doe@example.com", surrogate: SURROGATE, origin: "detected" },
+    expect(annotationsOf(displayMessages[1])).toEqual([
+      { start: 7, end: 27, surrogate: SURROGATE, origin: "detected", direction: "restored" },
     ]);
   });
 
@@ -78,7 +79,7 @@ describe("deriveRestoreHighlightDisplay", () => {
     const regenerated = [user("hi"), assistant("No email on file.")];
     const { displayMessages, restoreHighlightsAvailable } = deriveRestoreHighlightDisplay(regenerated, store);
 
-    expect(partOf(displayMessages[1], 0).restorations).toBeUndefined();
+    expect(annotationsOf(displayMessages[1])).toEqual([]);
     expect(restoreHighlightsAvailable).toBe(false);
   });
 
@@ -89,6 +90,25 @@ describe("deriveRestoreHighlightDisplay", () => {
 
     expect(displayMessages).toBe(messages); // no assistant highlights → same reference back
     expect(restoreHighlightsAvailable).toBe(false);
+  });
+
+  it("hydrates persisted user and assistant annotations without a value-bearing cache", () => {
+    const userMessage = user("Email jane.doe@example.com");
+    userMessage.parts[0] = withProtectionAnnotations(userMessage.parts[0], [
+      { start: 6, end: 26, surrogate: SURROGATE, origin: "detected", direction: "redacted" },
+    ]);
+    const assistantMessage = assistant("Confirmed jane.doe@example.com");
+    assistantMessage.parts[0] = withProtectionAnnotations(assistantMessage.parts[0], [
+      { start: 10, end: 30, surrogate: SURROGATE, origin: "detected", direction: "restored" },
+    ]);
+
+    const { displayMessages, restoreHighlightsAvailable } = deriveRestoreHighlightDisplay(
+      [userMessage, assistantMessage],
+      createRestoreHighlightStore(),
+    );
+
+    expect(displayMessages).toEqual([userMessage, assistantMessage]);
+    expect(restoreHighlightsAvailable).toBe(true);
   });
 
   it("prunes cache entries for turns that are no longer present", () => {

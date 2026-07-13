@@ -1,16 +1,19 @@
 import type { ProtectionPreviewOrigin } from "@serovaai/ficta-protocol";
 import { memo, type ReactNode, useMemo } from "react";
 import { Streamdown } from "streamdown";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  type RestoreHighlight,
+  type ProtectionHighlightAnnotation,
+  protectionHighlightTag,
   type RestoreHighlightDisplayMode,
-  renderVisibleHighlights,
-  restoreHighlightTag,
+  renderProtectionHighlights,
 } from "@/lib/restore-highlights";
+import { ProtectionMark, protectionHighlightPresentation } from "./ProtectionMark";
 
 const RESTORE_ORIGINS = ["registry", "detected", "user"] as const;
-const RESTORE_TAGS = RESTORE_ORIGINS.map(restoreHighlightTag);
+const RESTORE_DIRECTIONS = ["redacted", "restored"] as const;
+const RESTORE_TAGS = RESTORE_DIRECTIONS.flatMap((direction) =>
+  RESTORE_ORIGINS.map((origin) => protectionHighlightTag(direction, origin)),
+);
 const RESTORE_ALLOWED_TAGS = Object.fromEntries(RESTORE_TAGS.map((tag) => [tag, []]));
 const RESTORE_LITERAL_TAGS = RESTORE_TAGS;
 
@@ -21,16 +24,16 @@ const RESTORE_LITERAL_TAGS = RESTORE_TAGS;
  */
 const Markdown = memo(function Markdown({
   content,
-  restorations,
+  annotations,
   restoreDisplayMode = "values",
 }: {
   content: string;
-  restorations?: RestoreHighlight[];
+  annotations?: ProtectionHighlightAnnotation[];
   restoreDisplayMode?: RestoreHighlightDisplayMode;
 }) {
   const { html, highlighted } = useMemo(
-    () => renderVisibleHighlights(content, restorations ?? [], restoreDisplayMode),
-    [content, restorations, restoreDisplayMode],
+    () => renderProtectionHighlights(content, annotations ?? [], restoreDisplayMode),
+    [annotations, content, restoreDisplayMode],
   );
   const restoreComponents = useMemo(() => restoreHighlightComponents(restoreDisplayMode), [restoreDisplayMode]);
   return (
@@ -49,54 +52,16 @@ export default Markdown;
 
 function restoreHighlightComponents(displayMode: RestoreHighlightDisplayMode) {
   return Object.fromEntries(
-    RESTORE_ORIGINS.map((origin) => [
-      restoreHighlightTag(origin),
-      ({ children }: { children?: ReactNode }) => (
-        <RestoreMark displayMode={displayMode} origin={origin}>
-          {children}
-        </RestoreMark>
-      ),
-    ]),
-  );
-}
-
-function RestoreMark({
-  children,
-  displayMode,
-  origin,
-}: {
-  children?: ReactNode;
-  displayMode: RestoreHighlightDisplayMode;
-  origin: ProtectionPreviewOrigin;
-}) {
-  if (displayMode === "surrogates") {
-    return (
-      <mark className="rounded-[3px] bg-muted px-1 font-mono text-[0.86em] text-foreground ring-1 ring-border dark:bg-muted/70">
-        {children}
-      </mark>
-    );
-  }
-
-  const { tooltipLabel, borderClass } = restoreHighlightPresentation(origin);
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <mark
-          className={`cursor-help rounded-[3px] border-b-2 bg-emerald-100 px-0.5 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-emerald-950/60 ${borderClass}`}
-          // The tooltip annotates arbitrary inline markdown, where an interactive element could create
-          // invalid nesting. A focusable mark keeps the explanation keyboard-accessible without doing so.
-          // biome-ignore lint/a11y/noNoninteractiveTabindex: focus is the keyboard trigger for this tooltip
-          tabIndex={0}
-        >
-          {children}
-        </mark>
-      </TooltipTrigger>
-      <TooltipContent className="max-w-64" sideOffset={6}>
-        <span className="block font-medium">{tooltipLabel}</span>
-        <span className="mt-0.5 block opacity-80">Replaced with a protected token before reaching the model.</span>
-      </TooltipContent>
-    </Tooltip>
+    RESTORE_DIRECTIONS.flatMap((direction) =>
+      RESTORE_ORIGINS.map((origin) => [
+        protectionHighlightTag(direction, origin),
+        ({ children }: { children?: ReactNode }) => (
+          <ProtectionMark displayMode={displayMode} direction={direction} origin={origin}>
+            {children}
+          </ProtectionMark>
+        ),
+      ]),
+    ),
   );
 }
 
@@ -105,18 +70,6 @@ export function restoreHighlightPresentation(origin: ProtectionPreviewOrigin): {
   tooltipLabel: string;
   borderClass: string;
 } {
-  const tooltipLabel =
-    origin === "user"
-      ? "Protected by you · restored locally"
-      : origin === "registry"
-        ? "Protected Registry · restored locally"
-        : "Detected PII · restored locally";
-  const borderClass =
-    origin === "user"
-      ? "border-foreground"
-      : origin === "detected"
-        ? "border-emerald-600 border-dashed"
-        : "border-emerald-600";
-
+  const { tooltipLabel, borderClass } = protectionHighlightPresentation(origin, "restored");
   return { tooltipLabel, borderClass };
 }

@@ -19,7 +19,7 @@ import {
 import { recordProtectionStatsTrend } from "../../lib/protection-stats.server";
 import { MissingKeyError, ProviderKeyDecryptionError, resolveProviderApiKey } from "../../lib/provider-keys.server";
 import { proxyBaseUrl } from "../../lib/proxy-base.server";
-import { stripRestoreHighlightMarkers } from "../../lib/restore-highlights";
+import { stripProtectionDisplayMetadata } from "../../lib/restore-highlights";
 import { getStorage } from "../../lib/storage/storage.server";
 import { isModelAllowed } from "../../lib/storage/types";
 
@@ -58,7 +58,7 @@ export const Route = createFileRoute("/api/chat")({
           reasoningEffort = resolveRequestedReasoningEffort(provider, model, body.forwardedProps?.reasoningEffort);
           requestedTraceEnabled = body.forwardedProps?.traceEnabled === true;
           protectionTicket = cleanProtectionTicket(body.forwardedProps?.protectionTicket);
-          messages = stripRestoreHighlightMarkers(body.messages);
+          messages = messagesForModel(body.messages);
           threadId = typeof body.threadId === "string" ? body.threadId.trim().slice(0, 128) || undefined : undefined;
           if (!PROVIDERS.includes(provider)) throw new Error(`unknown provider "${provider}"`);
           if (!model) throw new Error("no model selected");
@@ -218,6 +218,11 @@ export function latestUserText(messages: readonly unknown[] | undefined): string
     return text || undefined;
   }
   return undefined;
+}
+
+/** Remove Ficta's browser-only evidence before TanStack converts UI parts into provider messages. */
+export function messagesForModel<T>(messages: T): T {
+  return stripProtectionDisplayMetadata(messages);
 }
 
 export function resolveChatTraceEnabled({

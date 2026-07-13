@@ -9,9 +9,15 @@ import { describe, expect, it } from "vitest";
 import { restoreHighlightPresentation } from "@/components/chat/Markdown";
 import {
   hasVisibleRestorations,
+  normalizeProtectionAnnotations,
   parseRestoreHighlightText,
+  previewFindingsToAnnotations,
+  protectionAnnotationsFromPart,
+  protectionTextSegments,
   renderVisibleHighlights,
+  stripProtectionDisplayMetadata,
   stripRestoreHighlightMarkers,
+  withProtectionAnnotations,
 } from "@/lib/restore-highlights";
 
 function marked(surrogate: string, value: string, origin: ProtectionPreviewOrigin): string {
@@ -82,14 +88,16 @@ describe("renderVisibleHighlights", () => {
       { value: "Jane & <Doe>", surrogate: "FICTA_PERSON_1234567890abcdef1234567890abcdef", origin: "registry" },
     ]);
     expect(result.highlighted).toBe(true);
-    expect(result.html).toBe("The client is <ficta-restore-registry>Jane &amp; &lt;Doe&gt;</ficta-restore-registry>.");
+    expect(result.html).toBe(
+      "The client is <ficta-protection-restored-registry>Jane &amp; &lt;Doe&gt;</ficta-protection-restored-registry>.",
+    );
   });
 
   it("shows the surrogate token when the privacy display is toggled", () => {
     const surrogate = "FICTA_PERSON_1234567890abcdef1234567890abcdef";
     const restorations = [{ value: "Jane Doe", surrogate, origin: "detected" as const }];
     expect(renderVisibleHighlights("The client is Jane Doe.", restorations, "surrogates").html).toBe(
-      `The client is <ficta-restore-detected>${surrogate}</ficta-restore-detected>.`,
+      `The client is <ficta-protection-restored-detected>${surrogate}</ficta-protection-restored-detected>.`,
     );
   });
 
@@ -100,9 +108,9 @@ describe("renderVisibleHighlights", () => {
       { value: "user", surrogate: "FICTA_00000000000000000000000000000003", origin: "user" },
     ]);
     expect(result.html).toBe(
-      "<ficta-restore-registry>Registry</ficta-restore-registry>, " +
-        "<ficta-restore-detected>detected</ficta-restore-detected>, " +
-        "<ficta-restore-user>user</ficta-restore-user>",
+      "<ficta-protection-restored-registry>Registry</ficta-protection-restored-registry>, " +
+        "<ficta-protection-restored-detected>detected</ficta-protection-restored-detected>, " +
+        "<ficta-protection-restored-user>user</ficta-protection-restored-user>",
     );
   });
 
@@ -111,7 +119,8 @@ describe("renderVisibleHighlights", () => {
       { value: "X", surrogate: "FICTA_00000000000000000000000000000001", origin: "registry" },
     ]);
     expect(result.html).toBe(
-      "<ficta-restore-registry>X</ficta-restore-registry> then <ficta-restore-registry>X</ficta-restore-registry>",
+      "<ficta-protection-restored-registry>X</ficta-protection-restored-registry> then " +
+        "<ficta-protection-restored-registry>X</ficta-protection-restored-registry>",
     );
   });
 
@@ -120,7 +129,7 @@ describe("renderVisibleHighlights", () => {
       { value: "Jane", surrogate: "FICTA_00000000000000000000000000000001", origin: "detected" },
       { value: "Jane Doe", surrogate: "FICTA_00000000000000000000000000000002", origin: "registry" },
     ]);
-    expect(result.html).toBe("<ficta-restore-registry>Jane Doe</ficta-restore-registry>");
+    expect(result.html).toBe("<ficta-protection-restored-registry>Jane Doe</ficta-protection-restored-registry>");
   });
 
   it("is a no-op when the value is absent (drift / regenerated content)", () => {
@@ -133,6 +142,84 @@ describe("renderVisibleHighlights", () => {
     ]);
     expect(result.highlighted).toBe(false);
     expect(result.html).toBe("Nothing to see here");
+  });
+});
+
+describe("durable protection annotations", () => {
+  const surrogate = "FICTA_EMAIL_1234567890abcdef1234567890abcdef";
+
+  it("stores only coordinates, origin, direction, and surrogate from preview findings", () => {
+    const text = "Email jane.doe@example.com";
+    expect(
+      previewFindingsToAnnotations(text, [
+        {
+          start: 6,
+          end: 26,
+          surrogate,
+          origin: "detected",
+          name: "EMAIL",
+          source: "sidecar",
+          kind: "pii",
+          confidence: "high",
+        },
+      ]),
+    ).toEqual([{ start: 6, end: 26, surrogate, origin: "detected", direction: "redacted" }]);
+  });
+
+  it("rejects malformed, out-of-range, and overlapping hydrated evidence", () => {
+    const text = "Jane Doe";
+    expect(
+      normalizeProtectionAnnotations(text, [
+        { start: 0, end: 99, surrogate, origin: "detected", direction: "redacted" },
+        { start: 0, end: 8, surrogate, origin: "registry", direction: "redacted" },
+        { start: 2, end: 6, surrogate, origin: "detected", direction: "redacted" },
+        { start: 8, end: 8, surrogate, origin: "user", direction: "redacted" },
+      ]),
+    ).toEqual([{ start: 0, end: 8, surrogate, origin: "registry", direction: "redacted" }]);
+  });
+
+  it("round-trips annotations through namespaced text metadata and model-view segments", () => {
+    const text = "Email jane.doe@example.com";
+    const part = withProtectionAnnotations({ type: "text", content: text, metadata: { provider: "keep" } }, [
+      { start: 6, end: 26, surrogate, origin: "detected", direction: "redacted" },
+    ]);
+
+    const annotations = protectionAnnotationsFromPart(part);
+    expect(annotations).toHaveLength(1);
+    expect(protectionAnnotationsFromPart(part, "restored")).toEqual([]);
+    expect(
+      protectionTextSegments(text, annotations, "surrogates")
+        .map((segment) => segment.text)
+        .join(""),
+    ).toBe(`Email ${surrogate}`);
+    expect(part.metadata.provider).toBe("keep");
+  });
+
+  it("strips only Ficta display metadata and raw markers at the model boundary", () => {
+    const message = {
+      role: "user",
+      parts: [
+        {
+          type: "text",
+          content: `Email ${marked(surrogate, "jane.doe@example.com", "detected")}`,
+          metadata: {
+            provider: "keep",
+            fictaProtection: [{ start: 6, end: 26, surrogate, origin: "detected", direction: "redacted" }],
+          },
+        },
+      ],
+    };
+
+    expect(stripProtectionDisplayMetadata(message)).toEqual({
+      role: "user",
+      parts: [
+        {
+          type: "text",
+          content: "Email jane.doe@example.com",
+          metadata: { provider: "keep" },
+        },
+      ],
+    });
   });
 });
 

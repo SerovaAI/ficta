@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   latestUserText,
+  messagesForModel,
   requiresProtectionReviewTicket,
   resolveChatTraceEnabled,
   resolveRequestedReasoningEffort,
 } from "@/routes/api/chat";
+
+const SURROGATE = "FICTA_EMAIL_1234567890abcdef1234567890abcdef";
 
 describe("latestUserText", () => {
   it("prepares only the current user turn rather than serializing a large transcript", () => {
@@ -14,6 +17,37 @@ describe("latestUserText", () => {
       { role: "user", parts: [{ type: "text", content: "current protected turn" }] },
     ];
     expect(latestUserText(transcript)).toBe("current protected turn");
+  });
+});
+
+describe("messagesForModel", () => {
+  it("removes persisted Ficta annotations before provider conversion", () => {
+    const messages = [
+      {
+        role: "user",
+        parts: [
+          {
+            type: "text",
+            content: "Email jane.doe@example.com",
+            metadata: {
+              fictaProtection: [
+                {
+                  start: 6,
+                  end: 26,
+                  surrogate: SURROGATE,
+                  origin: "detected",
+                  direction: "redacted",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ];
+
+    expect(messagesForModel(messages)).toEqual([
+      { role: "user", parts: [{ type: "text", content: "Email jane.doe@example.com" }] },
+    ]);
   });
 });
 

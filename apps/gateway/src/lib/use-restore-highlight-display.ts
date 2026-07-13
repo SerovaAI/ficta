@@ -1,12 +1,14 @@
 import type { UIMessage } from "@tanstack/ai-react";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   hasRestoreHighlightMarkers,
   hasVisibleRestorations,
   parseRestoreHighlightText,
+  protectionAnnotationsFromPart,
   type RestoreHighlight,
-  type RestoreHighlightPart,
+  restorationsToAnnotations,
+  withProtectionAnnotations,
 } from "@/lib/restore-highlights";
 
 /**
@@ -18,9 +20,9 @@ import {
  * locating each value at render time — so highlights survive the stream→finish swap and in-SPA thread
  * navigation without ever letting delimiter markers into `messages`, storage, or replay.
  *
- * Persistence is deliberately session-scoped: the store lives in React Query (`["restore-highlights",
- * threadId]`) so it outlives ChatView remounts (thread switch) but not a hard reload — persisted
- * transcripts are marker-free by design, so a reloaded thread shows no highlights, which is intended.
+ * The value-bearing cache remains session-scoped. Before a snapshot is saved, it is converted into
+ * values-free coordinates under the text part's namespaced metadata, so reopened transcripts retain the
+ * display evidence without persisting a second copy of the protected value or any raw delimiter marker.
  */
 
 const HIGHLIGHT_QUERY_ROOT = "restore-highlights";
@@ -46,7 +48,12 @@ export function createRestoreHighlightStore(): RestoreHighlightStore {
 export function useRestoreHighlightDisplay(
   threadId: string,
   messages: UIMessage[],
-): { displayMessages: UIMessage[]; restoreHighlightsAvailable: boolean } {
+): {
+  displayMessages: UIMessage[];
+  restoreHighlightsAvailable: boolean;
+  prepareMessagesForPersistence: (snapshot: UIMessage[]) => UIMessage[];
+  clearRestoreHighlightsAtPosition: (position: number) => void;
+} {
   const queryClient = useQueryClient();
   const storeRef = useRef<RestoreHighlightStore | undefined>(undefined);
   // Seed once per mount from the persisted mirror so highlights come back after a thread-switch remount.
@@ -66,7 +73,21 @@ export function useRestoreHighlightDisplay(
     if (current) queryClient.setQueryData<SerializedStore>(restoreHighlightKey(threadId), serializeStore(current));
   }, [queryClient, threadId, messages]);
 
-  return { displayMessages, restoreHighlightsAvailable };
+  const prepareMessagesForPersistence = useCallback((snapshot: UIMessage[]) => {
+    const current = storeRef.current;
+    return current ? deriveRestoreHighlightDisplay(snapshot, current).displayMessages : snapshot;
+  }, []);
+
+  const clearRestoreHighlightsAtPosition = useCallback((position: number) => {
+    storeRef.current?.delete(position);
+  }, []);
+
+  return {
+    displayMessages,
+    restoreHighlightsAvailable,
+    prepareMessagesForPersistence,
+    clearRestoreHighlightsAtPosition,
+  };
 }
 
 /**
@@ -95,13 +116,17 @@ export function deriveRestoreHighlightDisplay(
         const parsed = parseRestoreHighlightText(field.value);
         setStore(store, position, partIndex, parsed.restorations);
         partsChanged = true;
-        return { ...part, [field.key]: parsed.visibleText, restorations: parsed.restorations };
+        return withProtectionAnnotations(
+          { ...part, [field.key]: parsed.visibleText },
+          restorationsToAnnotations(parsed.visibleText, parsed.restorations),
+        );
       }
 
+      if (protectionAnnotationsFromPart(part, "restored").length > 0) return part;
       const restorations = store.get(position)?.get(partIndex);
       if (restorations && restorations.length > 0 && hasVisibleRestorations(field.value, restorations)) {
         partsChanged = true;
-        return { ...part, restorations } as typeof part & RestoreHighlightPart;
+        return withProtectionAnnotations(part, restorationsToAnnotations(field.value, restorations));
       }
       return part;
     });
@@ -113,15 +138,10 @@ export function deriveRestoreHighlightDisplay(
 
   pruneStore(store, livePositions);
 
-  const restoreHighlightsAvailable = displayMessages.some(
-    (message) =>
-      message.role === "assistant" &&
-      message.parts.some((part) => {
-        const restorations = (part as RestoreHighlightPart).restorations;
-        const field = textField(part);
-        return !!restorations && !!field && hasVisibleRestorations(field.value, restorations);
-      }),
-  );
+  const restoreHighlightsAvailable = displayMessages.some((message) => {
+    const direction = message.role === "user" ? "redacted" : message.role === "assistant" ? "restored" : undefined;
+    return !!direction && message.parts.some((part) => protectionAnnotationsFromPart(part, direction).length > 0);
+  });
 
   return { displayMessages: changed ? displayMessages : messages, restoreHighlightsAvailable };
 }
