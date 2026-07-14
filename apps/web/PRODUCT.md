@@ -6,11 +6,11 @@ brand
 
 ## Users
 
-Security-conscious teams, regulated organizations, and technical evaluators deciding whether ficta Gateway's model-traffic redaction boundary fits their workflow. They arrive skeptical of broad AI-security claims and need to understand the mechanism quickly enough to decide whether to start a Gateway conversation.
+Security-conscious teams, regulated organizations, and technical evaluators deciding whether ficta Gateway's model-traffic boundary fits their workflow. They arrive skeptical of broad AI-security claims and need to see what users can review, what administrators can govern, and what the product can actually prove.
 
 ## Product Purpose
 
-apps/web is the public marketing site at ficta.sh. Its primary job is to position ficta Gateway as a self-hosted AI workspace for regulated teams, make the local redact-and-restore mechanism legible, and invite relevant teams to start a conversation. The open-source engine, CLI, docs, and source links remain visible as technical proof and evaluation paths, but they are not the main offer.
+apps/web is the public marketing site at ficta.sh. Its primary job is to position ficta Gateway as a self-hosted AI workspace where model egress is reviewable, protectable, and evidenced. The site should show the pre-send review, the chat-to-workspace policy loop, and the local redact-and-restore mechanism clearly enough for a relevant team to start a conversation. The open-source engine, CLI, docs, and source links remain technical proof, not a competing offer.
 
 ## Brand Personality
 
@@ -24,7 +24,8 @@ Precise, operationally honest, and calm. The site should feel technically credib
 
 ## Design Principles
 
-- Show the mechanism instead of asserting safety.
+- Show the real Gateway review workflow instead of asserting safety.
+- Make the user-to-admin protection loop legible: protect for a chat, suggest, approve, publish, verify.
 - Keep the strongest claims scoped to exact-match registered values and covered request surfaces.
 - Make limits visible enough to build trust, without turning the page into a disclaimer wall.
 - Keep the OSS install path and source visibility easy to find as proof of the Gateway boundary, without giving it equal product weight.

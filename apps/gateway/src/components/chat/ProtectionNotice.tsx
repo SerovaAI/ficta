@@ -1,5 +1,5 @@
 import { AlertTriangle } from "lucide-react";
-import type { ProtectionStatus } from "@/lib/protection-status";
+import { type ProtectionStatus, requiredRegistryBlock } from "@/lib/protection-status";
 import { cn } from "@/lib/utils";
 
 export function ProtectionNotice({ status }: { status?: ProtectionStatus }) {
@@ -57,6 +57,15 @@ function noticeFor(status: ProtectionStatus | undefined):
       tone: "danger",
       title: "Protection can't be confirmed",
       body: "ficta responded unexpectedly, so your messages can't be verified as protected. Restart the proxy and try again.",
+    };
+  }
+
+  const registryBlock = requiredRegistryBlock(status);
+  if (registryBlock) {
+    return {
+      tone: "danger",
+      title: "Chat is paused until the protected registry is ready",
+      body: `${registryBlock.message} Contact your admin if this continues.`,
     };
   }
 

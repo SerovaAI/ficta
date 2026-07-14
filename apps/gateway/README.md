@@ -75,15 +75,10 @@ before saving admin-managed keys:
 FICTA_GATEWAY_KEY_ENCRYPTION_SECRET="$(openssl rand -base64 32)"
 ```
 
-For a realistic sensitive-data demo, enable the proxy-side detectors too:
-
-```sh
-FICTA_SECRET_SHAPES_ENABLED=1
-FICTA_PII_ENABLED=1
-FICTA_PII_BACKEND=presidio
-FICTA_PII_FAIL_CLOSED=1
-FICTA_PII_PRESIDIO_URL=http://127.0.0.1:5002
-```
+For a realistic sensitive-data demo, apply the canonical
+[`packages/ficta/docs/poc-configuration.md`](../../packages/ficta/docs/poc-configuration.md) proxy
+policy. Keep that policy in `~/.ficta/config.toml`; the Gateway `.env` should contain only secrets
+and deployment wiring.
 
 Then start the source-checkout dev stack:
 
@@ -97,7 +92,7 @@ Open http://localhost:4747.
 `.env` files and starts the proxy plus the web app. It starts or reuses the local Docker
 document-converter sidecar by default so PDF/DOCX uploads work in dev; set
 `FICTA_DOC_CONVERTER_MANAGED=0` to opt out. When the effective env selects
-`FICTA_PII_BACKEND=presidio`, the dev wrapper can also start or reuse a local Docker
+`FICTA_PII_BACKENDS=presidio`, the dev wrapper can also start or reuse a local Docker
 `presidio-analyzer` sidecar and mount
 `../../packages/ficta/presidio/default_recognizers.za.yaml` plus
 `../../packages/ficta/presidio/nlp_engine.za.yaml`; it builds the Ficta-derived Presidio image so
@@ -120,11 +115,14 @@ Minimum production-like posture:
 - Define retention, deletion, backup, and access-review policy for chat history.
 - Run Presidio as an explicit sidecar under your process/container supervisor. Do not rely on
   source-checkout managed sidecar behavior in production.
-- Set `FICTA_PII_FAIL_CLOSED=1` so a detector outage blocks requests instead of silently forwarding
+- Set `[pii] fail_closed = true` so a detector outage blocks requests instead of silently forwarding
   unscreened text.
 - Load a firm-specific exact-match registry for client names, matter IDs, patient IDs, account numbers,
   project names, or other high-value identifiers. Lead demos with this strong layer, not only best-effort
   NER.
+- Set `[registry] require = true` so provider requests stay paused if that registry is empty or a
+  source fails. Gateway can still publish the managed registry through the live control endpoint
+  while paused.
 - Keep the runtime trace-capture grant off except during active debugging; captures can contain raw request/response bodies.
 - Decide which provider/deployment is approved for the data class. For medical workflows, redaction
   does not remove the need for the right HIPAA/BAA posture if ePHI can reach a vendor.
@@ -190,13 +188,11 @@ ANTHROPIC_API_KEY=...
 FICTA_GATEWAY_KEY_ENCRYPTION_SECRET=...
 
 FICTA_PROXY_URL=http://127.0.0.1:8787
-FICTA_SECRET_SHAPES_ENABLED=1
-FICTA_PII_ENABLED=1
-FICTA_PII_BACKEND=presidio
-FICTA_PII_FAIL_CLOSED=1
-FICTA_PII_PRESIDIO_URL=http://127.0.0.1:5002
-FICTA_LOG_LEVEL=info
 ```
+
+Keep the proxy's protection policy in `~/.ficta/config.toml` using the same
+[canonical POC policy](../../packages/ficta/docs/poc-configuration.md#proxy-policy); do not duplicate
+it into the Gateway environment.
 
 Run the Presidio sidecar explicitly, for example:
 
@@ -246,23 +242,12 @@ Web app env:
 | `FICTA_GATEWAY_DATA_DIR` | PGlite data directory when `DATABASE_URL` is unset | `.data/pglite` |
 | `FICTA_GATEWAY_MANAGED_REGISTRY_PATH` | Private managed-registry file shared with the proxy; use the same absolute path as `FICTA_REGISTRY_MANAGED_FILE_PATHS` | `.data/protected-registry.json` |
 | `FICTA_DOC_CONVERTER_URL` | Document-converter sidecar URL for PDF/DOCX extraction | `http://127.0.0.1:5003` |
-| `FICTA_DOC_CONVERTER_MANAGED` | Source-checkout `pnpm dev` lifecycle toggle for the converter sidecar | `1` |
-| `FICTA_DOC_CONVERTER_BACKEND` | Converter backend label/env passed to the managed sidecar: `markitdown` or `docling` | `markitdown` |
 
-Proxy-side env commonly used with the gateway:
-
-| Env var | Purpose | Default |
-| --- | --- | --- |
-| `FICTA_SECRET_SHAPES_ENABLED` | Enable best-effort detection of pasted API keys, JWTs, private keys, credential URLs, and secret-ish assignments | unconfigured proxy: `0`; `ficta setup`: prompted/default yes |
-| `FICTA_PII_ENABLED` | Enable best-effort PII detection for gateway traffic | unconfigured proxy: `0`; `ficta setup`: prompted/default yes |
-| `FICTA_PII_BACKEND` | Legacy single PII backend selector: `regex` or `presidio` | `regex` |
-| `FICTA_PII_BACKENDS` | Select one or more PII backends, e.g. `presidio,openmed` | unset → `FICTA_PII_BACKEND` |
-| `FICTA_PII_FAIL_CLOSED` | PII detector outage policy: block instead of skip detection | `0` |
-| `FICTA_PII_PRESIDIO_URL` | Presidio analyzer URL when using the `presidio` backend | local sidecar URL |
-| `FICTA_PII_OPENMED_URL` | OpenMed service URL when using the `openmed` backend | local service URL |
-| `FICTA_RESTORE_INTO_TOOLS` | Tool-call restore policy: `detected` restores locally-read detector values while withholding registry secrets; `all` or `none` force either extreme | `detected` |
-| `FICTA_ALLOW_CUSTOM_UPSTREAM` | Permit forwarding provider auth headers to trusted non-default upstreams | `0` |
-| `FICTA_LOG_LEVEL` | Structured proxy logging level | `info` standalone |
+Proxy policy and backend tuning belong in the proxy TOML file. See the
+[minimal POC contract](../../packages/ficta/docs/poc-configuration.md) first and the fully annotated
+[`config.toml.example`](../../packages/ficta/config.toml.example) only when an advanced override is
+actually needed. Source-checkout-only sidecar lifecycle flags remain documented with the development
+workflow rather than the deployment environment.
 
 ## Verification
 
@@ -273,7 +258,7 @@ Before any sensitive workflow:
    in the intended fail-open/fail-closed posture.
 3. Send fake registered identifiers and fake PII through a live provider key and verify the model does
    not receive the registered literals.
-4. Stop the Presidio sidecar and confirm `FICTA_PII_FAIL_CLOSED=1` blocks sends rather than forwarding.
+4. Stop the Presidio sidecar and confirm `[pii] fail_closed = true` blocks sends rather than forwarding.
 
 Useful commands:
 

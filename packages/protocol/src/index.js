@@ -231,6 +231,7 @@ export function isProtectionStatusOk(value) {
   if (!isRecord(value)) return false;
   if (value.ok !== true || value.service !== "ficta") return false;
   if (!isRecord(value.protection) || !isRecord(value.secretShapes) || !isRecord(value.pii)) return false;
+  if (value.registry !== undefined && !isRegistryProtectionStatus(value.registry)) return false;
   if (value.activity !== undefined && !isProtectionActivity(value.activity)) return false;
   return (
     typeof value.protection.enabled === "boolean" &&
@@ -249,6 +250,16 @@ export function isProtectionStatusOk(value) {
     typeof value.pii.message === "string" &&
     (value.pii.url === undefined || typeof value.pii.url === "string") &&
     (value.pii.detail === undefined || typeof value.pii.detail === "string")
+  );
+}
+
+/** @param {unknown} value */
+function isRegistryProtectionStatus(value) {
+  return (
+    isRecord(value) &&
+    typeof value.required === "boolean" &&
+    (value.status === "ready" || value.status === "empty" || value.status === "error") &&
+    typeof value.message === "string"
   );
 }
 

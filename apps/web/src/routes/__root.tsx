@@ -4,9 +4,9 @@ import "@fontsource/fragment-mono";
 import type * as React from "react";
 import styles from "@/styles.css?url";
 
-const SITE_TITLE = "ficta Gateway — self-hosted redaction for AI chat";
+const SITE_TITLE = "ficta Gateway — review and redaction for AI chat";
 const DESCRIPTION =
-  "ficta Gateway is a self-hosted AI workspace with a local redaction boundary for model traffic. It tokenizes registered secrets, sensitive identifiers, and detected PII before a request reaches the model — and restores the real values locally in the reply.";
+  "ficta Gateway is a self-hosted AI workspace that lets teams review registered and detected values before model egress, add anything missed, and replace protected text with local surrogates.";
 const CONTACT_EMAIL = "hello@ficta.sh";
 const CONTACT = `mailto:${CONTACT_EMAIL}?subject=ficta%20Gateway`;
 
@@ -30,8 +30,7 @@ export const Route = createRootRoute({
       { property: "og:image:height", content: "630" },
       {
         property: "og:image:alt",
-        content:
-          "ficta Gateway — AI chat behind your redaction boundary. A protected value becoming a FICTA_ surrogate.",
+        content: "ficta Gateway — the model sees a token while the real value stays inside your environment.",
       },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: SITE_TITLE },
@@ -39,8 +38,7 @@ export const Route = createRootRoute({
       { name: "twitter:image", content: "https://ficta.sh/og.png" },
       {
         name: "twitter:image:alt",
-        content:
-          "ficta Gateway — AI chat behind your redaction boundary. A protected value becoming a FICTA_ surrogate.",
+        content: "ficta Gateway — the model sees a token while the real value stays inside your environment.",
       },
     ],
     links: [

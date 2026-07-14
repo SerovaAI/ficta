@@ -27,9 +27,15 @@ function Token({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** A real value that stays local — shown in the mint "restored" signal. */
-function Kept({ children }: { children: React.ReactNode }) {
-  return <span className="font-mono text-[0.82em] text-restored break-words">{children}</span>;
+/** A real value still inside Gateway, with the same origin language used by the product review. */
+function ReviewValue({ children, origin }: { children: React.ReactNode; origin: "registry" | "detected" | "user" }) {
+  const border =
+    origin === "detected"
+      ? "border-restored border-dashed"
+      : origin === "registry"
+        ? "border-restored"
+        : "border-foreground";
+  return <span className={`border-b-2 bg-restored/8 px-0.5 text-foreground ${border}`}>{children}</span>;
 }
 
 /* The Token Wrapper wordmark — `[ficta]`, brackets in vermilion, letters in chalk (assets/brand).
@@ -217,13 +223,13 @@ function SiteHeader() {
             href="#how"
             className="inline-flex items-center transition-colors hover:text-foreground [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
           >
-            How it works
+            Workflow
           </a>
           <a
             href="#gateway"
             className="inline-flex items-center transition-colors hover:text-foreground [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
           >
-            ficta Gateway
+            Workspace
           </a>
           <a
             href="#oss"
@@ -263,17 +269,16 @@ function Hero() {
         <div className="min-w-0 animate-rise">
           <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-card/50 py-1 pr-3 pl-2 text-muted-foreground text-xs">
             <span className="inline-block size-1.5 rounded-full bg-restored" />
-            self-hosted Gateway · local restore
+            review before send · local restore
           </p>
           <h1 className="font-semibold text-[clamp(2.5rem,4.2vw,3.3rem)] leading-[0.98]">
-            AI chat behind your <br />
-            <span className="text-muted-foreground">redaction boundary.</span>
+            See what leaves. <br />
+            <span className="text-muted-foreground">Protect what matters.</span>
           </h1>
           <p className="mt-6 max-w-xl text-[1.05rem] text-muted-foreground leading-relaxed">
-            ficta Gateway is a self-hosted AI workspace for regulated teams. It swaps registered client names, matter
-            IDs, secrets, and opt-in detected PII for local surrogates{" "}
-            <em className="text-foreground/90 not-italic">before</em> requests reach the model — then restores the reply
-            inside your environment.
+            ficta Gateway is a self-hosted AI workspace for regulated teams. It marks registered and detected values
+            before model egress, lets users add anything missed, and replaces protected text with local surrogates
+            before the provider sees it.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Button asChild size="lg">
@@ -290,128 +295,155 @@ function Hero() {
             </Button>
           </div>
           <p className="mt-5 text-muted-foreground text-sm">
-            Built on an inspectable open-source engine.{" "}
+            Provider keys stay server-side. Responses are restored inside your environment.{" "}
             <a
               href="#oss"
               className="text-foreground underline decoration-primary/50 underline-offset-4 transition-colors hover:decoration-primary"
             >
-              See the source path →
+              Inspect the engine →
             </a>
           </p>
         </div>
-        <GatewayHeroArt />
+        <GatewayReviewArt />
       </div>
     </section>
   );
 }
 
-/** Product-art version of the Gateway boundary: local values on one side, model-bound tokens on the other. */
-function GatewayHeroArt() {
+/** A faithful, interactive slice of Gateway's pre-send review instead of a generic product screenshot. */
+function GatewayReviewArt() {
+  const [mode, setMode] = React.useState<"values" | "model">("values");
   return (
-    <div
-      role="img"
-      aria-label="Gateway boundary showing local sensitive values redacted into FICTA tokens before the request is sent to the model."
-      className="w-full min-w-0 max-w-full animate-rise [animation-delay:120ms] lg:-mr-10"
-    >
-      <div aria-hidden="true" className="relative mx-auto w-full max-w-[760px] lg:w-[736px] lg:max-w-none">
-        <div className="-z-10 absolute inset-y-8 right-12 left-12 rounded-full bg-primary/8 blur-3xl" />
-        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-2xl shadow-black/40">
+    <div className="w-full min-w-0 max-w-full animate-rise [animation-delay:120ms] lg:-mr-10">
+      <div className="relative mx-auto w-full max-w-[760px] lg:w-[736px] lg:max-w-none">
+        <div aria-hidden className="-z-10 absolute inset-y-8 right-12 left-12 rounded-full bg-primary/8 blur-3xl" />
+        <div className="overflow-hidden rounded-xl bg-card shadow-2xl shadow-black/40">
           <div className="flex min-w-0 items-center gap-3 border-border/70 border-b bg-background/35 px-4 py-3">
-            <div className="flex gap-1.5">
+            <div aria-hidden className="flex gap-1.5">
               <span className="size-2.5 rounded-full border border-border" />
               <span className="size-2.5 rounded-full border border-border" />
               <span className="size-2.5 rounded-full border border-border" />
             </div>
             <div className="flex min-w-0 items-baseline gap-2">
               <Wordmark className="text-sm" />
-              <span className="font-medium text-foreground text-sm">Gateway boundary</span>
+              <span className="font-medium text-foreground text-sm">Gateway</span>
             </div>
             <div className="ml-auto hidden items-center gap-2 rounded-full border border-border px-2.5 py-1 font-mono text-[0.68rem] text-restored sm:flex">
               <span className="size-1.5 rounded-full bg-restored" />
-              local
+              protection connected
             </div>
           </div>
 
-          <div className="grid min-w-0 grid-cols-1 bg-border md:grid-cols-[minmax(0,1fr)_4rem_minmax(0,1fr)]">
-            <div className="min-w-0 bg-card p-4 sm:p-5">
-              <div className="mb-4 flex min-w-0 items-center justify-between gap-3">
-                <div>
-                  <p className="font-mono text-[0.64rem] text-restored uppercase tracking-[0.14em]">local Gateway</p>
-                  <p className="mt-1 text-muted-foreground text-xs">Real values remain readable here.</p>
+          <div className="border-border/70 border-b px-4 py-4 sm:px-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="size-4 text-restored" aria-hidden />
+                  <p className="font-medium text-sm">Review protection</p>
                 </div>
-                <span className="rounded-full border border-border px-2.5 py-1 font-mono text-[0.65rem] text-restored">
-                  before send
-                </span>
+                <p className="mt-1 text-muted-foreground text-xs">
+                  Nothing is sent to the model until you choose Send protected.
+                </p>
               </div>
-              <div className="rounded-xl border border-border/80 bg-secondary p-4 text-[0.9rem] text-foreground leading-relaxed break-words">
-                Follow up with <Kept>Emily Carter</Kept> at <Kept>emily.carter@northwind.co</Kept> about matter{" "}
-                <Kept>invoice-4471</Kept>.
-              </div>
-              <div className="mt-4 rounded-lg border border-border bg-background/40 p-3 font-mono text-[0.7rem] text-muted-foreground leading-5">
-                client: <Kept>Northwind Health</Kept>
-                <br />
-                email: <Kept>emily.carter@northwind.co</Kept>
-                <br />
-                matter: <Kept>invoice-4471</Kept>
+              <div
+                className="flex rounded-lg bg-background/60 p-0.5"
+                role="tablist"
+                aria-label="Protection preview view"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  id="hero-values-tab"
+                  aria-selected={mode === "values"}
+                  aria-controls="hero-values-panel"
+                  onClick={() => setMode("values")}
+                  className={`min-h-8 rounded-md px-2.5 font-medium text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [@media(pointer:coarse)]:min-h-11 ${mode === "values" ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  Values
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  id="hero-model-tab"
+                  aria-selected={mode === "model"}
+                  aria-controls="hero-model-panel"
+                  onClick={() => setMode("model")}
+                  className={`min-h-8 rounded-md px-2.5 font-medium text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [@media(pointer:coarse)]:min-h-11 ${mode === "model" ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  Model will see
+                </button>
               </div>
             </div>
+          </div>
 
-            <div className="relative flex min-h-16 items-center justify-center bg-background md:min-h-full">
-              <div className="absolute inset-x-5 top-1/2 border-border/80 border-t border-dashed md:inset-x-auto md:inset-y-5 md:left-1/2 md:border-t-0 md:border-l" />
-              <span className="relative z-10 bg-background px-3 font-mono text-[0.62rem] text-primary uppercase tracking-[0.28em] md:absolute md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:rotate-90 md:px-2 md:py-1">
-                redact
-              </span>
+          <div className="p-4 sm:p-5">
+            <div id="hero-values-panel" role="tabpanel" aria-labelledby="hero-values-tab" hidden={mode !== "values"}>
+              <div className="mb-3 flex flex-wrap gap-x-4 gap-y-2 text-[0.68rem] text-muted-foreground">
+                <LegendMark label="Registry · Exact" border="border-restored" />
+                <LegendMark label="Detected · best effort" border="border-restored border-dashed" />
+                <LegendMark label="You protected · Exact" border="border-foreground" />
+              </div>
+              <div className="rounded-lg bg-background/55 px-4 py-4 text-[0.9rem] text-foreground leading-7 break-words">
+                Draft a renewal note for <ReviewValue origin="registry">Northwind Health</ReviewValue> about matter{" "}
+                <ReviewValue origin="user">invoice-4471</ReviewValue> and send it to{" "}
+                <ReviewValue origin="detected">emily.carter@northwind.co</ReviewValue>.
+              </div>
+              <p className="mt-3 text-muted-foreground text-xs">
+                Highlight text or type a phrase to protect it for this chat.
+              </p>
             </div>
+            <div id="hero-model-panel" role="tabpanel" aria-labelledby="hero-model-tab" hidden={mode !== "model"}>
+              <p className="mb-3 text-muted-foreground text-xs">
+                Protected values are replaced before the provider receives the request.
+              </p>
+              <div className="rounded-lg bg-background/55 px-4 py-4 font-mono text-[0.78rem] text-foreground/85 leading-7 break-words">
+                Draft a renewal note for <Token>FICTA_82a1c0...</Token> about matter <Token>FICTA_71d4aa...</Token> and
+                send it to <Token>FICTA_9f3a2c...</Token>.
+              </div>
+              <p className="mt-3 font-mono text-[0.68rem] text-muted-foreground">
+                mapping: local to this Gateway scope
+              </p>
+            </div>
+          </div>
 
-            <div className="min-w-0 bg-card p-4 sm:p-5">
-              <div className="mb-4 flex min-w-0 items-center justify-between gap-3">
-                <div>
-                  <p className="font-mono text-[0.64rem] text-primary uppercase tracking-[0.14em]">sent to model</p>
-                  <p className="mt-1 text-muted-foreground text-xs">Protected values cross as local surrogates.</p>
-                </div>
-                <span className="rounded-full border border-primary/40 px-2.5 py-1 font-mono text-[0.65rem] text-primary">
-                  egress
-                </span>
-              </div>
-              <div className="rounded-xl border border-border/80 bg-background/50 p-4 font-mono text-[0.78rem] text-foreground/85 leading-6 break-words">
-                Follow up with <Token>FICTA_4b1e7d...</Token> at <Token>FICTA_9f3a2c...</Token> about matter{" "}
-                <Token>FICTA_71d4aa...</Token>.
-              </div>
-              <div className="mt-4 rounded-lg border border-border bg-background/40 p-3 font-mono text-[0.7rem] text-muted-foreground leading-5">
-                client: <Token>FICTA_82a1c0...</Token>
-                <br />
-                email: <Token>FICTA_9f3a2c...</Token>
-                <br />
-                matter: <Token>FICTA_71d4aa...</Token>
-              </div>
-            </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-border/70 border-t bg-background/25 px-4 py-3 sm:px-5">
+            <span className="text-muted-foreground text-xs">Back to edit</span>
+            <span className="inline-flex min-h-9 items-center gap-2 rounded-md bg-primary px-3 font-medium text-primary-foreground text-sm">
+              <Check className="size-4" aria-hidden />
+              Send protected
+            </span>
           </div>
         </div>
 
         <p className="mt-3 px-1 text-muted-foreground text-xs">
-          The model-bound request is the same prompt, with protected values replaced before it leaves your machine.
+          Exact matches use solid lines. Best-effort detector matches use dashed lines.
         </p>
       </div>
     </div>
   );
 }
 
+function LegendMark({ label, border }: { label: string; border: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`size-3 rounded-[3px] border-2 bg-restored/8 ${border}`} aria-hidden />
+      {label}
+    </span>
+  );
+}
+
 const STEPS = [
   {
-    title: "Detect",
-    body: "Registered .env / Doppler secrets, secret-shaped keys and JWTs, and — opt-in — detected PII across the request body, query, and non-auth headers.",
+    title: "Review",
+    body: "Registry matches and configured detector matches are marked before any provider request begins.",
   },
   {
-    title: "Tokenize",
-    body: "Each protected value is swapped for a deterministic local surrogate. If a registered secret would still be forwarded verbatim, the request is blocked, not sent.",
+    title: "Protect",
+    body: "Users can add a missed name, amount, project, code, or clause and inspect the exact text the model will see.",
   },
   {
-    title: "Forward",
-    body: "Protected payload values cross the boundary as tokens. Required auth headers pass through to the vendor; the mapping never leaves your machine.",
-  },
-  {
-    title: "Restore",
-    body: "As the reply streams back, surrogates are swapped for the real values locally — so your agent, or your lawyer, reads a coherent answer.",
+    title: "Send and verify",
+    body: "Gateway tokenizes protected values, restores the response locally, and records values-free egress evidence.",
   },
 ];
 
@@ -420,15 +452,13 @@ function HowItWorks() {
     <section id="how" className="scroll-mt-16 border-border/60 border-t">
       <div className="mx-auto max-w-6xl px-5 py-20 sm:px-8 lg:py-28">
         <div className="max-w-2xl">
-          <h2 className="font-semibold text-[clamp(1.75rem,3.5vw,2.5rem)] leading-tight">
-            A one-way airlock for model traffic
-          </h2>
+          <h2 className="font-semibold text-[clamp(1.75rem,3.5vw,2.5rem)] leading-tight">Review. Protect. Send.</h2>
           <p className="mt-4 text-muted-foreground leading-relaxed">
-            Point Gateway, an agent, or an app at the local ficta proxy. Everything on the way out is redacted;
-            everything on the way back is restored. Reversible by design.
+            Gateway turns model egress into a visible workflow. Registered values use exact matching; configured
+            detectors remain best effort.
           </p>
         </div>
-        <ol className="mt-12 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+        <ol className="mt-12 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3">
           {STEPS.map((step, i) => (
             <li key={step.title} className="bg-card p-6">
               <div className="flex items-baseline gap-3">
@@ -451,12 +481,11 @@ function GatewaySection() {
         <div className="grid gap-10 lg:grid-cols-[0.92fr_1.08fr] lg:items-start">
           <div className="max-w-2xl">
             <h2 className="font-semibold text-[clamp(1.75rem,3.5vw,2.5rem)] leading-tight">
-              Self-hosted AI chat with the redaction boundary in front of the model.
+              Protection gets stronger with the team.
             </h2>
             <p className="mt-4 text-muted-foreground leading-relaxed">
-              Gateway packages ficta's local redact-and-restore engine as an internal workspace for law, health,
-              finance, and other teams that need AI workflows without sending known sensitive values straight into
-              provider context.
+              Users can protect a phrase for one chat or suggest it for the workspace. Admins approve exact-match
+              policy, publish it to the running proxy, and verify that the same revision is active.
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-3">
               <Button asChild>
@@ -466,11 +495,11 @@ function GatewaySection() {
                 </a>
               </Button>
               <Button asChild variant="outline">
-                <a href="#faq">Review the boundary</a>
+                <a href="#faq">Review deployment</a>
               </Button>
             </div>
             <p className="mt-4 text-muted-foreground text-sm">
-              Design-partner pilots now — or email <ContactEmail />
+              One Gateway and proxy deployment serves one organization. Email <ContactEmail />
             </p>
           </div>
           <article className="relative overflow-hidden rounded-xl border border-primary/30 bg-card p-7">
@@ -483,22 +512,45 @@ function GatewaySection() {
             />
             <div className="relative flex items-center gap-2.5 text-muted-foreground">
               <ShieldCheck className="size-4 text-primary" />
-              <span className="font-mono text-xs uppercase tracking-widest">Gateway · self-hosted</span>
+              <span className="font-mono text-xs uppercase tracking-widest">Gateway · governed workspace</span>
             </div>
             <h3 className="relative mt-4 font-semibold text-2xl">
-              What Gateway adds <span className="text-muted-foreground">around the engine</span>
+              From a missed phrase <span className="text-muted-foreground">to active policy.</span>
             </h3>
-            <ul className="relative mt-5 grid gap-4 text-sm sm:grid-cols-2">
+            <ol className="relative mt-5 border-border/70 border-y">
               {[
-                "Deploys inside your perimeter, with chat history on your own database",
-                "Loads client, matter, patient, vendor, and case rosters as exact-match values",
-                "Runs Presidio / OpenMed sidecars fail-closed when detection is required",
-                "Supports regional recognizers, including South African ID and company numbers",
-                "Admin controls and redaction proof without logging protected values",
-                "SSO, workspaces, private support, and commercial licensing for teams",
+                [
+                  "Protected in this chat",
+                  "A user adds an amount, project, code, or clause the detectors did not find.",
+                ],
+                [
+                  "Suggested for workspace",
+                  "The value enters an admin review queue; it does not silently change policy.",
+                ],
+                [
+                  "Approved and published",
+                  "Exact-match values and aliases are written privately and loaded by the proxy.",
+                ],
+                ["Verified active", "Gateway confirms the running proxy parsed that exact revision."],
+              ].map(([title, body], index) => (
+                <li key={title} className="flex gap-3 border-border/70 border-t py-3 first:border-t-0">
+                  <span className="mt-0.5 font-mono text-restored text-xs">{String(index + 1).padStart(2, "0")}</span>
+                  <span>
+                    <span className="block font-medium text-foreground text-sm">{title}</span>
+                    <span className="mt-1 block text-muted-foreground text-xs leading-relaxed">{body}</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+            <ul className="relative mt-5 grid gap-x-5 gap-y-2 text-muted-foreground text-xs sm:grid-cols-2">
+              {[
+                "BYO OpenAI and Anthropic keys",
+                "Model allow-lists and reasoning controls",
+                "PDF, DOCX, and text review",
+                "Values-free receipts and trends",
               ].map((item) => (
-                <li key={item} className="flex gap-2.5 text-muted-foreground">
-                  <Check className="mt-0.5 size-4 shrink-0 text-restored" />
+                <li key={item} className="flex gap-2">
+                  <Check className="mt-0.5 size-3.5 shrink-0 text-restored" />
                   {item}
                 </li>
               ))}
@@ -542,8 +594,8 @@ function OssProof() {
           </div>
           <ul className="mt-6 grid gap-3 text-sm sm:grid-cols-3">
             {[
-              "Exact-match protection for registered secrets",
-              "Fail-closed if a protected value would leave verbatim",
+              "Exact-match protection for registered values",
+              "Fail-closed if a registered value would leave verbatim",
               "Runs locally per launch, with no account or telemetry",
             ].map((item) => (
               <li key={item} className="flex gap-2.5 text-muted-foreground">
@@ -566,48 +618,49 @@ function OssProof() {
 
 const FAQ_ITEMS = [
   {
-    question: "Does the gateway support South African identifiers?",
+    question: "What is exact, and what is best effort?",
     answer: (
       <>
-        Yes. The Presidio sidecar can mount ficta's registry config, which keeps Presidio's default recognizers, enables
-        South African ID numbers, and adds a South African company registration number recognizer.
+        Registered values, aliases, and phrases a user protects for a chat use exact matching. Secret-shape and PII
+        detection reduce exposure, but they can miss values and are not a completeness guarantee.
       </>
     ),
   },
   {
-    question: "Is that an exact guarantee?",
+    question: "Can administrators require review before sending?",
     answer: (
       <>
-        No. Presidio recognition is still a best-effort detector. For the strong guarantee, load the firm's client
-        names, matter IDs, case numbers, and other known identifiers as registered exact-match values.
+        Yes. Review starts on for each chat, and administrators can lock it on for the deployment. The server requires a
+        short-lived confirmation bound to the user, organization, chat, and exact message before the provider request
+        begins.
       </>
     ),
   },
   {
-    question: "Does Ficta make privileged or confidential legal content safe to send?",
+    question: "Where do provider keys and chat history live?",
     answer: (
       <>
-        No. Legal confidentiality is broader than identifiers and PII. Ficta reduces exposure of registered identifiers
-        and detectable PII, but factual content can still be confidential or privileged even after names are removed.
-        Use Gateway inside your own policy boundary and treat external model use accordingly.
+        Provider keys stay server-side and workspace-managed keys are encrypted before storage. Chat history remains in
+        your PGlite or Postgres database and contains the restored transcript, so it must be governed as sensitive data.
       </>
     ),
   },
   {
-    question: "What happens if Presidio is unavailable?",
+    question: "What happens if a configured detector is unavailable?",
     answer: (
       <>
-        For the gateway, run the detector fail-closed: if the sidecar is down, chat requests are blocked before they
-        reach the model. That protects against an outage, but it does not make detection complete.
+        The outage policy is explicit. A production-like deployment can run networked detectors fail-closed so sends are
+        blocked while a required sidecar is unavailable. Detector health remains visible to administrators.
       </>
     ),
   },
   {
-    question: "Can a firm add its own local patterns?",
+    question: "Does Ficta make confidential content safe to send?",
     answer: (
       <>
-        Yes. A deployment can extend Presidio with recognizers or deny-lists for firm-specific identifiers, while the
-        ficta registry handles exact-match protection for known rosters and matter data.
+        No. Confidentiality is broader than identifiers and PII. Ficta reduces exposure of registered and detectable
+        values, but facts, clauses, and context can remain sensitive after names are removed. External model use still
+        needs your policy boundary.
       </>
     ),
   },
@@ -619,11 +672,11 @@ function Faq() {
       <div className="mx-auto grid max-w-6xl gap-10 px-5 py-20 sm:px-8 lg:grid-cols-[0.8fr_1.2fr] lg:py-28">
         <div>
           <h2 className="font-semibold text-[clamp(1.75rem,3.5vw,2.5rem)] leading-tight">
-            Built for local rules, not generic privacy theater.
+            Questions the boundary should answer.
           </h2>
           <p className="mt-4 max-w-xl text-muted-foreground leading-relaxed">
-            The gateway can run Microsoft Presidio with local recognizer configuration, so regional identifiers and
-            firm-specific shapes can be handled inside the same redact-and-restore path.
+            Deployment, policy, and evidence stay explicit. Covered request surfaces and deliberate exceptions are
+            documented in the threat model.
           </p>
         </div>
         <div className="border-border/70 border-y">
@@ -646,26 +699,19 @@ function ScopeNote() {
   return (
     <section className="border-border/60 border-t">
       <div className="mx-auto max-w-2xl px-5 py-20 sm:px-8 lg:py-24">
-        <h2 className="font-semibold text-[clamp(1.5rem,3vw,2rem)] leading-tight">Honest about what it is</h2>
+        <h2 className="font-semibold text-[clamp(1.5rem,3vw,2rem)] leading-tight">
+          Exact where configured. Honest everywhere else.
+        </h2>
         <div className="mt-6 space-y-4 text-muted-foreground leading-relaxed">
           <p>
-            The strong guarantee is <strong className="font-medium text-foreground">exact-match</strong> protection for
-            the secrets you already manage: if a registered value would be sent verbatim in a surface ficta redacts, the
-            request is blocked instead of forwarded.
+            Registered values and chat-added phrases use{" "}
+            <strong className="font-medium text-foreground">exact-match</strong> protection. If a registered value
+            survives redaction in a covered surface, the request is blocked instead of forwarded.
           </p>
           <p>
-            Secret-shape and PII detection are{" "}
-            <strong className="font-medium text-foreground">opt-in, best-effort</strong> layers. They reduce exposure;
-            they are not a completeness guarantee, and undetected values can still reach the model. ficta is
-            secret-hygiene and PII-reduction tooling — <strong className="font-medium text-foreground">not</strong>{" "}
-            enterprise DLP, a compliance product, or a sandbox.
-          </p>
-          <p>
-            Ficta reduces exposure of registered identifiers and detectable PII. It does not make all confidential legal
-            content safe to send to an external model.
-          </p>
-          <p>
-            The exact boundary — every covered surface and deliberate exception — is written down in the{" "}
+            Secret-shape and PII detection are <strong className="font-medium text-foreground">best-effort</strong>.
+            They reduce exposure but can miss values, and confidential context can remain after identifiers are removed.
+            ficta is not enterprise DLP, a compliance product, or a sandbox. The exact boundary is written down in the{" "}
             <a
               href={THREAT_MODEL}
               target="_blank"
@@ -715,7 +761,7 @@ function SiteFooter() {
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-5 py-10 sm:flex-row sm:items-center sm:px-8">
         <div>
           <Wordmark />
-          <p className="mt-2 text-muted-foreground text-sm">A local redaction gateway for model traffic.</p>
+          <p className="mt-2 text-muted-foreground text-sm">Review and redaction for self-hosted model traffic.</p>
         </div>
         <nav className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm sm:ml-auto">
           <ExternalLink href={GITHUB}>GitHub</ExternalLink>

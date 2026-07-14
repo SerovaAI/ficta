@@ -74,6 +74,15 @@ export interface SecretShapeProtectionStatus {
   message: string;
 }
 
+export type RegistryProtectionState = "ready" | "empty" | "error";
+
+/** Values-free readiness of the exact-match registry used to gate provider-bound traffic. */
+export interface RegistryProtectionStatus {
+  required: boolean;
+  status: RegistryProtectionState;
+  message: string;
+}
+
 export interface ProtectionStatusOk {
   ok: true;
   service: "ficta";
@@ -83,6 +92,8 @@ export interface ProtectionStatusOk {
     registeredValues: number;
     policyExcluded: number;
   };
+  /** Optional for compatibility with proxies released before runtime registry readiness gating. */
+  registry?: RegistryProtectionStatus;
   secretShapes: SecretShapeProtectionStatus;
   pii: PiiProtectionStatus;
   activity?: {

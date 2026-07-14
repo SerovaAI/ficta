@@ -29,6 +29,7 @@ import {
   type ProtectionStatusOk,
   type ProxyConfigOk,
   type ProxyConfigPatchError,
+  type RegistryProtectionStatus,
   type RegistryReloadError,
   type RegistryReloadOk,
   type RuntimeTraceCaptureError,
@@ -377,6 +378,26 @@ export async function startProxy(
         registry: { ...reloaded, ...managed, ...(revision ? { revision } : {}) },
       };
       return c.json(response);
+    }
+
+    // Strict registry mode is a runtime egress invariant, not only an agent-launch preflight. Keep
+    // control-plane endpoints above reachable so an operator can inspect status and publish/fix the
+    // managed registry without restarting the proxy; only provider-bound traffic is paused.
+    const registry = registryProtectionStatus(engine);
+    if (registry.required && registry.status !== "ready") {
+      log.warn(
+        { method, path: url.pathname, registryStatus: registry.status },
+        "Provider request blocked because the required protected registry is not ready",
+      );
+      return c.json(
+        {
+          error: {
+            type: "ficta_registry_unavailable",
+            message: registry.message,
+          },
+        },
+        503,
+      );
     }
 
     // Protect every outbound request body, query string, and non-auth header by default.
@@ -856,21 +877,26 @@ export async function startProxy(
   return new Promise<ProxyHandle>((resolve) => {
     const server = serve({ fetch: app.fetch, port: opts.port ?? cfg.port, hostname: bindHost }, (info) => {
       const keyWarning = surrogateKeyWarning();
+      const registry = registryProtectionStatus(engine);
       log.info(
         {
           url: `http://${bindHost}:${info.port}`,
           clientBaseUrl: `http://${clientHost}:${info.port}`,
           upstreams: cfg.upstreams,
           vault: engine.size,
+          registryRequired: registry.required,
+          registryStatus: registry.status,
           failClosed: cfg.failClosed,
           logDir,
           runDir: currentRunDir(),
           rawBodies: false,
           rawValueAuditCapable: cfg.traceAudit,
         },
-        engine.protecting
-          ? `🔒 ficta listening on http://${bindHost}:${info.port} — ${engine.size} value(s), redacting up / restoring back`
-          : `⚠ ficta listening on http://${bindHost}:${info.port} — NONE loaded, passthrough`,
+        registry.required && registry.status !== "ready"
+          ? `🛑 ficta listening on http://${bindHost}:${info.port} — provider requests blocked until the protected registry is ready (${registry.status})`
+          : engine.protecting
+            ? `🔒 ficta listening on http://${bindHost}:${info.port} — ${engine.size} value(s), redacting up / restoring back`
+            : `⚠ ficta listening on http://${bindHost}:${info.port} — NONE loaded, passthrough`,
       );
       // Per-source discovery + policy detail is the old --ficta-verbose report; keep it at debug.
       for (const line of registryDiscoveryLines(
@@ -1033,6 +1059,7 @@ async function protectionStatus(engine: RedactionEngine, stats: ProtectionStats)
   return {
     ok: true,
     service: "ficta",
+    registry: registryProtectionStatus(engine),
     protection: {
       enabled: engine.enabled,
       protecting: engine.protecting,
@@ -1054,6 +1081,35 @@ async function protectionStatus(engine: RedactionEngine, stats: ProtectionStats)
       restoredValues: stats.restoredValues,
       withheldFromTools: stats.withheldFromToolsValues,
     },
+  };
+}
+
+/** One source of truth for request gating, startup posture, and the Gateway status response. */
+function registryProtectionStatus(engine: RedactionEngine): RegistryProtectionStatus {
+  const required = process.env.FICTA_REQUIRE_REGISTRY === "1" && process.env.FICTA_ALLOW_EMPTY !== "1";
+  const sourceErrored = engine.registryStatus.discoveries.some((discovery) => discovery.status === "error");
+  if (sourceErrored) {
+    return {
+      required,
+      status: "error",
+      message: required
+        ? "The required protected registry did not load successfully. Fix or republish it before sending."
+        : "One or more protected-registry sources failed to load.",
+    };
+  }
+  if (engine.size === 0) {
+    return {
+      required,
+      status: "empty",
+      message: required
+        ? "This deployment requires registered protected values, but none are loaded. Publish the protected registry before sending."
+        : "No registered protected values are loaded.",
+    };
+  }
+  return {
+    required,
+    status: "ready",
+    message: `${engine.size} registered protected value${engine.size === 1 ? " is" : "s are"} loaded.`,
   };
 }
 

@@ -172,7 +172,7 @@ describe("ficta doctor", () => {
     expect(doctorExitCode(report)).toBe(1);
     expect(report.issues).toContainEqual({
       severity: "error",
-      message: "no protected values loaded, and FICTA_REQUIRE_REGISTRY=1 would block agent launch",
+      message: "no protected values loaded; FICTA_REQUIRE_REGISTRY=1 blocks provider requests and agent launch",
     });
   });
 

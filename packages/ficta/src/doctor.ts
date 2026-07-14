@@ -103,7 +103,7 @@ export async function collectDoctorReport(opts: DoctorOptions = {}): Promise<Doc
       severity: process.env.FICTA_REQUIRE_REGISTRY === "1" ? "error" : "warning",
       message:
         process.env.FICTA_REQUIRE_REGISTRY === "1"
-          ? "no protected values loaded, and FICTA_REQUIRE_REGISTRY=1 would block agent launch"
+          ? "no protected values loaded; FICTA_REQUIRE_REGISTRY=1 blocks provider requests and agent launch"
           : "no protected values loaded; ficta would launch in passthrough mode",
     });
   }

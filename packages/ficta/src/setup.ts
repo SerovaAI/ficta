@@ -12,6 +12,19 @@ export interface SetupOptions {
   supportedAgents: readonly string[];
 }
 
+/**
+ * Keep newly written setup config on the canonical multi-backend setting. Older config files may
+ * still contain the singular key; preserve its effective value while migrating it forward.
+ */
+export function normalizePiiBackendConfig(values: Record<string, string>): Record<string, string> {
+  const next = { ...values };
+  const canonical = next.FICTA_PII_BACKENDS?.trim();
+  const legacy = next.FICTA_PII_BACKEND?.trim();
+  if (!canonical && legacy) next.FICTA_PII_BACKENDS = legacy;
+  delete next.FICTA_PII_BACKEND;
+  return next;
+}
+
 export async function runSetup(opts: SetupOptions): Promise<void> {
   intro("ficta setup");
 
@@ -87,7 +100,6 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
     );
     const selectedBackends = backends.length > 0 ? backends : ["regex"];
     piiValues.FICTA_PII_BACKENDS = selectedBackends.join(",");
-    piiValues.FICTA_PII_BACKEND = selectedBackends[0] ?? "regex";
     if (selectedBackends.includes("presidio")) {
       piiValues.FICTA_PII_PRESIDIO_URL = await promptText(
         "PII detection: Presidio analyzer URL",
@@ -145,7 +157,7 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
   };
 
   const path = setupConfigPath();
-  const nextConfig = { ...readUserConfig(path), ...values };
+  const nextConfig = normalizePiiBackendConfig({ ...readUserConfig(path), ...values });
   // min_len is no longer prompted (silent default of 8); a hand-set value in the existing config
   // survives via the merge above. Persist the review's exclusion choices: "" clears the key.
   if (excludeNames === "") delete nextConfig.FICTA_REGISTRY_EXCLUDE_NAMES;

@@ -1,10 +1,22 @@
-import { FICTA_STATUS_PATH, isProtectionStatusOk, type ProtectionStatusOk } from "@serovaai/ficta-protocol";
+import {
+  FICTA_STATUS_PATH,
+  isProtectionStatusOk,
+  type ProtectionStatusOk,
+  type RegistryProtectionStatus,
+} from "@serovaai/ficta-protocol";
 import { createServerFn } from "@tanstack/react-start";
 import type { ProxyCallResult } from "@/lib/proxy-result";
 
 export type ProtectionStatus = ProxyCallResult<ProtectionStatusOk>;
 export type { ProtectionStatusOk };
 export { isProtectionStatusOk };
+
+/** Required-registry failures pause sends; relaxed/legacy proxy status remains non-blocking here. */
+export function requiredRegistryBlock(status: ProtectionStatus | undefined): RegistryProtectionStatus | undefined {
+  if (!status?.ok) return undefined;
+  const registry = status.registry;
+  return registry?.required && registry.status !== "ready" ? registry : undefined;
+}
 
 const STATUS_TIMEOUT_MS = 1500;
 

@@ -259,8 +259,9 @@ enabled` directly and ignores `[pii] agents`.
 ### Choosing backends
 
 PII detection can run multiple backends, selected by name via `FICTA_PII_BACKENDS` ↔ `[pii] backends`.
-The older single-backend setting, `FICTA_PII_BACKEND` ↔ `[pii] backend`, still works when
-`backends` is unset. Enabling PII never silently reaches for a sidecar — you opt into networked
+The deprecated single-backend setting, `FICTA_PII_BACKEND` ↔ `[pii] backend`, remains readable when
+`backends` is unset so existing installations keep working; new setup and examples use only the
+list form. Enabling PII never silently reaches for a sidecar — you opt into networked
 backends explicitly:
 
 ```toml
@@ -295,8 +296,8 @@ such as South African IDs, document identifiers, and Mauritius phones.
   teammate's machine, a POC box. After pulling recognizer code or Presidio configuration changes,
   rerun `pnpm sidecars` so the local `ficta-presidio:dev` image is rebuilt and the analyzer is
   recreated; a plain Compose `up` can reuse the stale local image.
-- **Root `pnpm dev`** auto-manages the sidecars for whichever backends `FICTA_PII_BACKENDS` /
-  `FICTA_PII_BACKEND` selects (force per-sidecar with `FICTA_PII_PRESIDIO_MANAGED` /
+- **Root `pnpm dev`** auto-manages the sidecars for whichever backends `FICTA_PII_BACKENDS`
+  selects (force per-sidecar with `FICTA_PII_PRESIDIO_MANAGED` /
   `FICTA_PII_OPENMED_MANAGED`). It reuses anything already healthy at the configured URL — including
   compose-started containers — and tears down only what it started.
 

@@ -4,6 +4,8 @@
 
 [registry]
 min_len = 8
+# When true, provider requests and coding-agent launches stay blocked until at least one value loads
+# and every enabled registry source is healthy. Proxy control/status/reload endpoints remain available.
 require = false
 # Exact env var names to leave unprotected after review, e.g. ["LOG_LEVEL"].
 exclude_names = []
@@ -55,9 +57,9 @@ agents = false
 enabled = true
 # Coding-agent launches stay off unless this is also true (or FICTA_PII_ENABLED is set for one run).
 agents = false
-# One or more backends can run. `backend` is the legacy single-backend setting; `backends`
-# takes precedence when set.
-backend = "regex"
+# One or more backends can run. New config should use this list form. The deprecated singular
+# `backend` key remains readable for older config files but is no longer written by `ficta setup`.
+backends = ["regex"]
 # backends = ["presidio", "openmed"]
 # PII-specific detector-outage policy; overrides [detection] fail_closed.
 fail_closed = false

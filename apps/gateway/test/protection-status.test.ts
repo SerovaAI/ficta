@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isProtectionStatusOk } from "@/lib/protection-status";
+import { isProtectionStatusOk, requiredRegistryBlock } from "@/lib/protection-status";
 
 function validStatus() {
   return {
@@ -28,6 +28,28 @@ describe("isProtectionStatusOk", () => {
   it("accepts a payload with activity counters", () => {
     const status = { ...validStatus(), activity: { restoredValues: 4, withheldFromTools: 1 } };
     expect(isProtectionStatusOk(status)).toBe(true);
+  });
+
+  it("identifies only required, unready registries as blocking", () => {
+    const emptyRequired = {
+      ...validStatus(),
+      registry: { required: true, status: "empty" as const, message: "publish the registry" },
+    };
+    expect(isProtectionStatusOk(emptyRequired)).toBe(true);
+    expect(requiredRegistryBlock(emptyRequired)).toEqual(emptyRequired.registry);
+
+    expect(
+      requiredRegistryBlock({
+        ...validStatus(),
+        registry: { required: false, status: "empty", message: "optional" },
+      }),
+    ).toBeUndefined();
+    expect(
+      requiredRegistryBlock({
+        ...validStatus(),
+        registry: { required: true, status: "ready", message: "ready" },
+      }),
+    ).toBeUndefined();
   });
 
   it("rejects a mistyped activity section", () => {

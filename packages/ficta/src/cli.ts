@@ -193,6 +193,9 @@ process.env.FICTA_LOG_ROLE ??= `agents/${agent.command}/${logInstanceId}`;
 // before any request-time proxy logs are emitted.
 applyRuntimeEnvDefaults(process.env);
 process.env.FICTA_LOG_LEVEL ??= "silent"; // keep the terminal clean for the agent unless explicitly overridden
+// The embedded proxy now enforces strict registry readiness at request time too. Carry the CLI's
+// one-run escape hatch into that shared runtime policy so --allow-empty keeps its documented meaning.
+if (allowEmpty) process.env.FICTA_ALLOW_EMPTY = "1";
 
 // Per-surface PII gate: this is a launched coding agent, so PII detection is off unless explicitly
 // opted in (see resolveAgentPiiEnabled). Force FICTA_PII_ENABLED to the resolved value before the
@@ -361,7 +364,7 @@ function printHelp(exitCode: number): never {
       ["FICTA_DISABLE=1", "Bypass ficta for one agent launch"],
       ["FICTA_LOG_LEVEL=<level>", "silent|error|warn|info|debug|trace (structured log verbosity)"],
       ["FICTA_TRACE_AUDIT=1", "With runtime trace capture, also write raw protected-value audit sidecars"],
-      ["FICTA_REQUIRE_REGISTRY=1", "Refuse to launch if no protected values load"],
+      ["FICTA_REQUIRE_REGISTRY=1", "Block provider requests and agent launch until the registry is ready"],
     ]),
     "",
     "Registry sources:",

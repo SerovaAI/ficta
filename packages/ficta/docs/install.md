@@ -211,13 +211,19 @@ configs = ["dev", "prod"]
 
 Shell `FICTA_*` environment variables can still override these settings for one run.
 
-If you want strict startup blocking instead, set `registry.require = true` in config, or override once:
+If you want strict registry enforcement, set `registry.require = true` in config, or override once:
 
 ```sh
 FICTA_REQUIRE_REGISTRY=1 claude
 ```
 
-With strict mode enabled, bypass once with:
+Strict mode keeps the standalone proxy's health, status, config, preview, and live registry-reload
+endpoints available, but returns `503` for provider-bound requests until at least one registered value
+is loaded and no registry source reports an error. This lets Gateway publish or repair its managed
+registry in place without allowing an unprotected provider request through. Coding-agent launches
+also refuse to start until the same condition is met.
+
+For coding-agent launches, bypass strict mode once with:
 
 ```sh
 claude --allow-empty

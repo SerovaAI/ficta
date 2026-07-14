@@ -72,6 +72,20 @@ describe("protection copy", () => {
     expect(emptyStateProtectionCopy(blocked)).toContain("Sending is paused");
   });
 
+  it("pauses sending when the deployment requires an unready registry", () => {
+    const empty = healthyStatus();
+    if (!empty.ok) throw new Error("expected healthy status");
+    empty.registry = {
+      required: true,
+      status: "empty",
+      message: "This deployment requires registered protected values, but none are loaded.",
+    };
+
+    expect(protectionPresentation(empty)).toMatchObject({ tone: "danger", label: "Sending paused" });
+    expect(emptyStateProtectionCopy(empty)).toContain("Sending is paused");
+    expect(emptyStateProtectionCopy(empty)).toContain("requires registered protected values");
+  });
+
   it("keeps drafting separate from sending when the proxy is unavailable", () => {
     const status: ProtectionStatus = {
       ok: false,

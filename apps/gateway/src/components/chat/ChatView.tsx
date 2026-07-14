@@ -38,7 +38,7 @@ import {
 } from "@/lib/models";
 import { withOneShotProtectionTicket } from "@/lib/protection-connection";
 import { type GatewayProtectionPreview, previewProtection } from "@/lib/protection-preview";
-import type { ProtectionStatus } from "@/lib/protection-status";
+import { type ProtectionStatus, requiredRegistryBlock } from "@/lib/protection-status";
 import { fetchProxyConfig } from "@/lib/proxy-config";
 import {
   type ProtectionHighlightAnnotation,
@@ -848,6 +848,8 @@ function sendPosture(status: ProtectionStatus | undefined): SendPosture {
           : "ficta protection can't be confirmed, so messages can't be sent.",
     };
   }
+  const registryBlock = requiredRegistryBlock(status);
+  if (registryBlock) return { kind: "blocked", reason: registryBlock.message };
   if (status.pii.status === "blocking") {
     return { kind: "blocked", reason: "Chat is paused until ficta protection recovers." };
   }

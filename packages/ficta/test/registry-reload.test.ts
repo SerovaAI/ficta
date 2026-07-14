@@ -22,7 +22,10 @@ const ENV_KEYS = [
   "FICTA_REGISTRY_MANAGED_FILE_ENABLED",
   "FICTA_REGISTRY_MANAGED_FILE_PATHS",
   "FICTA_REGISTRY_MIN_LEN",
+  "FICTA_REQUIRE_REGISTRY",
+  "FICTA_ALLOW_EMPTY",
   "FICTA_UPSTREAM",
+  "FICTA_SECRET_SHAPES_ENABLED",
   "FICTA_LOG_LEVEL",
   "FICTA_LOG_DIR",
 ] as const;
@@ -128,6 +131,110 @@ describe("engine registry reload", () => {
 });
 
 describe("proxy registry reload endpoint", () => {
+  it("blocks provider traffic in strict mode until an empty registry is published live", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ficta-required-registry-"));
+    const file = join(dir, "protected-registry.json");
+    process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = file;
+    process.env.FICTA_REQUIRE_REGISTRY = "1";
+    // An active best-effort detector must not satisfy the exact-registry requirement.
+    process.env.FICTA_SECRET_SHAPES_ENABLED = "1";
+    process.env.FICTA_LOG_LEVEL = "silent";
+    process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-required-registry-logs-"));
+    writeManagedFile(file, []);
+
+    let upstreamHits = 0;
+    let upstreamSaw = "";
+    const upstream = createServer((req, res) => {
+      upstreamHits++;
+      let body = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        upstreamSaw = body;
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(body);
+      });
+    });
+    const upstreamPort = await new Promise<number>((resolve) => {
+      upstream.listen(0, "127.0.0.1", () => resolve((upstream.address() as AddressInfo).port));
+    });
+    process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
+
+    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    try {
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0 });
+      const base = `http://127.0.0.1:${proxy.port}`;
+      const send = () =>
+        fetch(`${base}/v1/messages`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ messages: [{ role: "user", content: "Northstar Biologics" }] }),
+        });
+
+      const initialStatus = await (await fetch(`${base}${FICTA_STATUS_PATH}`)).json();
+      expect(initialStatus).toMatchObject({
+        registry: { required: true, status: "empty" },
+        protection: { protecting: true, registeredValues: 0 },
+      });
+
+      const blocked = await send();
+      expect(blocked.status).toBe(503);
+      expect(await blocked.json()).toMatchObject({ error: { type: "ficta_registry_unavailable" } });
+      expect(upstreamHits).toBe(0);
+
+      writeManagedFile(file, ["Northstar Biologics"]);
+      const reload = await fetch(`${base}${FICTA_REGISTRY_RELOAD_PATH}`, { method: "POST" });
+      expect(reload.status).toBe(200);
+
+      const readyStatus = await (await fetch(`${base}${FICTA_STATUS_PATH}`)).json();
+      expect(readyStatus).toMatchObject({
+        registry: { required: true, status: "ready" },
+        protection: { registeredValues: 1 },
+      });
+
+      const forwarded = await send();
+      expect(forwarded.status).toBe(200);
+      expect(upstreamHits).toBe(1);
+      expect(upstreamSaw).not.toContain("Northstar Biologics");
+      expect(upstreamSaw).toMatch(/FICTA_[0-9a-f]{32}/);
+    } finally {
+      proxy?.close();
+      await new Promise<void>((resolve, reject) => upstream.close((err) => (err ? reject(err) : resolve())));
+    }
+  });
+
+  it("blocks strict-mode provider traffic when a registry source errors", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ficta-required-registry-error-"));
+    const file = join(dir, "protected-registry.json");
+    process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = file;
+    process.env.FICTA_REQUIRE_REGISTRY = "1";
+    process.env.FICTA_LOG_LEVEL = "silent";
+    process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-required-registry-error-logs-"));
+    writeFileSync(file, "not valid registry json", { mode: 0o600 });
+    process.env.FICTA_UPSTREAM = "http://127.0.0.1:1";
+
+    const { startProxy } = await import("../src/server.js");
+    const proxy = await startProxy({ port: 0 });
+    try {
+      const base = `http://127.0.0.1:${proxy.port}`;
+      const status = await (await fetch(`${base}${FICTA_STATUS_PATH}`)).json();
+      expect(status).toMatchObject({ registry: { required: true, status: "error" } });
+
+      const blocked = await fetch(`${base}/v1/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(blocked.status).toBe(503);
+      expect(await blocked.json()).toMatchObject({ error: { type: "ficta_registry_unavailable" } });
+    } finally {
+      proxy.close();
+    }
+  });
+
   it("POST reloads live (counts-only response), and the next proxied request redacts the new value", async () => {
     const dir = mkdtempSync(join(tmpdir(), "ficta-reload-proxy-"));
     const file = join(dir, "protected-registry.json");

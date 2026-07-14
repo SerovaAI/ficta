@@ -1,4 +1,4 @@
-import type { ProtectionStatus } from "@/lib/protection-status";
+import { type ProtectionStatus, requiredRegistryBlock } from "@/lib/protection-status";
 
 export type ProtectionTone = "good" | "warning" | "danger" | "neutral";
 
@@ -30,6 +30,15 @@ export function protectionPresentation(status: ProtectionStatus | undefined, cou
       tone: "danger",
       label: "Protection error",
       description: "Protection can't be confirmed. Restart the ficta proxy and try again.",
+    };
+  }
+
+  const registryBlock = requiredRegistryBlock(status);
+  if (registryBlock) {
+    return {
+      tone: "danger",
+      label: "Sending paused",
+      description: registryBlock.message,
     };
   }
 
@@ -73,6 +82,9 @@ export function emptyStateProtectionCopy(status: ProtectionStatus | undefined): 
       ? "You can draft here, but sending stays paused until ficta reconnects and protection can be verified."
       : "You can draft here, but sending stays paused until protection can be confirmed.";
   }
+
+  const registryBlock = requiredRegistryBlock(status);
+  if (registryBlock) return `Sending is paused. ${registryBlock.message}`;
 
   if (status.pii.status === "blocking") {
     return `Sending is paused while personal-information detection recovers. ${stillProtectedSentence(status)}`;

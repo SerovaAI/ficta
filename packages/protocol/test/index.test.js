@@ -12,6 +12,7 @@ import {
   isManagedRegistryFile,
   isProtectionPreviewOk,
   isProtectionStatsOk,
+  isProtectionStatusOk,
   isProxyConfigOk,
   isRegistryReloadError,
   isRegistryReloadOk,
@@ -172,6 +173,38 @@ describe("normalizers", () => {
 });
 
 describe("runtime guards", () => {
+  it("accepts and validates required-registry readiness", () => {
+    const base = {
+      ok: true,
+      service: "ficta",
+      protection: { enabled: true, protecting: true, registeredValues: 3, policyExcluded: 0 },
+      secretShapes: { enabled: false, status: "off", message: "off" },
+      pii: {
+        enabled: false,
+        configuredBackend: "regex",
+        backend: "regex",
+        status: "off",
+        failureMode: "fail-open",
+        message: "off",
+      },
+    };
+    assert.equal(isProtectionStatusOk(base), true); // older proxy compatibility
+    assert.equal(
+      isProtectionStatusOk({
+        ...base,
+        registry: { required: true, status: "empty", message: "registry required" },
+      }),
+      true,
+    );
+    assert.equal(
+      isProtectionStatusOk({
+        ...base,
+        registry: { required: "yes", status: "blocked", message: 3 },
+      }),
+      false,
+    );
+  });
+
   it("accepts valid config and protection-stats payloads", () => {
     assert.equal(isProxyConfigOk(configPayload()), true);
     assert.equal(isProtectionStatsOk(statsPayload()), true);
