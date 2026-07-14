@@ -1,4 +1,4 @@
-import type { Entity, EntityClaim, EntityForm, Occurrence } from "./occurrence.js";
+import type { EntityClaim, EntityForm, Occurrence } from "./occurrence.js";
 
 export interface ExpansionOptions {
   caseInsensitive?: boolean;
@@ -46,7 +46,7 @@ export function expandEntities(leaves: readonly string[], claims: readonly Entit
   for (const claim of claims) {
     if (!claim.mention.protectionEligible) continue;
     const { entity } = claim;
-    const forms = matchingForms(entity);
+    const forms = matchingForms(claim);
     for (const form of forms) {
       // Registered opaque/digit-bearing forms retain exact-case matching. Detected values retain
       // their existing case expansion because the detector has already admitted the entity.
@@ -77,7 +77,11 @@ export function expandEntities(leaves: readonly string[], claims: readonly Entit
 }
 
 /** Canonical/full values are substring matches; only explicitly declared aliases may be token-bounded. */
-function matchingForms(entity: Entity): EntityForm[] {
+function matchingForms(claim: EntityClaim): EntityForm[] {
+  if (claim.mention.linkSource === "deterministic_alias") {
+    return claim.meta.value ? [{ value: claim.meta.value, boundary: "token" }] : [];
+  }
+  const { entity } = claim;
   const forms = new Map<string, EntityForm>();
   if (entity.canonical) forms.set(entity.canonical, { value: entity.canonical, boundary: "substring" });
   for (const form of entity.forms) {

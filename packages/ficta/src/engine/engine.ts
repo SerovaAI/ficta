@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { detectorFailClosed } from "./detection-policy.js";
+import { type EntityLinkAnchorIndex, entityLinkAnchorIndex, linkDetectedEntityClaims } from "./entity-linker.js";
 import { expandEntities, expansionSpans } from "./expander.js";
 import {
   type EntityClaim,
@@ -25,6 +26,7 @@ import {
   protectionRecordSurfaces,
 } from "./protection.js";
 import {
+  type AmbiguousEntityLinkDiagnostic,
   type BodyRedactionContext,
   type BodyRedactionDetails,
   DetectorUnavailableError,
@@ -262,6 +264,7 @@ export class ProtectionEngine implements RedactionEngine {
       state.metadata,
       state.seenLeaves,
       state.tokenOnly,
+      identifierHash(scopeKey),
     );
   }
 
@@ -346,6 +349,12 @@ export class ProtectionEngine implements RedactionEngine {
  * PII is garbage-collected and can never be restored into a later request's response.
  */
 class ProtectionRequestScope implements RequestScope {
+  private registryLinkingCache?: {
+    permanentClaimsLength: number;
+    registryClaims: EntityClaim[];
+    anchorIndex: EntityLinkAnchorIndex;
+  };
+
   constructor(
     private readonly plugins: readonly RedactionPlugin[],
     private readonly policy: RegistryPolicy,
@@ -357,11 +366,14 @@ class ProtectionRequestScope implements RequestScope {
     private readonly seenLeaves?: Set<string>,
     /** Resolver-clipped surfaces retain restore metadata but never become future entity candidates. */
     private readonly tokenOnly = new Set<string>(),
+    /** One-way correlation boundary for values-free local ambiguity diagnostics. */
+    private readonly protectionContextHash?: string,
     /** Explicit caller selections are re-seeded per request, never retained by a keyed scope. */
     private readonly userProtectedMetadata: Map<string, ProtectedValue[]> = new Map(),
   ) {}
 
   registerProtectedValues(values: readonly ProtectedValue[]): void {
+    let changed = false;
     for (const candidate of values) {
       const value = candidate.value.trim();
       if (!value) continue;
@@ -375,7 +387,9 @@ class ProtectionRequestScope implements RequestScope {
       };
       remember(this.userProtectedMetadata, protectedValue);
       this.vault.registerUserProtectedSurface(protectedValue, true);
+      changed = true;
     }
+    if (changed) this.registryLinkingCache = undefined;
   }
 
   async redactBodyDetailed(body: string, ctx: BodyRedactionContext = {}): Promise<BodyRedactionDetails> {
@@ -395,7 +409,7 @@ class ProtectionRequestScope implements RequestScope {
     });
     if (seen && detection.complete) for (const hash of hashes) seen.add(hash);
 
-    const registryClaims = [...this.permanentClaims, ...claimsFromMetadata(this.userProtectedMetadata, "registry")];
+    const { registryClaims, anchorIndex } = this.registryLinkingState();
     const detectedByValue = new Map<string, ProtectedValue>();
     for (const [value, metas] of this.detectedMetadata) {
       if (this.tokenOnly.has(value)) continue;
@@ -403,8 +417,11 @@ class ProtectionRequestScope implements RequestScope {
       if (meta) detectedByValue.set(value, meta);
     }
     for (const { value } of detection.detections) detectedByValue.set(value.value, value);
-    const detectedClaims = claimsFromValues([...detectedByValue.values()], "detected");
-    const detectedClaimByValue = new Map(detectedClaims.map((claim) => [claim.entity.canonical, claim]));
+    const detectedClaims = linkDetectedEntityClaims(
+      anchorIndex,
+      claimsFromValues([...detectedByValue.values()], "detected"),
+    );
+    const detectedClaimByValue = new Map(detectedClaims.map((claim) => [claim.meta.value, claim]));
 
     const occurrences: Occurrence[] = [];
     for (const { value, leaves: detectedLeaves } of detection.detections) {
@@ -458,6 +475,7 @@ class ProtectionRequestScope implements RequestScope {
     if (resolved.length > MAX_BODY_OCCURRENCES) {
       throw new RedactionInvariantError("resolved body occurrence limit exceeded");
     }
+    const ambiguityDiagnostics = resolvedAmbiguityDiagnostics(admissible, resolved, this.protectionContextHash);
 
     for (const { value } of detection.detections) remember(this.detectedMetadata, value);
     const replacements = new Map<number, string>();
@@ -538,6 +556,7 @@ class ProtectionRequestScope implements RequestScope {
       leaks: leakValues.length,
       hits: this.hitsForEntities([...owners.values()]),
       leakHits: this.hitsForOwnedValues(leakValues, leakOwners),
+      ambiguousEntityLinks: ambiguityDiagnostics.length,
     };
     if (traceValues) {
       if (found.size > 0) details.traceValues = this.traceValuesForOwnedValues(found, owners);
@@ -546,7 +565,26 @@ class ProtectionRequestScope implements RequestScope {
     if (traceOccurrences && resolvedTrace.length > 0) {
       details.traceOccurrences = resolvedTrace.sort((a, b) => a.leaf - b.leaf || a.start - b.start || b.end - a.end);
     }
+    if (traceValues && ambiguityDiagnostics.length > 0) {
+      details.traceAmbiguousEntityLinks = ambiguityDiagnostics;
+    }
     return details;
+  }
+
+  private registryLinkingState(): {
+    registryClaims: readonly EntityClaim[];
+    anchorIndex: EntityLinkAnchorIndex;
+  } {
+    const cached = this.registryLinkingCache;
+    if (cached && cached.permanentClaimsLength === this.permanentClaims.length) return cached;
+    const registryClaims = [...this.permanentClaims, ...claimsFromMetadata(this.userProtectedMetadata, "registry")];
+    const refreshed = {
+      permanentClaimsLength: this.permanentClaims.length,
+      registryClaims,
+      anchorIndex: entityLinkAnchorIndex(registryClaims),
+    };
+    this.registryLinkingCache = refreshed;
+    return refreshed;
   }
 
   async redactTextDetailed(text: string, ctx: TextRedactionContext = {}): Promise<TextRedactionDetails> {
@@ -844,6 +882,7 @@ function applyRecordBoundaries(vault: Vault, records: readonly ProtectionRecord[
 
 function occurrenceWordBounded(occurrence: Occurrence): boolean {
   if (occurrence.entity.protectionKind !== "entity") return false;
+  if (occurrence.mention.linkSource === "deterministic_alias") return true;
   if (
     expansionSpans(occurrence.surface, occurrence.entity.canonical, { caseInsensitive: true }).some(
       ({ start, end }) => start === 0 && end === occurrence.surface.length,
@@ -932,6 +971,48 @@ function leafHash(leaf: string): string {
 
 function valueHash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function identifierHash(value: string): string {
+  return valueHash(value).slice(0, 16);
+}
+
+function resolvedAmbiguityDiagnostics(
+  admissible: readonly Occurrence[],
+  resolved: readonly ResolvedOccurrence[],
+  contextHash: string | undefined,
+): AmbiguousEntityLinkDiagnostic[] {
+  const winning = resolved.filter((occurrence) => occurrence.ambiguousEntityLink !== undefined);
+  if (winning.length === 0) return [];
+  const seen = new Set<string>();
+  const diagnostics: AmbiguousEntityLinkDiagnostic[] = [];
+  for (const occurrence of admissible) {
+    const ambiguity = occurrence.ambiguousEntityLink;
+    if (!ambiguity) continue;
+    const key = `${occurrence.entity.id}\0${occurrence.leaf}\0${occurrence.start}\0${occurrence.end}`;
+    if (seen.has(key)) continue;
+    const survived = winning.some(
+      (candidate) =>
+        candidate.entity.id === occurrence.entity.id &&
+        candidate.leaf === occurrence.leaf &&
+        candidate.start < occurrence.end &&
+        candidate.end > occurrence.start,
+    );
+    if (!survived) continue;
+    seen.add(key);
+    const diagnostic: AmbiguousEntityLinkDiagnostic = {
+      code: ambiguity.code,
+      linkingRule: ambiguity.linkingRule,
+      leaf: occurrence.leaf,
+      start: occurrence.start,
+      end: occurrence.end,
+      candidateCount: ambiguity.candidateEntityIds.length,
+      candidateEntityIds: ambiguity.candidateEntityIds.map(identifierHash).sort(),
+    };
+    if (contextHash) diagnostic.contextHash = contextHash;
+    diagnostics.push(diagnostic);
+  }
+  return diagnostics.sort((a, b) => a.leaf - b.leaf || a.start - b.start || a.end - b.end);
 }
 
 /** Drop named candidates excluded by an enforced (trusted) registry-policy rule. */

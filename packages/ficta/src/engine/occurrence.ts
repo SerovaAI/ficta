@@ -8,6 +8,13 @@ export type EntityFormBoundary = "substring" | "token";
 export type MentionDetectionSource = "registry" | "detector";
 export type MentionLinkSource = "explicit_form" | "deterministic_alias" | "none";
 
+/** Values-free internal evidence that an inferred organization alias had no unique registry owner. */
+export interface AmbiguousEntityLink {
+  readonly code: "AMBIGUOUS_ENTITY_LINK";
+  readonly linkingRule: "organization_short_name";
+  readonly candidateEntityIds: readonly string[];
+}
+
 /** A declared non-canonical form with an explicit matching boundary policy. */
 export interface EntityForm {
   readonly value: string;
@@ -41,6 +48,7 @@ export interface EntityClaim {
   readonly entity: Entity;
   readonly meta: ProtectedValue;
   readonly mention: MentionTrust;
+  readonly ambiguousEntityLink?: AmbiguousEntityLink;
 }
 
 /** One exact UTF-16 range in a redactable body leaf. */
@@ -167,6 +175,7 @@ export function mapJoinedOffsets(
         entity: joined.entity,
         meta: joined.meta,
         mention: joined.mention,
+        ...(joined.ambiguousEntityLink ? { ambiguousEntityLink: joined.ambiguousEntityLink } : {}),
       });
     }
     base += text.length + (i + 1 < leaves.length ? 1 : 0);
@@ -233,6 +242,7 @@ function finalizeSlice(
     entity: slice.source.entity,
     meta: slice.source.meta,
     mention: slice.source.mention,
+    ...(slice.source.ambiguousEntityLink ? { ambiguousEntityLink: slice.source.ambiguousEntityLink } : {}),
     clipped,
     ...(clippedBy ? { clippedBy } : {}),
   };

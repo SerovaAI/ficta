@@ -70,7 +70,7 @@ function ProofRows({
   const { totals } = proof.stats;
   return (
     <>
-      <div className="grid grid-cols-2 gap-2 py-4 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2 py-4 sm:grid-cols-4">
         <Metric label="Kept out" value={totals.keptOutOfModelValues} />
         <Metric label="Affected requests" value={totals.affectedRequests} />
         <Metric label="Restored" value={totals.restoredValues} />
@@ -81,6 +81,12 @@ function ProofRows({
           value={totals.withheldFromToolsValues}
           warn={totals.withheldFromToolsValues > 0}
           description="Values the model placed in tool arguments that were replaced with placeholders this run."
+        />
+        <Metric
+          label="Ambiguous entity links"
+          value={totals.ambiguousEntityLinks}
+          warn={totals.ambiguousEntityLinks > 0}
+          description={`Across ${formatNumber(totals.ambiguousEntityLinkRequests)} affected requests; mentions stayed independently protected.`}
         />
       </div>
 
@@ -119,12 +125,18 @@ function TrendSummary({ history }: { history: ProtectionStatsDailySummary[] | un
         <p className="py-4 text-sm text-muted-foreground">No retained redaction trend data yet.</p>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-2 py-4 sm:grid-cols-5">
+          <div className="grid grid-cols-2 gap-2 py-4 sm:grid-cols-3">
             <Metric label="Kept out" value={totals.keptOutOfModelValues} />
             <Metric label="Affected requests" value={totals.affectedRequests} />
             <Metric label="Restored" value={totals.restoredValues} />
             <Metric label="Known values left" value={totals.survivingValues} warn={totals.survivingValues > 0} />
             <Metric label="Blocked" value={totals.blockedRequests} warn={totals.blockedRequests > 0} />
+            <Metric
+              label="Ambiguous entity links"
+              value={totals.ambiguousEntityLinks}
+              warn={totals.ambiguousEntityLinks > 0}
+              description={`Across ${formatNumber(totals.ambiguousEntityLinkRequests)} affected requests.`}
+            />
           </div>
           <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full min-w-[32rem] text-left text-sm">
@@ -145,6 +157,9 @@ function TrendSummary({ history }: { history: ProtectionStatsDailySummary[] | un
                   <th scope="col" className="px-3 py-2 font-medium">
                     Blocked
                   </th>
+                  <th scope="col" className="px-3 py-2 font-medium">
+                    Ambiguous links
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -155,6 +170,7 @@ function TrendSummary({ history }: { history: ProtectionStatsDailySummary[] | un
                     <CountCell value={day.affectedRequests} />
                     <CountCell value={day.survivingValues} warn={day.survivingValues > 0} />
                     <CountCell value={day.blockedRequests} warn={day.blockedRequests > 0} />
+                    <AmbiguityCell links={day.ambiguousEntityLinks} requests={day.ambiguousEntityLinkRequests} />
                   </tr>
                 ))}
               </tbody>
@@ -260,6 +276,22 @@ function CountCell({ value, warn }: { value: number; warn?: boolean }) {
   );
 }
 
+function AmbiguityCell({ links, requests }: { links: number; requests: number }) {
+  return (
+    <td
+      className={cn(
+        "whitespace-nowrap px-3 py-2 align-top tabular-nums",
+        links > 0 && "font-medium text-amber-700 dark:text-amber-300",
+      )}
+    >
+      {formatNumber(links)}
+      <div className="pt-0.5 font-normal text-muted-foreground text-xs">
+        {formatNumber(requests)} {requests === 1 ? "request" : "requests"}
+      </div>
+    </td>
+  );
+}
+
 function bucketKey(bucket: ProtectionStatsLabelBucket): string {
   return [bucket.name, bucket.source, bucket.plugin ?? "", bucket.kind ?? "", bucket.confidence ?? ""].join("\0");
 }
@@ -275,6 +307,8 @@ function sumHistory(history: ProtectionStatsDailySummary[]) {
       keptOutOfModelValues: total.keptOutOfModelValues + day.keptOutOfModelValues,
       restoredValues: total.restoredValues + day.restoredValues,
       withheldFromToolsValues: total.withheldFromToolsValues + day.withheldFromToolsValues,
+      ambiguousEntityLinks: total.ambiguousEntityLinks + day.ambiguousEntityLinks,
+      ambiguousEntityLinkRequests: total.ambiguousEntityLinkRequests + day.ambiguousEntityLinkRequests,
     }),
     {
       events: 0,
@@ -285,6 +319,8 @@ function sumHistory(history: ProtectionStatsDailySummary[]) {
       keptOutOfModelValues: 0,
       restoredValues: 0,
       withheldFromToolsValues: 0,
+      ambiguousEntityLinks: 0,
+      ambiguousEntityLinkRequests: 0,
     },
   );
 }

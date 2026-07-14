@@ -158,6 +158,10 @@ export interface ProtectionStatsTotals {
   keptOutOfModelValues: number;
   restoredValues: number;
   withheldFromToolsValues: number;
+  /** Ambiguous inferred organization mention occurrences protected through the literal path. */
+  ambiguousEntityLinks: number;
+  /** Distinct requests containing at least one ambiguous inferred organization mention. */
+  ambiguousEntityLinkRequests: number;
 }
 
 export interface ProtectionStatsBucket {
@@ -190,6 +194,8 @@ export interface ProtectionStatsEvent {
   redactedValues: number;
   survivingValues: number;
   blocked: boolean;
+  /** Values-free count of ambiguous inferred entity mentions on this event surface. */
+  ambiguousEntityLinks: number;
   /** Values-free reason for a request blocked before ordinary redaction proof was available. */
   blockReason?: ProtectionStatsBlockReason;
   redactedHits: ProtectionHit[];
@@ -232,6 +238,8 @@ export interface EgressProof {
   redactedValues: number;
   /** Registered or detected values that survived redaction; undetected PII is outside this proof. */
   survivingValues: number;
+  /** Values-free count of ambiguous inferred entity mentions protected on this request. */
+  ambiguousEntityLinks: number;
   labels: EgressProofLabel[];
 }
 

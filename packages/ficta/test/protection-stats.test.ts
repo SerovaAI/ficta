@@ -74,4 +74,33 @@ describe("protection stats label accounting", () => {
       events: [{ blockReason: "detector_unavailable" }],
     });
   });
+
+  it("counts ambiguous entity occurrences and affected requests without storing mention values", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "ficta-protection-stats-")), "stats.json");
+    const stats = new ProtectionStats(path);
+    const base = {
+      method: "POST",
+      path: "/v1/responses",
+      wire: "openai-responses" as const,
+      surface: "body" as const,
+      redactedValues: 1,
+      survivingValues: 0,
+      blocked: false,
+    };
+
+    stats.record({ ...base, requestId: 11, ambiguousEntityLinks: 2 });
+    stats.record({ ...base, requestId: 11, ambiguousEntityLinks: 1 });
+    stats.record({ ...base, requestId: 12, ambiguousEntityLinks: 1 });
+    stats.record({ ...base, requestId: 13, redactedValues: 0, ambiguousEntityLinks: 3 });
+
+    const snapshot = stats.snapshot();
+    expect(snapshot.totals).toMatchObject({
+      affectedRequests: 3,
+      redactedValues: 3,
+      ambiguousEntityLinks: 7,
+      ambiguousEntityLinkRequests: 3,
+    });
+    expect(snapshot.events.map((event) => event.ambiguousEntityLinks)).toEqual([2, 1, 1, 3]);
+    expect(readFileSync(path, "utf8")).not.toContain("Northstar");
+  });
 });

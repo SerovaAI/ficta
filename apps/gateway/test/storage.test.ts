@@ -128,6 +128,8 @@ const zeroTotals = (): ProtectionStatsTotals => ({
   keptOutOfModelValues: 0,
   restoredValues: 0,
   withheldFromToolsValues: 0,
+  ambiguousEntityLinks: 0,
+  ambiguousEntityLinkRequests: 0,
 });
 
 const totals = (patch: Partial<ProtectionStatsTotals>): ProtectionStatsTotals => ({ ...zeroTotals(), ...patch });
@@ -169,6 +171,8 @@ describe("protection stats trends", () => {
         redactedValues: 3,
         keptOutOfModelValues: 3,
         restoredValues: 2,
+        ambiguousEntityLinks: 2,
+        ambiguousEntityLinkRequests: 1,
       }),
     );
 
@@ -181,6 +185,8 @@ describe("protection stats trends", () => {
         redactedValues: 6,
         keptOutOfModelValues: 6,
         restoredValues: 4,
+        ambiguousEntityLinks: 5,
+        ambiguousEntityLinkRequests: 2,
       }),
     );
 
@@ -192,6 +198,8 @@ describe("protection stats trends", () => {
       redactedValues: 6,
       keptOutOfModelValues: 6,
       restoredValues: 4,
+      ambiguousEntityLinks: 5,
+      ambiguousEntityLinkRequests: 2,
     });
   });
 

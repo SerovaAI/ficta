@@ -200,6 +200,20 @@ export interface ProtectionTraceOccurrence extends ProtectionHit {
   origin: "registry" | "detected" | "user";
 }
 
+/** Values-free trace-only detail for one ambiguous inferred organization mention. */
+export interface AmbiguousEntityLinkDiagnostic {
+  code: "AMBIGUOUS_ENTITY_LINK";
+  linkingRule: "organization_short_name";
+  leaf: number;
+  start: number;
+  end: number;
+  candidateCount: number;
+  /** Stable one-way identifiers for local correlation; never raw registry ids. */
+  candidateEntityIds: string[];
+  /** Present for a trusted keyed request scope; never the raw scope key. */
+  contextHash?: string;
+}
+
 export interface RestoreTraceDetails {
   restored: ProtectionTraceValue[];
   withheldFromTools: ProtectionTraceValue[];
@@ -241,9 +255,12 @@ export interface BodyRedactionDetails extends BodyRedactionResult {
   hits: ProtectionHit[];
   /** Safe metadata, one entry per distinct surviving known value (labels may repeat). */
   leakHits: ProtectionHit[];
+  /** Ambiguous inferred entity mentions that remained protected through the literal path. */
+  ambiguousEntityLinks: number;
   traceValues?: ProtectionTraceValue[];
   traceLeakValues?: ProtectionTraceValue[];
   traceOccurrences?: ProtectionTraceOccurrence[];
+  traceAmbiguousEntityLinks?: AmbiguousEntityLinkDiagnostic[];
 }
 
 export interface TextRedactionDetails extends TextRedactionResult {
