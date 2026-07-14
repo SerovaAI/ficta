@@ -15,6 +15,8 @@ colors:
   dark-panel: "oklch(0.205 0 0)"
   dark-muted-rail: "oklch(0.269 0 0)"
   protection-emerald: "#059669"
+  protection-action: "#047857"
+  dark-protection-action: "#34D399"
   warning-amber-bg: "#fffbeb"
   warning-amber-ink: "#451a03"
   incident-red: "oklch(0.577 0.245 27.325)"
@@ -196,6 +198,7 @@ The system is flat by default, with depth conveyed primarily through borders, to
 
 - **Shape:** Gently curved rectangles (`8px` radius) with icon-compatible gaps. Icon-only and composer buttons may use `12px` radius where the surrounding control is larger.
 - **Primary:** Ink background with Paper text (`36px` height, `8px 16px` padding). Hover darkens by opacity (`primary/90`).
+- **Protection action:** The final "Send protected" action uses Emerald 700 with white text in light mode and Emerald 400 with Emerald 950 text in dark mode. Its stronger semantic treatment is reserved for actions that send through the protection boundary; hover and focus stay within the emerald scale.
 - **Hover / Focus:** Color transitions are immediate and quiet. Focus uses a visible `3px` ring at `ring/50` plus border-ring where supported.
 - **Secondary / Ghost / Tertiary:** Secondary uses Muted Rail; ghost buttons are transparent until hover. Link buttons use Ink text with underline on hover.
 
