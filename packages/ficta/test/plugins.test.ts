@@ -223,12 +223,13 @@ describe("registry plugin discovery", () => {
         entries: [
           {
             id: "entry-1",
-            name: "gateway:client:nsb-2026-0147:entry-1",
-            type: "client",
-            scope: "NSB-2026-0147",
-            value,
-            aliases: ["Northstar", "NBL"],
-            kind: "custom",
+            protectionKind: "entity",
+            entityType: "organization",
+            canonicalValue: value,
+            forms: [
+              { value: "Northstar", kind: "short_name", boundary: "substring" },
+              { value: "NBL", kind: "alias", boundary: "token" },
+            ],
           },
         ],
       }),
@@ -246,7 +247,7 @@ describe("registry plugin discovery", () => {
     expect(snapshot.values).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          name: "gateway:client:nsb-2026-0147:entry-1",
+          name: "managed-registry:entry-1",
           value,
           source: "managed-registry-file",
           plugin: "managed-registry-file",
@@ -254,15 +255,29 @@ describe("registry plugin discovery", () => {
           confidence: "exact",
         }),
         expect.objectContaining({
-          name: "gateway:client:nsb-2026-0147:entry-1:alias-1",
+          name: "managed-registry:entry-1",
           value: "Northstar",
           source: "managed-registry-file",
         }),
       ]),
     );
-    expect(snapshot.values.some((v) => v.value === "NBL")).toBe(false);
+    expect(snapshot.values.some((v) => v.value === "NBL")).toBe(true);
+    expect(snapshot.records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          protectionKind: "entity",
+          entityId: "entry-1",
+          entityType: "organization",
+          canonical: expect.objectContaining({ value }),
+          forms: expect.arrayContaining([
+            expect.objectContaining({ value: "Northstar", boundary: "substring" }),
+            expect.objectContaining({ value: "NBL", boundary: "token" }),
+          ]),
+        }),
+      ]),
+    );
     expect(managed?.status).toBe("loaded");
-    expect(managed?.valueCount).toBe(2);
+    expect(managed?.valueCount).toBe(3);
     expect(JSON.stringify(snapshot.discoveries)).not.toContain(value);
   });
 
@@ -272,20 +287,11 @@ describe("registry plugin discovery", () => {
     writeFileSync(
       file,
       JSON.stringify({
-        schema: "ficta.managed-registry.v2",
+        schema: "ficta.managed-registry.v3",
         revision: "future-schema-1",
         generatedBy: "future-gateway",
         generatedAt: "2026-07-10T00:00:00.000Z",
-        entries: [
-          {
-            id: "entry-1",
-            name: "gateway:client:global:entry-1",
-            type: "client",
-            value: "must-not-load",
-            aliases: [],
-            kind: "custom",
-          },
-        ],
+        entries: [],
       }),
       { mode: 0o600 },
     );
@@ -293,11 +299,35 @@ describe("registry plugin discovery", () => {
     process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "1";
     process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = file;
 
-    const snapshot = loadPluginRegistry();
-    const managed = snapshot.discoveries.find((discovery) => discovery.id === "managed-registry-file/json-files");
+    expect(() => loadPluginRegistry()).toThrow("unsupported json");
+  });
 
-    expect(snapshot.values).not.toEqual(expect.arrayContaining([expect.objectContaining({ value: "must-not-load" })]));
-    expect(managed).toMatchObject({ status: "error", valueCount: 0 });
+  it("validates ids and normalized entity-form ownership across every configured file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ficta-managed-registry-conflict-"));
+    const first = join(dir, "first.json");
+    const second = join(dir, "second.json");
+    const registry = (id: string, canonicalValue: string, form: string) => ({
+      schema: FICTA_MANAGED_REGISTRY_SCHEMA,
+      revision: `revision-${id}`,
+      generatedBy: "ficta-test",
+      generatedAt: "2026-07-14T00:00:00.000Z",
+      entries: [
+        {
+          id,
+          protectionKind: "entity",
+          entityType: "organization",
+          canonicalValue,
+          forms: [{ value: form, kind: "alias", boundary: "token" }],
+        },
+      ],
+    });
+    writeFileSync(first, JSON.stringify(registry("entity-1", "Northstar Biologics", "Northstar")), { mode: 0o600 });
+    writeFileSync(second, JSON.stringify(registry("entity-2", "Proxima Medical", "  NORTHSTAR  ")), { mode: 0o600 });
+    process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+    process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "1";
+    process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = `${first}:${second}`;
+
+    expect(() => loadPluginRegistry()).toThrow("assigned to both entity-1 and entity-2");
   });
 
   it("refuses Doppler commands resolved inside the current working tree", () => {

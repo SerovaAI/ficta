@@ -26,6 +26,8 @@ export interface VaultValue {
   name?: string;
   /** Coarse kind — fallback type for typed surrogates when the category is unmapped. */
   kind?: ProtectedValueKind;
+  /** Engine-internal matching policy; public ProtectedValue producers never need to set this. */
+  wordBounded?: boolean;
 }
 
 export interface VaultTraceValue {
@@ -71,6 +73,7 @@ export type LayerProvenance = "permanent" | "detected";
 export class SurrogateTable {
   readonly values: string[] = []; // known values, longest first
   private readonly matchForms = new Set<string>();
+  private readonly wordBoundedForms = new Set<string>();
   readonly toSur = new Map<string, string>();
   readonly toVal = new Map<string, string>();
 
@@ -125,11 +128,30 @@ export class SurrogateTable {
 
   private admitMatchForm(item: VaultValue): boolean {
     const value = item.value;
-    if (!value || this.matchForms.has(value)) return false;
+    if (!value) return false;
+    if (this.matchForms.has(value)) {
+      if (!item.wordBounded) this.wordBoundedForms.delete(value);
+      return false;
+    }
     this.ensureToken(item);
     this.matchForms.add(value);
+    if (item.wordBounded) this.wordBoundedForms.add(value);
     this.values.push(value);
     return true;
+  }
+
+  setWordBounded(value: string, wordBounded: boolean): void {
+    if (!this.matchForms.has(value)) return;
+    if (wordBounded) this.wordBoundedForms.add(value);
+    else this.wordBoundedForms.delete(value);
+  }
+
+  hasMatchForm(value: string): boolean {
+    return this.matchForms.has(value);
+  }
+
+  isWordBounded(value: string): boolean {
+    return this.wordBoundedForms.has(value);
   }
 
   private sortMatchForms(): void {
@@ -202,6 +224,17 @@ export abstract class VaultView {
     }
     out.sort((a, b) => b.length - a.length);
     return out;
+  }
+
+  /** A value is bounded only when every matching layer that contains it declares that policy. */
+  private isWordBounded(value: string): boolean {
+    let found = false;
+    for (const layer of this.layers) {
+      if (!layer.hasMatchForm(value)) continue;
+      found = true;
+      if (!layer.isWordBounded(value)) return false;
+    }
+    return found;
   }
 
   protected surrogateFor(value: string): string | undefined {
@@ -296,6 +329,7 @@ export abstract class VaultView {
         surrogate,
         surrogateSpans(out, this.surrogate.pattern),
         preservePaths,
+        this.isWordBounded(v),
       );
       if (replaced.count === 0) continue;
       found.add(v);
@@ -469,13 +503,16 @@ export abstract class VaultView {
     const bodySpans = masked === undefined ? surrogateSpans(body, this.surrogate.pattern) : [];
     const leaked: string[] = [];
     for (const v of this.orderedValues()) {
-      const stringLeak = strings.some((s, i) => containsKnownOutsidePaths(s, v, stringSpans[i], preservePaths));
+      const wordBounded = this.isWordBounded(v);
+      const stringLeak = strings.some((s, i) =>
+        containsKnownOutsidePaths(s, v, stringSpans[i], preservePaths, wordBounded),
+      );
       // For valid JSON, string contents are masked out, so the backstop scans only primitives and
       // matches a value as a complete token — never as a substring of a longer number (so a
       // registered `12345678` is not flagged inside an unrelated `99912345678`).
       const primitiveLeak =
         masked === undefined
-          ? containsKnownOutsidePaths(body, v, bodySpans, preservePaths)
+          ? containsKnownOutsidePaths(body, v, bodySpans, preservePaths, wordBounded)
           : containsKnownPrimitive(masked, v);
       if (stringLeak || primitiveLeak) leaked.push(v);
     }
@@ -486,7 +523,9 @@ export abstract class VaultView {
   containsKnownValue(text: string, preservePaths = true): boolean {
     if (!this.hasValues || !text) return false;
     const spans = surrogateSpans(text, this.surrogate.pattern);
-    return this.orderedValues().some((value) => containsKnownOutsidePaths(text, value, spans, preservePaths));
+    return this.orderedValues().some((value) =>
+      containsKnownOutsidePaths(text, value, spans, preservePaths, this.isWordBounded(value)),
+    );
   }
 
   /**
@@ -608,6 +647,11 @@ export class Vault extends VaultView {
   /** Register additional permanent values (launch-time registry ingress only). See {@link SurrogateTable.register}. */
   register(values: ReadonlyArray<VaultValue>): number {
     return this.permanent.register(values);
+  }
+
+  /** Apply structured registry matching policy after the flattened values enter the permanent table. */
+  setWordBounded(value: string, wordBounded: boolean): void {
+    this.permanent.setWordBounded(value, wordBounded);
   }
 
   /**
@@ -1010,13 +1054,14 @@ function replaceKnownOutsidePaths(
   replacement: string,
   excludedSpans: ReadonlyArray<readonly [number, number]> = NO_SPANS,
   preservePaths = true,
+  wordBounded = false,
 ): { text: string; count: number } {
   if (!needle) return { text, count: 0 };
 
   let out = "";
   let cursor = 0;
   let count = 0;
-  const matches = knownValueMatches(text, needle);
+  const matches = knownValueMatches(text, needle, wordBounded);
 
   for (const { index, end } of matches) {
     if (overlapsSpan(excludedSpans, index, end) || isInsidePathLikeToken(text, index, end, needle, preservePaths)) {
@@ -1115,9 +1160,10 @@ function containsKnownOutsidePaths(
   needle: string,
   excludedSpans: ReadonlyArray<readonly [number, number]> = NO_SPANS,
   preservePaths = true,
+  wordBounded = false,
 ): boolean {
   if (!needle) return false;
-  for (const { index, end } of knownValueMatches(text, needle)) {
+  for (const { index, end } of knownValueMatches(text, needle, wordBounded)) {
     if (!overlapsSpan(excludedSpans, index, end) && !isInsidePathLikeToken(text, index, end, needle, preservePaths))
       return true;
   }
@@ -1129,7 +1175,10 @@ function knownValueMayAppear(text: string, value: string): boolean {
   return hasWhitespace(value) && flexibleWhitespacePattern(value).test(text);
 }
 
-function knownValueMatches(text: string, value: string): Array<{ index: number; end: number }> {
+function knownValueMatches(text: string, value: string, wordBounded = false): Array<{ index: number; end: number }> {
+  if (wordBounded) {
+    return expansionSpans(text, value, { wordBounded: true }).map(({ start: index, end }) => ({ index, end }));
+  }
   if (!hasWhitespace(value)) {
     const matches: Array<{ index: number; end: number }> = [];
     let cursor = 0;

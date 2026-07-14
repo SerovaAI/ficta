@@ -15,29 +15,41 @@ import {
   saveProtectedRegistryEntry,
 } from "@/lib/storage/protected-registry";
 import {
+  PROTECTED_REGISTRY_ENTITY_TYPES,
   PROTECTED_REGISTRY_ENTRY_STATUSES,
+  PROTECTED_REGISTRY_FORM_BOUNDARIES,
+  PROTECTED_REGISTRY_FORM_KINDS,
+  PROTECTED_REGISTRY_PROTECTION_KINDS,
+  type ProtectedRegistryEntityType,
   type ProtectedRegistryEntry,
+  type ProtectedRegistryEntryForm,
   type ProtectedRegistryEntryInput,
   type ProtectedRegistryEntryStatus,
   type ProtectedRegistryEntryType,
+  type ProtectedRegistryProtectionKind,
 } from "@/lib/storage/types";
 import { cn } from "@/lib/utils";
 
 type SaveStatus = "idle" | "saving" | "error";
+type DraftForm = ProtectedRegistryEntryForm & { draftId: string };
 type Draft = {
   id?: string;
   matterId: string;
   type: ProtectedRegistryEntryType;
+  protectionKind: ProtectedRegistryProtectionKind;
+  entityType: ProtectedRegistryEntityType;
   value: string;
-  aliases: string;
+  forms: DraftForm[];
   status: ProtectedRegistryEntryStatus;
 };
 
 const EMPTY_DRAFT: Draft = {
   matterId: "",
   type: "other",
+  protectionKind: "entity",
+  entityType: "organization",
   value: "",
-  aliases: "",
+  forms: [],
   status: "approved",
 };
 
@@ -62,11 +74,7 @@ export function ProtectedRegistrySection({ showHeader = true }: { showHeader?: b
 
   const approvedEntries = useMemo(() => entries?.filter((entry) => entry.status === "approved") ?? [], [entries]);
   const approvedValues = useMemo(
-    () =>
-      approvedEntries.reduce(
-        (total, entry) => total + 1 + entry.aliases.filter((alias) => alias.length >= 4).length,
-        0,
-      ),
+    () => approvedEntries.reduce((total, entry) => total + 1 + entry.forms.length, 0),
     [approvedEntries],
   );
 
@@ -226,7 +234,7 @@ export function ProtectedRegistrySection({ showHeader = true }: { showHeader?: b
             <h4 className="text-sm font-medium">Publish approved values to the proxy</h4>
             <p className="max-w-3xl pt-1 text-muted-foreground text-xs leading-relaxed">
               Publishes one private file and verifies that the running proxy loaded that exact revision. New values and
-              aliases apply immediately. Removed values and metadata-only changes keep their previous behavior until the
+              forms apply immediately. Removed values and metadata-only changes keep their previous behavior until the
               proxy restarts.
             </p>
           </div>
@@ -268,7 +276,6 @@ export function ProtectedRegistrySection({ showHeader = true }: { showHeader?: b
           >
             {exportResult.values} value{exportResult.values === 1 ? "" : "s"} written to{" "}
             <code className="break-all font-mono">{exportResult.path}</code>
-            {exportResult.skippedAliases > 0 ? `; ${exportResult.skippedAliases} short alias(es) skipped` : ""}
           </p>
         ) : null}
         {publishResult ? (
@@ -279,7 +286,6 @@ export function ProtectedRegistrySection({ showHeader = true }: { showHeader?: b
             <p>
               {publishResult.values} value{publishResult.values === 1 ? "" : "s"} written to{" "}
               <code className="break-all font-mono">{publishResult.path}</code>
-              {publishResult.skippedAliases > 0 ? `; ${publishResult.skippedAliases} short alias(es) skipped` : ""}
             </p>
             {publishResult.reload.ok ? (
               <>
@@ -287,18 +293,17 @@ export function ProtectedRegistrySection({ showHeader = true }: { showHeader?: b
                   Verified on proxy: now protecting {publishResult.reload.total} value
                   {publishResult.reload.total === 1 ? "" : "s"} (+{publishResult.reload.added} new).
                 </p>
-                {publishResult.reload.skippedTooShort > 0 ? (
-                  <p className="pt-1 text-amber-600 dark:text-amber-400">
-                    {publishResult.reload.skippedTooShort} value
-                    {publishResult.reload.skippedTooShort === 1 ? " is" : "s are"} shorter than the proxy&apos;s minimum
-                    length and NOT protected (FICTA_REGISTRY_MIN_LEN).
-                  </p>
-                ) : null}
                 {publishResult.reload.filesMissing > 0 ? (
                   <p className="pt-1 text-amber-600 dark:text-amber-400">
                     This publish is verified, but {publishResult.reload.filesMissing} other configured registry file
                     {publishResult.reload.filesMissing === 1 ? " is" : "s are"} missing on the proxy
                     (FICTA_REGISTRY_MANAGED_FILE_PATHS).
+                  </p>
+                ) : null}
+                {publishResult.reload.restartRequired ? (
+                  <p className="pt-1 text-amber-600 dark:text-amber-400">
+                    This revision includes edits or removals to active entries. Restart the proxy to apply those
+                    changes; the previous protection remains active until then.
                   </p>
                 ) : null}
               </>
@@ -364,7 +369,10 @@ function ManualEntryForm({
   status: SaveStatus;
 }) {
   const editing = Boolean(draft.id);
-  const canSave = draft.value.trim().length > 0 && status !== "saving";
+  const canSave =
+    draft.value.trim().length > 0 &&
+    (draft.protectionKind !== "entity" || Boolean(draft.entityType)) &&
+    status !== "saving";
   return (
     <div className="min-w-0">
       <div>
@@ -375,8 +383,45 @@ function ManualEntryForm({
       </div>
 
       <div className="mt-3 grid gap-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <LabeledInput label="Protection kind" htmlFor="protected-registry-kind">
+            <Select
+              id="protected-registry-kind"
+              value={draft.protectionKind}
+              onChange={(value) =>
+                onDraftChange({
+                  ...draft,
+                  protectionKind: value as ProtectedRegistryProtectionKind,
+                  forms:
+                    value === "literal" ? draft.forms.filter((form) => form.boundary === "substring") : draft.forms,
+                })
+              }
+            >
+              {PROTECTED_REGISTRY_PROTECTION_KINDS.map((kind) => (
+                <option key={kind} value={kind}>
+                  {kind === "entity" ? "Entity with forms" : "Literal value"}
+                </option>
+              ))}
+            </Select>
+          </LabeledInput>
+          {draft.protectionKind === "entity" ? (
+            <LabeledInput label="Entity type" htmlFor="protected-registry-entity-type">
+              <Select
+                id="protected-registry-entity-type"
+                value={draft.entityType}
+                onChange={(value) => onDraftChange({ ...draft, entityType: value as ProtectedRegistryEntityType })}
+              >
+                {PROTECTED_REGISTRY_ENTITY_TYPES.map((entityType) => (
+                  <option key={entityType} value={entityType}>
+                    {entityType === "organization" ? "Organization" : "Person"}
+                  </option>
+                ))}
+              </Select>
+            </LabeledInput>
+          ) : null}
+        </div>
         <LabeledInput
-          label="Text to protect"
+          label={draft.protectionKind === "entity" ? "Canonical value" : "Text to protect"}
           htmlFor="protected-registry-value"
           hint="Use the exact spelling users are likely to paste into chat."
         >
@@ -388,18 +433,9 @@ function ManualEntryForm({
           />
         </LabeledInput>
 
-        <LabeledInput
-          label="Also protect"
-          htmlFor="protected-registry-aliases"
-          hint="Optional. Separate nicknames, abbreviations, or alternate spellings with semicolons."
-        >
-          <Input
-            id="protected-registry-aliases"
-            value={draft.aliases}
-            placeholder="Northstar; NBL"
-            onChange={(event) => onDraftChange({ ...draft, aliases: event.target.value })}
-          />
-        </LabeledInput>
+        {draft.protectionKind === "entity" ? (
+          <EntityFormsEditor forms={draft.forms} onChange={(forms) => onDraftChange({ ...draft, forms })} />
+        ) : null}
 
         {editing ? (
           <LabeledInput
@@ -454,13 +490,14 @@ function ImportPanel({
     <div>
       <h4 className="text-sm font-medium">Import CSV</h4>
       <p className="mt-1 text-muted-foreground text-xs leading-relaxed">
-        Header row supported: <code className="font-mono">value,aliases,status</code>.
+        Header row: <code className="font-mono">protection_kind,entity_type,matter_id,type,value,forms,status</code>.
+        Separate forms with semicolons and write each as <code className="font-mono">value~kind~boundary</code>.
       </p>
       <textarea
         value={value}
         rows={8}
         className="mt-3 min-h-36 w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm leading-5 outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        placeholder={`value,aliases,status\nNorthstar Renewal,"Northstar; Renewal",approved`}
+        placeholder={`protection_kind,entity_type,matter_id,type,value,forms,status\nentity,organization,NSB-2026-0147,client,Northstar Biologics,"Northstar~short_name~token;NBL~alias~token",approved`}
         onChange={(event) => onChange(event.target.value)}
       />
       <div className="mt-3 flex items-center gap-2">
@@ -543,9 +580,12 @@ function ProtectedRegistryTable({
                 <tr key={entry.id} className="border-b border-border last:border-b-0">
                   <td className="max-w-sm px-3 py-2 align-top">
                     <div className="font-medium text-foreground">{entry.value}</div>
-                    {entry.aliases.length > 0 ? (
+                    <div className="mt-1 text-muted-foreground text-xs">
+                      {entry.protectionKind === "entity" ? entry.entityType : `literal · ${entry.type}`}
+                    </div>
+                    {entry.forms.length > 0 ? (
                       <div className="mt-1 break-words text-muted-foreground text-xs">
-                        Aliases: {entry.aliases.join("; ")}
+                        Forms: {entry.forms.map((form) => `${form.value} (${form.boundary})`).join("; ")}
                       </div>
                     ) : null}
                   </td>
@@ -658,8 +698,10 @@ function setDraftFromEntry(setDraft: (draft: Draft) => void) {
       id: entry.id,
       matterId: entry.matterId,
       type: entry.type,
+      protectionKind: entry.protectionKind,
+      entityType: entry.entityType ?? "organization",
       value: entry.value,
-      aliases: entry.aliases.join("; "),
+      forms: entry.forms.map((form) => ({ ...form, draftId: crypto.randomUUID() })),
       status: entry.status,
     });
 }
@@ -669,8 +711,10 @@ function draftToInput(draft: Draft): ProtectedRegistryEntryInput {
     ...(draft.id ? { id: draft.id } : {}),
     matterId: draft.matterId,
     type: draft.type,
+    protectionKind: draft.protectionKind,
+    ...(draft.protectionKind === "entity" ? { entityType: draft.entityType } : {}),
     value: draft.value,
-    aliases: splitAliases(draft.aliases),
+    forms: draft.forms.filter((form) => form.value.trim()).map(({ draftId: _draftId, ...form }) => form),
     status: draft.status,
     source: "manual",
   };
@@ -681,16 +725,77 @@ function entryToInput(entry: ProtectedRegistryEntry): ProtectedRegistryEntryInpu
     id: entry.id,
     matterId: entry.matterId,
     type: entry.type,
+    protectionKind: entry.protectionKind,
+    ...(entry.entityType ? { entityType: entry.entityType } : {}),
     value: entry.value,
-    aliases: entry.aliases,
+    forms: entry.forms,
     status: entry.status,
     source: entry.source,
   };
 }
 
-function splitAliases(value: string): string[] {
-  return value
-    .split(/[;|]/)
-    .map((alias) => alias.trim())
-    .filter(Boolean);
+function EntityFormsEditor({ forms, onChange }: { forms: DraftForm[]; onChange: (forms: DraftForm[]) => void }) {
+  const update = (index: number, patch: Partial<ProtectedRegistryEntryForm>) =>
+    onChange(forms.map((form, itemIndex) => (itemIndex === index ? { ...form, ...patch } : form)));
+  return (
+    <div className="space-y-2">
+      <div>
+        <div className="text-muted-foreground text-xs font-medium">Additional forms</div>
+        <div className="pt-1 text-muted-foreground text-xs leading-relaxed">
+          Declare how each short name, alias, or alternate spelling may match.
+        </div>
+      </div>
+      {forms.map((form, index) => (
+        <div key={form.draftId} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_8rem_7rem_auto]">
+          <Input
+            aria-label={`Form ${index + 1} value`}
+            value={form.value}
+            placeholder="Northstar"
+            onChange={(event) => update(index, { value: event.target.value })}
+          />
+          <Select
+            id={`protected-registry-form-kind-${index}`}
+            value={form.kind}
+            onChange={(kind) => update(index, { kind: kind as ProtectedRegistryEntryForm["kind"] })}
+          >
+            {PROTECTED_REGISTRY_FORM_KINDS.map((kind) => (
+              <option key={kind} value={kind}>
+                {kind.replace("_", " ")}
+              </option>
+            ))}
+          </Select>
+          <Select
+            id={`protected-registry-form-boundary-${index}`}
+            value={form.boundary}
+            onChange={(boundary) => update(index, { boundary: boundary as ProtectedRegistryEntryForm["boundary"] })}
+          >
+            {PROTECTED_REGISTRY_FORM_BOUNDARIES.map((boundary) => (
+              <option key={boundary} value={boundary}>
+                {boundary}
+              </option>
+            ))}
+          </Select>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => onChange(forms.filter((_, itemIndex) => itemIndex !== index))}
+          >
+            <Trash2 className="size-4" aria-hidden />
+            <span className="sr-only">Remove form {index + 1}</span>
+          </Button>
+        </div>
+      ))}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() =>
+          onChange([...forms, { draftId: crypto.randomUUID(), value: "", kind: "alias", boundary: "token" }])
+        }
+      >
+        <Plus className="size-4" aria-hidden /> Add form
+      </Button>
+    </div>
+  );
 }

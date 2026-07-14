@@ -57,6 +57,13 @@
       "when": 1783782217174,
       "tag": "0007_sad_smiling_tiger",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784029877311,
+      "tag": "0008_powerful_phalanx",
+      "breakpoints": true
     }
   ]
 }

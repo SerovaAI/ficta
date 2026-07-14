@@ -113,11 +113,11 @@ export function isRegistryReloadOk(value) {
     isNonNegativeInteger(value.registry.added) &&
     isNonNegativeInteger(value.registry.total) &&
     (value.registry.loaded === undefined || isNonNegativeInteger(value.registry.loaded)) &&
-    (value.registry.skippedTooShort === undefined || isNonNegativeInteger(value.registry.skippedTooShort)) &&
     (value.registry.filesRead === undefined || isNonNegativeInteger(value.registry.filesRead)) &&
     (value.registry.filesMissing === undefined || isNonNegativeInteger(value.registry.filesMissing)) &&
     (value.registry.filesErrored === undefined || isNonNegativeInteger(value.registry.filesErrored)) &&
-    (value.registry.revision === undefined || typeof value.registry.revision === "string")
+    (value.registry.revision === undefined || typeof value.registry.revision === "string") &&
+    (value.registry.restartRequired === undefined || typeof value.registry.restartRequired === "boolean")
   );
 }
 
@@ -127,42 +127,80 @@ export function isRegistryReloadError(value) {
     isRecord(value) &&
     value.ok === false &&
     value.service === "ficta" &&
-    (value.status === "forbidden" || value.status === "unsupported") &&
+    (value.status === "forbidden" || value.status === "unsupported" || value.status === "invalid_registry") &&
     typeof value.message === "string"
   );
 }
 
 /** @param {unknown} value */
 export function isManagedRegistryFile(value) {
-  return (
-    isRecord(value) &&
-    value.schema === FICTA_MANAGED_REGISTRY_SCHEMA &&
-    isRegistryRevision(value.revision) &&
-    typeof value.generatedBy === "string" &&
-    value.generatedBy.length > 0 &&
-    typeof value.generatedAt === "string" &&
-    value.generatedAt.length > 0 &&
-    Array.isArray(value.entries) &&
-    value.entries.every(isManagedRegistryEntry)
-  );
+  if (
+    !(
+      isRecord(value) &&
+      value.schema === FICTA_MANAGED_REGISTRY_SCHEMA &&
+      isRegistryRevision(value.revision) &&
+      typeof value.generatedBy === "string" &&
+      value.generatedBy.length > 0 &&
+      isIsoTimestamp(value.generatedAt) &&
+      Array.isArray(value.entries) &&
+      value.entries.every(isManagedRegistryEntry)
+    )
+  )
+    return false;
+
+  const ids = new Set();
+  const entityOwners = new Map();
+  for (const entry of value.entries) {
+    if (ids.has(entry.id)) return false;
+    ids.add(entry.id);
+    if (entry.protectionKind !== "entity") continue;
+    for (const form of [entry.canonicalValue, ...entry.forms.map((item) => item.value)]) {
+      const normalized = normalizeManagedRegistryForm(form);
+      const owner = entityOwners.get(normalized);
+      if (owner !== undefined && owner !== entry.id) return false;
+      entityOwners.set(normalized, entry.id);
+    }
+  }
+  return true;
 }
 
 /** @param {unknown} value */
 function isManagedRegistryEntry(value) {
+  if (!isRecord(value) || typeof value.id !== "string" || value.id.trim().length === 0) return false;
+  if (value.protectionKind === "literal") {
+    return (
+      typeof value.value === "string" &&
+      value.value.trim().length > 0 &&
+      (value.semanticType === undefined || (typeof value.semanticType === "string" && value.semanticType.length > 0))
+    );
+  }
+  return (
+    value.protectionKind === "entity" &&
+    (value.entityType === "organization" || value.entityType === "person") &&
+    typeof value.canonicalValue === "string" &&
+    value.canonicalValue.trim().length > 0 &&
+    Array.isArray(value.forms) &&
+    value.forms.every(isManagedRegistryEntityForm)
+  );
+}
+
+/** @param {unknown} value */
+function isManagedRegistryEntityForm(value) {
   return (
     isRecord(value) &&
-    typeof value.id === "string" &&
-    value.id.length > 0 &&
-    typeof value.name === "string" &&
-    value.name.length > 0 &&
-    typeof value.type === "string" &&
-    value.type.length > 0 &&
-    (value.scope === undefined || typeof value.scope === "string") &&
     typeof value.value === "string" &&
-    value.value.length > 0 &&
-    isStringArray(value.aliases) &&
-    (value.kind === "secret" || value.kind === "pii" || value.kind === "custom")
+    value.value.trim().length > 0 &&
+    (value.kind === "legal_name" ||
+      value.kind === "full_name" ||
+      value.kind === "short_name" ||
+      value.kind === "alias") &&
+    (value.boundary === "substring" || value.boundary === "token")
   );
+}
+
+/** @param {string} value */
+function normalizeManagedRegistryForm(value) {
+  return value.replace(/\s+/gu, " ").trim().toLowerCase();
 }
 
 /** @param {unknown} value */
@@ -483,4 +521,11 @@ function isNonNegativeInteger(value) {
 /** @param {unknown} value */
 function isRegistryRevision(value) {
   return typeof value === "string" && /^[A-Za-z0-9._:-]{1,128}$/.test(value);
+}
+
+/** @param {unknown} value */
+function isIsoTimestamp(value) {
+  if (typeof value !== "string") return false;
+  const time = Date.parse(value);
+  return Number.isFinite(time) && new Date(time).toISOString() === value;
 }

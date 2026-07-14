@@ -4,6 +4,8 @@ import type { ProtectedValue, ProtectionConfidence } from "./plugins/types.js";
 
 export interface LiteralProtection {
   readonly protectionKind: "literal";
+  /** Durable registry id when one exists; value-derived for public ProtectedValue adapters. */
+  readonly protectionId: string;
   readonly value: string;
   readonly semanticType?: string;
   readonly authority: "registry" | "detected";
@@ -34,6 +36,13 @@ export interface RegisteredEntityProtection {
 
 export type ProtectionRecord = LiteralProtection | RegisteredEntityProtection;
 
+/** Built-in-only structured ingress, deliberately absent from the public RegistrySourcePlugin API. */
+export interface StructuredRegistrySourceCapabilities {
+  loadProtectionRecords(): readonly ProtectionRecord[];
+  /** Invalid content prevents startup instead of degrading to discovery-only. */
+  fatalLoadErrors?: boolean;
+}
+
 /** Preserve the public ProtectedValue contract while normalizing it into the richer internal model. */
 export function literalProtectionRecords(
   values: readonly ProtectedValue[],
@@ -43,6 +52,7 @@ export function literalProtectionRecords(
   for (const value of values) if (value.value && !byValue.has(value.value)) byValue.set(value.value, value);
   return [...byValue].map(([value, meta]) => ({
     protectionKind: "literal",
+    protectionId: `${authority}:${valueHash(value)}`,
     value,
     authority,
     confidence: meta.confidence ?? "probabilistic",
@@ -87,7 +97,7 @@ function literalClaim(record: LiteralProtection): EntityClaim {
   };
   return {
     entity: {
-      id: `${record.authority}:${valueHash(record.value)}`,
+      id: record.protectionId,
       protectionKind: "literal",
       provenance: record.authority === "registry" ? "registry" : "detector",
       canonical: record.value,

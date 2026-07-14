@@ -80,6 +80,7 @@ import {
   registryDiscoveryLines,
   registryPolicyLines,
   resetManagedRegistryFilePluginCache,
+  retainManagedRegistryFilePluginCacheForCurrentFiles,
   secretShapesEnabled,
   selectedBackendNames,
 } from "./plugins/index.js";
@@ -360,17 +361,29 @@ export async function startProxy(
       // Explicit cache bust before reloading: the stat-based cache key catches ordinary file edits, but
       // a rewrite landing with an identical {mtimeMs, size} fingerprint would otherwise be missed.
       resetManagedRegistryFilePluginCache();
-      const reloaded = engine.reloadRegistryValues();
-      // Surface min-len drops (counts only): a published value shorter than FICTA_REGISTRY_MIN_LEN is
-      // filtered at load, and without this it would read back to the gateway as a successful no-op.
+      let reloaded: ReturnType<NonNullable<typeof engine.reloadRegistryValues>>;
+      try {
+        reloaded = engine.reloadRegistryValues();
+      } catch (error) {
+        retainManagedRegistryFilePluginCacheForCurrentFiles();
+        log.warn({ error }, "registry reload rejected invalid source data; retaining the active registry");
+        return c.json(
+          {
+            ok: false,
+            service: "ficta",
+            status: "invalid_registry",
+            message: error instanceof Error ? error.message : "Managed registry validation failed.",
+          } satisfies RegistryReloadError,
+          409,
+        );
+      }
+      // Counts-only source health and revision acknowledgement; managed registry responses do not expose values.
       const expectedRevision = c.req.header(FICTA_REGISTRY_REVISION_HEADER)?.trim();
       const { revisions, ...managed } = managedRegistryLoadCounts();
       const revision = expectedRevision && revisions.includes(expectedRevision) ? expectedRevision : undefined;
       log.info(
         { added: reloaded.added, total: reloaded.total, ...managed, revisionConfirmed: revision !== undefined },
-        `🔄 registry reload: +${reloaded.added} value(s), ${reloaded.total} total${
-          managed.skippedTooShort > 0 ? `, ${managed.skippedTooShort} below min length` : ""
-        }`,
+        `🔄 registry reload: +${reloaded.added} value(s), ${reloaded.total} total`,
       );
       const response: RegistryReloadOk = {
         ok: true,

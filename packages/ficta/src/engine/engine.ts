@@ -18,7 +18,7 @@ import type {
   RedactionPlugin,
   RegistryPolicy,
 } from "./plugins/types.js";
-import { entityClaimsFromProtectionRecords, literalProtectionRecords } from "./protection.js";
+import { entityClaimsFromProtectionRecords, literalProtectionRecords, type ProtectionRecord } from "./protection.js";
 import {
   type BodyRedactionContext,
   type BodyRedactionDetails,
@@ -113,6 +113,10 @@ export class ProtectionEngine implements RedactionEngine {
   private readonly policy: RegistryPolicy;
   /** Metadata for permanent (registered) values only; detected-value metadata lives on each scope. */
   private readonly metadataByValue = new Map<string, ProtectedValue[]>();
+  /** Resolver inputs retain logical registry identities while the vault continues to own flattened surfaces. */
+  private readonly permanentClaims: EntityClaim[];
+  /** Records active in this process. Deletions and modifications remain active until restart. */
+  private readonly activeRegistryRecords = new Map<string, ProtectionRecord>();
   /** Persistent per-key scope state (detected layer + metadata + swept-content hashes), LRU-ordered. */
   private readonly keyedScopes = new Map<string, KeyedScopeState>();
   private defaultRequestScope?: ProtectionRequestScope;
@@ -148,8 +152,12 @@ export class ProtectionEngine implements RedactionEngine {
     // pass through the same enforced exclusions so every ingress into the vault is consistent.
     const values = [...this.registrySnapshot.values, ...admit(opts.values ?? [], this.policy)];
     for (const value of values) remember(this.metadataByValue, value);
+    const optionRecords = literalProtectionRecords(admit(opts.values ?? [], this.policy), "registry");
+    this.permanentClaims = entityClaimsFromProtectionRecords([...this.registrySnapshot.records, ...optionRecords]);
+    for (const record of this.registrySnapshot.records) this.activeRegistryRecords.set(recordKey(record), record);
     this.registrySize = values.length;
     this.vault = new Vault(values);
+    applyRecordBoundaries(this.vault, this.registrySnapshot.records);
   }
 
   /**
@@ -167,13 +175,24 @@ export class ProtectionEngine implements RedactionEngine {
    * Callers that want a file edit picked up must bust the source plugin's cache first (see
    * `resetManagedRegistryFilePluginCache`); the stat-based cache key covers ordinary edits.
    */
-  reloadRegistryValues(): { added: number; total: number } {
+  reloadRegistryValues(): { added: number; total: number; restartRequired: boolean } {
     const snapshot = loadPluginRegistry(this.plugins, this.trusted);
-    const fresh = snapshot.values.filter((value) => value.value && !this.metadataByValue.has(value.value));
+    const nextByKey = new Map(snapshot.records.map((record) => [recordKey(record), record]));
+    let restartRequired = false;
+    for (const [key, active] of this.activeRegistryRecords) {
+      const next = nextByKey.get(key);
+      if (!next || recordFingerprint(next) !== recordFingerprint(active)) restartRequired = true;
+    }
+
+    const newRecords = snapshot.records.filter((record) => !this.activeRegistryRecords.has(recordKey(record)));
+    const fresh = newRecords.flatMap(flattenProtectionRecord);
     for (const value of fresh) remember(this.metadataByValue, value);
     const added = this.vault.register(fresh);
+    this.permanentClaims.push(...entityClaimsFromProtectionRecords(newRecords));
+    for (const record of newRecords) this.activeRegistryRecords.set(recordKey(record), record);
+    applyRecordBoundaries(this.vault, [...this.activeRegistryRecords.values()]);
     this.registrySnapshot = snapshot; // discovery/policyExcluded lines in /__ficta/status reflect the reload
-    return { added, total: this.vault.size };
+    return { added, total: this.vault.size, restartRequired };
   }
 
   get size(): number {
@@ -219,13 +238,20 @@ export class ProtectionEngine implements RedactionEngine {
    */
   beginRequest(scopeKey?: string): RequestScope {
     if (!scopeKey) {
-      return new ProtectionRequestScope(this.plugins, this.policy, this.metadataByValue, this.vault.beginScope());
+      return new ProtectionRequestScope(
+        this.plugins,
+        this.policy,
+        this.metadataByValue,
+        this.permanentClaims,
+        this.vault.beginScope(),
+      );
     }
     const state = this.keyedScopeState(scopeKey);
     return new ProtectionRequestScope(
       this.plugins,
       this.policy,
       this.metadataByValue,
+      this.permanentClaims,
       this.vault.beginScope(state.detected, state.registryDerived),
       state.metadata,
       state.seenLeaves,
@@ -269,6 +295,7 @@ export class ProtectionEngine implements RedactionEngine {
         this.plugins,
         this.policy,
         this.metadataByValue,
+        this.permanentClaims,
         this.vault.beginScope(),
       );
     }
@@ -317,6 +344,7 @@ class ProtectionRequestScope implements RequestScope {
     private readonly plugins: readonly RedactionPlugin[],
     private readonly policy: RegistryPolicy,
     private readonly permanentMetadata: ReadonlyMap<string, ProtectedValue[]>,
+    private readonly permanentClaims: readonly EntityClaim[],
     private readonly vault: ScopedVault,
     private readonly detectedMetadata: Map<string, ProtectedValue[]> = new Map(),
     /** Present only for keyed scopes: leaf hashes already swept by every available detector. */
@@ -361,10 +389,7 @@ class ProtectionRequestScope implements RequestScope {
     });
     if (seen && detection.complete) for (const hash of hashes) seen.add(hash);
 
-    const registryClaims = [
-      ...claimsFromMetadata(this.permanentMetadata, "registry"),
-      ...claimsFromMetadata(this.userProtectedMetadata, "registry"),
-    ];
+    const registryClaims = [...this.permanentClaims, ...claimsFromMetadata(this.userProtectedMetadata, "registry")];
     const detectedByValue = new Map<string, ProtectedValue>();
     for (const [value, metas] of this.detectedMetadata) {
       if (this.tokenOnly.has(value)) continue;
@@ -440,7 +465,11 @@ class ProtectionRequestScope implements RequestScope {
       const leaf = document.leaves[leafIndex];
       if (!leaf) continue;
       const rewritten = spliceResolvedOccurrences(leaf.text, claims, (occurrence) => {
-        const surface = { ...occurrence.meta, value: occurrence.surface };
+        const surface = {
+          ...occurrence.meta,
+          value: occurrence.surface,
+          wordBounded: occurrenceWordBounded(occurrence),
+        };
         const userProtected = this.userProtectedMetadata.has(occurrence.entity.canonical);
         const token = userProtected
           ? this.vault.registerUserProtectedSurface(surface, matchSurfaces.has(occurrence.surface))
@@ -765,6 +794,75 @@ function claimsFromMetadata(
 
 function claimsFromValues(values: readonly ProtectedValue[], authority: "registry" | "detected"): EntityClaim[] {
   return entityClaimsFromProtectionRecords(literalProtectionRecords(values, authority));
+}
+
+function recordKey(record: ProtectionRecord): string {
+  return record.protectionKind === "entity" ? record.entityId : record.protectionId;
+}
+
+function recordFingerprint(record: ProtectionRecord): string {
+  if (record.protectionKind === "literal") {
+    return JSON.stringify({
+      protectionKind: record.protectionKind,
+      value: record.value,
+      semanticType: record.semanticType,
+      authority: record.authority,
+      confidence: record.confidence,
+      meta: record.meta,
+    });
+  }
+  return JSON.stringify({
+    protectionKind: record.protectionKind,
+    entityType: record.entityType,
+    canonical: record.canonical,
+    forms: [...record.forms].sort((a, b) => a.formId.localeCompare(b.formId)),
+    provenance: record.provenance,
+    meta: record.meta,
+  });
+}
+
+function flattenProtectionRecord(record: ProtectionRecord): ProtectedValue[] {
+  if (record.protectionKind === "literal") return [{ ...record.meta, value: record.value }];
+  return [record.canonical, ...record.forms].map((form) => ({
+    ...record.meta,
+    value: form.value,
+  }));
+}
+
+function applyRecordBoundaries(vault: Vault, records: readonly ProtectionRecord[]): void {
+  const policies = new Map<string, boolean>();
+  for (const record of records) {
+    if (record.protectionKind === "literal") {
+      policies.set(record.value, false);
+      continue;
+    }
+    policies.set(record.canonical.value, false);
+    for (const form of record.forms) {
+      if (policies.get(form.value) !== false) policies.set(form.value, form.boundary === "token");
+    }
+  }
+  for (const [value, wordBounded] of policies) vault.setWordBounded(value, wordBounded);
+}
+
+function occurrenceWordBounded(occurrence: Occurrence): boolean {
+  if (occurrence.entity.protectionKind !== "entity") return false;
+  if (
+    expansionSpans(occurrence.surface, occurrence.entity.canonical, { caseInsensitive: true }).some(
+      ({ start, end }) => start === 0 && end === occurrence.surface.length,
+    )
+  ) {
+    return false;
+  }
+  let matchedToken = false;
+  for (const form of occurrence.entity.forms) {
+    const matchesSurface = expansionSpans(occurrence.surface, form.value, { caseInsensitive: true }).some(
+      ({ start, end }) => start === 0 && end === occurrence.surface.length,
+    );
+    if (!matchesSurface) continue;
+    if (form.boundary === "substring") return false;
+    matchedToken = true;
+  }
+  return matchedToken;
 }
 
 function exactDetectorOccurrences(leaves: readonly BodyLeaf[], value: string, claim: EntityClaim): Occurrence[] {

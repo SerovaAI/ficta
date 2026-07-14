@@ -68,7 +68,7 @@ export interface RedactionEngine {
    * apply on restart). Optional: engines without a reloadable registry simply omit it, and the proxy's
    * reload endpoint reports the capability as unavailable.
    */
-  reloadRegistryValues?(): { added: number; total: number };
+  reloadRegistryValues?(): { added: number; total: number; restartRequired?: boolean };
 }
 
 /** Values-free engine diagnostics consumed by the proxy status, banner, and returned handle. */

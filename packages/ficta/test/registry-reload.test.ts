@@ -66,11 +66,9 @@ function writeManagedFile(file: string, values: string[], revision = `revision-$
       generatedAt: "2026-07-10T00:00:00.000Z",
       entries: values.map((value, i) => ({
         id: `entry-${i}`,
-        name: `gateway:client:global:entry-${i}`,
-        type: "client",
+        protectionKind: "literal",
         value,
-        aliases: [],
-        kind: "custom",
+        semanticType: "client",
       })),
     }),
     { mode: 0o600 },
@@ -91,7 +89,7 @@ describe("engine registry reload", () => {
     // edit up on its own here — the engine-level reload does NOT get the endpoint's explicit reset.
     writeManagedFile(file, ["Northstar Biologics", "Copper Kite Litigation"]);
     const first = engine.reloadRegistryValues();
-    expect(first).toEqual({ added: 1, total: 2 });
+    expect(first).toEqual({ added: 1, total: 2, restartRequired: false });
 
     // A fresh scope protects the new value immediately: redacted, case-expanded, restored.
     const scope = engine.beginRequest();
@@ -105,7 +103,7 @@ describe("engine registry reload", () => {
     expect(restored).toContain("COPPER KITE LITIGATION");
 
     // Unchanged file → idempotent no-op.
-    expect(engine.reloadRegistryValues()).toEqual({ added: 0, total: 2 });
+    expect(engine.reloadRegistryValues()).toEqual({ added: 0, total: 2, restartRequired: false });
   });
 
   it("existing keyed scopes see reloaded values on their next request, detected layer intact", async () => {
@@ -121,12 +119,90 @@ describe("engine registry reload", () => {
     expect(before.body).toContain("Frog Trust"); // not yet registered
 
     writeManagedFile(file, ["Northstar Biologics", "Frog Trust"]);
-    expect(engine.reloadRegistryValues()).toEqual({ added: 1, total: 2 });
+    expect(engine.reloadRegistryValues()).toEqual({ added: 1, total: 2, restartRequired: false });
 
     // Turn 2 on the SAME key: the shared permanent layer now covers the value.
     const after = await engine.beginRequest(key).redactBodyDetailed(JSON.stringify({ content: "Frog Trust memo" }));
     expect(after.body).not.toContain("Frog Trust");
     expect(after.leaks).toBe(0);
+  });
+
+  it("defers modifications and removals until restart while retaining the active snapshot", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ficta-reload-restart-"));
+    const file = join(dir, "protected-registry.json");
+    process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = file;
+    writeManagedFile(file, ["Northstar Biologics"]);
+    const engine = new ProtectionEngine({ plugins: [managedRegistryFilePlugin] });
+
+    writeManagedFile(file, ["Changed Northstar"]);
+    expect(engine.reloadRegistryValues()).toEqual({ added: 0, total: 1, restartRequired: true });
+    const modified = await engine
+      .beginRequest()
+      .redactBodyDetailed(JSON.stringify({ content: "Northstar Biologics and Changed Northstar" }));
+    expect(modified.body).not.toContain("Northstar Biologics");
+    expect(modified.body).toContain("Changed Northstar");
+
+    writeManagedFile(file, []);
+    expect(engine.reloadRegistryValues()).toEqual({ added: 0, total: 1, restartRequired: true });
+    const removed = await engine.beginRequest().redactBodyDetailed(JSON.stringify({ content: "Northstar Biologics" }));
+    expect(removed.body).not.toContain("Northstar Biologics");
+  });
+
+  it("retains the previous registry after a failed reload", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ficta-reload-invalid-"));
+    const file = join(dir, "protected-registry.json");
+    process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = file;
+    writeManagedFile(file, ["Northstar Biologics"]);
+    const engine = new ProtectionEngine({ plugins: [managedRegistryFilePlugin] });
+
+    writeFileSync(file, "not json", { mode: 0o600 });
+    expect(() => engine.reloadRegistryValues()).toThrow("invalid managed registry file");
+    const result = await engine.beginRequest().redactBodyDetailed(JSON.stringify({ content: "Northstar Biologics" }));
+    expect(result.body).not.toContain("Northstar Biologics");
+  });
+
+  it("ingests entity forms with durable identity and explicit token boundaries", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ficta-entity-"));
+    const file = join(dir, "protected-registry.json");
+    process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = file;
+    writeFileSync(
+      file,
+      JSON.stringify({
+        schema: FICTA_MANAGED_REGISTRY_SCHEMA,
+        revision: "entity-revision-1",
+        generatedBy: "ficta-test",
+        generatedAt: "2026-07-14T00:00:00.000Z",
+        entries: [
+          {
+            id: "entity:northstar",
+            protectionKind: "entity",
+            entityType: "organization",
+            canonicalValue: "Northstar Biologics",
+            forms: [{ value: "Northstar", kind: "short_name", boundary: "token" }],
+          },
+        ],
+      }),
+      { mode: 0o600 },
+    );
+    const engine = new ProtectionEngine({ plugins: [managedRegistryFilePlugin] });
+    const body = JSON.stringify({ content: "Northstar Biologics, Northstar, and Northstarship" });
+    const result = await engine.beginRequest().redactBodyDetailed(body, { traceOccurrences: true });
+
+    expect(result.body).not.toContain("Northstar Biologics,");
+    expect(result.body).toContain("Northstarship");
+    expect(result.leaks).toBe(0);
+    expect(result.traceOccurrences).toHaveLength(2);
+    expect(engine.beginRequest().restoreText(result.body)).toBe(body);
+    const header = await engine.beginRequest().redactTextDetailed("Northstar Northstarship", {
+      surface: "header",
+      preservePaths: false,
+    });
+    expect(header.text).not.toMatch(/^Northstar /u);
+    expect(header.text).toContain("Northstarship");
+    expect(header.leaks).toBe(0);
+    const scope = engine.beginRequest();
+    const scoped = await scope.redactBodyDetailed(body);
+    expect(scope.restoreText(scoped.body)).toBe(body);
   });
 });
 
@@ -206,7 +282,7 @@ describe("proxy registry reload endpoint", () => {
     }
   });
 
-  it("blocks strict-mode provider traffic when a registry source errors", async () => {
+  it("fails startup when a managed registry source is invalid", async () => {
     const dir = mkdtempSync(join(tmpdir(), "ficta-required-registry-error-"));
     const file = join(dir, "protected-registry.json");
     process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = file;
@@ -217,22 +293,7 @@ describe("proxy registry reload endpoint", () => {
     process.env.FICTA_UPSTREAM = "http://127.0.0.1:1";
 
     const { startProxy } = await import("../src/server.js");
-    const proxy = await startProxy({ port: 0 });
-    try {
-      const base = `http://127.0.0.1:${proxy.port}`;
-      const status = await (await fetch(`${base}${FICTA_STATUS_PATH}`)).json();
-      expect(status).toMatchObject({ registry: { required: true, status: "error" } });
-
-      const blocked = await fetch(`${base}/v1/messages`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: "{}",
-      });
-      expect(blocked.status).toBe(503);
-      expect(await blocked.json()).toMatchObject({ error: { type: "ficta_registry_unavailable" } });
-    } finally {
-      proxy.close();
-    }
+    await expect(startProxy({ port: 0 })).rejects.toThrow("invalid managed registry file");
   });
 
   it("POST reloads live (counts-only response), and the next proxied request redacts the new value", async () => {
@@ -270,8 +331,7 @@ describe("proxy registry reload endpoint", () => {
       // Non-POST → 405.
       expect((await fetch(`${base}${FICTA_REGISTRY_RELOAD_PATH}`)).status).toBe(405);
 
-      // Publish: the gateway rewrites the file, then POSTs reload. "ZA" is below FICTA_REGISTRY_MIN_LEN
-      // (4 in this suite) — it must be surfaced as skippedTooShort, not read as a silent success.
+      // Managed forms and literals are explicit policy, so the short literal is not silently dropped.
       const revision = "gateway-revision-3";
       writeManagedFile(file, ["Northstar Biologics", "Copper Kite Litigation", "ZA"], revision);
       const res = await fetch(`${base}${FICTA_REGISTRY_RELOAD_PATH}`, {
@@ -286,10 +346,10 @@ describe("proxy registry reload endpoint", () => {
       expect(isRegistryReloadOk(json)).toBe(true);
       if (isRegistryReloadOk(json)) {
         expect(json.registry).toEqual({
-          added: 1,
-          total: 2,
-          loaded: 2,
-          skippedTooShort: 1,
+          added: 2,
+          total: 3,
+          restartRequired: false,
+          loaded: 3,
           filesRead: 1,
           filesMissing: 0,
           filesErrored: 0,
@@ -320,7 +380,22 @@ describe("proxy registry reload endpoint", () => {
       const status = (await (await fetch(`${base}${FICTA_STATUS_PATH}`)).json()) as {
         protection: { registeredValues: number };
       };
-      expect(status.protection.registeredValues).toBe(2);
+      expect(status.protection.registeredValues).toBe(3);
+
+      // A malformed next publication is rejected atomically and the last valid snapshot remains live.
+      writeFileSync(file, "not json", { mode: 0o600 });
+      const rejected = await fetch(`${base}${FICTA_REGISTRY_RELOAD_PATH}`, { method: "POST" });
+      expect(rejected.status).toBe(409);
+      expect(await rejected.json()).toMatchObject({ ok: false, status: "invalid_registry" });
+      upstreamSaw = "";
+      const afterRejected = await fetch(`${base}/v1/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ messages: [{ role: "user", content: "Copper Kite Litigation" }] }),
+      });
+      expect(afterRejected.status).toBe(200);
+      await afterRejected.text();
+      expect(upstreamSaw).not.toContain("Copper Kite Litigation");
     } finally {
       proxy?.close();
       await new Promise<void>((resolve, reject) => upstream.close((err) => (err ? reject(err) : resolve())));

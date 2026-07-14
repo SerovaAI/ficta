@@ -1,4 +1,9 @@
 import { isRecord } from "../json.js";
+import {
+  literalProtectionRecords,
+  type ProtectionRecord,
+  type StructuredRegistrySourceCapabilities,
+} from "../protection.js";
 import { piiPlugin } from "./pii/index.js";
 import {
   buildRegistryPolicy,
@@ -34,6 +39,8 @@ export const defaultDetectors: readonly RedactionPlugin[] = [secretShapesPlugin,
 
 export interface PluginRegistrySnapshot {
   values: ProtectedValue[];
+  /** Logical records corresponding to the flattened exact values. */
+  records: ProtectionRecord[];
   pluginNames: string[];
   discoveries: PluginDiscovery[];
   registryPolicy: RegistryPolicy;
@@ -149,6 +156,7 @@ export function loadPluginRegistry(
     ? { exclusions: [userExclusion.rule, ...pluginPolicy.exclusions] }
     : pluginPolicy;
   const values: ProtectedValue[] = [];
+  const records: ProtectionRecord[] = [];
   const pluginNames: string[] = [];
   const discoveries: PluginDiscovery[] = [];
   let policyExcluded = 0;
@@ -176,8 +184,10 @@ export function loadPluginRegistry(
       continue;
     }
 
+    const structured = plugin as typeof plugin & Partial<StructuredRegistrySourceCapabilities>;
     try {
       const loaded = plugin.loadValues();
+      const admittedValues: ProtectedValue[] = [];
       for (const value of loaded) {
         const candidate = { ...value, plugin: value.plugin ?? plugin.name };
         const excludedBy = protectedValueExcludedBy(candidate, registryPolicy);
@@ -193,8 +203,20 @@ export function loadPluginRegistry(
           continue;
         }
         values.push(candidate);
+        admittedValues.push(candidate);
       }
-    } catch {
+      const loadedRecords =
+        structured.loadProtectionRecords?.() ?? literalProtectionRecords(admittedValues, "registry");
+      for (const record of loadedRecords) {
+        const meta = { ...record.meta, plugin: record.meta.plugin ?? plugin.name };
+        if (protectedValueExcludedBy(meta, registryPolicy)) continue;
+        records.push({ ...record, meta } as ProtectionRecord);
+      }
+    } catch (error) {
+      if (structured.fatalLoadErrors) {
+        const detail = error instanceof Error ? `: ${error.message}` : "";
+        throw new Error(`ficta registry source ${plugin.name} contains invalid data${detail}`, { cause: error });
+      }
       discoveries.push({
         id: `${plugin.name}/load`,
         plugin: plugin.name,
@@ -210,6 +232,7 @@ export function loadPluginRegistry(
 
   return {
     values,
+    records,
     pluginNames,
     discoveries,
     registryPolicy,
