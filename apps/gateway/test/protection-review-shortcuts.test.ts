@@ -33,4 +33,13 @@ describe("protection review shortcuts", () => {
     expect(protectionReviewShortcut(escapeEvent, true)).toBeUndefined();
     expect(protectionReviewShortcut({ ...escapeEvent, defaultPrevented: true }, false)).toBeUndefined();
   });
+
+  it("does not intercept the native copy shortcut", () => {
+    expect(
+      protectionReviewShortcut({ key: "c", metaKey: true, ctrlKey: false, defaultPrevented: false }, false),
+    ).toBeUndefined();
+    expect(
+      protectionReviewShortcut({ key: "c", metaKey: false, ctrlKey: true, defaultPrevented: false }, false),
+    ).toBeUndefined();
+  });
 });

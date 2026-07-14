@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   automaticProtectionValues,
   normalizeHighlightedProtectionValue,
+  protectionSelectionCandidate,
   validateProtectionValue,
 } from "../src/lib/protection-review-value";
 
@@ -98,6 +99,52 @@ describe("validateProtectionValue", () => {
     expect(
       validateProtectionValue({ originalText: text, protectedValues: [], value: "fraud", ...automaticValues }),
     ).toEqual({ ok: true, value: "fraud" });
+  });
+});
+
+describe("protectionSelectionCandidate", () => {
+  const originalText = "Review fraud, wilfully, before sharing Project Apollo.";
+
+  it("preserves exact clipboard text while normalizing the value used for protection", () => {
+    expect(
+      protectionSelectionCandidate({
+        rawValue: " fraud, wilfully, ",
+        originalText,
+        protectedValues: [],
+      }),
+    ).toEqual({
+      rawValue: " fraud, wilfully, ",
+      protection: { ok: true, value: "fraud, wilfully" },
+    });
+  });
+
+  it("keeps unprotectable selections available for copying", () => {
+    expect(protectionSelectionCandidate({ rawValue: "!!!", originalText, protectedValues: [] })).toEqual({
+      rawValue: "!!!",
+      protection: { ok: false, reason: "empty" },
+    });
+    expect(
+      protectionSelectionCandidate({
+        rawValue: "Project Apollo",
+        originalText,
+        protectedValues: ["Project Apollo"],
+      }),
+    ).toEqual({
+      rawValue: "Project Apollo",
+      protection: { ok: false, reason: "protected-chat" },
+    });
+  });
+
+  it("treats surrogate selections as copyable but already protected", () => {
+    const surrogate = "FICTA_SECRET_0123456789abcdef0123456789abcdef";
+    expect(protectionSelectionCandidate({ rawValue: surrogate, originalText, protectedValues: [] })).toEqual({
+      rawValue: surrogate,
+      protection: { ok: false, reason: "surrogate" },
+    });
+  });
+
+  it("omits collapsed or whitespace-only selections", () => {
+    expect(protectionSelectionCandidate({ rawValue: "  ", originalText, protectedValues: [] })).toBeUndefined();
   });
 });
 

@@ -154,9 +154,10 @@ protection. Configure the same absolute path with `FICTA_GATEWAY_MANAGED_REGISTR
 Each chat starts with **Review before send** on, so **Send** opens an inline protection review before any
 provider request starts. Users can turn it off for the current chat and turn it back on whenever they want
 another review. An admin can lock review on under **Admin > General**. Users can inspect
-the original message, switch to the exact surrogate-bearing text the model will see, and select or type a
-missed phrase to protect throughout that chat. Chat selections remain user/thread-scoped and do not silently
-change workspace policy. **Suggest for workspace** adds review-only rows to the existing Protected Registry;
+the original message, switch to the exact surrogate-bearing text the model will see, and select a missed phrase
+to copy, protect throughout that chat, or protect and suggest for workspace review in one explicit action. Users
+can also type a missed phrase. Chat selections remain user/thread-scoped and do not silently change workspace
+policy. **Suggest for workspace** adds review-only rows to the existing Protected Registry;
 an admin may edit, approve, and publish them. Stored chat selections are treated as sensitive
 application data alongside the restored transcript and are deleted with the thread.
 
