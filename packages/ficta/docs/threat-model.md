@@ -18,6 +18,22 @@ This is an **exact-match** promise for registered values in covered redacted req
 general claim that all secrets or all PII are detected. Any public "security" wording should
 include this scope.
 
+## Entity-family metadata disclosure
+
+For structured managed-registry `entity` records in a trusted keyed request body, ficta sends a
+context-bound family token with a coarse `ORG` or `PERSON` type, an entity tag shared by linked forms,
+and an exact-surface tag used for reversible restoration. This deliberately reveals coarse entity
+type and within-context sameness to preserve attribution. HMAC-derived tags do not reveal the raw
+identity, registry ID, operator labels, legal role, matter metadata, or a stable identity across
+different protection contexts.
+
+Only registered canonical/forms and uniquely anchored high-confidence organization aliases join a
+family. A linked detected alias retains detector authority and confidence; linking does not upgrade it
+to registry trust. Ambiguous links, detector-only entities, explicit user selections, headers,
+queries, and unkeyed requests remain protected with literal tokens and do not claim shared identity.
+People link only through explicit registered forms. Workspace registry applicability does not imply
+matter-specific enforcement.
+
 ## Covered by default
 
 - Model API request bodies handled by the proxy.
@@ -68,6 +84,7 @@ honest there too.
 - **Fail closed for expected leaks.** If a registered value remains in a surface ficta is supposed to redact, ficta blocks rather than forwarding.
 - **Usability for coding agents.** Path-like tokens on the query string and in the request body are preserved so legitimate path parameters and agent tool calls (`cd`, `Read`, `Edit`) aren't mangled — a registered value inside a real path is far more likely a path segment than a secret. Request **headers** are the exception: they rarely carry a legitimate local path, so a registered value inside a slash-path in a header is redacted, closing that leak surface at no ergonomic cost.
 - **Local only.** Registry values and surrogate mappings are kept in memory for the local proxy session and are not intentionally sent anywhere except where explicitly restored locally. The proxy-internal surrogate key is not passed to child agent processes.
+- **Controlled entity metadata.** Entity-family tokens expose only coarse person/organization type and within-context sameness; they never encode party role, matter, or a cross-context identifier.
 
 ## Public-claim guardrails
 

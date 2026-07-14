@@ -96,9 +96,9 @@ export class SurrogateTable {
 
   /**
    * Ensure a reversible raw-value↔token mapping without admitting the raw value to future matching
-   * or leak scans. Phase 4 uses this for clip-produced residuals: they must round-trip, but must not
-   * silently become body-wide persistent match candidates in a keyed scope. The table is name-blind:
-   * callers with named candidates must enforce registry policy before calling this method.
+   * or leak scans. Entity rendering uses this for clip-produced residuals: they must round-trip, but
+   * must not silently become body-wide persistent match candidates in a keyed scope. The table is
+   * name-blind: callers with named candidates must enforce registry policy before calling this method.
    */
   ensureToken(item: VaultValue): boolean {
     const value = item.value;

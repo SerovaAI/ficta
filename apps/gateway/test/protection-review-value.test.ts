@@ -136,11 +136,12 @@ describe("protectionSelectionCandidate", () => {
   });
 
   it("treats surrogate selections as copyable but already protected", () => {
-    const surrogate = "FICTA_SECRET_0123456789abcdef0123456789abcdef";
-    expect(protectionSelectionCandidate({ rawValue: surrogate, originalText, protectedValues: [] })).toEqual({
-      rawValue: surrogate,
-      protection: { ok: false, reason: "surrogate" },
-    });
+    for (const surrogate of ["FICTA_SECRET_0123456789abcdef0123456789abcdef", "FICTA_ORG_45SZ6UEHCLPT_ZWQCH5ASZWWH"]) {
+      expect(protectionSelectionCandidate({ rawValue: surrogate, originalText, protectedValues: [] })).toEqual({
+        rawValue: surrogate,
+        protection: { ok: false, reason: "surrogate" },
+      });
+    }
   });
 
   it("omits collapsed or whitespace-only selections", () => {

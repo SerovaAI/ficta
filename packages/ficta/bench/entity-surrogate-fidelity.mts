@@ -124,7 +124,7 @@ console.log(
       phase: "0-characterization",
       fixture: fixture.name,
       mode: options.targets.length === 0 ? "offline" : "live",
-      note: "Entity-family rendering has a gated engine path and is not the shipped default before the release gate.",
+      note: "Entity-family rendering is active for structured entities in trusted keyed request bodies.",
       offline,
       live,
     },

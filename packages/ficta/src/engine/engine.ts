@@ -57,8 +57,6 @@ export interface ProtectionEngineOptions {
    * fence against *external* plugins lives in the public `loadPluginRegistry` (see plugins/index.ts).
    */
   trusted?: ReadonlySet<FictaPluginBase>;
-  /** Phase 4 verification gate. Phase 5 enables this inherently for structured entity records. */
-  entityFamilyRendering?: boolean;
 }
 
 /** How long a keyed scope's detected PII may sit idle in memory before it is dropped. */
@@ -121,7 +119,6 @@ export class ProtectionEngine implements RedactionEngine {
   private readonly hasDetectors: boolean;
   private readonly vault: Vault;
   private readonly policy: RegistryPolicy;
-  private readonly entityFamilyRendering: boolean;
   /** Metadata for permanent (registered) values only; detected-value metadata lives on each scope. */
   private readonly metadataByValue = new Map<string, ProtectedValue[]>();
   /** Resolver inputs retain logical registry identities while the vault continues to own flattened surfaces. */
@@ -159,7 +156,6 @@ export class ProtectionEngine implements RedactionEngine {
     // calling pluginsHaveDetectors (which would re-validate every plugin).
     this.hasDetectors = this.plugins.some((plugin) => Boolean(plugin.detectText));
     this.policy = this.registrySnapshot.registryPolicy;
-    this.entityFamilyRendering = opts.entityFamilyRendering === true;
     // registry.values are already policy-filtered by loadPluginRegistry; caller-supplied opts.values
     // pass through the same enforced exclusions so every ingress into the vault is consistent.
     const admittedOptions = admit(opts.values ?? [], this.policy);
@@ -169,7 +165,7 @@ export class ProtectionEngine implements RedactionEngine {
     this.permanentClaims = entityClaimsFromProtectionRecords([...this.registrySnapshot.records, ...optionRecords]);
     for (const record of this.registrySnapshot.records) this.activeRegistryRecords.set(recordKey(record), record);
     this.registrySize = values.length;
-    this.vault = new Vault(values, this.entityFamilyRendering ? entityFamilySurrogateStrategy() : surrogateStrategy());
+    this.vault = new Vault(values, entityFamilySurrogateStrategy(surrogateStrategy()));
     applyRecordBoundaries(this.vault, this.registrySnapshot.records);
   }
 
@@ -265,11 +261,11 @@ export class ProtectionEngine implements RedactionEngine {
       this.policy,
       this.metadataByValue,
       this.permanentClaims,
-      this.vault.beginScope(state.detected, state.registryDerived, this.entityFamilyRendering ? scopeKey : undefined),
+      this.vault.beginScope(state.detected, state.registryDerived, scopeKey),
       state.metadata,
       state.seenLeaves,
       state.tokenOnly,
-      this.entityFamilyRendering,
+      true,
       identifierHash(scopeKey),
     );
   }
@@ -372,8 +368,8 @@ class ProtectionRequestScope implements RequestScope {
     private readonly seenLeaves?: Set<string>,
     /** Resolver-clipped surfaces retain restore metadata but never become future entity candidates. */
     private readonly tokenOnly = new Set<string>(),
-    /** Phase 4 gated renderer; unkeyed scopes and the Phase 5 default remain literal. */
-    private readonly entityFamilyRendering = false,
+    /** Entity families require the trusted context supplied only by keyed request scopes. */
+    private readonly hasTrustedEntityContext = false,
     /** One-way correlation boundary for values-free local ambiguity diagnostics. */
     private readonly protectionContextHash?: string,
     /** Explicit caller selections are re-seeded per request, never retained by a keyed scope. */
@@ -505,7 +501,7 @@ class ProtectionRequestScope implements RequestScope {
         };
         const userProtected = this.userProtectedMetadata.has(occurrence.entity.canonical);
         const token =
-          this.entityFamilyRendering &&
+          this.hasTrustedEntityContext &&
           !userProtected &&
           occurrence.entity.protectionKind === "entity" &&
           occurrence.entity.entityType

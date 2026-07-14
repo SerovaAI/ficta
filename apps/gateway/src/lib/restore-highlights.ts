@@ -418,7 +418,7 @@ function parseHighlightPayload(payload: string): ParsedHighlightPayload {
 }
 
 function isSurrogateToken(value: string): boolean {
-  return /^FICTA_(?:[0-9a-f]{32}|[A-Z0-9]{1,12}_[0-9a-f]{32})$/.test(value);
+  return /^FICTA_(?:[0-9a-f]{32}|[A-Z0-9]{1,12}_[0-9a-f]{32}|(?:ORG|PERSON)_[A-Z2-7]{12}_[A-Z2-7]{12})$/.test(value);
 }
 
 function isProtectionOrigin(value: string | undefined): value is ProtectionPreviewOrigin {

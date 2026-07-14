@@ -36,7 +36,7 @@ export interface SurrogateStrategy {
   /** Deterministically mint the surrogate token for a value. `hint` steers typed surrogates; the
    *  opaque strategy ignores it. */
   mint(value: string, hint?: SurrogateHint): string;
-  /** Present only on the gated Phase 4 strategy; literal-only strategies deliberately omit it. */
+  /** Present on strategies that can render context-bound registered entity families. */
   mintEntity?(input: EntitySurrogateInput): EntitySurrogate;
   /** Global regex matching one complete surrogate token; used to scan text/JSON on restore. */
   readonly pattern: RegExp;
@@ -113,9 +113,8 @@ export function typedSurrogateStrategy(key: string = DEFAULT_KEY): SurrogateStra
 }
 
 /**
- * Add context-bounded entity-family tokens while delegating every literal to the selected shipped
- * strategy. Phase 4 callers opt into this wrapper explicitly; Phase 5 decides when registry entity
- * records use it by default.
+ * Add context-bounded entity-family tokens while delegating every literal to the configured literal
+ * strategy. The engine uses this wrapper by default; only trusted keyed scopes render entity records.
  */
 export function entityFamilySurrogateStrategy(
   literal: SurrogateStrategy = surrogateStrategy(),

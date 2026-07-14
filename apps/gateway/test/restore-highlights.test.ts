@@ -59,6 +59,14 @@ describe("parseRestoreHighlightText", () => {
     expect(restorations).toEqual([{ value: "Jane Doe", surrogate, origin: "registry" }]);
   });
 
+  it("accepts entity-family tokens in restore metadata", () => {
+    const surrogate = "FICTA_ORG_45SZ6UEHCLPT_ZWQCH5ASZWWH";
+    expect(parseRestoreHighlightText(marked(surrogate, "Northstar", "registry"))).toEqual({
+      visibleText: "Northstar",
+      restorations: [{ value: "Northstar", surrogate, origin: "registry" }],
+    });
+  });
+
   it("hides a trailing partial marker while a stream chunk is incomplete", () => {
     const { visibleText, restorations } = parseRestoreHighlightText(
       `Contact ${FICTA_RESTORE_HIGHLIGHT_START.slice(0, 4)}`,

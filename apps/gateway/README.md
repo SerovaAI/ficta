@@ -151,6 +151,13 @@ exact revision; a path, shared-volume, or source error is reported as partial su
 protection. Configure the same absolute path with `FICTA_GATEWAY_MANAGED_REGISTRY_PATH` in Gateway and
 `FICTA_REGISTRY_MANAGED_FILE_PATHS` in the proxy. Suggested and ignored rows are review workflow only.
 
+Approved person and organization entries retain their canonical name and explicit forms as one
+identity. In keyed chats those forms use context-bound `FICTA_PERSON_…_…` or `FICTA_ORG_…_…` tokens,
+letting the model preserve within-chat attribution without receiving the identity. Each exact surface
+still restores byte-for-byte. The token reveals coarse type and within-chat sameness only; literals,
+user-selected phrases, ambiguous links, and detector-only entities continue to use ordinary literal
+surrogates.
+
 Each chat starts with **Review before send** on, so **Send** opens an inline protection review before any
 provider request starts. Users can turn it off for the current chat and turn it back on whenever they want
 another review. An admin can lock review on under **Admin > General**. Users can inspect
