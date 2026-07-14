@@ -38,6 +38,14 @@ dates, and configured document-ID shapes). NER is probabilistic: it will miss en
 unusual names, partial identifiers, and firm-specific shapes not registered or added as
 recognizers/deny-lists. Detection is only as good as the configured backend.
 
+In a trusted keyed Gateway chat, registered people and organizations use context-bound family tokens.
+Explicit registered forms share one entity tag; a high-confidence detected organization alias joins
+only when exactly one registered anchor matches. That link preserves detector provenance and trust.
+Ambiguous and detector-only findings remain literal tokens, and people are never linked from an
+inferred short name. The provider can see only the coarse person/organization type and that two tokens
+belong to the same entity within this chat—not the identity, registry ID, matter, role, or a stable
+cross-chat identifier.
+
 **The shipped Presidio policy is identity and attribution, not general document confidentiality.**
 Its custom recognizer applies context and entity-shape gates inside Presidio before candidates reach
 Ficta. It protects structured identifiers and contact/account values, plus qualified people,

@@ -503,6 +503,13 @@ account numbers, project names, and aliases. Managed entities retain one durable
 form boundaries inside the engine; every surface still uses the same vault, fail-closed leak checks, and
 restore path as literal registry values.
 
+On trusted keyed request bodies, an `entity` entry renders as a context-bound `FICTA_ORG_…_…` or
+`FICTA_PERSON_…_…` family. Its canonical and explicit forms share an entity tag, and exact restoration
+uses a separate surface tag. A uniquely anchored, high-confidence detected organization alias may
+join that family but keeps detector authority and confidence. Probabilistic, conflicting, or ambiguous
+aliases and detector-only entities stay on literal tokens. The `opaque`/`typed` surrogate setting
+continues to control literal entries and unstructured env, process-env, and Doppler values independently.
+
 Default TOML:
 
 ```toml

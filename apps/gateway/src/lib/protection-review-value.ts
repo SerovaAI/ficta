@@ -1,6 +1,6 @@
 import type { ProtectionPreviewFinding } from "@serovaai/ficta-protocol";
 
-const SURROGATE_VALUE = /FICTA_(?:[A-Z0-9]{1,12}_)?[0-9a-f]{32}/;
+const SURROGATE_VALUE = /FICTA_(?:[0-9a-f]{32}|[A-Z0-9]{1,12}_[0-9a-f]{32}|(?:ORG|PERSON)_[A-Z2-7]{12}_[A-Z2-7]{12})/;
 const TRAILING_PROSE_PUNCTUATION = /[,.!?;:]+$/u;
 const SUBSTANTIVE_TEXT = /[\p{L}\p{N}]/u;
 const OUTER_WRAPPERS = [

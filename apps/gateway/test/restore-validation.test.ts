@@ -31,6 +31,11 @@ describe("validateRestoredText", () => {
     expect(validateRestoredText(`Client ${token}`).complete).toEqual([token]);
   });
 
+  it("classifies an entity-family surrogate as complete", () => {
+    const token = "FICTA_ORG_45SZ6UEHCLPT_ZWQCH5ASZWWH";
+    expect(validateRestoredText(`Client ${token}`).complete).toEqual([token]);
+  });
+
   it("counts both kinds together", () => {
     const result = validateRestoredText("FICTA_62a02923... and FICTA_e0ba46ccd8719363bd0443dea6de3a4d");
     expect(result.truncated.length).toBe(1);

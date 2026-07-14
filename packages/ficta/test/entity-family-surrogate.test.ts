@@ -137,9 +137,9 @@ describe("entity-family surrogate contract", () => {
   });
 });
 
-describe("gated engine entity-family rendering", () => {
+describe("engine entity-family rendering", () => {
   it("renders registered forms as one family, keeps literals opaque, and restores exact surfaces", async () => {
-    const engine = fixtureEngine(true);
+    const engine = fixtureEngine();
     const scope = engine.beginRequest(CONTEXT);
     const body = JSON.stringify({
       content: "Northstar Biologics (Pty) Ltd instructed Northstar. Amelia Naidoo approved account ZA-TRUST-0042.",
@@ -165,21 +165,38 @@ describe("gated engine entity-family rendering", () => {
     );
   });
 
-  it("keeps the Phase 5 default and unkeyed gated scopes on byte-identical literal rendering", async () => {
-    const current = fixtureEngine(false);
-    const gated = fixtureEngine(true);
+  it("keeps unkeyed scopes on literal rendering", async () => {
+    const engine = fixtureEngine();
     const body = JSON.stringify({ content: "Northstar instructed Amelia Naidoo." });
 
-    const currentResult = await current.redactBodyDetailed(body);
-    const gatedUnkeyedResult = await gated.redactBodyDetailed(body);
+    const result = await engine.redactBodyDetailed(body);
 
-    expect(gatedUnkeyedResult.body).toBe(currentResult.body);
-    expect(gatedUnkeyedResult.body).not.toContain("FICTA_ORG_");
-    expect(gatedUnkeyedResult.body).not.toContain("FICTA_PERSON_");
+    expect(result.body).not.toContain("FICTA_ORG_");
+    expect(result.body).not.toContain("FICTA_PERSON_");
+    expect(result.body).toMatch(/FICTA_[0-9a-f]{32}/u);
+    expect(engine.restoreText(result.body)).toBe(body);
+  });
+
+  it("keeps the configured typed style for literals in a keyed entity scope", async () => {
+    const originalStyle = process.env.FICTA_SURROGATE_STYLE;
+    try {
+      process.env.FICTA_SURROGATE_STYLE = "typed";
+      const scope = fixtureEngine().beginRequest(CONTEXT);
+      const body = JSON.stringify({ content: "Northstar approved account ZA-TRUST-0042." });
+
+      const result = await scope.redactBodyDetailed(body);
+
+      expect(result.body).toMatch(/FICTA_ORG_[A-Z2-7]{12}_[A-Z2-7]{12}/u);
+      expect(result.body).toMatch(/FICTA_SECRET_[0-9a-f]{32}/u);
+      expect(scope.restoreJson(result.body)).toBe(body);
+    } finally {
+      if (originalStyle === undefined) delete process.env.FICTA_SURROGATE_STYLE;
+      else process.env.FICTA_SURROGATE_STYLE = originalStyle;
+    }
   });
 
   it("keeps raw text surfaces literal after the same value renders as a body entity", async () => {
-    const scope = fixtureEngine(true).beginRequest(CONTEXT);
+    const scope = fixtureEngine().beginRequest(CONTEXT);
     const body = JSON.stringify({ content: "Northstar approved." });
 
     const bodyResult = await scope.redactBodyDetailed(body);
@@ -195,7 +212,7 @@ describe("gated engine entity-family rendering", () => {
   });
 
   it("cannot correlate or restore a family token from another protection context", async () => {
-    const engine = fixtureEngine(true);
+    const engine = fixtureEngine();
     const first = engine.beginRequest("thread:first");
     const second = engine.beginRequest("thread:second");
     const body = JSON.stringify({ content: "Northstar approved." });
@@ -210,7 +227,7 @@ describe("gated engine entity-family rendering", () => {
   });
 
   it("round-trips Markdown, possessives, casing, and reflowed registered forms byte-for-byte", async () => {
-    const northstar = fixtureEngine(true).beginRequest(CONTEXT);
+    const northstar = fixtureEngine().beginRequest(CONTEXT);
     const northstarBody = JSON.stringify({ content: "**Northstar** alleges; NORTHSTAR's tracker agrees." });
     const northstarRedaction = await northstar.redactBodyDetailed(northstarBody);
     const northstarTokens = northstar
@@ -224,7 +241,6 @@ describe("gated engine entity-family rendering", () => {
     expect(northstar.restoreJson(northstarRedaction.body)).toBe(northstarBody);
 
     const proximaEngine = new ProtectionEngine({
-      entityFamilyRendering: true,
       plugins: [structuredRegistry([entityRecord("entity-proxima", "organization", "Proxima Medical Supplies CC")])],
     });
     const proxima = proximaEngine.beginRequest(CONTEXT);
@@ -236,7 +252,6 @@ describe("gated engine entity-family rendering", () => {
 
   it("gives a uniquely linked detector alias the registered entity family without upgrading its trust", async () => {
     const engine = new ProtectionEngine({
-      entityFamilyRendering: true,
       plugins: [
         structuredRegistry([entityRecord(NORTHSTAR_ID, "organization", "Northstar Biologics (Pty) Ltd")]),
         organizationDetector("Northstar"),
@@ -265,7 +280,6 @@ describe("gated engine entity-family rendering", () => {
   it("round-trips an entity-family residual clipped by a higher-authority literal without persisting it", async () => {
     const detected = "Northstar-segment";
     const engine = new ProtectionEngine({
-      entityFamilyRendering: true,
       plugins: [
         structuredRegistry([
           entityRecord("entity-northstar-segment", "organization", "Northstar-segment Holdings Ltd"),
@@ -379,9 +393,8 @@ describe("entity-family restoration transports", () => {
   });
 });
 
-function fixtureEngine(entityFamilyRendering: boolean): ProtectionEngine {
+function fixtureEngine(): ProtectionEngine {
   return new ProtectionEngine({
-    entityFamilyRendering,
     plugins: [
       structuredRegistry([
         entityRecord(NORTHSTAR_ID, "organization", "Northstar Biologics (Pty) Ltd", ["Northstar"]),

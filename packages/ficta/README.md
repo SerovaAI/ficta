@@ -11,6 +11,14 @@ values while the provider sees surrogates. Optional request-time detectors add b
 for pasted secret-shaped values and PII; they are a reduction layer, not the exact-match guarantee
 registered secrets receive.
 
+In trusted keyed Gateway chats, structured managed-registry people and organizations use
+context-bound entity-family tokens such as `FICTA_ORG_<entity-tag>_<surface-tag>`. Registered forms
+and uniquely anchored, high-confidence detected organization aliases share the entity tag while each
+exact replaced surface keeps its own reversible surface tag. The token discloses only the coarse
+`ORG`/`PERSON` type and within-chat sameness. Literal registry entries, env/Doppler values, explicit
+user selections, probabilistic, ambiguous, or detector-only mentions, headers, queries, and unkeyed
+agent traffic retain the configured opaque or typed literal style.
+
 For the full pitch, threat model, and what's in/out of scope, see the
 [project overview](https://ficta.sh) and
 [`docs/threat-model.md`](./docs/threat-model.md). This page is the practical install-and-configure

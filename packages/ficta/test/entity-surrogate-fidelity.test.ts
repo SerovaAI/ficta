@@ -37,7 +37,7 @@ describe("Phase 0 entity-surrogate legal fidelity", () => {
     });
   }
 
-  it("characterizes current tokens as surface-specific and candidate tokens as entity-family-specific", () => {
+  it("characterizes literal tokens as surface-specific and family tokens as entity-specific", () => {
     const canonical = "Northstar Biologics (Pty) Ltd";
     const short = "Northstar";
 
@@ -61,7 +61,7 @@ describe("Phase 0 entity-surrogate legal fidelity", () => {
     expect(tokenForSurface(rendered["entity-family"], account)).toMatch(/^FICTA_[0-9a-f]{32}$/u);
   });
 
-  it("keeps the candidate family and surface tags protection-context scoped", () => {
+  it("keeps family and surface tags protection-context scoped", () => {
     const otherContext = structuredClone(fixture);
     otherContext.protectionContextId = "thread:separate-fidelity-fixture";
     const first = rendered["entity-family"].mappings.find((mapping) => mapping.kind === "entity");
@@ -87,7 +87,7 @@ describe("Phase 0 entity-surrogate legal fidelity", () => {
     expect(restoreText(candidate.text, candidate.mappings)).toBe(candidate.sourceText);
   });
 
-  it("never maps a mutated candidate token to a registered entity", () => {
+  it("never maps a mutated family token to a registered entity", () => {
     const candidate = rendered["entity-family"];
     const token = tokenForSurface(candidate, "Northstar");
     const mutated = mutateToken(token);
@@ -100,7 +100,7 @@ describe("Phase 0 entity-surrogate legal fidelity", () => {
 });
 
 describe("Phase 0 entity-surrogate transport fidelity", () => {
-  it("restores every candidate token across every possible two-chunk split", () => {
+  it("restores every family token across every possible two-chunk split", () => {
     const candidate = rendered["entity-family"];
     for (const mapping of candidate.mappings) {
       const text = `before ${mapping.token} after`;
@@ -112,7 +112,7 @@ describe("Phase 0 entity-surrogate transport fidelity", () => {
     }
   });
 
-  it("restores a candidate token delivered one character per chunk", () => {
+  it("restores a family token delivered one character per chunk", () => {
     const candidate = rendered["entity-family"];
     const token = tokenForSurface(candidate, "Northstar");
     expect(restoreFragmented([...token], candidate.mappings)).toBe("Northstar");

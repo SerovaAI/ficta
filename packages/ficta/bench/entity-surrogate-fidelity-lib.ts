@@ -76,9 +76,9 @@ export async function loadEntityFidelityFixture(): Promise<EntityFidelityFixture
 }
 
 /**
- * Render the synthetic fixture using the two shipped literal strategies or the independently
- * characterized family shape. Phase 4 has a gated engine implementation; this reference remains
- * separate so the release gate can compare production output against the original fixture vector.
+ * Render the synthetic fixture using the two literal strategies or the independently characterized
+ * family shape. This reference remains separate so production output can be compared against the
+ * original fixture vector.
  */
 export function renderEntityFidelityFixture(fixture: EntityFidelityFixture, style: SurrogateStyle): RenderedFixture {
   const sourceText = fixture.documentLines.join("\n");

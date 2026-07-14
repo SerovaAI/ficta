@@ -12,8 +12,9 @@ import { stripRestoreHighlightMarkers } from "@/lib/restore-highlights";
  * token format. This is measurement only; it never changes the response.
  */
 
-// A complete minted surrogate: opaque `FICTA_<32hex>` or typed `FICTA_<TYPE>_<32hex>`.
-const COMPLETE_SURROGATE = /^FICTA_(?:[0-9a-f]{32}|[A-Z0-9]{1,12}_[0-9a-f]{32})$/;
+// A complete minted surrogate: opaque, typed literal, or context-bound entity-family token.
+const COMPLETE_SURROGATE =
+  /^FICTA_(?:[0-9a-f]{32}|[A-Z0-9]{1,12}_[0-9a-f]{32}|(?:ORG|PERSON)_[A-Z2-7]{12}_[A-Z2-7]{12})$/;
 // Any surrogate-shaped run, so a shortened token (`FICTA_62a02923`) is caught as well as a complete one.
 const SURROGATE_LIKE = /FICTA_[0-9A-Za-z_]+/g;
 

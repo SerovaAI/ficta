@@ -10,3 +10,7 @@ short-lived ticket header. Tickets are bound to the reviewed current message and
 Preview responses contain redacted text, UTF-16 finding coordinates, safe detector metadata, and surrogates;
 raw user-selected values remain in the loopback request and proxy scope rather than being carried in
 model-request headers.
+
+Surrogate fields may contain an opaque or typed literal token, or a context-bound `ORG`/`PERSON`
+entity-family token for a registered entity in a trusted keyed body. Entity-family tags expose coarse
+type and within-context sameness but do not carry raw identity, registry IDs, roles, or matter metadata.

@@ -223,6 +223,20 @@ describe("proxy hardening", () => {
         headers: { [FICTA_SCOPE_HEADER]: "another-scope", [FICTA_EGRESS_EVENT_HEADER]: eventId },
       });
       expect(otherScope.status).toBe(404);
+
+      receivedBody = "";
+      const entityChat = await fetch(`http://127.0.0.1:${proxy.port}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", [FICTA_SCOPE_HEADER]: scope },
+        body: JSON.stringify({
+          model: "gpt-test",
+          messages: [{ role: "user", content: "Northstar Biologics Ltd" }],
+        }),
+      });
+      expect(entityChat.status).toBe(200);
+      await entityChat.text();
+      expect(receivedBody).not.toContain("Northstar Biologics Ltd");
+      expect(receivedBody).toMatch(/FICTA_ORG_[A-Z2-7]{12}_[A-Z2-7]{12}/u);
     } finally {
       proxy?.close();
       await close(upstream);

@@ -24,6 +24,8 @@ export const PROTECTION_REVIEW_ADD_COPY =
   "Highlight text above to copy or protect it, or type an amount, project name, code, or clause below.";
 export const PROTECTION_REVIEW_SUGGESTION_COPY =
   "Workspace proposals send the normalized protected phrase to admins. It is not workspace-wide until approved and published.";
+export const MODEL_SURROGATE_TOKEN_PATTERN =
+  /(?<![0-9A-Za-z_])FICTA_(?:[0-9a-f]{32}|[A-Z0-9]{1,12}_[0-9a-f]{32}|(?:ORG|PERSON)_[A-Z2-7]{12}_[A-Z2-7]{12})(?![0-9A-Za-z_])/g;
 
 export function ProtectionReview({
   text,
@@ -464,10 +466,9 @@ function HighlightedText({ text, findings }: { text: string; findings: Protectio
 }
 
 function ModelText({ text }: { text: string }) {
-  const token = /FICTA_(?:[A-Z0-9]{1,12}_)?[0-9a-f]{32}/g;
   const parts: ReactNode[] = [];
   let cursor = 0;
-  for (const match of text.matchAll(token)) {
+  for (const match of text.matchAll(MODEL_SURROGATE_TOKEN_PATTERN)) {
     const start = match.index;
     parts.push(text.slice(cursor, start));
     parts.push(
