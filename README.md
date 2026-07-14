@@ -165,7 +165,7 @@ coding agents do not use it -
 
 ## License
 
-This monorepo is dual-licensed by product - see [`LICENSING.md`](LICENSING.md) for the map:
+This monorepo is licensed per product - see [`LICENSING.md`](LICENSING.md) for the map:
 
 - **`packages/ficta`** (the published `@serovaai/ficta` engine + CLI) - **MIT**, see [`packages/ficta/LICENSE`](packages/ficta/LICENSE).
-- **`apps/gateway`** (Ficta Gateway) - **AGPL-3.0-only**, with a commercial license available; see [`apps/gateway/LICENSING.md`](apps/gateway/LICENSING.md).
+- **`apps/gateway`** (Ficta Gateway) - **BUSL-1.1**, source-available: free for non-production use, production use requires a commercial license; see [`apps/gateway/LICENSING.md`](apps/gateway/LICENSING.md). Versions up to commit `aacf45d` remain AGPL-3.0-only.

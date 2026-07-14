@@ -777,7 +777,8 @@ function SiteFooter() {
         </nav>
       </div>
       <div className="mx-auto max-w-6xl border-border/40 border-t px-5 py-5 text-muted-foreground text-xs sm:px-8">
-        Engine + CLI are MIT. ficta&nbsp;Gateway is AGPL-3.0 with a commercial option. © 2026 ficta — built and owned by{" "}
+        Engine + CLI are MIT. ficta&nbsp;Gateway is source-available (BUSL-1.1); production use needs a commercial
+        license. © 2026 ficta — built and owned by{" "}
         <a
           href={SEROVA}
           target="_blank"

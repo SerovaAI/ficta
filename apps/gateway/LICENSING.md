@@ -1,37 +1,50 @@
-# Licensing — ficta gateway (`apps/gateway`)
+# Licensing — ficta Gateway (`apps/gateway`)
 
-This application (the sensitive-data chat gateway) is **dual-licensed**.
+This application (the sensitive-data chat gateway) is **source-available** under the
+**Business Source License 1.1** ([`LICENSE`](./LICENSE)), with a **commercial license required for
+production use**.
 
-Copyright (c) 2026 steflsd.
+Copyright (c) 2026 Serova OÜ (registry no. 17252303), Soo 2-3, 10414 Tallinn, Estonia.
 
-## 1. Open-source license: AGPL-3.0-only
+## What you can do for free (BUSL 1.1)
 
-By default this app is licensed under the **GNU Affero General Public License, version 3.0 only**
-([`LICENSE`](./LICENSE)). You may use, modify, and self-host it under those terms.
+- **Read and audit every line.** The gateway's whole trust argument is that it is **a control you
+  run and audit, not a processor you send data to**. The source stays public; nothing about that
+  changes.
+- **Copy, modify, create derivative works, and redistribute** the source under the terms of the
+  License.
+- **All non-production use** — evaluation, development, testing, staging, and security review,
+  self-hosted in your own environment.
 
-The key AGPL obligation (§13): if you **run a modified version and make it available to users over a
-network**, you must offer those users the corresponding source of your modified version under the
-AGPL. Unmodified use, and internal self-hosting for your own organization's users, is
-straightforward — the source is already available to them here.
+## What requires a commercial license
 
-This is deliberate. The gateway's whole trust argument is that it is **a control you run and audit,
-not a processor you send data to**. AGPL keeps it source-available and self-hostable while deterring
-anyone from offering a **closed, hosted fork** as a competing service.
-
-## 2. Commercial license
-
-If you cannot or do not want to comply with the AGPL — for example you want to offer a hosted service
-based on this app without releasing your modifications, or embed it in a proprietary product — a
-**commercial license is available**.
+**Any production use.** The `Additional Use Grant` in [`LICENSE`](./LICENSE) is `None`, so running
+the gateway in production — whether internally within an organization or offered to others as a
+service — requires a commercial license from Serova OÜ.
 
 Contact: **hello@ficta.sh**.
 
-> Note: offering a commercial license requires the licensor to hold or have consolidated copyright in
-> the code (directly or via a contributor license agreement). Keep this in mind before accepting
-> outside contributions to `apps/gateway`.
+## Change Date
+
+Each released version of the Licensed Work converts to the **Apache License 2.0** four years after
+it is published. Older versions become open source on that schedule; the current version always
+requires a commercial license for production use.
+
+## Prior versions
+
+Versions of `apps/gateway` in the repository history **up to and including commit `aacf45d`** were
+licensed under **AGPL-3.0-only** and remain available under those terms. The change to BUSL 1.1 is
+not retroactive and applies from the relicensing commit onward.
+
+## Contributions
+
+Serova OÜ must hold consolidated copyright in `apps/gateway` for the commercial license to work.
+External contributions to this directory are only accepted under a contributor license agreement
+(CLA) that assigns or broadly licenses the contribution to Serova OÜ.
 
 ## Scope
 
-This dual-license applies to **`apps/gateway` only**. The published engine + CLI package
-[`packages/ficta`](../../packages/ficta) remains **MIT** — see
-[`../../packages/ficta/LICENSE`](../../packages/ficta/LICENSE).
+This license applies to **`apps/gateway` only**. The published engine + CLI package
+[`packages/ficta`](../../packages/ficta) and the shared protocol package
+[`packages/protocol`](../../packages/protocol) remain **MIT** — see their respective `LICENSE`
+files.
