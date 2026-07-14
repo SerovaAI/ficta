@@ -1,4 +1,9 @@
 import { isRecord } from "../json.js";
+import {
+  literalProtectionRecords,
+  type ProtectionRecord,
+  type StructuredRegistrySourceCapabilities,
+} from "../protection.js";
 import { piiPlugin } from "./pii/index.js";
 import {
   buildRegistryPolicy,
@@ -34,6 +39,8 @@ export const defaultDetectors: readonly RedactionPlugin[] = [secretShapesPlugin,
 
 export interface PluginRegistrySnapshot {
   values: ProtectedValue[];
+  /** Logical records corresponding to the flattened exact values. */
+  records: ProtectionRecord[];
   pluginNames: string[];
   discoveries: PluginDiscovery[];
   registryPolicy: RegistryPolicy;
@@ -149,11 +156,13 @@ export function loadPluginRegistry(
     ? { exclusions: [userExclusion.rule, ...pluginPolicy.exclusions] }
     : pluginPolicy;
   const values: ProtectedValue[] = [];
+  const records: ProtectionRecord[] = [];
   const pluginNames: string[] = [];
   const discoveries: PluginDiscovery[] = [];
   let policyExcluded = 0;
   const policyExcludedBySource: Record<string, number> = {};
   const policyExcludedValues: PluginRegistrySnapshot["policyExcludedValues"] = [];
+  const diagnosedExcludedNames = new Set<string>();
 
   if (userExclusion.invalidNames.length > 0) {
     // status "available" renders as a note without tripping strict-mode error gates (which key off "error").
@@ -176,25 +185,46 @@ export function loadPluginRegistry(
       continue;
     }
 
+    const structured = plugin as typeof plugin & Partial<StructuredRegistrySourceCapabilities>;
     try {
       const loaded = plugin.loadValues();
+      const admittedValues: ProtectedValue[] = [];
       for (const value of loaded) {
         const candidate = { ...value, plugin: value.plugin ?? plugin.name };
         const excludedBy = protectedValueExcludedBy(candidate, registryPolicy);
         if (excludedBy) {
-          policyExcluded++;
-          policyExcludedBySource[candidate.source] = (policyExcludedBySource[candidate.source] ?? 0) + 1;
-          policyExcludedValues.push({
-            name: candidate.name,
-            source: candidate.source,
-            plugin: candidate.plugin,
-            rule: excludedBy,
+          recordPolicyExclusion(candidate, excludedBy, {
+            diagnosedExcludedNames,
+            policyExcludedBySource,
+            policyExcludedValues,
+            increment: () => policyExcluded++,
           });
           continue;
         }
         values.push(candidate);
+        admittedValues.push(candidate);
       }
-    } catch {
+      const loadedRecords =
+        structured.loadProtectionRecords?.() ?? literalProtectionRecords(admittedValues, "registry");
+      for (const record of loadedRecords) {
+        const meta = { ...record.meta, plugin: record.meta.plugin ?? plugin.name };
+        const excludedBy = protectedValueExcludedBy(meta, registryPolicy);
+        if (excludedBy) {
+          recordPolicyExclusion(meta, excludedBy, {
+            diagnosedExcludedNames,
+            policyExcludedBySource,
+            policyExcludedValues,
+            increment: () => policyExcluded++,
+          });
+          continue;
+        }
+        records.push({ ...record, meta } as ProtectionRecord);
+      }
+    } catch (error) {
+      if (structured.fatalLoadErrors) {
+        const detail = error instanceof Error ? `: ${error.message}` : "";
+        throw new Error(`ficta registry source ${plugin.name} contains invalid data${detail}`, { cause: error });
+      }
       discoveries.push({
         id: `${plugin.name}/load`,
         plugin: plugin.name,
@@ -210,6 +240,7 @@ export function loadPluginRegistry(
 
   return {
     values,
+    records,
     pluginNames,
     discoveries,
     registryPolicy,
@@ -217,6 +248,24 @@ export function loadPluginRegistry(
     policyExcludedBySource,
     policyExcludedValues,
   };
+}
+
+function recordPolicyExclusion(
+  value: ProtectedValue,
+  rule: EffectiveRegistryExclusionRule,
+  diagnostics: {
+    diagnosedExcludedNames: Set<string>;
+    policyExcludedBySource: Record<string, number>;
+    policyExcludedValues: PluginRegistrySnapshot["policyExcludedValues"];
+    increment(): void;
+  },
+): void {
+  const plugin = value.plugin ?? "unknown";
+  if (diagnostics.diagnosedExcludedNames.has(value.name)) return;
+  diagnostics.diagnosedExcludedNames.add(value.name);
+  diagnostics.increment();
+  diagnostics.policyExcludedBySource[value.source] = (diagnostics.policyExcludedBySource[value.source] ?? 0) + 1;
+  diagnostics.policyExcludedValues.push({ name: value.name, source: value.source, plugin, rule });
 }
 
 /** Run a plugin's discover() and append its lines, turning a throw into a safe error discovery. */

@@ -1,10 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import {
   FICTA_MANAGED_REGISTRY_SCHEMA,
   FICTA_REGISTRY_RELOAD_PATH,
   FICTA_REGISTRY_REVISION_HEADER,
+  isManagedRegistryFile,
   isRegistryReloadOk,
   type ManagedRegistryEntry,
   type ManagedRegistryFile,
@@ -14,9 +15,15 @@ import { requireAdminScope, requireScope } from "@/lib/auth/guards.server";
 import { SerialTaskQueue, writePrivateFileAtomic } from "./private-file.server";
 import { getStorage } from "./storage.server";
 import {
+  normalizeProtectedRegistryValue,
+  PROTECTED_REGISTRY_ENTITY_TYPES,
   PROTECTED_REGISTRY_ENTRY_SOURCES,
   PROTECTED_REGISTRY_ENTRY_STATUSES,
   PROTECTED_REGISTRY_ENTRY_TYPES,
+  PROTECTED_REGISTRY_FORM_BOUNDARIES,
+  PROTECTED_REGISTRY_FORM_KINDS,
+  PROTECTED_REGISTRY_FORMS_MAX,
+  PROTECTED_REGISTRY_PROTECTION_KINDS,
   type ProtectedRegistryEntry,
   type ProtectedRegistryEntryInput,
   type ProtectedRegistryEntrySource,
@@ -24,7 +31,6 @@ import {
 
 const ENTRY_IMPORT_MAX = 500;
 const FIELD_MAX = 500;
-const ALIASES_PER_ENTRY_MAX = 20;
 const DEFAULT_MANAGED_REGISTRY_FILE = ".data/protected-registry.json";
 
 export interface ProtectedRegistryExport {
@@ -32,7 +38,6 @@ export interface ProtectedRegistryExport {
   revision: string;
   entries: number;
   values: number;
-  skippedAliases: number;
 }
 
 /** Result of the proxy-reload half of a publish. Failure is partial success: the file is written. */
@@ -43,11 +48,12 @@ export type ProtectedRegistryReloadResult =
       added: number;
       total: number;
       loaded: number;
-      skippedTooShort: number;
       filesRead: number;
       /** Other configured registry files the proxy could not find — a proxy-config warning, not a
        *  publication failure (this publish's own file is revision-verified). */
       filesMissing: number;
+      /** The valid file includes edits/removals that the running proxy intentionally defers. */
+      restartRequired: boolean;
     }
   | {
       ok: false;
@@ -98,8 +104,9 @@ export const suggestProtectedRegistryEntries = createServerFn({ method: "POST" }
         await storage.upsertProtectedRegistryEntry(orgId, userId, {
           matterId: "",
           type: "other",
+          protectionKind: "literal",
           value,
-          aliases: [],
+          forms: [],
           source: "suggested",
           status: "suggested",
         }),
@@ -152,7 +159,6 @@ async function writeManagedRegistryFile(orgId: string): Promise<ProtectedRegistr
     revision: result.revision,
     entries: approved.length,
     values: result.values,
-    skippedAliases: result.skippedAliases,
   };
 }
 
@@ -175,6 +181,19 @@ async function requestProxyRegistryReload(expectedRevision: string): Promise<Pro
         status: "forbidden",
         message: `ficta proxy at ${proxyUrl} refused the reload (loopback-only); restart the proxy to load the file.`,
       };
+    }
+    if (res.status === 409) {
+      const json = (await res.json()) as unknown;
+      if (
+        typeof json === "object" &&
+        json !== null &&
+        "status" in json &&
+        json.status === "invalid_registry" &&
+        "message" in json &&
+        typeof json.message === "string"
+      ) {
+        return { ok: false, status: "source_error", message: json.message };
+      }
     }
     if (!res.ok) {
       return {
@@ -244,9 +263,9 @@ export function verifyRegistryReload(json: unknown, expectedRevision: string): P
     added: registry.added,
     total: registry.total,
     loaded: registry.loaded,
-    skippedTooShort: registry.skippedTooShort ?? 0,
     filesRead: registry.filesRead,
     filesMissing: registry.filesMissing,
+    restartRequired: registry.restartRequired ?? false,
   };
 }
 
@@ -292,60 +311,87 @@ function normalizeProtectedRegistryEntry(
   const type = readEnum(record.type, PROTECTED_REGISTRY_ENTRY_TYPES, "type");
   const status = readEnum(record.status ?? "approved", PROTECTED_REGISTRY_ENTRY_STATUSES, "status");
   const source = readEnum(record.source ?? fallbackSource, PROTECTED_REGISTRY_ENTRY_SOURCES, "source");
-  return {
+  const protectionKind = readEnum(record.protectionKind, PROTECTED_REGISTRY_PROTECTION_KINDS, "protectionKind");
+  const forms = normalizeForms(record.forms);
+  if (protectionKind === "literal" && forms.some((form) => form.boundary !== "substring")) {
+    throw new Error("literal entries cannot declare token-bounded forms; create a separate literal value instead");
+  }
+  const fields = {
     ...(id ? { id } : {}),
     matterId,
     type,
     value,
-    aliases: normalizeAliases(record.aliases),
+    forms,
     source,
     status,
   };
-}
-
-function normalizeAliases(value: unknown): string[] {
-  const raw = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[;|]/) : [];
-  const seen = new Set<string>();
-  const aliases: string[] = [];
-  for (const item of raw) {
-    if (typeof item !== "string") continue;
-    const alias = cleanString(item);
-    const key = alias.toLocaleLowerCase();
-    if (!alias || seen.has(key)) continue;
-    seen.add(key);
-    aliases.push(alias);
-    if (aliases.length >= ALIASES_PER_ENTRY_MAX) break;
+  if (protectionKind === "entity") {
+    const entityType = readEnum(record.entityType, PROTECTED_REGISTRY_ENTITY_TYPES, "entityType");
+    return { ...fields, protectionKind, entityType };
   }
-  return aliases;
+  return { ...fields, protectionKind };
 }
 
-function renderManagedRegistryFile(entries: ProtectedRegistryEntry[]): {
+function normalizeForms(formsValue: unknown): ProtectedRegistryEntry["forms"] {
+  if (formsValue === undefined) return [];
+  if (!Array.isArray(formsValue)) throw new Error("forms must be an array");
+  const raw = formsValue;
+  const forms = new Map<string, ProtectedRegistryEntry["forms"][number]>();
+  for (const item of raw) {
+    const record = asRecord(item);
+    const value = readString(record, "value", { required: true });
+    const kind = readEnum(record.kind, PROTECTED_REGISTRY_FORM_KINDS, "form kind");
+    const boundary = readEnum(record.boundary, PROTECTED_REGISTRY_FORM_BOUNDARIES, "form boundary");
+    const key = normalizeProtectedRegistryValue(value);
+    const current = forms.get(key);
+    if (!current || current.boundary === "token") forms.set(key, { value, kind, boundary });
+    if (forms.size > PROTECTED_REGISTRY_FORMS_MAX) {
+      throw new Error(`use at most ${PROTECTED_REGISTRY_FORMS_MAX} forms per entry`);
+    }
+  }
+  return [...forms.values()];
+}
+
+export function renderManagedRegistryFile(entries: ProtectedRegistryEntry[]): {
   body: string;
   revision: string;
   values: number;
-  skippedAliases: number;
 } {
   const revision = randomUUID();
   const registryEntries: ManagedRegistryEntry[] = [];
   let values = 0;
-  let skippedAliases = 0;
   entries.forEach((entry) => {
-    const aliases = entry.aliases.filter((alias) => {
-      if (alias.length >= 4) return true;
-      skippedAliases++;
-      return false;
-    });
+    if (entry.protectionKind === "entity") {
+      const canonical = normalizeProtectedRegistryValue(entry.value);
+      const forms = entry.forms.filter((form) => normalizeProtectedRegistryValue(form.value) !== canonical);
+      registryEntries.push({
+        id: entry.id,
+        protectionKind: "entity",
+        entityType: entry.entityType,
+        canonicalValue: entry.value,
+        forms,
+      });
+      values += 1 + forms.length;
+      return;
+    }
     registryEntries.push({
       id: entry.id,
-      name: managedRegistryName(entry),
-      type: entry.type,
-      ...(entry.matterId ? { scope: entry.matterId } : {}),
+      protectionKind: "literal",
       value: entry.value,
-      aliases,
-      kind: "custom",
+      semanticType: entry.type,
     });
     values++;
-    values += aliases.length;
+    for (const form of entry.forms.filter(
+      (form) => normalizeProtectedRegistryValue(form.value) !== normalizeProtectedRegistryValue(entry.value),
+    )) {
+      registryEntries.push({
+        id: literalFormId(entry.id, form.value),
+        protectionKind: "literal",
+        value: form.value,
+        semanticType: entry.type,
+      });
+      values++;
+    }
   });
   const file: ManagedRegistryFile = {
     schema: FICTA_MANAGED_REGISTRY_SCHEMA,
@@ -354,27 +400,19 @@ function renderManagedRegistryFile(entries: ProtectedRegistryEntry[]): {
     generatedAt: new Date().toISOString(),
     entries: registryEntries,
   };
+  if (!isManagedRegistryFile(file)) {
+    throw new Error("approved registry contains duplicate ids, conflicting entity forms, or invalid registry data");
+  }
   return {
     body: `${JSON.stringify(file, null, 2)}\n`,
     revision,
     values,
-    skippedAliases,
   };
 }
 
-function managedRegistryName(entry: ProtectedRegistryEntry): string {
-  return ["gateway", entry.type, entry.matterId || "global", entry.id].map(safeNamePart).join(":");
-}
-
-function safeNamePart(value: string): string {
-  return (
-    value
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9._-]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 80) || "entry"
-  );
+function literalFormId(entryId: string, value: string): string {
+  const digest = createHash("sha256").update(normalizeProtectedRegistryValue(value)).digest("hex").slice(0, 16);
+  return `${entryId}:form:${digest}`;
 }
 
 function managedRegistryPath(): string {

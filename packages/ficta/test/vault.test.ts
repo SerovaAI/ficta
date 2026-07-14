@@ -99,6 +99,16 @@ describe("vault", () => {
     expect(table.toVal.size).toBe(2);
   });
 
+  it("preserves an existing word boundary unless a duplicate explicitly disables it", () => {
+    const table = new SurrogateTable(hexSurrogateStrategy("word-boundary-registration-key"));
+    expect(table.register([{ value: "Northstar", wordBounded: true }])).toBe(1);
+    expect(table.register([{ value: "Northstar" }])).toBe(0);
+    expect(table.isWordBounded("Northstar")).toBe(true);
+
+    expect(table.register([{ value: "Northstar", wordBounded: false }])).toBe(0);
+    expect(table.isWordBounded("Northstar")).toBe(false);
+  });
+
   it("redacts known values out of raw JSON text", () => {
     const body = JSON.stringify({ messages: [{ role: "user", content: `key is ${AWS}` }] });
     const { text: red, count } = v.redactText(body);

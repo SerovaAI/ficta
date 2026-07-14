@@ -2,74 +2,86 @@ import { describe, expect, it } from "vitest";
 import { parseProtectedRegistryImport } from "@/lib/protected-registry-import";
 
 describe("protected registry import parser", () => {
-  it("parses the value-first CSV format with compatibility defaults", () => {
+  it("parses entity and literal CSV rows", () => {
     const result = parseProtectedRegistryImport(
       [
-        "value,aliases,status",
-        'Northstar Biologics (Pty) Ltd,"Northstar; NBL",approved',
-        "Proxima Medical Supplies CC,Proxima,suggested",
+        "protection_kind,entity_type,matter_id,type,value,forms,status",
+        'entity,organization,NSB-2026-0147,client,Northstar Biologics (Pty) Ltd,"Northstar~short_name~token;NBL~alias~token",approved',
+        "literal,,,counterparty,Proxima Medical Supplies CC,,suggested",
       ].join("\n"),
     );
 
     expect(result.warnings).toEqual([]);
     expect(result.entries).toEqual([
       {
-        matterId: "",
-        type: "other",
+        matterId: "NSB-2026-0147",
+        type: "client",
+        protectionKind: "entity",
+        entityType: "organization",
         value: "Northstar Biologics (Pty) Ltd",
-        aliases: ["Northstar", "NBL"],
+        forms: [
+          { value: "Northstar", kind: "short_name", boundary: "token" },
+          { value: "NBL", kind: "alias", boundary: "token" },
+        ],
         status: "approved",
         source: "csv",
       },
       {
         matterId: "",
-        type: "other",
+        type: "counterparty",
+        protectionKind: "literal",
         value: "Proxima Medical Supplies CC",
-        aliases: ["Proxima"],
+        forms: [],
         status: "suggested",
         source: "csv",
       },
     ]);
   });
 
-  it("parses value-first rows without a header", () => {
-    const result = parseProtectedRegistryImport('Northstar Biologics (Pty) Ltd,"Northstar; NBL",approved');
+  it("parses literal value-first rows without a header", () => {
+    const result = parseProtectedRegistryImport("Northstar Biologics (Pty) Ltd,approved");
 
     expect(result.warnings).toEqual([]);
     expect(result.entries).toEqual([
       {
         matterId: "",
         type: "other",
+        protectionKind: "literal",
         value: "Northstar Biologics (Pty) Ltd",
-        aliases: ["Northstar", "NBL"],
+        forms: [],
         status: "approved",
         source: "csv",
       },
     ]);
   });
 
-  it("continues to accept legacy headed CSV rows", () => {
+  it("skips rows with unsupported types, invalid forms, or blank values", () => {
     const result = parseProtectedRegistryImport(
-      "scope_id,type,value,aliases,status\nNSB-2026-0147,client,Northstar Biologics (Pty) Ltd,Northstar,approved",
-    );
-
-    expect(result.warnings).toEqual([]);
-    expect(result.entries[0]).toMatchObject({
-      matterId: "NSB-2026-0147",
-      type: "client",
-      value: "Northstar Biologics (Pty) Ltd",
-    });
-  });
-
-  it("skips rows with unsupported types or blank values", () => {
-    const result = parseProtectedRegistryImport(
-      ["matter_id,type,value", "M-1,client,", "M-2,unsupported,Acme"].join("\n"),
+      [
+        "protection_kind,entity_type,matter_id,type,value,forms",
+        "literal,,M-1,client,,",
+        "literal,,M-2,unsupported,Acme,",
+        "entity,organization,M-3,client,Northstar,Northstar~short_name~word",
+        "literal,,M-4,client,Northstar,Northstar~alias~token",
+      ].join("\n"),
     );
 
     expect(result.entries).toEqual([]);
     expect(result.warnings).toEqual([
       "Row 2 was skipped because value is blank.",
       'Row 3 was skipped because type "unsupported" is not supported.',
+      'Row 4 was skipped because form boundary "word" is not supported.',
+      "Row 5 was skipped because literal forms must use substring boundaries.",
     ]);
+  });
+
+  it("rejects rows with more than the supported number of deduplicated forms", () => {
+    const forms = Array.from({ length: 21 }, (_, index) => `Form ${index}~alias~substring`).join(";");
+    const result = parseProtectedRegistryImport(
+      `protection_kind,entity_type,value,forms\nentity,organization,Northstar,"${forms}"`,
+    );
+
+    expect(result.entries).toEqual([]);
+    expect(result.warnings).toEqual(["Row 2 was skipped because use at most 20 forms per entry."]);
   });
 });

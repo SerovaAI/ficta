@@ -1,8 +1,12 @@
-import { boolean, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { boolean, check, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
 import type {
   InstanceSettings,
+  ProtectedRegistryEntityType,
+  ProtectedRegistryEntryForm,
   ProtectedRegistryEntryStatus,
   ProtectedRegistryEntryType,
+  ProtectedRegistryProtectionKind,
   ProtectionStatsTotals,
   ThreadEgressEvent,
   UserSettings,
@@ -98,8 +102,10 @@ export const protectedRegistryEntries = pgTable(
     orgId: text("org_id").notNull(),
     matterId: text("matter_id").notNull().default(""),
     type: text("type").$type<ProtectedRegistryEntryType>().notNull(),
+    protectionKind: text("protection_kind").$type<ProtectedRegistryProtectionKind>().notNull().default("literal"),
+    entityType: text("entity_type").$type<ProtectedRegistryEntityType>(),
     value: text("value").notNull(),
-    aliases: jsonb("aliases").$type<string[]>().notNull().default([]),
+    forms: jsonb("forms").$type<ProtectedRegistryEntryForm[]>().notNull().default([]),
     source: text("source").notNull().default("manual"),
     status: text("status").$type<ProtectedRegistryEntryStatus>().notNull().default("approved"),
     createdBy: text("created_by").notNull(),
@@ -111,6 +117,11 @@ export const protectedRegistryEntries = pgTable(
   (t) => [
     index("protected_registry_entries_scope_status_idx").on(t.orgId, t.status, t.updatedAt.desc()),
     index("protected_registry_entries_scope_matter_idx").on(t.orgId, t.matterId, t.type),
+    check("protected_registry_entries_protection_kind_check", sql`${t.protectionKind} in ('literal', 'entity')`),
+    check(
+      "protected_registry_entries_entity_type_check",
+      sql`${t.entityType} is null or ${t.entityType} in ('organization', 'person')`,
+    ),
   ],
 );
 

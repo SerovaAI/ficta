@@ -349,36 +349,52 @@ export interface RegistryReloadOk {
     total: number;
     /** Values accepted from the currently configured managed-registry files. */
     loaded?: number;
-    /** Managed-file values dropped by the proxy's FICTA_REGISTRY_MIN_LEN filter — a published value
-     *  shorter than the minimum would otherwise read as a silent no-op. Optional for older proxies. */
-    skippedTooShort?: number;
-    /** Managed-registry source health. Optional for compatibility with older proxies. */
+    /** Managed-registry source health. */
     filesRead?: number;
     filesMissing?: number;
     filesErrored?: number;
     /** The caller's expected file revision, only when that exact revision was parsed by the proxy. */
     revision?: string;
+    /** True when the file is valid but modifies/removes a record already active in this process. */
+    restartRequired?: boolean;
   };
 }
 
 export interface RegistryReloadError {
   ok: false;
   service: "ficta";
-  status: "forbidden" | "unsupported";
+  status: "forbidden" | "unsupported" | "invalid_registry";
   message: string;
 }
 
 export type RegistryReloadResponse = RegistryReloadOk | RegistryReloadError;
 
-export interface ManagedRegistryEntry {
-  id: string;
-  name: string;
-  type: string;
-  scope?: string;
+export type ManagedRegistryFormBoundary = "substring" | "token";
+export type ManagedRegistryEntityType = "organization" | "person";
+export type ManagedRegistryFormKind = "legal_name" | "full_name" | "short_name" | "alias";
+
+export interface ManagedRegistryEntityForm {
   value: string;
-  aliases: string[];
-  kind: "secret" | "pii" | "custom";
+  kind: ManagedRegistryFormKind;
+  boundary: ManagedRegistryFormBoundary;
 }
+
+export interface ManagedRegistryEntityEntry {
+  id: string;
+  protectionKind: "entity";
+  entityType: ManagedRegistryEntityType;
+  canonicalValue: string;
+  forms: ManagedRegistryEntityForm[];
+}
+
+export interface ManagedRegistryLiteralEntry {
+  id: string;
+  protectionKind: "literal";
+  value: string;
+  semanticType?: string;
+}
+
+export type ManagedRegistryEntry = ManagedRegistryEntityEntry | ManagedRegistryLiteralEntry;
 
 export interface ManagedRegistryFile {
   schema: typeof FICTA_MANAGED_REGISTRY_SCHEMA;

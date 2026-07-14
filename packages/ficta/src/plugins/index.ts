@@ -121,6 +121,7 @@ export {
   managedRegistryFilePlugin,
   managedRegistryLoadCounts,
   resetManagedRegistryFilePluginCache,
+  retainManagedRegistryFilePluginCacheForCurrentFiles,
 } from "./managed-registry-file.js";
 
 /**

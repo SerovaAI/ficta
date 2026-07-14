@@ -24,6 +24,7 @@ describe("internal protection records", () => {
     expect(records).toEqual([
       {
         protectionKind: "literal",
+        protectionId: expect.stringMatching(/^registry:[0-9a-f]{64}$/u),
         value: value.value,
         authority: "registry",
         confidence: "exact",

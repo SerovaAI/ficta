@@ -94,12 +94,35 @@ export const PROTECTED_REGISTRY_ENTRY_SOURCES = ["manual", "csv", "suggested"] a
 
 export type ProtectedRegistryEntrySource = (typeof PROTECTED_REGISTRY_ENTRY_SOURCES)[number];
 
-export interface ProtectedRegistryEntry {
+export const PROTECTED_REGISTRY_PROTECTION_KINDS = ["literal", "entity"] as const;
+export type ProtectedRegistryProtectionKind = (typeof PROTECTED_REGISTRY_PROTECTION_KINDS)[number];
+
+export const PROTECTED_REGISTRY_ENTITY_TYPES = ["organization", "person"] as const;
+export type ProtectedRegistryEntityType = (typeof PROTECTED_REGISTRY_ENTITY_TYPES)[number];
+
+export const PROTECTED_REGISTRY_FORM_KINDS = ["legal_name", "full_name", "short_name", "alias"] as const;
+export type ProtectedRegistryFormKind = (typeof PROTECTED_REGISTRY_FORM_KINDS)[number];
+
+export const PROTECTED_REGISTRY_FORM_BOUNDARIES = ["substring", "token"] as const;
+export type ProtectedRegistryFormBoundary = (typeof PROTECTED_REGISTRY_FORM_BOUNDARIES)[number];
+export const PROTECTED_REGISTRY_FORMS_MAX = 20;
+
+export function normalizeProtectedRegistryValue(value: string): string {
+  return value.normalize("NFC").replace(/\s+/gu, " ").trim().toLowerCase();
+}
+
+export interface ProtectedRegistryEntryForm {
+  value: string;
+  kind: ProtectedRegistryFormKind;
+  boundary: ProtectedRegistryFormBoundary;
+}
+
+interface ProtectedRegistryEntryFields {
   id: string;
   matterId: string;
   type: ProtectedRegistryEntryType;
   value: string;
-  aliases: string[];
+  forms: ProtectedRegistryEntryForm[];
   source: ProtectedRegistryEntrySource;
   status: ProtectedRegistryEntryStatus;
   createdBy: string;
@@ -109,15 +132,27 @@ export interface ProtectedRegistryEntry {
   updatedAt: string;
 }
 
-export interface ProtectedRegistryEntryInput {
+export type ProtectedRegistryEntry = ProtectedRegistryEntryFields &
+  (
+    | { protectionKind: "entity"; entityType: ProtectedRegistryEntityType }
+    | { protectionKind: "literal"; entityType?: never }
+  );
+
+interface ProtectedRegistryEntryInputFields {
   id?: string;
   matterId: string;
   type: ProtectedRegistryEntryType;
   value: string;
-  aliases?: string[];
+  forms?: ProtectedRegistryEntryForm[];
   source?: ProtectedRegistryEntrySource;
   status?: ProtectedRegistryEntryStatus;
 }
+
+export type ProtectedRegistryEntryInput = ProtectedRegistryEntryInputFields &
+  (
+    | { protectionKind: "entity"; entityType: ProtectedRegistryEntityType }
+    | { protectionKind: "literal"; entityType?: never }
+  );
 
 export const DEFAULT_SUGGESTED_PROMPTS = [
   "Summarize this document and flag anything that needs attention.",

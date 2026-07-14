@@ -496,11 +496,12 @@ list and remain protected by the normal `TOKEN` heuristic.
 
 ## Built-in registry source: `managed-registry-file`
 
-This plugin loads exact admin-approved business values from JSON files. It is separate from
+This plugin loads admin-approved literal values and registered entities from JSON files. It is separate from
 `known-env-values`: env sources protect runtime/config material such as API keys and database URLs,
 while managed registry files protect domain values such as client names, matter IDs, patient IDs,
-account numbers, project names, and aliases. Both sources feed the same `ProtectedValue[]` contract
-and therefore use the same vault, exact-match redaction, fail-closed leak checks, and restore path.
+account numbers, project names, and aliases. Managed entities retain one durable identity plus explicit
+form boundaries inside the engine; every surface still uses the same vault, fail-closed leak checks, and
+restore path as literal registry values.
 
 Default TOML:
 
@@ -532,24 +533,35 @@ Canonical file shape:
   "entries": [
     {
       "id": "entry-1",
-      "name": "gateway:client:nsb-2026-0147:entry-1",
-      "type": "client",
-      "scope": "NSB-2026-0147",
-      "value": "Northstar Biologics (Pty) Ltd",
-      "aliases": ["Northstar"],
-      "kind": "custom"
+      "protectionKind": "entity",
+      "entityType": "organization",
+      "canonicalValue": "Northstar Biologics (Pty) Ltd",
+      "forms": [
+        { "value": "Northstar", "kind": "short_name", "boundary": "token" }
+      ]
+    },
+    {
+      "id": "entry-2",
+      "protectionKind": "literal",
+      "value": "ZA-12345",
+      "semanticType": "account"
     }
   ]
 }
 ```
 
-The proxy validates this versioned shape strictly and rejects missing fields or unknown schema versions.
-`name` is a safe label for logs and discovery metadata; it must not contain the protected value.
-`value` and `aliases` are filtered by `registry.min_len`, deduped, loaded into memory, and never
-printed. `revision` is a required non-sensitive generation identifier: Gateway changes it on every
-atomic publication and sends it to `POST /__ficta/registry/reload`, allowing the proxy to acknowledge
-that exact file generation rather than treating an ambiguous `added: 0` as success. Discovery output
-reports only file paths, statuses, and counts.
+Validation covers the complete configured file set before any record is admitted: IDs must be unique,
+and a case/whitespace-normalized entity form cannot belong to two entities. Entity canonicals always
+match as substrings. Every additional form declares `substring` or Unicode-aware `token` boundaries
+explicitly, so managed entries do not use `registry.min_len` to infer or discard forms. Gateway-local
+workflow fields such as matter scope and review role are not exported.
+
+`revision` is a required non-sensitive generation identifier. Gateway changes it on every atomic
+publication and sends it to `POST /__ficta/registry/reload`, allowing the proxy to acknowledge that
+exact file generation rather than treating an ambiguous `added: 0` as success. A reload admits only
+wholly new IDs. Edits, form changes, and removals leave the previous protection active and return
+`restartRequired: true`; an invalid reload retains the previous snapshot. Discovery and reload output
+report only file paths, statuses, and counts.
 
 ## Built-in registry source: `known-env-values`
 
@@ -614,8 +626,9 @@ changes the prompt's *default* selection — nothing is persisted until you subm
 confirmation. Deselecting a name writes it to `registry.exclude_names` /
 `FICTA_REGISTRY_EXCLUDE_NAMES`; re-selecting a previously-excluded name removes it. Excluded names
 are enforced at both the registry-load and request-time-detection seams and are listed in the
-startup banner and `ficta doctor`. The older `registry.min_len` filter still applies as a silent
-default of 8 (short values overmatch normal text) but is no longer a setup prompt.
+startup banner and `ficta doctor`. The older `registry.min_len` filter still applies to unstructured
+env/Doppler registry candidates as a silent default of 8 (short values overmatch normal text), but is
+no longer a setup prompt. Managed entity forms instead carry an explicit boundary policy.
 
 ## Optional detector plugins
 

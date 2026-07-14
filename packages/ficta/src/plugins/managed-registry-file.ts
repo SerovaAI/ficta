@@ -1,20 +1,30 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { isManagedRegistryFile } from "@serovaai/ficta-protocol";
+import {
+  isManagedRegistryFile,
+  type ManagedRegistryEntityForm,
+  type ManagedRegistryEntry,
+} from "@serovaai/ficta-protocol";
 import { envEnabled } from "../engine/env-flags.js";
 import type {
   PluginDiscovery,
   ProtectedValue,
-  ProtectedValueKind,
   RegistrySetupSource,
   RegistrySourcePlugin,
 } from "../engine/plugins/types.js";
+import {
+  type ProtectionRecord,
+  protectionRecordSurfaces,
+  type RegisteredEntityForm,
+  type StructuredRegistrySourceCapabilities,
+} from "../engine/protection.js";
 
 interface ManagedRegistryFileStat {
   file: string;
   exists: boolean;
   loaded: number;
   revision?: string;
-  error?: "read error" | "invalid json" | "unsupported json";
+  error?: "read error" | "invalid json" | "unsupported json" | "registry conflict";
 }
 
 interface ManagedRegistryStats {
@@ -22,7 +32,6 @@ interface ManagedRegistryStats {
   pathSetting: string;
   loaded: number;
   skippedEmpty: number;
-  skippedTooShort: number;
   skippedDuplicate: number;
   filesRead: number;
   filesMissing: number;
@@ -31,16 +40,14 @@ interface ManagedRegistryStats {
   files: ManagedRegistryFileStat[];
 }
 
-interface ParsedManagedEntry {
-  name: string;
-  value: string;
-  aliases: string[];
-  kind: ProtectedValueKind;
+interface ParsedManagedRegistry {
+  entries: ManagedRegistryEntry[];
+  revision: string;
 }
 
-interface ParsedManagedRegistry {
-  entries: ParsedManagedEntry[];
-  revision: string;
+interface ParsedManagedRegistryFile {
+  stat: ManagedRegistryFileStat;
+  registry: ParsedManagedRegistry;
 }
 
 const PLUGIN_NAME = "managed-registry-file";
@@ -49,12 +56,13 @@ const DEFAULT_ENABLED = "1";
 
 let cachedKey: string | undefined;
 let cachedValues: ProtectedValue[] | undefined;
+let cachedRecords: ProtectionRecord[] | undefined;
 let cachedStats: ManagedRegistryStats | undefined;
 
-export const managedRegistryFilePlugin: RegistrySourcePlugin = {
+export const managedRegistryFilePlugin: RegistrySourcePlugin & StructuredRegistrySourceCapabilities = {
   kind: "registry-source",
   name: PLUGIN_NAME,
-  description: "Loads exact admin-managed business values from managed registry JSON files",
+  description: "Loads admin-managed literals and entities from managed registry JSON files",
   config: {
     envDefaults: {
       FICTA_REGISTRY_MANAGED_FILE_ENABLED: DEFAULT_ENABLED,
@@ -75,47 +83,27 @@ export const managedRegistryFilePlugin: RegistrySourcePlugin = {
   },
   discover: discoverManagedRegistryFiles,
   loadValues: loadManagedRegistryValues,
+  loadProtectionRecords: loadManagedRegistryProtectionRecords,
+  fatalLoadErrors: true,
 };
 
 function loadManagedRegistryValues(): ProtectedValue[] {
   const key = cacheKey();
-  if (cachedValues && cachedKey === key) return cachedValues;
+  if (cachedValues && cachedRecords && cachedKey === key) return cachedValues;
 
   const stats = emptyStats();
   const values: ProtectedValue[] = [];
-  const seen = new Set<string>();
+  const records: ProtectionRecord[] = [];
+  const seenValues = new Set<string>();
+  const parsedFiles: ParsedManagedRegistryFile[] = [];
 
-  cachedKey = key;
-  cachedValues = values;
-  cachedStats = stats;
-
-  if (!stats.enabled) return values;
-
-  const minLen = registryMinLen();
-  const add = (entry: ParsedManagedEntry, value: string, suffix?: string): boolean => {
-    if (!value) {
-      stats.skippedEmpty++;
-      return false;
-    }
-    if (value.length < minLen) {
-      stats.skippedTooShort++;
-      return false;
-    }
-    if (seen.has(value)) {
-      stats.skippedDuplicate++;
-      return false;
-    }
-    seen.add(value);
-    values.push({
-      name: suffix ? `${entry.name}:${suffix}` : entry.name,
-      value,
-      source: "managed-registry-file",
-      plugin: PLUGIN_NAME,
-      kind: entry.kind,
-      confidence: "exact",
-    });
-    return true;
-  };
+  if (!stats.enabled) {
+    cachedKey = key;
+    cachedValues = values;
+    cachedRecords = records;
+    cachedStats = stats;
+    return values;
+  }
 
   for (const file of managedRegistryPaths()) {
     const stat: ManagedRegistryFileStat = { file, exists: existsSync(file), loaded: 0 };
@@ -131,7 +119,7 @@ function loadManagedRegistryValues(): ProtectedValue[] {
     } catch {
       stats.filesErrored++;
       stat.error = "read error";
-      continue;
+      throw new Error(`could not read managed registry file ${file}`);
     }
 
     stats.filesRead++;
@@ -139,7 +127,7 @@ function loadManagedRegistryValues(): ProtectedValue[] {
     if (!parsed.ok) {
       stats.filesErrored++;
       stat.error = parsed.error;
-      continue;
+      throw new Error(`invalid managed registry file ${file}: ${parsed.error}`);
     }
 
     if (parsed.registry.revision) {
@@ -147,17 +135,44 @@ function loadManagedRegistryValues(): ProtectedValue[] {
       if (!stats.revisions.includes(parsed.registry.revision)) stats.revisions.push(parsed.registry.revision);
     }
 
-    parsed.registry.entries.forEach((entry) => {
-      if (add(entry, entry.value)) stat.loaded++;
-      entry.aliases.forEach((alias, index) => {
-        if (add(entry, alias, `alias-${index + 1}`)) stat.loaded++;
-      });
-    });
+    parsedFiles.push({ stat, registry: parsed.registry });
+  }
+
+  try {
+    validateManagedRegistrySet(parsedFiles);
+  } catch (error) {
+    stats.filesErrored++;
+    cachedStats = stats;
+    throw error;
+  }
+  for (const { stat, registry } of parsedFiles) {
+    for (const entry of registry.entries) {
+      const record = protectionRecord(entry);
+      records.push(record);
+      for (const surface of protectionRecordSurfaces(record)) {
+        if (seenValues.has(surface.value)) {
+          stats.skippedDuplicate++;
+          continue;
+        }
+        seenValues.add(surface.value);
+        values.push(surface);
+        stat.loaded++;
+      }
+    }
   }
 
   values.sort((a, b) => b.value.length - a.value.length || a.name.localeCompare(b.name));
   stats.loaded = values.length;
+  cachedKey = key;
+  cachedValues = values;
+  cachedRecords = records;
+  cachedStats = stats;
   return values;
+}
+
+function loadManagedRegistryProtectionRecords(): ProtectionRecord[] {
+  loadManagedRegistryValues();
+  return cachedRecords ?? [];
 }
 
 function discoverManagedRegistryFiles(): PluginDiscovery[] {
@@ -171,13 +186,11 @@ function loadManagedRegistryStats(): ManagedRegistryStats {
 }
 
 /**
- * Counts-only view of the last managed-registry load, for the reload endpoint's response: values the
- * operator published that were silently dropped by the `FICTA_REGISTRY_MIN_LEN` filter would otherwise
- * read as a successful no-op. Never contains values or file contents.
+ * Counts-only view of the last managed-registry load for the reload endpoint. Never contains values
+ * or file contents.
  */
 export function managedRegistryLoadCounts(): {
   loaded: number;
-  skippedTooShort: number;
   filesRead: number;
   filesMissing: number;
   filesErrored: number;
@@ -186,7 +199,6 @@ export function managedRegistryLoadCounts(): {
   const stats = loadManagedRegistryStats();
   return {
     loaded: stats.loaded,
-    skippedTooShort: stats.skippedTooShort,
     filesRead: stats.filesRead,
     filesMissing: stats.filesMissing,
     filesErrored: stats.filesErrored,
@@ -202,12 +214,18 @@ export function managedRegistryLoadCounts(): {
  */
 export function resetManagedRegistryFilePluginCache(): void {
   cachedKey = undefined;
-  cachedValues = undefined;
-  cachedStats = undefined;
+}
+
+/** Keep request-time inspection on the last good snapshot after an explicit reload is rejected. */
+export function retainManagedRegistryFilePluginCacheForCurrentFiles(): void {
+  if (cachedValues && cachedRecords && cachedStats) cachedKey = cacheKey();
 }
 
 export function resetManagedRegistryFilePluginCacheForTests(): void {
-  resetManagedRegistryFilePluginCache();
+  cachedKey = undefined;
+  cachedValues = undefined;
+  cachedRecords = undefined;
+  cachedStats = undefined;
 }
 
 function managedRegistrySetupSource(env: NodeJS.ProcessEnv): RegistrySetupSource {
@@ -304,9 +322,12 @@ function managedRegistryDiscovery(stats: ManagedRegistryStats): PluginDiscovery 
   };
 }
 
-function parseManagedRegistryJson(
-  text: string,
-): { ok: true; registry: ParsedManagedRegistry } | { ok: false; error: "invalid json" | "unsupported json" } {
+function parseManagedRegistryJson(text: string):
+  | {
+      ok: true;
+      registry: ParsedManagedRegistry;
+    }
+  | { ok: false; error: "invalid json" | "unsupported json" } {
   let json: unknown;
   try {
     json = JSON.parse(text);
@@ -320,9 +341,107 @@ function parseManagedRegistryJson(
     ok: true,
     registry: {
       revision: json.revision,
-      entries: json.entries.map(({ name, value, aliases, kind }) => ({ name, value, aliases, kind })),
+      entries: json.entries,
     },
   };
+}
+
+function protectionRecord(entry: ManagedRegistryEntry): ProtectionRecord {
+  const meta: ProtectedValue = {
+    name: `managed-registry:${entry.id}`,
+    value: entry.protectionKind === "entity" ? entry.canonicalValue : entry.value,
+    source: "managed-registry-file",
+    plugin: PLUGIN_NAME,
+    kind: "custom",
+    confidence: "exact",
+  };
+  if (entry.protectionKind === "literal") {
+    return {
+      protectionKind: "literal",
+      protectionId: entry.id,
+      value: entry.value,
+      semanticType: entry.semanticType,
+      authority: "registry",
+      confidence: "exact",
+      meta,
+    };
+  }
+  const forms = dedupeEntityForms(entry.id, entry.canonicalValue, entry.forms);
+  return {
+    protectionKind: "entity",
+    entityId: entry.id,
+    entityType: entry.entityType,
+    canonical: {
+      formId: formId(entry.id, entry.canonicalValue),
+      value: entry.canonicalValue,
+      kind: entry.entityType === "organization" ? "legal_name" : "full_name",
+    },
+    forms,
+    provenance: "registry",
+    meta,
+  };
+}
+
+function dedupeEntityForms(
+  entityId: string,
+  canonicalValue: string,
+  forms: readonly ManagedRegistryEntityForm[],
+): RegisteredEntityForm[] {
+  const canonical = normalizeForm(canonicalValue);
+  const byValue = new Map<string, RegisteredEntityForm>();
+  for (const form of forms) {
+    const normalized = normalizeForm(form.value);
+    if (normalized === canonical) continue;
+    const candidate: RegisteredEntityForm = {
+      formId: formId(entityId, normalized),
+      value: form.value,
+      kind: form.kind,
+      boundary: form.boundary,
+    };
+    const current = byValue.get(normalized);
+    if (!current || current.boundary === "token") byValue.set(normalized, candidate);
+  }
+  return [...byValue.values()];
+}
+
+function validateManagedRegistrySet(files: readonly ParsedManagedRegistryFile[]): void {
+  const idOwners = new Map<string, ManagedRegistryFileStat>();
+  const valueOwners = new Map<string, { entryId: string; stat: ManagedRegistryFileStat }>();
+  for (const { stat, registry } of files) {
+    for (const entry of registry.entries) {
+      const idOwner = idOwners.get(entry.id);
+      if (idOwner) {
+        stat.error = "registry conflict";
+        throw new Error(
+          `duplicate managed registry id ${entry.id} in ${stat.file} (already declared in ${idOwner.file})`,
+        );
+      }
+      idOwners.set(entry.id, stat);
+      const values =
+        entry.protectionKind === "entity"
+          ? [entry.canonicalValue, ...entry.forms.map((form) => form.value)]
+          : [entry.value];
+      for (const value of values) {
+        const normalized = normalizeForm(value);
+        const owner = valueOwners.get(normalized);
+        if (owner !== undefined && owner.entryId !== entry.id) {
+          stat.error = "registry conflict";
+          throw new Error(
+            `managed registry value in ${stat.file} is assigned to both ${owner.entryId} (${owner.stat.file}) and ${entry.id}`,
+          );
+        }
+        valueOwners.set(normalized, { entryId: entry.id, stat });
+      }
+    }
+  }
+}
+
+function normalizeForm(value: string): string {
+  return value.normalize("NFC").replace(/\s+/gu, " ").trim().toLowerCase();
+}
+
+function formId(entityId: string, value: string): string {
+  return `${entityId}:${createHash("sha256").update(normalizeForm(value)).digest("hex").slice(0, 16)}`;
 }
 
 function emptyStats(): ManagedRegistryStats {
@@ -331,7 +450,6 @@ function emptyStats(): ManagedRegistryStats {
     pathSetting: managedRegistryPathSetting(),
     loaded: 0,
     skippedEmpty: 0,
-    skippedTooShort: 0,
     skippedDuplicate: 0,
     filesRead: 0,
     filesMissing: 0,
@@ -343,7 +461,6 @@ function emptyStats(): ManagedRegistryStats {
 
 function skippedOnlyMessage(stats: ManagedRegistryStats): string | undefined {
   const parts: string[] = [];
-  if (stats.skippedTooShort > 0) parts.push(`${stats.skippedTooShort} shorter than registry.min_len`);
   if (stats.skippedDuplicate > 0) parts.push(`${stats.skippedDuplicate} duplicate`);
   if (stats.skippedEmpty > 0) parts.push(`${stats.skippedEmpty} blank`);
   return parts.length > 0 ? parts.join("; ") : undefined;
@@ -361,17 +478,10 @@ function managedRegistryPaths(): string[] {
   return managedRegistryPathSetting().split(":").filter(Boolean);
 }
 
-function registryMinLen(): number {
-  const raw = Number(process.env.FICTA_REGISTRY_MIN_LEN ?? 8);
-  if (!Number.isFinite(raw) || raw < 0) return 8;
-  return raw;
-}
-
 function cacheKey(): string {
   return JSON.stringify({
     enabled: managedRegistryEnabled(),
     paths: managedRegistryPathSetting(),
-    minLen: registryMinLen(),
     // Per-file stat fingerprints so an edited/created/deleted registry file busts the cache. Without
     // this the key was content-blind: a gateway "publish" that rewrote the file returned stale values
     // to every consumer (per-request log meta, discover(), doctor) until the process restarted.

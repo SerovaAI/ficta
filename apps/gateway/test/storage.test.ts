@@ -308,8 +308,9 @@ const protectedRegistryInput = (
 ): ProtectedRegistryEntryInput => ({
   matterId: "NSB-2026-0147",
   type: "client",
+  protectionKind: "literal",
   value,
-  aliases: [],
+  forms: [],
   status: "approved",
   source: "manual",
   ...patch,
@@ -318,7 +319,13 @@ const protectedRegistryInput = (
 describe("confidential protected registry", () => {
   it("imports, updates, and deletes workspace protected registry entries", async () => {
     const imported = await store.importProtectedRegistryEntries("org-protected-registry", "admin-1", [
-      protectedRegistryInput("Northstar Biologics (Pty) Ltd", { aliases: ["Northstar", "NBL"], source: "csv" }),
+      protectedRegistryInput("Northstar Biologics (Pty) Ltd", {
+        forms: [
+          { value: "Northstar", kind: "alias", boundary: "substring" },
+          { value: "NBL", kind: "alias", boundary: "substring" },
+        ],
+        source: "csv",
+      }),
       protectedRegistryInput("Proxima Medical Supplies CC", {
         type: "counterparty",
         status: "suggested",
@@ -330,8 +337,12 @@ describe("confidential protected registry", () => {
     expect(imported[0]).toMatchObject({
       matterId: "NSB-2026-0147",
       type: "client",
+      protectionKind: "literal",
       value: "Northstar Biologics (Pty) Ltd",
-      aliases: ["Northstar", "NBL"],
+      forms: [
+        { value: "Northstar", kind: "alias", boundary: "substring" },
+        { value: "NBL", kind: "alias", boundary: "substring" },
+      ],
       status: "approved",
       source: "csv",
       createdBy: "admin-1",
@@ -344,7 +355,7 @@ describe("confidential protected registry", () => {
       ...protectedRegistryInput("Proxima Medical Supplies CC", {
         id: imported[1]?.id,
         type: "counterparty",
-        aliases: ["Proxima"],
+        forms: [{ value: "Proxima", kind: "alias", boundary: "substring" }],
       }),
       status: "approved",
     });

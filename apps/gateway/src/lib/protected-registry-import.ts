@@ -1,9 +1,18 @@
 import {
+  normalizeProtectedRegistryValue,
+  PROTECTED_REGISTRY_ENTITY_TYPES,
   PROTECTED_REGISTRY_ENTRY_STATUSES,
   PROTECTED_REGISTRY_ENTRY_TYPES,
+  PROTECTED_REGISTRY_FORM_BOUNDARIES,
+  PROTECTED_REGISTRY_FORM_KINDS,
+  PROTECTED_REGISTRY_FORMS_MAX,
+  PROTECTED_REGISTRY_PROTECTION_KINDS,
+  type ProtectedRegistryEntityType,
+  type ProtectedRegistryEntryForm,
   type ProtectedRegistryEntryInput,
   type ProtectedRegistryEntryStatus,
   type ProtectedRegistryEntryType,
+  type ProtectedRegistryProtectionKind,
 } from "@/lib/storage/types";
 
 export interface ProtectedRegistryImportParseResult {
@@ -11,32 +20,16 @@ export interface ProtectedRegistryImportParseResult {
   warnings: string[];
 }
 
-type Column = "matterId" | "type" | "value" | "aliases" | "status";
+type Column = "protectionKind" | "entityType" | "matterId" | "type" | "value" | "forms" | "status";
 
-const DEFAULT_COLUMNS: Column[] = ["value", "aliases", "status"];
-const HEADER_ALIASES: Record<string, Column> = {
-  scope: "matterId",
-  scopeid: "matterId",
-  scope_id: "matterId",
-  record: "matterId",
-  recordid: "matterId",
-  record_id: "matterId",
-  matter: "matterId",
-  matterid: "matterId",
+const DEFAULT_COLUMNS: Column[] = ["value", "status"];
+const HEADERS: Record<string, Column> = {
+  protection_kind: "protectionKind",
+  entity_type: "entityType",
   matter_id: "matterId",
-  mattercode: "matterId",
-  matter_code: "matterId",
   type: "type",
-  kind: "type",
-  category: "type",
   value: "value",
-  name: "value",
-  entity: "value",
-  identifier: "value",
-  aliases: "aliases",
-  alias: "aliases",
-  also_known_as: "aliases",
-  aka: "aliases",
+  forms: "forms",
   status: "status",
 };
 
@@ -69,14 +62,38 @@ export function parseProtectedRegistryImport(text: string): ProtectedRegistryImp
       warnings.push(`Row ${rowNumber} was skipped because status "${draft.status}" is not supported.`);
       return;
     }
-    entries.push({
+    const protectionKind = normalizeProtectionKind(draft.protectionKind);
+    if (!protectionKind) {
+      warnings.push(`Row ${rowNumber} was skipped because protection kind "${draft.protectionKind}" is not supported.`);
+      return;
+    }
+    const entityType = protectionKind === "entity" ? normalizeEntityType(draft.entityType) : undefined;
+    if (protectionKind === "entity" && !entityType) {
+      warnings.push(`Row ${rowNumber} was skipped because entity type "${draft.entityType}" is not supported.`);
+      return;
+    }
+    const parsedForms = parseForms(draft.forms);
+    if (parsedForms.error) {
+      warnings.push(`Row ${rowNumber} was skipped because ${parsedForms.error}.`);
+      return;
+    }
+    if (protectionKind === "literal" && parsedForms.forms.some((form) => form.boundary !== "substring")) {
+      warnings.push(`Row ${rowNumber} was skipped because literal forms must use substring boundaries.`);
+      return;
+    }
+    const fields = {
       matterId: draft.matterId,
       type,
       value: draft.value,
-      aliases: splitAliases(draft.aliases),
+      forms: parsedForms.forms,
       status,
       source: "csv",
-    });
+    } as const;
+    entries.push(
+      protectionKind === "entity"
+        ? { ...fields, protectionKind, entityType: entityType as ProtectedRegistryEntityType }
+        : { ...fields, protectionKind },
+    );
   });
 
   if (entries.length === 0 && warnings.length === 0) warnings.push("No importable registry entries found.");
@@ -84,22 +101,32 @@ export function parseProtectedRegistryImport(text: string): ProtectedRegistryImp
 }
 
 function rowToDraft(row: string[], columns: Array<Column | undefined>) {
-  const draft: Record<Column, string> = { matterId: "", type: "", value: "", aliases: "", status: "" };
+  const draft: Record<Column, string> = {
+    protectionKind: "",
+    entityType: "",
+    matterId: "",
+    type: "",
+    value: "",
+    forms: "",
+    status: "",
+  };
   columns.forEach((column, index) => {
     if (!column) return;
     draft[column] = clean(row[index] ?? "");
   });
   return {
+    protectionKind: draft.protectionKind || "literal",
+    entityType: draft.entityType,
     matterId: draft.matterId,
     type: draft.type || "other",
     value: draft.value,
-    aliases: draft.aliases,
+    forms: draft.forms,
     status: draft.status || "approved",
   };
 }
 
 function headerColumns(row: string[]): Array<Column | undefined> {
-  return row.map((cell) => HEADER_ALIASES[normalizeHeader(cell)]);
+  return row.map((cell) => HEADERS[normalizeHeader(cell)]);
 }
 
 function normalizeHeader(value: string): string {
@@ -130,17 +157,48 @@ function normalizeStatus(value: string): ProtectedRegistryEntryStatus | undefine
     : undefined;
 }
 
-function splitAliases(value: string): string[] {
+function normalizeProtectionKind(value: string): ProtectedRegistryProtectionKind | undefined {
+  const normalized = normalizeHeader(value);
+  return (PROTECTED_REGISTRY_PROTECTION_KINDS as readonly string[]).includes(normalized)
+    ? (normalized as ProtectedRegistryProtectionKind)
+    : undefined;
+}
+
+function normalizeEntityType(value: string): ProtectedRegistryEntityType | undefined {
+  const normalized = normalizeHeader(value);
+  return (PROTECTED_REGISTRY_ENTITY_TYPES as readonly string[]).includes(normalized)
+    ? (normalized as ProtectedRegistryEntityType)
+    : undefined;
+}
+
+function parseForms(value: string): { forms: ProtectedRegistryEntryForm[]; error?: string } {
+  const forms: ProtectedRegistryEntryForm[] = [];
   const seen = new Set<string>();
-  const aliases: string[] = [];
-  for (const raw of value.split(/[;|]/)) {
-    const alias = clean(raw);
-    const key = alias.toLocaleLowerCase();
-    if (!alias || seen.has(key)) continue;
+  if (!value) return { forms };
+  for (const raw of value.split(";")) {
+    const parts = raw.split("~").map(clean);
+    if (parts.length !== 3) return { forms: [], error: `form "${clean(raw)}" must be value~kind~boundary` };
+    const [formValue = "", kind = "", boundary = ""] = parts;
+    if (!formValue) return { forms: [], error: "form value is blank" };
+    if (!(PROTECTED_REGISTRY_FORM_KINDS as readonly string[]).includes(kind)) {
+      return { forms: [], error: `form kind "${kind}" is not supported` };
+    }
+    if (!(PROTECTED_REGISTRY_FORM_BOUNDARIES as readonly string[]).includes(boundary)) {
+      return { forms: [], error: `form boundary "${boundary}" is not supported` };
+    }
+    const key = normalizeProtectedRegistryValue(formValue);
+    if (seen.has(key)) continue;
     seen.add(key);
-    aliases.push(alias);
+    forms.push({
+      value: formValue,
+      kind: kind as ProtectedRegistryEntryForm["kind"],
+      boundary: boundary as ProtectedRegistryEntryForm["boundary"],
+    });
+    if (forms.length > PROTECTED_REGISTRY_FORMS_MAX) {
+      return { forms: [], error: `use at most ${PROTECTED_REGISTRY_FORMS_MAX} forms per entry` };
+    }
   }
-  return aliases;
+  return { forms };
 }
 
 function parseCsvRows(text: string): string[][] {

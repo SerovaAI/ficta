@@ -251,7 +251,6 @@ describe("runtime guards", () => {
           added: 1,
           total: 12,
           loaded: 10,
-          skippedTooShort: 2,
           filesRead: 1,
           filesMissing: 0,
           filesErrored: 0,
@@ -284,18 +283,68 @@ describe("runtime guards", () => {
       entries: [
         {
           id: "entry-1",
-          name: "gateway:client:global:entry-1",
-          type: "client",
-          value: "Northstar Biologics",
-          aliases: ["Northstar"],
-          kind: "custom",
+          protectionKind: "entity",
+          entityType: "organization",
+          canonicalValue: "Northstar Biologics",
+          forms: [{ value: "Northstar", kind: "short_name", boundary: "token" }],
+        },
+        {
+          id: "entry-2",
+          protectionKind: "literal",
+          value: "ZA-12345",
+          semanticType: "account",
         },
       ],
     };
     assert.equal(isManagedRegistryFile(file), true);
-    assert.equal(isManagedRegistryFile({ ...file, schema: "ficta.managed-registry.v2" }), false);
-    assert.equal(isManagedRegistryFile({ ...file, entries: [{ ...file.entries[0], value: "" }] }), false);
+    assert.equal(isManagedRegistryFile({ ...file, schema: "ficta.managed-registry.v99" }), false);
+    assert.equal(isManagedRegistryFile({ ...file, entries: [{ ...file.entries[0], canonicalValue: "" }] }), false);
     assert.equal(isManagedRegistryFile({ ...file, revision: "bad revision" }), false);
+    assert.equal(isManagedRegistryFile({ ...file, generatedAt: "yesterday" }), false);
+    assert.equal(
+      isManagedRegistryFile({ ...file, entries: [file.entries[0], { ...file.entries[1], id: "entry-1" }] }),
+      false,
+    );
+    assert.equal(
+      isManagedRegistryFile({
+        ...file,
+        entries: [
+          file.entries[0],
+          {
+            id: "entry-3",
+            protectionKind: "entity",
+            entityType: "organization",
+            canonicalValue: "  NORTHSTAR   ",
+            forms: [],
+          },
+        ],
+      }),
+      false,
+    );
+    assert.equal(
+      isManagedRegistryFile({
+        ...file,
+        entries: [
+          file.entries[0],
+          {
+            id: "entry-3",
+            protectionKind: "literal",
+            value: "  NORTHSTAR   ",
+          },
+        ],
+      }),
+      false,
+    );
+    assert.equal(
+      isManagedRegistryFile({
+        ...file,
+        entries: [
+          { id: "entry-1", protectionKind: "literal", value: "Caf\u00e9" },
+          { id: "entry-2", protectionKind: "literal", value: "Cafe\u0301" },
+        ],
+      }),
+      false,
+    );
   });
 
   it("validates protection previews", () => {

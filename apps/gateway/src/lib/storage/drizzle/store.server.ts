@@ -326,8 +326,10 @@ export function createStorage(): Storage {
           orgId,
           matterId: entry.matterId,
           type: entry.type,
+          protectionKind: entry.protectionKind,
+          entityType: entry.protectionKind === "entity" ? entry.entityType : null,
           value: entry.value,
-          aliases: entry.aliases ?? [],
+          forms: entry.forms ?? [],
           source: entry.source ?? "manual",
           status,
           createdBy: current?.createdBy ?? userId,
@@ -340,8 +342,10 @@ export function createStorage(): Storage {
           set: {
             matterId: entry.matterId,
             type: entry.type,
+            protectionKind: entry.protectionKind,
+            entityType: entry.protectionKind === "entity" ? entry.entityType : null,
             value: entry.value,
-            aliases: entry.aliases ?? [],
+            forms: entry.forms ?? [],
             source: entry.source ?? "manual",
             status,
             approvedBy,
@@ -369,8 +373,10 @@ export function createStorage(): Storage {
               orgId,
               matterId: entry.matterId,
               type: entry.type,
+              protectionKind: entry.protectionKind,
+              entityType: entry.protectionKind === "entity" ? entry.entityType : null,
               value: entry.value,
-              aliases: entry.aliases ?? [],
+              forms: entry.forms ?? [],
               source: entry.source ?? "csv",
               status,
               createdBy: userId,
@@ -728,8 +734,10 @@ function toProtectedRegistryEntry(row: {
   id: string;
   matterId: string;
   type: ProtectedRegistryEntry["type"];
+  protectionKind: ProtectedRegistryEntry["protectionKind"];
+  entityType: ProtectedRegistryEntry["entityType"] | null;
   value: string;
-  aliases: string[];
+  forms: ProtectedRegistryEntry["forms"];
   source: string;
   status: ProtectedRegistryEntry["status"];
   createdBy: string;
@@ -738,13 +746,15 @@ function toProtectedRegistryEntry(row: {
   createdAt: Date;
   updatedAt: Date;
 }): ProtectedRegistryEntry {
-  return {
+  const source: ProtectedRegistryEntry["source"] =
+    row.source === "csv" || row.source === "suggested" ? row.source : "manual";
+  const fields = {
     id: row.id,
     matterId: row.matterId,
     type: row.type,
     value: row.value,
-    aliases: Array.isArray(row.aliases) ? row.aliases : [],
-    source: row.source === "csv" || row.source === "suggested" ? row.source : "manual",
+    forms: Array.isArray(row.forms) ? row.forms : [],
+    source,
     status: row.status,
     createdBy: row.createdBy,
     approvedBy: row.approvedBy ?? undefined,
@@ -752,6 +762,11 @@ function toProtectedRegistryEntry(row: {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+  if (row.protectionKind === "entity") {
+    if (!row.entityType) throw new Error("entity registry row has no entity type");
+    return { ...fields, protectionKind: row.protectionKind, entityType: row.entityType };
+  }
+  return { ...fields, protectionKind: row.protectionKind };
 }
 
 function toThreadSummary(row: {
