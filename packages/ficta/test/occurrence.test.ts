@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  type Entity,
+  type EntityClaim,
   mapJoinedOffsets,
   type Occurrence,
   resolveOccurrences,
@@ -23,7 +23,7 @@ describe("occurrence resolver", () => {
 
     expect(resolveOccurrences([detected, registry])).toEqual([
       {
-        ...occurrence(text, 0, "Project:**".length, detected.entity, "clipped"),
+        ...occurrence(text, 0, "Project:**".length, detected, "clipped"),
         clipped: true,
         clippedBy: "registry",
       },
@@ -53,13 +53,13 @@ describe("occurrence resolver", () => {
 
     expect(resolveOccurrences([registry, detected])).toEqual([
       {
-        ...occurrence(text, 0, 3, detected.entity, "clipped"),
+        ...occurrence(text, 0, 3, detected, "clipped"),
         clipped: true,
         clippedBy: "registry",
       },
       { ...registry, clipped: false },
       {
-        ...occurrence(text, text.indexOf("xyz"), text.length, detected.entity, "clipped"),
+        ...occurrence(text, text.indexOf("xyz"), text.length, detected, "clipped"),
         clipped: true,
         clippedBy: "registry",
       },
@@ -79,6 +79,31 @@ describe("occurrence resolver", () => {
     const exactA = occurrence(text, 0, text.length, entity("a-exact", "detected", text, "exact"));
 
     expect(resolveOccurrences([probabilistic, exactB, highB, exactA])).toEqual([{ ...exactA, clipped: false }]);
+  });
+
+  it("ranks mention trust independently of registered entity provenance and parent metadata", () => {
+    const text = "Northstar";
+    const linkedDetected = occurrence(
+      text,
+      0,
+      text.length,
+      entity("registered-anchor", "detected", text, "probabilistic"),
+    );
+    const linkedWithRegisteredIdentity: Occurrence = {
+      ...linkedDetected,
+      entity: {
+        ...linkedDetected.entity,
+        protectionKind: "entity",
+        provenance: "registry",
+        entityType: "organization",
+      },
+      meta: { ...linkedDetected.meta, confidence: "exact" },
+    };
+    const highDetected = occurrence(text, 0, text.length, entity("standalone", "detected", text, "high"));
+
+    expect(resolveOccurrences([linkedWithRegisteredIdentity, highDetected])).toEqual([
+      { ...highDetected, clipped: false },
+    ]);
   });
 
   it("resolves nested and chained overlaps without overlap or partial non-whitespace coverage", () => {
@@ -146,18 +171,18 @@ describe("mapJoinedOffsets", () => {
     expect(
       mapJoinedOffsets(leaves, [2, 5, 9], {
         start,
-        end: start + item.canonical.length,
-        entity: item,
+        end: start + item.entity.canonical.length,
+        ...item,
         origin: "detector",
       }),
     ).toEqual([
       {
         leaf: 5,
         start: 0,
-        end: item.canonical.length,
-        surface: item.canonical,
+        end: item.entity.canonical.length,
+        surface: item.entity.canonical,
         origin: "detector",
-        entity: item,
+        ...item,
       },
     ]);
   });
@@ -169,27 +194,23 @@ describe("mapJoinedOffsets", () => {
     const end = joined.indexOf(" Omega");
     const item = entity("north-star", "detected", "North\nStar");
 
-    expect(mapJoinedOffsets(leaves, [3, 8], { start, end, entity: item, origin: "detector" })).toEqual([
-      { leaf: 3, start: 6, end: 11, surface: "North", origin: "clipped", entity: item },
-      { leaf: 8, start: 0, end: 4, surface: "Star", origin: "clipped", entity: item },
+    expect(mapJoinedOffsets(leaves, [3, 8], { start, end, ...item, origin: "detector" })).toEqual([
+      { leaf: 3, start: 6, end: 11, surface: "North", origin: "clipped", ...item },
+      { leaf: 8, start: 0, end: 4, surface: "Star", origin: "clipped", ...item },
     ]);
   });
 
   it("uses UTF-16 offsets and validates the fresh-to-full leaf mapping", () => {
     const leaves = ["😀 Acme", "尾部"];
     const item = entity("unicode", "detected", "Acme");
-    expect(mapJoinedOffsets(leaves, [4, 7], { start: 3, end: 7, entity: item, origin: "detector" })[0]).toMatchObject({
+    expect(mapJoinedOffsets(leaves, [4, 7], { start: 3, end: 7, ...item, origin: "detector" })[0]).toMatchObject({
       leaf: 4,
       start: 3,
       end: 7,
       surface: "Acme",
     });
-    expect(() => mapJoinedOffsets(leaves, [4], { start: 0, end: 1, entity: item, origin: "detector" })).toThrow(
-      /align/,
-    );
-    expect(() => mapJoinedOffsets(leaves, [4, 4], { start: 0, end: 1, entity: item, origin: "detector" })).toThrow(
-      /unique/,
-    );
+    expect(() => mapJoinedOffsets(leaves, [4], { start: 0, end: 1, ...item, origin: "detector" })).toThrow(/align/);
+    expect(() => mapJoinedOffsets(leaves, [4, 4], { start: 0, end: 1, ...item, origin: "detector" })).toThrow(/unique/);
   });
 });
 
@@ -229,16 +250,26 @@ describe("spliceResolvedOccurrences", () => {
 
 function entity(
   id: string,
-  authority: Entity["authority"],
+  authority: EntityClaim["mention"]["resolverAuthority"],
   canonical: string,
-  confidence: Entity["meta"]["confidence"] = authority === "registry" ? "exact" : "probabilistic",
-): Entity {
+  confidence: EntityClaim["mention"]["detectionConfidence"] = authority === "registry" ? "exact" : "probabilistic",
+): EntityClaim {
   return {
-    id,
-    canonical,
-    forms: [],
-    authority,
+    entity: {
+      id,
+      protectionKind: "literal",
+      provenance: authority === "registry" ? "registry" : "detector",
+      canonical,
+      forms: [],
+    },
     meta: { name: id, value: canonical, source: "test", kind: authority === "registry" ? "secret" : "pii", confidence },
+    mention: {
+      detectionSource: authority === "registry" ? "registry" : "detector",
+      detectionConfidence: confidence,
+      linkSource: "none",
+      resolverAuthority: authority,
+      protectionEligible: true,
+    },
   };
 }
 
@@ -246,10 +277,19 @@ function occurrence(
   text: string,
   start: number,
   end: number,
-  item: Entity,
+  item: EntityClaim,
   origin: Occurrence["origin"] = "detector",
 ): Occurrence {
-  return { leaf: 0, start, end, surface: text.slice(start, end), origin, entity: item };
+  return {
+    leaf: 0,
+    start,
+    end,
+    surface: text.slice(start, end),
+    origin,
+    entity: item.entity,
+    meta: item.meta,
+    mention: item.mention,
+  };
 }
 
 function assertOrderedAndNonOverlapping(resolved: readonly Occurrence[]): void {

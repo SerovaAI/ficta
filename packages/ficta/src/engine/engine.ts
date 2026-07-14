@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { detectorFailClosed } from "./detection-policy.js";
 import { expandEntities, expansionSpans } from "./expander.js";
 import {
-  type Entity,
+  type EntityClaim,
   mapJoinedOffsets,
   type Occurrence,
   type ResolvedOccurrence,
@@ -18,6 +18,7 @@ import type {
   RedactionPlugin,
   RegistryPolicy,
 } from "./plugins/types.js";
+import { entityClaimsFromProtectionRecords, literalProtectionRecords } from "./protection.js";
 import {
   type BodyRedactionContext,
   type BodyRedactionDetails,
@@ -360,9 +361,9 @@ class ProtectionRequestScope implements RequestScope {
     });
     if (seen && detection.complete) for (const hash of hashes) seen.add(hash);
 
-    const registryEntities = [
-      ...entitiesFromMetadata(this.permanentMetadata, "registry"),
-      ...entitiesFromMetadata(this.userProtectedMetadata, "registry"),
+    const registryClaims = [
+      ...claimsFromMetadata(this.permanentMetadata, "registry"),
+      ...claimsFromMetadata(this.userProtectedMetadata, "registry"),
     ];
     const detectedByValue = new Map<string, ProtectedValue>();
     for (const [value, metas] of this.detectedMetadata) {
@@ -371,13 +372,13 @@ class ProtectionRequestScope implements RequestScope {
       if (meta) detectedByValue.set(value, meta);
     }
     for (const { value } of detection.detections) detectedByValue.set(value.value, value);
-    const detectedEntities = entitiesFromValues([...detectedByValue.values()], "detected");
-    const detectedEntityByValue = new Map(detectedEntities.map((entity) => [entity.canonical, entity]));
+    const detectedClaims = claimsFromValues([...detectedByValue.values()], "detected");
+    const detectedClaimByValue = new Map(detectedClaims.map((claim) => [claim.entity.canonical, claim]));
 
     const occurrences: Occurrence[] = [];
     for (const { value, leaves: detectedLeaves } of detection.detections) {
-      const entity = detectedEntityByValue.get(value.value);
-      if (!entity) continue;
+      const claim = detectedClaimByValue.get(value.value);
+      if (!claim) continue;
       const detectedText = detectedLeaves.map((leaf) => leaf.text).join("\n");
       const detectedTexts = detectedLeaves.map((leaf) => leaf.text);
       const detectedIndices = detectedLeaves.map((leaf) => leaf.index);
@@ -399,20 +400,20 @@ class ProtectionRequestScope implements RequestScope {
               start: span.start,
               end: span.end,
               origin: "detector",
-              entity,
+              ...claim,
             }),
           );
         }
       }
-      if (!validSpans) occurrences.push(...exactDetectorOccurrences(detectedLeaves, value.value, entity));
+      if (!validSpans) occurrences.push(...exactDetectorOccurrences(detectedLeaves, value.value, claim));
     }
 
-    const allEntities = [...registryEntities, ...detectedEntities];
-    if (allEntities.length > MAX_BODY_ENTITIES) throw new RedactionInvariantError("body entity limit exceeded");
+    const allClaims = [...registryClaims, ...detectedClaims];
+    if (allClaims.length > MAX_BODY_ENTITIES) throw new RedactionInvariantError("body entity limit exceeded");
     occurrences.push(
       ...expandEntities(
         document.leaves.map((leaf) => leaf.text),
-        allEntities,
+        allClaims,
       ),
     );
     if (occurrences.length > MAX_BODY_OCCURRENCES) {
@@ -429,7 +430,7 @@ class ProtectionRequestScope implements RequestScope {
 
     for (const { value } of detection.detections) remember(this.detectedMetadata, value);
     const replacements = new Map<number, string>();
-    const owners = new Map<string, Entity>();
+    const owners = new Map<string, EntityClaim>();
     const found = new Set<string>();
     const resolvedTrace: ProtectionTraceOccurrence[] = [];
     const matchSurfaces = new Set(
@@ -439,30 +440,41 @@ class ProtectionRequestScope implements RequestScope {
       const leaf = document.leaves[leafIndex];
       if (!leaf) continue;
       const rewritten = spliceResolvedOccurrences(leaf.text, claims, (occurrence) => {
-        const surface = { ...occurrence.entity.meta, value: occurrence.surface };
+        const surface = { ...occurrence.meta, value: occurrence.surface };
         const userProtected = this.userProtectedMetadata.has(occurrence.entity.canonical);
         const token = userProtected
           ? this.vault.registerUserProtectedSurface(surface, matchSurfaces.has(occurrence.surface))
           : this.vault.registerResolvedSurface(
               surface,
-              occurrence.entity.authority,
+              occurrence.mention.resolverAuthority,
               matchSurfaces.has(occurrence.surface),
             );
         if (traceOccurrences) {
           resolvedTrace.push({
-            ...this.hitFromProtectedValue(occurrence.entity.meta),
+            ...this.hitFromProtectedValue(occurrence.meta),
             leaf: occurrence.leaf,
             start: occurrence.start,
             end: occurrence.end,
             surrogate: token,
-            origin: userProtected ? "user" : occurrence.entity.authority === "registry" ? "registry" : "detected",
+            origin: userProtected
+              ? "user"
+              : occurrence.mention.resolverAuthority === "registry"
+                ? "registry"
+                : "detected",
           });
         }
         found.add(occurrence.surface);
         const owner = owners.get(occurrence.surface);
-        if (!owner || occurrence.entity.authority === "registry") owners.set(occurrence.surface, occurrence.entity);
+        const occurrenceClaim: EntityClaim = {
+          entity: occurrence.entity,
+          meta: occurrence.meta,
+          mention: occurrence.mention,
+        };
+        if (!owner || occurrence.mention.resolverAuthority === "registry") {
+          owners.set(occurrence.surface, occurrenceClaim);
+        }
         if (!userProtected) {
-          remember(this.detectedMetadata, { ...occurrence.entity.meta, value: occurrence.surface });
+          remember(this.detectedMetadata, { ...occurrence.meta, value: occurrence.surface });
           if (matchSurfaces.has(occurrence.surface)) this.tokenOnly.delete(occurrence.surface);
           else this.tokenOnly.add(occurrence.surface);
         }
@@ -474,11 +486,11 @@ class ProtectionRequestScope implements RequestScope {
     const redactedBody = renderBodyDocument(document, replacements);
     const leakValues = this.vault.leakValues(redactedBody);
     const leakValueSet = new Set(leakValues);
-    const leakOwners = entityOwners(allEntities);
+    const leakOwners = entityOwners(allClaims);
     // The string catalog catches exact known surfaces. Re-scan the already-redacted body against
     // logical entity policy as an independent backstop for case/whitespace variants that were not
     // admitted to the catalog because downstream resolution/catalog registration missed them.
-    for (const [surface, owner] of entityPolicyLeakOwners(redactedBody, allEntities, this.vault)) {
+    for (const [surface, owner] of entityPolicyLeakOwners(redactedBody, allClaims, this.vault)) {
       if (!leakValueSet.has(surface)) {
         leakValueSet.add(surface);
         leakValues.push(surface);
@@ -639,29 +651,30 @@ class ProtectionRequestScope implements RequestScope {
       this.detectedMetadata.get(raw))?.[0];
   }
 
-  private hitsForEntities(entities: readonly Entity[]): ProtectionHit[] {
+  private hitsForEntities(claims: readonly EntityClaim[]): ProtectionHit[] {
     // One entry per distinct redacted surface, even when several surfaces share the same safe label.
     // ProtectionStats groups these entries to produce actual per-label value counts; deduplicating
     // metadata here made three PERSON values look like one.
-    return entities.map((entity) => this.hitFromProtectedValue(entity.meta));
+    return claims.map((claim) => this.hitFromProtectedValue(claim.meta));
   }
 
-  private hitsForOwnedValues(values: readonly string[], owners: ReadonlyMap<string, Entity>): ProtectionHit[] {
-    const entities = values.flatMap((value) => {
+  private hitsForOwnedValues(values: readonly string[], owners: ReadonlyMap<string, EntityClaim>): ProtectionHit[] {
+    const claims = values.flatMap((value) => {
       const owner = owners.get(value);
       return owner ? [owner] : [];
     });
-    const hits = this.hitsForEntities(entities);
+    const hits = this.hitsForEntities(claims);
     if (hits.length > 0 || values.length === 0) return hits;
     return this.hitsFor(values);
   }
 
   private traceValuesForOwnedValues(
     values: Iterable<string>,
-    owners: ReadonlyMap<string, Entity>,
+    owners: ReadonlyMap<string, EntityClaim>,
   ): ProtectionTraceValue[] {
     return this.vault.traceValues(values).map((entry) => {
-      const meta = owners.get(entry.value)?.meta ?? this.storedMetadataFor(entry.value);
+      const owner = owners.get(entry.value);
+      const meta = owner?.meta ?? this.storedMetadataFor(entry.value);
       const hit = meta === undefined ? unknownHit() : this.hitFromProtectedValue(meta);
       const trace: ProtectionTraceValue = { ...hit, value: entry.value, valueSha256: valueHash(entry.value) };
       if (entry.surrogate !== undefined) trace.surrogate = entry.surrogate;
@@ -738,35 +751,27 @@ function renderBodyDocument(document: BodyDocument, replacements: ReadonlyMap<nu
   return JSON.stringify(mapped);
 }
 
-function entitiesFromMetadata(
+function claimsFromMetadata(
   metadata: ReadonlyMap<string, readonly ProtectedValue[]>,
-  authority: Entity["authority"],
-): Entity[] {
+  authority: "registry" | "detected",
+): EntityClaim[] {
   const values: ProtectedValue[] = [];
   for (const [value, metas] of metadata) {
     const meta = metas[0];
     if (meta) values.push({ ...meta, value });
   }
-  return entitiesFromValues(values, authority);
+  return claimsFromValues(values, authority);
 }
 
-function entitiesFromValues(values: readonly ProtectedValue[], authority: Entity["authority"]): Entity[] {
-  const byValue = new Map<string, ProtectedValue>();
-  for (const value of values) if (value.value && !byValue.has(value.value)) byValue.set(value.value, value);
-  return [...byValue].map(([canonical, meta]) => ({
-    id: `${authority}:${valueHash(canonical)}`,
-    canonical,
-    forms: [],
-    authority,
-    meta,
-  }));
+function claimsFromValues(values: readonly ProtectedValue[], authority: "registry" | "detected"): EntityClaim[] {
+  return entityClaimsFromProtectionRecords(literalProtectionRecords(values, authority));
 }
 
-function exactDetectorOccurrences(leaves: readonly BodyLeaf[], value: string, entity: Entity): Occurrence[] {
+function exactDetectorOccurrences(leaves: readonly BodyLeaf[], value: string, claim: EntityClaim): Occurrence[] {
   const occurrences: Occurrence[] = [];
   for (const leaf of leaves) {
     for (const span of expansionSpans(leaf.text, value)) {
-      occurrences.push({ leaf: leaf.index, ...span, origin: "detector", entity });
+      occurrences.push({ leaf: leaf.index, ...span, origin: "detector", ...claim });
     }
   }
   return occurrences;
@@ -782,22 +787,26 @@ function groupResolvedByLeaf(resolved: readonly ResolvedOccurrence[]): Map<numbe
   return grouped;
 }
 
-function entityOwners(entities: readonly Entity[]): Map<string, Entity> {
-  const owners = new Map<string, Entity>();
-  for (const entity of entities) {
-    preferOwner(owners, entity.canonical, entity);
-    for (const form of entity.forms) preferOwner(owners, form.value, entity);
+function entityOwners(claims: readonly EntityClaim[]): Map<string, EntityClaim> {
+  const owners = new Map<string, EntityClaim>();
+  for (const claim of claims) {
+    preferOwner(owners, claim.entity.canonical, claim);
+    for (const form of claim.entity.forms) preferOwner(owners, form.value, claim);
   }
   return owners;
 }
 
 /** Logical-entity leak scan, deliberately independent of which surfaces the resolver registered. */
-function entityPolicyLeakOwners(body: string, entities: readonly Entity[], vault: ScopedVault): Map<string, Entity> {
+function entityPolicyLeakOwners(
+  body: string,
+  claims: readonly EntityClaim[],
+  vault: ScopedVault,
+): Map<string, EntityClaim> {
   const document = bodyDocument(body);
-  const owners = new Map<string, Entity>();
+  const owners = new Map<string, EntityClaim>();
   const occurrences = expandEntities(
     document.leaves.map((leaf) => leaf.text),
-    entities,
+    claims,
   );
   if (occurrences.length > MAX_BODY_OCCURRENCES) {
     throw new RedactionInvariantError("body leak-gate occurrence limit exceeded");
@@ -805,14 +814,17 @@ function entityPolicyLeakOwners(body: string, entities: readonly Entity[], vault
   for (const occurrence of occurrences) {
     const leaf = document.leaves[occurrence.leaf];
     if (!leaf || !vault.isRedactableRange(leaf.text, occurrence.start, occurrence.end)) continue;
-    preferOwner(owners, occurrence.surface, occurrence.entity);
+    preferOwner(owners, occurrence.surface, occurrence);
   }
   return owners;
 }
 
-function preferOwner(owners: Map<string, Entity>, surface: string, candidate: Entity): void {
+function preferOwner(owners: Map<string, EntityClaim>, surface: string, candidate: EntityClaim): void {
   const current = owners.get(surface);
-  if (!current || (current.authority === "detected" && candidate.authority === "registry")) {
+  if (
+    !current ||
+    (current.mention.resolverAuthority === "detected" && candidate.mention.resolverAuthority === "registry")
+  ) {
     owners.set(surface, candidate);
   }
 }
