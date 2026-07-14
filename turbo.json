@@ -16,6 +16,7 @@
       "outputs": []
     },
     "check": {
+      "dependsOn": ["^build"],
       "outputs": []
     },
     "test": {

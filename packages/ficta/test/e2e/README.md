@@ -6,14 +6,14 @@ real ficta CLI, against the real provider using **your own auth**, makes the age
 read a sample `.env` containing a canary, and asserts ficta stripped that canary
 from what it forwarded upstream.
 
-It is **opt-in** and never runs in `pnpm test` / `pnpm verify` / CI — it needs the
+It is **opt-in** and never runs in `pnpm test` / `pnpm check` / CI — it needs the
 agent binaries, live auth, and spends real tokens.
 
 ## Run it
 
 ```sh
 pnpm test:e2e          # just the live suite
-pnpm verify:live       # offline verify, then the live suite (local release gate)
+pnpm check:live        # offline checks, then the live suite (local release gate)
 ```
 
 Each agent **self-skips** with a printed reason when its real binary or auth is

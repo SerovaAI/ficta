@@ -152,9 +152,7 @@ pnpm dev:proxy       # proxy only
 pnpm gateway:dev     # Gateway only
 pnpm sidecars        # Gateway document + PII sidecars via docker-compose.sidecars.yml
 pnpm sidecars:down
-pnpm check           # biome
-pnpm typecheck
-pnpm test
+pnpm check           # static checks, type checks, and tests
 pnpm build
 ```
 

@@ -321,7 +321,7 @@ international registrations while asserting that amounts, rates, dates, jurisdic
 terms remain model-visible, with zero known survivors and exact restoration:
 
 ```sh
-pnpm --filter @serovaai/ficta verify:presidio
+pnpm --filter @serovaai/ficta check:presidio
 ```
 
 Config (`[pii.presidio]` ↔ `FICTA_PII_PRESIDIO_*`):

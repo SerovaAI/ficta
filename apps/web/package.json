@@ -9,7 +9,8 @@
     "preview": "wrangler dev",
     "deploy": "vite build && doppler run -- wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "check": "biome check .",
+    "check": "pnpm check:static && pnpm typecheck",
+    "check:static": "biome check .",
     "check:fix": "biome check --write ."
   },
   "dependencies": {

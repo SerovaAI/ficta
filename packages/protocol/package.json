@@ -32,7 +32,8 @@
   "scripts": {
     "build": "node -e \"process.exit(0)\"",
     "typecheck": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 src/index.d.ts",
-    "check": "biome check .",
+    "check": "pnpm check:static && pnpm typecheck && pnpm test",
+    "check:static": "biome check .",
     "test": "node --test test/**/*.test.js"
   },
   "devDependencies": {

@@ -111,7 +111,7 @@ company registration numbers, birth dates, personal addresses, and cue-scoped OC
 leaving contract mechanics visible. The in-process regex detector remains active as a safety floor
 for email, US SSN, and Luhn-validated card values even when a network backend is selected.
 With the sidecar running, validate the complete detector→resolver→typed-surrogate→restore path using
-`pnpm --filter @serovaai/ficta verify:presidio`.
+`pnpm --filter @serovaai/ficta check:presidio`.
 
 For medical workspaces that need both general PII and medical/PHI-style identifiers, run the
 upstream OpenMed REST service alongside Presidio (published image

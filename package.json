@@ -12,7 +12,6 @@
     "check": "turbo run check",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "verify": "turbo run check typecheck test",
     "//pnpm": "pnpm-orchestrated: interactive / write / dev servers, not cached",
     "check:fix": "pnpm -r check:fix",
     "dev": "node scripts/dev.mjs",

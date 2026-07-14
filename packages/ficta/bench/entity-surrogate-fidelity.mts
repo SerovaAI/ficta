@@ -105,7 +105,11 @@ for (const target of options.targets) {
         try {
           const { prompt, expected } = evaluationPrompt(item, transport);
           const result = await callProvider(target, prompt, transport);
-          live.push({ ...context, fragmentCount: result.fragmentCount, ...scoreResponse(item, expected, result.response) });
+          live.push({
+            ...context,
+            fragmentCount: result.fragmentCount,
+            ...scoreResponse(item, expected, result.response),
+          });
         } catch (error) {
           live.push({ ...context, error: errorMessage(error) });
         }

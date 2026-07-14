@@ -52,12 +52,10 @@ Requirements:
 ```sh
 pnpm install
 pnpm check
-pnpm typecheck
-pnpm test
 pnpm build
 ```
 
-`pnpm verify` runs the main prepublish checks.
+`pnpm check` runs the full static, type, and test suite.
 
 ## Tests and fixtures
 
@@ -89,6 +87,6 @@ Before opening a PR:
 
 - [ ] The change is small enough to review, or has an issue/RFC first.
 - [ ] Tests cover the new behavior or bug fix.
-- [ ] `pnpm check`, `pnpm typecheck`, and `pnpm test` pass.
+- [ ] `pnpm check` passes.
 - [ ] Docs are updated if user-visible behavior or claims changed.
 - [ ] No real secrets, raw body logs, or private transcripts are included.
