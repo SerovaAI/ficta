@@ -1,6 +1,6 @@
 import type { ProtectionPreviewFinding } from "@serovaai/ficta-protocol";
 import { ArrowLeft, Check, Copy, Loader2, Plus, ShieldCheck, Sparkles, X } from "lucide-react";
-import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { GatewayProtectionPreview } from "@/lib/protection-preview";
@@ -58,18 +58,10 @@ export function ProtectionReview({
   const [draftValue, setDraftValue] = useState("");
   const [valueError, setValueError] = useState<ProtectionValueError>();
   const [selection, setSelection] = useState<ProtectionSelectionCandidate>();
-  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
-  const copyResetTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "error">("idle");
   const counts = useMemo(() => findingCounts(preview.findings), [preview.findings]);
   const findingTotal = counts.registry + counts.detected + counts.user;
   const automaticValues = useMemo(() => automaticProtectionValues(text, preview.findings), [preview.findings, text]);
-
-  useEffect(
-    () => () => {
-      if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
-    },
-    [],
-  );
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -142,11 +134,13 @@ export function ProtectionReview({
 
   const copySelection = async () => {
     if (!selection) return;
-    if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
     try {
       await navigator.clipboard.writeText(selection.rawValue);
-      setCopyStatus("copied");
-      copyResetTimer.current = setTimeout(() => setCopyStatus("idle"), 1500);
+      // A copied selection no longer needs its action panel. Keep the wider review open so people can
+      // inspect or protect other values before sending.
+      setSelection(undefined);
+      setCopyStatus("idle");
+      window.getSelection()?.removeAllRanges();
     } catch {
       setCopyStatus("error");
     }
@@ -263,12 +257,8 @@ export function ProtectionReview({
               </p>
               <div className="flex flex-wrap items-center gap-1.5">
                 <Button type="button" variant="ghost" size="sm" onClick={copySelection}>
-                  {copyStatus === "copied" ? (
-                    <Check className="size-4" aria-hidden />
-                  ) : (
-                    <Copy className="size-4" aria-hidden />
-                  )}
-                  {copyStatus === "copied" ? "Copied" : "Copy"}
+                  <Copy className="size-4" aria-hidden />
+                  Copy
                 </Button>
                 <Button
                   type="button"
@@ -306,9 +296,6 @@ export function ProtectionReview({
                   ? PROTECTION_REVIEW_SUGGESTION_COPY
                   : protectionValueErrorMessage(selection.protection.reason)}
             </p>
-            <span className="sr-only" aria-live="polite">
-              {copyStatus === "copied" ? "Copied selection." : ""}
-            </span>
           </section>
         ) : null}
 
