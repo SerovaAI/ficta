@@ -178,15 +178,21 @@ describe("engine entity-family rendering", () => {
   });
 
   it("keeps the configured typed style for literals in a keyed entity scope", async () => {
-    process.env.FICTA_SURROGATE_STYLE = "typed";
-    const scope = fixtureEngine().beginRequest(CONTEXT);
-    const body = JSON.stringify({ content: "Northstar approved account ZA-TRUST-0042." });
+    const originalStyle = process.env.FICTA_SURROGATE_STYLE;
+    try {
+      process.env.FICTA_SURROGATE_STYLE = "typed";
+      const scope = fixtureEngine().beginRequest(CONTEXT);
+      const body = JSON.stringify({ content: "Northstar approved account ZA-TRUST-0042." });
 
-    const result = await scope.redactBodyDetailed(body);
+      const result = await scope.redactBodyDetailed(body);
 
-    expect(result.body).toMatch(/FICTA_ORG_[A-Z2-7]{12}_[A-Z2-7]{12}/u);
-    expect(result.body).toMatch(/FICTA_SECRET_[0-9a-f]{32}/u);
-    expect(scope.restoreJson(result.body)).toBe(body);
+      expect(result.body).toMatch(/FICTA_ORG_[A-Z2-7]{12}_[A-Z2-7]{12}/u);
+      expect(result.body).toMatch(/FICTA_SECRET_[0-9a-f]{32}/u);
+      expect(scope.restoreJson(result.body)).toBe(body);
+    } finally {
+      if (originalStyle === undefined) delete process.env.FICTA_SURROGATE_STYLE;
+      else process.env.FICTA_SURROGATE_STYLE = originalStyle;
+    }
   });
 
   it("keeps raw text surfaces literal after the same value renders as a body entity", async () => {
