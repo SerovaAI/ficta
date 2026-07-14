@@ -38,6 +38,7 @@ import {
 } from "@/lib/models";
 import { withOneShotProtectionTicket } from "@/lib/protection-connection";
 import { type GatewayProtectionPreview, previewProtection } from "@/lib/protection-preview";
+import { type ProtectionReviewDestination, runProtectionReviewAction } from "@/lib/protection-review-action";
 import { automaticProtectionValues, protectionValueCoverage } from "@/lib/protection-review-value";
 import { type ProtectionStatus, requiredRegistryBlock } from "@/lib/protection-status";
 import { fetchProxyConfig } from "@/lib/proxy-config";
@@ -408,7 +409,7 @@ export function ChatView({
     else dispatchContent(messageWithAttachments(input.trim(), attachments));
   };
 
-  const protectSelection = async (rawValue: string) => {
+  const protectReviewValue = async (rawValue: string, destination: ProtectionReviewDestination) => {
     const value = rawValue.trim();
     if (!protectionReview || !value) return;
     setProtectionReviewLoading(true);
@@ -416,19 +417,42 @@ export function ChatView({
     setProtectionReviewNotice("");
     const request = startProtectionPreview();
     try {
-      const preview = await previewProtection({
-        threadId: tid,
-        text: protectionReview.text,
-        addValues: [value],
-        signal: request.controller.signal,
+      const result = await runProtectionReviewAction({
+        destination,
+        protect: async () => {
+          const preview = await previewProtection({
+            threadId: tid,
+            text: protectionReview.text,
+            addValues: [value],
+            signal: request.controller.signal,
+          });
+          if (!protectionPreviewIsCurrent(request.generation))
+            throw new DOMException("Protection preview replaced", "AbortError");
+          return preview;
+        },
+        suggest: () => suggestProtectedRegistryEntries({ data: [value] }),
       });
-      if (!protectionPreviewIsCurrent(request.generation))
-        throw new DOMException("Protection preview replaced", "AbortError");
+      if (!protectionPreviewIsCurrent(request.generation)) return;
+      const keepForSuggestion = result.suggestion === "not-requested" || result.suggestion === "failed";
       setProtectionReview({
         ...protectionReview,
-        preview,
-        newlyProtectedValues: [...new Set([...protectionReview.newlyProtectedValues, value])],
+        preview: result.protection,
+        newlyProtectedValues: keepForSuggestion
+          ? [...new Set([...protectionReview.newlyProtectedValues, value])]
+          : protectionReview.newlyProtectedValues.filter((entry) => entry !== value),
       });
+
+      if (result.suggestion === "saved") {
+        setProtectionReviewNotice(
+          "Protected in this chat and sent to admins for workspace review. It is not workspace-wide until approved and published.",
+        );
+      } else if (result.suggestion === "existing") {
+        setProtectionReviewNotice("Protected in this chat. This value is already in the Protected Registry.");
+      } else if (result.suggestion === "failed") {
+        setProtectionReviewError(
+          "Protected in this chat, but it couldn’t be sent to admins. Use Suggest for workspace to retry.",
+        );
+      }
     } catch (err) {
       if (protectionPreviewIsCurrent(request.generation) && !isAbortError(err)) {
         setProtectionReviewError(err instanceof Error ? err.message : "That value could not be protected.");
@@ -683,7 +707,7 @@ export function ChatView({
       error={protectionReviewError || undefined}
       notice={protectionReviewNotice || undefined}
       onBack={closeProtectionReview}
-      onProtect={protectSelection}
+      onProtect={protectReviewValue}
       onRemove={removeChatProtection}
       onSend={sendProtected}
       onSuggest={suggestForWorkspace}

@@ -30,6 +30,13 @@ export interface AutomaticProtectionValues {
 
 export type ProtectionValueResult = { ok: true; value: string } | { ok: false; reason: ProtectionValueError };
 
+export interface ProtectionSelectionCandidate {
+  /** Exact browser selection, preserved for clipboard copy. */
+  rawValue: string;
+  /** Normalized and validated value used only by protection actions. */
+  protection: ProtectionValueResult;
+}
+
 /**
  * Browser selections often pick up sentence punctuation or visual wrappers. Remove only those edge
  * artifacts; punctuation inside the selected value remains part of the exact chat protection.
@@ -57,6 +64,24 @@ export function normalizeHighlightedProtectionValue(rawValue: string): string {
   }
 
   return SUBSTANTIVE_TEXT.test(value) ? value : "";
+}
+
+/** Keep clipboard text exact while independently preparing the value that protection will store. */
+export function protectionSelectionCandidate(input: {
+  rawValue: string;
+  originalText: string;
+  protectedValues: readonly string[];
+  registryValues?: readonly string[];
+  detectedValues?: readonly string[];
+}): ProtectionSelectionCandidate | undefined {
+  if (!input.rawValue.trim()) return undefined;
+  return {
+    rawValue: input.rawValue,
+    protection: validateProtectionValue({
+      ...input,
+      value: normalizeHighlightedProtectionValue(input.rawValue),
+    }),
+  };
 }
 
 /** User findings are intentionally omitted: protectedValues is authoritative for active chat additions. */

@@ -1,13 +1,15 @@
 import type { ProtectionPreviewFinding } from "@serovaai/ficta-protocol";
-import { ArrowLeft, Check, Loader2, Plus, ShieldCheck, Sparkles, X } from "lucide-react";
-import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { ArrowLeft, Check, Copy, Loader2, Plus, ShieldCheck, Sparkles, X } from "lucide-react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { GatewayProtectionPreview } from "@/lib/protection-preview";
 import {
   automaticProtectionValues,
   normalizeHighlightedProtectionValue,
+  type ProtectionSelectionCandidate,
   type ProtectionValueError,
+  protectionSelectionCandidate,
   validateProtectionValue,
 } from "@/lib/protection-review-value";
 import { previewFindingsToAnnotations, protectionTextSegments } from "@/lib/restore-highlights";
@@ -19,7 +21,9 @@ type ReviewMode = "values" | "model";
 export const PROTECTION_REVIEW_SCOPE_COPY =
   "Automatic protection covers identity and attribution, not every confidential business term.";
 export const PROTECTION_REVIEW_ADD_COPY =
-  "Highlight text above, or add an amount, project name, code, or clause you also want protected.";
+  "Highlight text above to copy or protect it, or type an amount, project name, code, or clause below.";
+export const PROTECTION_REVIEW_SUGGESTION_COPY =
+  "Workspace proposals send the normalized protected phrase to admins. It is not workspace-wide until approved and published.";
 
 export function ProtectionReview({
   text,
@@ -41,7 +45,7 @@ export function ProtectionReview({
   error?: string;
   notice?: string;
   onBack: () => void;
-  onProtect: (value: string) => Promise<void>;
+  onProtect: (value: string, destination: "chat" | "chat-and-workspace") => Promise<void>;
   onRemove: (value: string) => Promise<void>;
   onSend: () => void;
   onSuggest: (values: string[]) => void;
@@ -53,9 +57,19 @@ export function ProtectionReview({
   const [mode, setMode] = useState<ReviewMode>("values");
   const [draftValue, setDraftValue] = useState("");
   const [valueError, setValueError] = useState<ProtectionValueError>();
+  const [selection, setSelection] = useState<ProtectionSelectionCandidate>();
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+  const copyResetTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const counts = useMemo(() => findingCounts(preview.findings), [preview.findings]);
   const findingTotal = counts.registry + counts.detected + counts.user;
   const automaticValues = useMemo(() => automaticProtectionValues(text, preview.findings), [preview.findings, text]);
+
+  useEffect(
+    () => () => {
+      if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -72,7 +86,11 @@ export function ProtectionReview({
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [busy, onBack, onSend]);
 
-  const protectValue = async (rawValue: string, source: "selection" | "typed") => {
+  const protectValue = async (
+    rawValue: string,
+    source: "selection" | "typed",
+    destination: "chat" | "chat-and-workspace" = "chat",
+  ) => {
     if (busy) return false;
     const value = source === "selection" ? normalizeHighlightedProtectionValue(rawValue) : rawValue;
     const result = validateProtectionValue({
@@ -86,8 +104,13 @@ export function ProtectionReview({
       return false;
     }
     try {
-      await onProtect(result.value);
+      await onProtect(result.value, destination);
       setValueError(undefined);
+      if (source === "selection") {
+        setSelection(undefined);
+        setCopyStatus("idle");
+        window.getSelection()?.removeAllRanges();
+      }
       return true;
     } catch {
       // ChatView owns the request error copy. Leave typed input intact so the user can retry it.
@@ -98,11 +121,42 @@ export function ProtectionReview({
   const captureSelection = (root: HTMLElement) => {
     if (busy) return;
     const selected = window.getSelection();
-    if (!selected || selected.rangeCount === 0 || selected.isCollapsed) return;
+    if (!selected || selected.rangeCount === 0 || selected.isCollapsed) {
+      setSelection(undefined);
+      setCopyStatus("idle");
+      return;
+    }
     const range = selected.getRangeAt(0);
     if (!root.contains(range.commonAncestorContainer)) return;
-    void protectValue(range.toString(), "selection");
-    selected.removeAllRanges();
+    setSelection(
+      protectionSelectionCandidate({
+        rawValue: range.toString(),
+        originalText: text,
+        protectedValues: preview.protectedValues,
+        ...automaticValues,
+      }),
+    );
+    setCopyStatus("idle");
+    setValueError(undefined);
+  };
+
+  const copySelection = async () => {
+    if (!selection) return;
+    if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
+    try {
+      await navigator.clipboard.writeText(selection.rawValue);
+      setCopyStatus("copied");
+      copyResetTimer.current = setTimeout(() => setCopyStatus("idle"), 1500);
+    } catch {
+      setCopyStatus("error");
+    }
+  };
+
+  const changeMode = (nextMode: ReviewMode) => {
+    setMode(nextMode);
+    setSelection(undefined);
+    setCopyStatus("idle");
+    window.getSelection()?.removeAllRanges();
   };
 
   const addDraftValue = async (event: FormEvent<HTMLFormElement>) => {
@@ -127,10 +181,14 @@ export function ProtectionReview({
           <p className="mt-1 truncate text-muted-foreground text-xs">{modelSummary}</p>
         </div>
         <div className="flex rounded-lg bg-muted p-0.5" role="tablist" aria-label="Protection preview view">
-          <ModeButton selected={mode === "values"} controls="protection-values-panel" onClick={() => setMode("values")}>
+          <ModeButton
+            selected={mode === "values"}
+            controls="protection-values-panel"
+            onClick={() => changeMode("values")}
+          >
             Values
           </ModeButton>
-          <ModeButton selected={mode === "model"} controls="protection-model-panel" onClick={() => setMode("model")}>
+          <ModeButton selected={mode === "model"} controls="protection-model-panel" onClick={() => changeMode("model")}>
             Model will see
           </ModeButton>
         </div>
@@ -190,6 +248,69 @@ export function ProtectionReview({
             <ModelText text={preview.redactedText} />
           </article>
         )}
+
+        {selection ? (
+          <section
+            className="mt-2 rounded-lg border border-border bg-muted/35 p-2.5"
+            aria-label="Selected text actions"
+          >
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <p className="min-w-0 flex-1 text-xs">
+                <span className="font-medium">Selected:</span>{" "}
+                <span className="text-muted-foreground" title={selection.rawValue}>
+                  “{selectionPreview(selection.rawValue)}”
+                </span>
+              </p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Button type="button" variant="ghost" size="sm" onClick={copySelection}>
+                  {copyStatus === "copied" ? (
+                    <Check className="size-4" aria-hidden />
+                  ) : (
+                    <Copy className="size-4" aria-hidden />
+                  )}
+                  {copyStatus === "copied" ? "Copied" : "Copy"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void protectValue(selection.rawValue, "selection")}
+                  disabled={busy || !selection.protection.ok}
+                  aria-describedby="selected-text-action-help"
+                >
+                  <ShieldCheck className="size-4" aria-hidden />
+                  Protect in chat
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void protectValue(selection.rawValue, "selection", "chat-and-workspace")}
+                  disabled={busy || !selection.protection.ok}
+                  aria-describedby="selected-text-action-help"
+                  aria-label="Protect in chat and propose to workspace"
+                >
+                  <Sparkles className="size-4" aria-hidden />
+                  Protect + propose
+                </Button>
+              </div>
+            </div>
+            <p
+              id="selected-text-action-help"
+              className={cn("mt-1.5 text-xs", copyStatus === "error" ? "text-destructive" : "text-muted-foreground")}
+              role={copyStatus === "error" ? "alert" : undefined}
+            >
+              {copyStatus === "error"
+                ? "Couldn’t copy automatically. The text is still selected; press Ctrl/⌘ C to copy it."
+                : selection.protection.ok
+                  ? PROTECTION_REVIEW_SUGGESTION_COPY
+                  : protectionValueErrorMessage(selection.protection.reason)}
+            </p>
+            <span className="sr-only" aria-live="polite">
+              {copyStatus === "copied" ? "Copied selection." : ""}
+            </span>
+          </section>
+        ) : null}
 
         <form className="mt-3 flex min-h-9 flex-wrap items-center gap-2" onSubmit={addDraftValue}>
           <label htmlFor="protect-missed-phrase" className="sr-only">
@@ -392,6 +513,11 @@ function protectionValueErrorMessage(error: ProtectionValueError): string {
     case "absent":
       return "That phrase does not appear in the original message.";
   }
+}
+
+function selectionPreview(value: string): string {
+  const preview = value.replace(/\s+/gu, " ").trim();
+  return preview.length > 96 ? `${preview.slice(0, 95)}…` : preview;
 }
 
 export function ProtectionReviewLoading({ onBack }: { onBack: () => void }) {
