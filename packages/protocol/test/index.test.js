@@ -321,6 +321,20 @@ describe("runtime guards", () => {
       }),
       false,
     );
+    assert.equal(
+      isManagedRegistryFile({
+        ...file,
+        entries: [
+          file.entries[0],
+          {
+            id: "entry-3",
+            protectionKind: "literal",
+            value: "  NORTHSTAR   ",
+          },
+        ],
+      }),
+      false,
+    );
   });
 
   it("validates protection previews", () => {

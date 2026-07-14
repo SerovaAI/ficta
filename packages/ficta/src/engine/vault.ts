@@ -130,7 +130,7 @@ export class SurrogateTable {
     const value = item.value;
     if (!value) return false;
     if (this.matchForms.has(value)) {
-      if (!item.wordBounded) this.wordBoundedForms.delete(value);
+      if (item.wordBounded === false) this.wordBoundedForms.delete(value);
       return false;
     }
     this.ensureToken(item);

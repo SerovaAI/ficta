@@ -326,7 +326,7 @@ export function createStorage(): Storage {
           orgId,
           matterId: entry.matterId,
           type: entry.type,
-          protectionKind: entry.protectionKind ?? "literal",
+          protectionKind: entry.protectionKind,
           entityType: entry.protectionKind === "entity" ? entry.entityType : null,
           value: entry.value,
           forms: entry.forms ?? [],
@@ -342,7 +342,7 @@ export function createStorage(): Storage {
           set: {
             matterId: entry.matterId,
             type: entry.type,
-            protectionKind: entry.protectionKind ?? "literal",
+            protectionKind: entry.protectionKind,
             entityType: entry.protectionKind === "entity" ? entry.entityType : null,
             value: entry.value,
             forms: entry.forms ?? [],
@@ -373,7 +373,7 @@ export function createStorage(): Storage {
               orgId,
               matterId: entry.matterId,
               type: entry.type,
-              protectionKind: entry.protectionKind ?? "literal",
+              protectionKind: entry.protectionKind,
               entityType: entry.protectionKind === "entity" ? entry.entityType : null,
               value: entry.value,
               forms: entry.forms ?? [],
@@ -746,15 +746,15 @@ function toProtectedRegistryEntry(row: {
   createdAt: Date;
   updatedAt: Date;
 }): ProtectedRegistryEntry {
-  return {
+  const source: ProtectedRegistryEntry["source"] =
+    row.source === "csv" || row.source === "suggested" ? row.source : "manual";
+  const fields = {
     id: row.id,
     matterId: row.matterId,
     type: row.type,
-    protectionKind: row.protectionKind,
-    entityType: row.entityType ?? undefined,
     value: row.value,
     forms: Array.isArray(row.forms) ? row.forms : [],
-    source: row.source === "csv" || row.source === "suggested" ? row.source : "manual",
+    source,
     status: row.status,
     createdBy: row.createdBy,
     approvedBy: row.approvedBy ?? undefined,
@@ -762,6 +762,11 @@ function toProtectedRegistryEntry(row: {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+  if (row.protectionKind === "entity") {
+    if (!row.entityType) throw new Error("entity registry row has no entity type");
+    return { ...fields, protectionKind: row.protectionKind, entityType: row.entityType };
+  }
+  return { ...fields, protectionKind: row.protectionKind };
 }
 
 function toThreadSummary(row: {

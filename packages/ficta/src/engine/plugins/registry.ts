@@ -162,6 +162,7 @@ export function loadPluginRegistry(
   let policyExcluded = 0;
   const policyExcludedBySource: Record<string, number> = {};
   const policyExcludedValues: PluginRegistrySnapshot["policyExcludedValues"] = [];
+  const diagnosedExcludedValues = new Set<string>();
 
   if (userExclusion.invalidNames.length > 0) {
     // status "available" renders as a note without tripping strict-mode error gates (which key off "error").
@@ -192,13 +193,11 @@ export function loadPluginRegistry(
         const candidate = { ...value, plugin: value.plugin ?? plugin.name };
         const excludedBy = protectedValueExcludedBy(candidate, registryPolicy);
         if (excludedBy) {
-          policyExcluded++;
-          policyExcludedBySource[candidate.source] = (policyExcludedBySource[candidate.source] ?? 0) + 1;
-          policyExcludedValues.push({
-            name: candidate.name,
-            source: candidate.source,
-            plugin: candidate.plugin,
-            rule: excludedBy,
+          recordPolicyExclusion(candidate, excludedBy, {
+            diagnosedExcludedValues,
+            policyExcludedBySource,
+            policyExcludedValues,
+            increment: () => policyExcluded++,
           });
           continue;
         }
@@ -209,7 +208,16 @@ export function loadPluginRegistry(
         structured.loadProtectionRecords?.() ?? literalProtectionRecords(admittedValues, "registry");
       for (const record of loadedRecords) {
         const meta = { ...record.meta, plugin: record.meta.plugin ?? plugin.name };
-        if (protectedValueExcludedBy(meta, registryPolicy)) continue;
+        const excludedBy = protectedValueExcludedBy(meta, registryPolicy);
+        if (excludedBy) {
+          recordPolicyExclusion(meta, excludedBy, {
+            diagnosedExcludedValues,
+            policyExcludedBySource,
+            policyExcludedValues,
+            increment: () => policyExcluded++,
+          });
+          continue;
+        }
         records.push({ ...record, meta } as ProtectionRecord);
       }
     } catch (error) {
@@ -240,6 +248,25 @@ export function loadPluginRegistry(
     policyExcludedBySource,
     policyExcludedValues,
   };
+}
+
+function recordPolicyExclusion(
+  value: ProtectedValue,
+  rule: EffectiveRegistryExclusionRule,
+  diagnostics: {
+    diagnosedExcludedValues: Set<string>;
+    policyExcludedBySource: Record<string, number>;
+    policyExcludedValues: PluginRegistrySnapshot["policyExcludedValues"];
+    increment(): void;
+  },
+): void {
+  const plugin = value.plugin ?? "unknown";
+  const key = JSON.stringify([value.name, value.value, value.source, plugin, rule.plugin, rule.id]);
+  if (diagnostics.diagnosedExcludedValues.has(key)) return;
+  diagnostics.diagnosedExcludedValues.add(key);
+  diagnostics.increment();
+  diagnostics.policyExcludedBySource[value.source] = (diagnostics.policyExcludedBySource[value.source] ?? 0) + 1;
+  diagnostics.policyExcludedValues.push({ name: value.name, source: value.source, plugin, rule });
 }
 
 /** Run a plugin's discover() and append its lines, turning a throw into a safe error discovery. */

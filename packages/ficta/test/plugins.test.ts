@@ -330,6 +330,48 @@ describe("registry plugin discovery", () => {
     expect(() => loadPluginRegistry()).toThrow("assigned to both entity-1 and entity-2");
   });
 
+  it("rejects literal/entity value ownership conflicts across configured files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ficta-managed-registry-literal-conflict-"));
+    const first = join(dir, "first.json");
+    const second = join(dir, "second.json");
+    const base = {
+      schema: FICTA_MANAGED_REGISTRY_SCHEMA,
+      generatedBy: "ficta-test",
+      generatedAt: "2026-07-14T00:00:00.000Z",
+    };
+    writeFileSync(
+      first,
+      JSON.stringify({
+        ...base,
+        revision: "literal-conflict-1",
+        entries: [{ id: "literal-1", protectionKind: "literal", value: "Northstar" }],
+      }),
+      { mode: 0o600 },
+    );
+    writeFileSync(
+      second,
+      JSON.stringify({
+        ...base,
+        revision: "literal-conflict-2",
+        entries: [
+          {
+            id: "entity-1",
+            protectionKind: "entity",
+            entityType: "organization",
+            canonicalValue: "Northstar Biologics",
+            forms: [{ value: "  NORTHSTAR  ", kind: "alias", boundary: "token" }],
+          },
+        ],
+      }),
+      { mode: 0o600 },
+    );
+    process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+    process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "1";
+    process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = `${first}:${second}`;
+
+    expect(() => loadPluginRegistry()).toThrow("assigned to both literal-1 and entity-1");
+  });
+
   it("refuses Doppler commands resolved inside the current working tree", () => {
     const cwd = process.cwd();
     const dir = mkdtempSync(join(tmpdir(), "ficta-doppler-cwd-"));
@@ -653,6 +695,45 @@ describe("user exclusion list", () => {
     expect(snapshot.registryPolicy.exclusions[0]?.id).toBe(USER_EXCLUSION_RULE_ID);
     // Safe metadata only — never the underlying value.
     expect(JSON.stringify(snapshot.policyExcludedValues)).not.toContain("AKIAIOSFODNN7EXAMPLE");
+  });
+
+  it("reports policy exclusions contributed only through structured records", () => {
+    process.env.FICTA_REGISTRY_EXCLUDE_NAMES = "BLOCKED_RECORD";
+    const source = {
+      kind: "registry-source" as const,
+      name: "structured-record-source",
+      config: { bindings: [], sections: [], envDefaults: {} },
+      setup: { registrySources: () => [] },
+      discover: () => [],
+      loadValues: () => [],
+      loadProtectionRecords: () => [
+        {
+          protectionKind: "literal" as const,
+          protectionId: "blocked-record",
+          value: "structured-secret-value",
+          authority: "registry" as const,
+          confidence: "exact" as const,
+          meta: {
+            name: "BLOCKED_RECORD",
+            value: "structured-secret-value",
+            source: "structured-fixture",
+          },
+        },
+      ],
+    };
+
+    const snapshot = loadPluginRegistry([source]);
+
+    expect(snapshot.records).toEqual([]);
+    expect(snapshot.policyExcluded).toBe(1);
+    expect(snapshot.policyExcludedBySource["structured-fixture"]).toBe(1);
+    expect(snapshot.policyExcludedValues).toEqual([
+      expect.objectContaining({
+        name: "BLOCKED_RECORD",
+        source: "structured-fixture",
+        plugin: "structured-record-source",
+      }),
+    ]);
   });
 
   it("reports invalid names as a non-blocking discovery, not an error", () => {

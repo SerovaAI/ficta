@@ -707,31 +707,33 @@ function setDraftFromEntry(setDraft: (draft: Draft) => void) {
 }
 
 function draftToInput(draft: Draft): ProtectedRegistryEntryInput {
-  return {
+  const fields = {
     ...(draft.id ? { id: draft.id } : {}),
     matterId: draft.matterId,
     type: draft.type,
-    protectionKind: draft.protectionKind,
-    ...(draft.protectionKind === "entity" ? { entityType: draft.entityType } : {}),
     value: draft.value,
     forms: draft.forms.filter((form) => form.value.trim()).map(({ draftId: _draftId, ...form }) => form),
     status: draft.status,
-    source: "manual",
+    source: "manual" as const,
   };
+  return draft.protectionKind === "entity"
+    ? { ...fields, protectionKind: draft.protectionKind, entityType: draft.entityType }
+    : { ...fields, protectionKind: draft.protectionKind };
 }
 
 function entryToInput(entry: ProtectedRegistryEntry): ProtectedRegistryEntryInput {
-  return {
+  const fields = {
     id: entry.id,
     matterId: entry.matterId,
     type: entry.type,
-    protectionKind: entry.protectionKind,
-    ...(entry.entityType ? { entityType: entry.entityType } : {}),
     value: entry.value,
     forms: entry.forms,
     status: entry.status,
     source: entry.source,
   };
+  return entry.protectionKind === "entity"
+    ? { ...fields, protectionKind: entry.protectionKind, entityType: entry.entityType }
+    : { ...fields, protectionKind: entry.protectionKind };
 }
 
 function EntityFormsEditor({ forms, onChange }: { forms: DraftForm[]; onChange: (forms: DraftForm[]) => void }) {

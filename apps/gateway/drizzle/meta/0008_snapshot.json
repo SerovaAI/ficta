@@ -281,7 +281,16 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "protected_registry_entries_protection_kind_check": {
+          "name": "protected_registry_entries_protection_kind_check",
+          "value": "\"protected_registry_entries\".\"protection_kind\" in ('literal', 'entity')"
+        },
+        "protected_registry_entries_entity_type_check": {
+          "name": "protected_registry_entries_entity_type_check",
+          "value": "\"protected_registry_entries\".\"entity_type\" is null or \"protected_registry_entries\".\"entity_type\" in ('organization', 'person')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.protection_stats_checkpoints": {

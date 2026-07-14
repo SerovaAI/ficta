@@ -310,30 +310,25 @@ function normalizeProtectedRegistryEntry(
   const type = readEnum(record.type, PROTECTED_REGISTRY_ENTRY_TYPES, "type");
   const status = readEnum(record.status ?? "approved", PROTECTED_REGISTRY_ENTRY_STATUSES, "status");
   const source = readEnum(record.source ?? fallbackSource, PROTECTED_REGISTRY_ENTRY_SOURCES, "source");
-  const protectionKind = readEnum(
-    record.protectionKind ?? "literal",
-    PROTECTED_REGISTRY_PROTECTION_KINDS,
-    "protectionKind",
-  );
-  const entityType =
-    protectionKind === "entity"
-      ? readEnum(record.entityType, PROTECTED_REGISTRY_ENTITY_TYPES, "entityType")
-      : undefined;
+  const protectionKind = readEnum(record.protectionKind, PROTECTED_REGISTRY_PROTECTION_KINDS, "protectionKind");
   const forms = normalizeForms(record.forms);
   if (protectionKind === "literal" && forms.some((form) => form.boundary !== "substring")) {
     throw new Error("literal entries cannot declare token-bounded forms; create a separate literal value instead");
   }
-  return {
+  const fields = {
     ...(id ? { id } : {}),
     matterId,
     type,
-    protectionKind,
-    ...(entityType ? { entityType } : {}),
     value,
     forms,
     source,
     status,
   };
+  if (protectionKind === "entity") {
+    const entityType = readEnum(record.entityType, PROTECTED_REGISTRY_ENTITY_TYPES, "entityType");
+    return { ...fields, protectionKind, entityType };
+  }
+  return { ...fields, protectionKind };
 }
 
 function normalizeForms(formsValue: unknown): ProtectedRegistryEntry["forms"] {
@@ -364,7 +359,6 @@ export function renderManagedRegistryFile(entries: ProtectedRegistryEntry[]): {
   let values = 0;
   entries.forEach((entry) => {
     if (entry.protectionKind === "entity") {
-      if (!entry.entityType) throw new Error(`entity registry entry ${entry.id} has no entity type`);
       const canonical = normalizeRegistryValue(entry.value);
       const forms = entry.forms.filter((form) => normalizeRegistryValue(form.value) !== canonical);
       registryEntries.push({

@@ -112,12 +112,10 @@ export interface ProtectedRegistryEntryForm {
   boundary: ProtectedRegistryFormBoundary;
 }
 
-export interface ProtectedRegistryEntry {
+interface ProtectedRegistryEntryFields {
   id: string;
   matterId: string;
   type: ProtectedRegistryEntryType;
-  protectionKind: ProtectedRegistryProtectionKind;
-  entityType?: ProtectedRegistryEntityType;
   value: string;
   forms: ProtectedRegistryEntryForm[];
   source: ProtectedRegistryEntrySource;
@@ -129,17 +127,27 @@ export interface ProtectedRegistryEntry {
   updatedAt: string;
 }
 
-export interface ProtectedRegistryEntryInput {
+export type ProtectedRegistryEntry = ProtectedRegistryEntryFields &
+  (
+    | { protectionKind: "entity"; entityType: ProtectedRegistryEntityType }
+    | { protectionKind: "literal"; entityType?: never }
+  );
+
+interface ProtectedRegistryEntryInputFields {
   id?: string;
   matterId: string;
   type: ProtectedRegistryEntryType;
-  protectionKind?: ProtectedRegistryProtectionKind;
-  entityType?: ProtectedRegistryEntityType;
   value: string;
   forms?: ProtectedRegistryEntryForm[];
   source?: ProtectedRegistryEntrySource;
   status?: ProtectedRegistryEntryStatus;
 }
+
+export type ProtectedRegistryEntryInput = ProtectedRegistryEntryInputFields &
+  (
+    | { protectionKind: "entity"; entityType: ProtectedRegistryEntityType }
+    | { protectionKind: "literal"; entityType?: never }
+  );
 
 export const DEFAULT_SUGGESTED_PROMPTS = [
   "Summarize this document and flag anything that needs attention.",

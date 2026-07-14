@@ -308,6 +308,7 @@ const protectedRegistryInput = (
 ): ProtectedRegistryEntryInput => ({
   matterId: "NSB-2026-0147",
   type: "client",
+  protectionKind: "literal",
   value,
   forms: [],
   status: "approved",

@@ -60,6 +60,15 @@ export function literalProtectionRecords(
   }));
 }
 
+/** Flatten one logical protection record into the exact surfaces registered with the vault. */
+export function protectionRecordSurfaces(record: ProtectionRecord): ProtectedValue[] {
+  if (record.protectionKind === "literal") return [{ ...record.meta, value: record.value }];
+  return [record.canonical, ...record.forms].map((form) => ({
+    ...record.meta,
+    value: form.value,
+  }));
+}
+
 /** Build range-claim inputs without placing resolver trust on the parent entity identity. */
 export function entityClaimsFromProtectionRecords(records: readonly ProtectionRecord[]): EntityClaim[] {
   return records.map((record) => {

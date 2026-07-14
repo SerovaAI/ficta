@@ -12,10 +12,11 @@ import type {
   RegistrySetupSource,
   RegistrySourcePlugin,
 } from "../engine/plugins/types.js";
-import type {
-  ProtectionRecord,
-  RegisteredEntityForm,
-  StructuredRegistrySourceCapabilities,
+import {
+  type ProtectionRecord,
+  protectionRecordSurfaces,
+  type RegisteredEntityForm,
+  type StructuredRegistrySourceCapabilities,
 } from "../engine/protection.js";
 
 interface ManagedRegistryFileStat {
@@ -137,7 +138,7 @@ function loadManagedRegistryValues(): ProtectedValue[] {
     for (const entry of registry.entries) {
       const record = protectionRecord(entry);
       records.push(record);
-      for (const surface of recordSurfaces(record)) {
+      for (const surface of protectionRecordSurfaces(record)) {
         if (seenValues.has(surface.value)) {
           stats.skippedDuplicate++;
           continue;
@@ -392,29 +393,24 @@ function dedupeEntityForms(
   return [...byValue.values()];
 }
 
-function recordSurfaces(record: ProtectionRecord): ProtectedValue[] {
-  if (record.protectionKind === "literal") return [{ ...record.meta, value: record.value }];
-  return [record.canonical, ...record.forms].map((form) => ({
-    ...record.meta,
-    value: form.value,
-  }));
-}
-
 function validateManagedRegistrySet(registries: readonly ParsedManagedRegistry[]): void {
   const ids = new Set<string>();
-  const formOwners = new Map<string, string>();
+  const valueOwners = new Map<string, string>();
   for (const registry of registries) {
     for (const entry of registry.entries) {
       if (ids.has(entry.id)) throw new Error(`duplicate managed registry id ${entry.id}`);
       ids.add(entry.id);
-      if (entry.protectionKind !== "entity") continue;
-      for (const value of [entry.canonicalValue, ...entry.forms.map((form) => form.value)]) {
+      const values =
+        entry.protectionKind === "entity"
+          ? [entry.canonicalValue, ...entry.forms.map((form) => form.value)]
+          : [entry.value];
+      for (const value of values) {
         const normalized = normalizeForm(value);
-        const owner = formOwners.get(normalized);
+        const owner = valueOwners.get(normalized);
         if (owner !== undefined && owner !== entry.id) {
-          throw new Error(`managed registry form is assigned to both ${owner} and ${entry.id}`);
+          throw new Error(`managed registry value is assigned to both ${owner} and ${entry.id}`);
         }
-        formOwners.set(normalized, entry.id);
+        valueOwners.set(normalized, entry.id);
       }
     }
   }

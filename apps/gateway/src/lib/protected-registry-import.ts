@@ -79,16 +79,19 @@ export function parseProtectedRegistryImport(text: string): ProtectedRegistryImp
       warnings.push(`Row ${rowNumber} was skipped because literal forms must use substring boundaries.`);
       return;
     }
-    entries.push({
+    const fields = {
       matterId: draft.matterId,
       type,
-      protectionKind,
-      ...(entityType ? { entityType } : {}),
       value: draft.value,
       forms: parsedForms.forms,
       status,
       source: "csv",
-    });
+    } as const;
+    entries.push(
+      protectionKind === "entity"
+        ? { ...fields, protectionKind, entityType: entityType as ProtectedRegistryEntityType }
+        : { ...fields, protectionKind },
+    );
   });
 
   if (entries.length === 0 && warnings.length === 0) warnings.push("No importable registry entries found.");

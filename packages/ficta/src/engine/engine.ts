@@ -18,7 +18,12 @@ import type {
   RedactionPlugin,
   RegistryPolicy,
 } from "./plugins/types.js";
-import { entityClaimsFromProtectionRecords, literalProtectionRecords, type ProtectionRecord } from "./protection.js";
+import {
+  entityClaimsFromProtectionRecords,
+  literalProtectionRecords,
+  type ProtectionRecord,
+  protectionRecordSurfaces,
+} from "./protection.js";
 import {
   type BodyRedactionContext,
   type BodyRedactionDetails,
@@ -150,9 +155,10 @@ export class ProtectionEngine implements RedactionEngine {
     this.policy = this.registrySnapshot.registryPolicy;
     // registry.values are already policy-filtered by loadPluginRegistry; caller-supplied opts.values
     // pass through the same enforced exclusions so every ingress into the vault is consistent.
-    const values = [...this.registrySnapshot.values, ...admit(opts.values ?? [], this.policy)];
+    const admittedOptions = admit(opts.values ?? [], this.policy);
+    const values = [...this.registrySnapshot.values, ...admittedOptions];
     for (const value of values) remember(this.metadataByValue, value);
-    const optionRecords = literalProtectionRecords(admit(opts.values ?? [], this.policy), "registry");
+    const optionRecords = literalProtectionRecords(admittedOptions, "registry");
     this.permanentClaims = entityClaimsFromProtectionRecords([...this.registrySnapshot.records, ...optionRecords]);
     for (const record of this.registrySnapshot.records) this.activeRegistryRecords.set(recordKey(record), record);
     this.registrySize = values.length;
@@ -185,7 +191,7 @@ export class ProtectionEngine implements RedactionEngine {
     }
 
     const newRecords = snapshot.records.filter((record) => !this.activeRegistryRecords.has(recordKey(record)));
-    const fresh = newRecords.flatMap(flattenProtectionRecord);
+    const fresh = newRecords.flatMap(protectionRecordSurfaces);
     for (const value of fresh) remember(this.metadataByValue, value);
     const added = this.vault.register(fresh);
     this.permanentClaims.push(...entityClaimsFromProtectionRecords(newRecords));
@@ -819,14 +825,6 @@ function recordFingerprint(record: ProtectionRecord): string {
     provenance: record.provenance,
     meta: record.meta,
   });
-}
-
-function flattenProtectionRecord(record: ProtectionRecord): ProtectedValue[] {
-  if (record.protectionKind === "literal") return [{ ...record.meta, value: record.value }];
-  return [record.canonical, ...record.forms].map((form) => ({
-    ...record.meta,
-    value: form.value,
-  }));
 }
 
 function applyRecordBoundaries(vault: Vault, records: readonly ProtectionRecord[]): void {

@@ -149,16 +149,19 @@ export function isManagedRegistryFile(value) {
     return false;
 
   const ids = new Set();
-  const entityOwners = new Map();
+  const valueOwners = new Map();
   for (const entry of value.entries) {
     if (ids.has(entry.id)) return false;
     ids.add(entry.id);
-    if (entry.protectionKind !== "entity") continue;
-    for (const form of [entry.canonicalValue, ...entry.forms.map((item) => item.value)]) {
-      const normalized = normalizeManagedRegistryForm(form);
-      const owner = entityOwners.get(normalized);
+    const surfaces =
+      entry.protectionKind === "entity"
+        ? [entry.canonicalValue, ...entry.forms.map((item) => item.value)]
+        : [entry.value];
+    for (const surface of surfaces) {
+      const normalized = normalizeManagedRegistryForm(surface);
+      const owner = valueOwners.get(normalized);
       if (owner !== undefined && owner !== entry.id) return false;
-      entityOwners.set(normalized, entry.id);
+      valueOwners.set(normalized, entry.id);
     }
   }
   return true;
