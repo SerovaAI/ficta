@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   PROTECTION_REVIEW_ADD_COPY,
   PROTECTION_REVIEW_SCOPE_COPY,
+  PROTECTION_REVIEW_SUGGESTION_COPY,
   protectionReviewShortcut,
 } from "@/components/chat/ProtectionReview";
 
@@ -11,6 +12,8 @@ describe("protection review scope", () => {
     expect(PROTECTION_REVIEW_SCOPE_COPY).toContain("not every confidential business term");
     expect(PROTECTION_REVIEW_ADD_COPY).toContain("amount");
     expect(PROTECTION_REVIEW_ADD_COPY).toContain("clause");
+    expect(PROTECTION_REVIEW_SUGGESTION_COPY).toContain("normalized protected phrase");
+    expect(PROTECTION_REVIEW_SUGGESTION_COPY).not.toContain("exact selected text");
   });
 });
 

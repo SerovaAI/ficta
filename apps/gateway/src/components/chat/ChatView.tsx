@@ -432,6 +432,7 @@ export function ChatView({
         },
         suggest: () => suggestProtectedRegistryEntries({ data: [value] }),
       });
+      if (!protectionPreviewIsCurrent(request.generation)) return;
       const keepForSuggestion = result.suggestion === "not-requested" || result.suggestion === "failed";
       setProtectionReview({
         ...protectionReview,

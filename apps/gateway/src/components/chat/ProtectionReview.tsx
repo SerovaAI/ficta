@@ -22,6 +22,8 @@ export const PROTECTION_REVIEW_SCOPE_COPY =
   "Automatic protection covers identity and attribution, not every confidential business term.";
 export const PROTECTION_REVIEW_ADD_COPY =
   "Highlight text above to copy or protect it, or type an amount, project name, code, or clause below.";
+export const PROTECTION_REVIEW_SUGGESTION_COPY =
+  "Workspace proposals send the normalized protected phrase to admins. It is not workspace-wide until approved and published.";
 
 export function ProtectionReview({
   text,
@@ -301,7 +303,7 @@ export function ProtectionReview({
               {copyStatus === "error"
                 ? "Couldn’t copy automatically. The text is still selected; press Ctrl/⌘ C to copy it."
                 : selection.protection.ok
-                  ? "Workspace suggestions send the exact selected text to admins. It is not workspace-wide until approved and published."
+                  ? PROTECTION_REVIEW_SUGGESTION_COPY
                   : protectionValueErrorMessage(selection.protection.reason)}
             </p>
             <span className="sr-only" aria-live="polite">
