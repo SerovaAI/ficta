@@ -1,0 +1,67 @@
+{
+  "name": "synthetic-supply-dispute",
+  "protectionContextId": "thread:entity-fidelity-fixture",
+  "documentLines": [
+    "# Privileged legal assessment",
+    "",
+    "**Client:** **Northstar Biologics (Pty) Ltd**",
+    "**Registered short name:** Northstar Biologics",
+    "**Counterparty:** Proxima Medical Supplies CC",
+    "**Client contact:** Amelia Naidoo",
+    "",
+    "NORTHSTAR sent a breach notice on 2 July 2026 under clause 9.4.",
+    "**Northstar** alleges that Proxima failed to maintain the required cold-chain controls.",
+    "The supply agreement requires Proxima to cure a verified temperature excursion within 30 calendar days.",
+    "An archived copy reflows the counterparty as:",
+    "Proxima Medical",
+    "Supplies CC",
+    "Northstar's finance tracker records interest at 8% per annum.",
+    "Clause 9.4 caps recoverable damages at ZAR 8,750,000.",
+    "The parties expect arbitration to take three months after the cure period expires.",
+    "Settlement funds must not be sent to account ZA-TRUST-0042 without written confirmation from Amelia Naidoo."
+  ],
+  "entities": [
+    {
+      "id": "entity-northstar-biologics",
+      "type": "ORG",
+      "surfaces": ["Northstar Biologics (Pty) Ltd", "Northstar Biologics", "Northstar", "NORTHSTAR"]
+    },
+    {
+      "id": "entity-proxima-medical",
+      "type": "ORG",
+      "surfaces": ["Proxima Medical Supplies CC", "Proxima Medical\nSupplies CC", "Proxima"]
+    },
+    {
+      "id": "entity-amelia-naidoo",
+      "type": "PERSON",
+      "surfaces": ["Amelia Naidoo"]
+    }
+  ],
+  "literals": [
+    {
+      "type": "ACCOUNT",
+      "value": "ZA-TRUST-0042"
+    }
+  ],
+  "mustRemainVisible": [
+    "2 July 2026",
+    "clause 9.4",
+    "30 calendar days",
+    "8% per annum",
+    "ZAR 8,750,000",
+    "three months"
+  ],
+  "evaluation": {
+    "clientSurface": "Northstar Biologics (Pty) Ltd",
+    "counterpartySurface": "Proxima Medical Supplies CC",
+    "supplierDutySurface": "Proxima",
+    "noticeSenderSurface": "NORTHSTAR",
+    "facts": {
+      "damagesCap": "ZAR 8,750,000",
+      "curePeriod": "30 calendar days",
+      "interestRate": "8% per annum",
+      "noticeDate": "2 July 2026",
+      "arbitrationDuration": "three months"
+    }
+  }
+}
