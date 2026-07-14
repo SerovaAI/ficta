@@ -44,6 +44,7 @@ import { ProtectionEngine } from "./engine/engine.js";
 import type { ProtectedValue } from "./engine/plugins/types.js";
 import { withPreservationInstruction } from "./engine/preserve-literals.js";
 import {
+  type AmbiguousEntityLinkDiagnostic,
   DetectorUnavailableError,
   type ProtectionHit,
   type ProtectionTraceOccurrence,
@@ -683,8 +684,16 @@ export async function startProxy(
           });
           if (redaction.count > 0) {
             const warn = redaction.leaks > 0 ? `  ⚠ ${redaction.leaks} LEAKED (fail-open)` : "";
-            const fields = { reqId: n, kept: redaction.count, leaked: redaction.leaks, surface: "body" };
-            const msg = `🔒 kept ${redaction.count} body value(s) out of the model${warn}`;
+            const ambiguity =
+              redaction.ambiguousEntityLinks > 0 ? `; ${redaction.ambiguousEntityLinks} ambiguous entity link(s)` : "";
+            const fields = {
+              reqId: n,
+              kept: redaction.count,
+              leaked: redaction.leaks,
+              ambiguousEntityLinks: redaction.ambiguousEntityLinks,
+              surface: "body",
+            };
+            const msg = `🔒 kept ${redaction.count} body value(s) out of the model${warn}${ambiguity}`;
             if (redaction.leaks > 0) log.warn(fields, msg);
             else log.info(fields, msg);
           }
@@ -1147,10 +1156,12 @@ const SURROGATE_RE = /FICTA_[0-9a-f]{32}/;
 interface SurfaceRedaction {
   count: number;
   leaks: number;
+  ambiguousEntityLinks: number;
   hits: ProtectionHit[];
   leakHits: ProtectionHit[];
   traceValues?: ProtectionTraceValue[];
   traceLeakValues?: ProtectionTraceValue[];
+  traceAmbiguousEntityLinks?: AmbiguousEntityLinkDiagnostic[];
 }
 
 interface ProtectionTraceRedaction {
@@ -1158,8 +1169,10 @@ interface ProtectionTraceRedaction {
   blocked: boolean;
   redactedCount: number;
   survivingCount: number;
+  ambiguousEntityLinks: number;
   redactedValues: ProtectionTraceValue[];
   survivingValues: ProtectionTraceValue[];
+  ambiguousLinks: AmbiguousEntityLinkDiagnostic[];
 }
 
 interface ProtectionTraceAudit {
@@ -1201,6 +1214,7 @@ function createEgressEvidence({
   if (!scopeKey || !eventId) return undefined;
   let redactedValues = 0;
   let survivingValues = 0;
+  let ambiguousEntityLinks = 0;
   let screening: EgressProof["screening"] = protectedRequest ? "completed" : "not_configured";
   const labels = new Map<string, EgressProof["labels"][number]>();
   let finished = false;
@@ -1216,6 +1230,7 @@ function createEgressEvidence({
     record(redaction) {
       redactedValues += redaction.count;
       survivingValues += redaction.leaks;
+      ambiguousEntityLinks += redaction.ambiguousEntityLinks;
       addLabels(redaction.hits, "redactedValues");
       addLabels(redaction.leakHits, "survivingValues");
     },
@@ -1234,6 +1249,7 @@ function createEgressEvidence({
         model,
         redactedValues,
         survivingValues,
+        ambiguousEntityLinks,
         labels: [...labels.values()],
       });
     },
@@ -1569,7 +1585,16 @@ async function redactNonAuthHeaders(
 }
 
 function emptyRedaction(): SurfaceRedaction {
-  return { count: 0, leaks: 0, hits: [], leakHits: [], traceValues: [], traceLeakValues: [] };
+  return {
+    count: 0,
+    leaks: 0,
+    ambiguousEntityLinks: 0,
+    hits: [],
+    leakHits: [],
+    traceValues: [],
+    traceLeakValues: [],
+    traceAmbiguousEntityLinks: [],
+  };
 }
 
 function addRedaction(
@@ -1577,20 +1602,25 @@ function addRedaction(
   redaction: {
     count: number;
     leaks: number;
+    ambiguousEntityLinks?: number;
     hits: ProtectionHit[];
     leakHits: ProtectionHit[];
     traceValues?: ProtectionTraceValue[];
     traceLeakValues?: ProtectionTraceValue[];
+    traceAmbiguousEntityLinks?: AmbiguousEntityLinkDiagnostic[];
   },
 ): void {
   total.count += redaction.count;
   total.leaks += redaction.leaks;
+  total.ambiguousEntityLinks += redaction.ambiguousEntityLinks ?? 0;
   total.hits.push(...redaction.hits);
   total.leakHits.push(...redaction.leakHits);
   total.traceValues ??= [];
   total.traceValues.push(...(redaction.traceValues ?? []));
   total.traceLeakValues ??= [];
   total.traceLeakValues.push(...(redaction.traceLeakValues ?? []));
+  total.traceAmbiguousEntityLinks ??= [];
+  total.traceAmbiguousEntityLinks.push(...(redaction.traceAmbiguousEntityLinks ?? []));
 }
 
 function recordProtection(
@@ -1620,6 +1650,7 @@ function recordProtection(
     surface: args.surface,
     redactedValues: args.redaction.count,
     survivingValues: args.redaction.leaks,
+    ambiguousEntityLinks: args.redaction.ambiguousEntityLinks,
     blocked: args.blocked,
     redactedHits: args.redaction.hits,
     survivingHits: args.redaction.leakHits,
@@ -1628,14 +1659,17 @@ function recordProtection(
   if (args.blocked) args.evidence?.finish("blocked", args.model);
   const redactedValues = args.redaction.traceValues ?? [];
   const survivingValues = args.redaction.traceLeakValues ?? [];
-  if (redactedValues.length === 0 && survivingValues.length === 0) return;
+  const ambiguousLinks = args.redaction.traceAmbiguousEntityLinks ?? [];
+  if (redactedValues.length === 0 && survivingValues.length === 0 && ambiguousLinks.length === 0) return;
   traceRedactions.push({
     surface: args.surface,
     blocked: args.blocked,
     redactedCount: args.redaction.count,
     survivingCount: args.redaction.leaks,
+    ambiguousEntityLinks: args.redaction.ambiguousEntityLinks,
     redactedValues,
     survivingValues,
+    ambiguousLinks,
   });
 }
 
@@ -1665,6 +1699,7 @@ function recordDetectorUnavailable(
     surface: args.surface,
     redactedValues: 0,
     survivingValues: 0,
+    ambiguousEntityLinks: 0,
     blocked: true,
     blockReason: "detector_unavailable",
   });

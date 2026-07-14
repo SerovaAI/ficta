@@ -27,6 +27,7 @@ interface ProtectionStatsRecord {
   redactedValues: number;
   survivingValues: number;
   blocked: boolean;
+  ambiguousEntityLinks?: number;
   blockReason?: ProtectionStatsBlockReason;
   redactedHits?: readonly ProtectionHit[];
   survivingHits?: readonly ProtectionHit[];
@@ -86,7 +87,14 @@ export class ProtectionStats {
   record(record: ProtectionStatsRecord): void {
     // Detector outages have no value counts because screening could not run, but the fail-closed
     // decision is still first-class protection proof and must survive in the stats stream.
-    if (record.redactedValues <= 0 && record.survivingValues <= 0 && record.blockReason === undefined) return;
+    if (
+      record.redactedValues <= 0 &&
+      record.survivingValues <= 0 &&
+      (record.ambiguousEntityLinks ?? 0) <= 0 &&
+      record.blockReason === undefined
+    ) {
+      return;
+    }
     const event: ProtectionStatsEvent = {
       index: this.events.length + 1,
       at: new Date().toISOString(),
@@ -97,6 +105,7 @@ export class ProtectionStats {
       redactedValues: record.redactedValues,
       survivingValues: record.survivingValues,
       blocked: record.blocked,
+      ambiguousEntityLinks: Math.max(0, record.ambiguousEntityLinks ?? 0),
       model: normalizeModel(record.model),
       redactedHits: [...(record.redactedHits ?? [])],
       survivingHits: [...(record.survivingHits ?? [])],
@@ -139,15 +148,19 @@ export class ProtectionStats {
   private totals(): ProtectionStatsTotals {
     const affectedRequestKeys = new Set<string>();
     const blockedRequestKeys = new Set<string>();
+    const ambiguousRequestKeys = new Set<string>();
     let redactedValues = 0;
     let survivingValues = 0;
     let keptOutOfModelValues = 0;
+    let ambiguousEntityLinks = 0;
     for (const event of this.events) {
       const key = requestKey(event);
       affectedRequestKeys.add(key);
       redactedValues += event.redactedValues;
       survivingValues += event.survivingValues;
       keptOutOfModelValues += keptOutValues(event);
+      ambiguousEntityLinks += event.ambiguousEntityLinks;
+      if (event.ambiguousEntityLinks > 0) ambiguousRequestKeys.add(key);
       if (event.blocked) blockedRequestKeys.add(key);
     }
     return {
@@ -159,6 +172,8 @@ export class ProtectionStats {
       keptOutOfModelValues,
       restoredValues: this.restoredValuesTotal,
       withheldFromToolsValues: this.withheldFromToolsValuesTotal,
+      ambiguousEntityLinks,
+      ambiguousEntityLinkRequests: ambiguousRequestKeys.size,
     };
   }
 
@@ -204,6 +219,11 @@ export function renderProtectionStatsSummary(snapshot: ProtectionStatsSnapshot):
 
   const blocked = snapshot.totals.blockedRequests > 0 ? `, blocked ${snapshot.totals.blockedRequests}` : "";
   lines.push(`   affected requests: ${snapshot.totals.affectedRequests}${blocked}`);
+  if (snapshot.totals.ambiguousEntityLinks > 0) {
+    lines.push(
+      `   ambiguous entity links: ${snapshot.totals.ambiguousEntityLinks} across ${snapshot.totals.ambiguousEntityLinkRequests} ${plural(snapshot.totals.ambiguousEntityLinkRequests, "request")}`,
+    );
+  }
 
   const modelLine = formatTopBuckets(
     snapshot.byModel.filter((bucket) => bucket.name !== "unknown"),

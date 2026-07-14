@@ -191,6 +191,8 @@ export function createStorage(): Storage {
                 keptOutOfModelValues: sql`${protectionStatsDaily.keptOutOfModelValues} + ${delta.keptOutOfModelValues}`,
                 restoredValues: sql`${protectionStatsDaily.restoredValues} + ${delta.restoredValues}`,
                 withheldFromToolsValues: sql`${protectionStatsDaily.withheldFromToolsValues} + ${delta.withheldFromToolsValues}`,
+                ambiguousEntityLinks: sql`${protectionStatsDaily.ambiguousEntityLinks} + ${delta.ambiguousEntityLinks}`,
+                ambiguousEntityLinkRequests: sql`${protectionStatsDaily.ambiguousEntityLinkRequests} + ${delta.ambiguousEntityLinkRequests}`,
                 updatedAt: now,
               },
             });
@@ -257,6 +259,7 @@ export function createStorage(): Storage {
           model: proof.model,
           redactedValues: proof.redactedValues,
           survivingValues: proof.survivingValues,
+          ambiguousEntityLinks: proof.ambiguousEntityLinks,
           labels: proof.labels,
           previousHash,
           eventHash,
@@ -286,6 +289,7 @@ export function createStorage(): Storage {
         blockedRequests: events.filter((event) => event.outcome === "blocked").length,
         tokenizedValues: events.reduce((total, event) => total + event.redactedValues, 0),
         survivingValues: events.reduce((total, event) => total + event.survivingValues, 0),
+        ambiguousEntityLinks: events.reduce((total, event) => total + event.ambiguousEntityLinks, 0),
       } satisfies ThreadEgressReceipt;
     },
 
@@ -637,6 +641,11 @@ function protectionStatsDelta(
     keptOutOfModelValues: positiveDelta(current.keptOutOfModelValues, previous.keptOutOfModelValues),
     restoredValues: positiveDelta(current.restoredValues, previous.restoredValues),
     withheldFromToolsValues: positiveDelta(current.withheldFromToolsValues, previous.withheldFromToolsValues),
+    ambiguousEntityLinks: positiveDelta(current.ambiguousEntityLinks, previous.ambiguousEntityLinks),
+    ambiguousEntityLinkRequests: positiveDelta(
+      current.ambiguousEntityLinkRequests,
+      previous.ambiguousEntityLinkRequests,
+    ),
   };
 }
 
@@ -659,6 +668,8 @@ function toProtectionStatsDailySummary(row: typeof protectionStatsDaily.$inferSe
     keptOutOfModelValues: row.keptOutOfModelValues,
     restoredValues: row.restoredValues,
     withheldFromToolsValues: row.withheldFromToolsValues,
+    ambiguousEntityLinks: row.ambiguousEntityLinks,
+    ambiguousEntityLinkRequests: row.ambiguousEntityLinkRequests,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -673,6 +684,7 @@ function toThreadEgressEvent(row: typeof threadEgressEvents.$inferSelect): Threa
     model: row.model,
     redactedValues: row.redactedValues,
     survivingValues: row.survivingValues,
+    ambiguousEntityLinks: row.ambiguousEntityLinks,
     labels: row.labels,
     ...(row.previousHash ? { previousHash: row.previousHash } : {}),
     eventHash: row.eventHash,
@@ -691,7 +703,7 @@ function egressEventHash({
   return createHash("sha256")
     .update(
       JSON.stringify({
-        version: 1,
+        version: 2,
         threadId,
         eventId: proof.eventId,
         at: proof.at,
@@ -700,6 +712,7 @@ function egressEventHash({
         model: proof.model,
         redactedValues: proof.redactedValues,
         survivingValues: proof.survivingValues,
+        ambiguousEntityLinks: proof.ambiguousEntityLinks,
         labels: proof.labels,
         previousHash: previousHash ?? null,
       }),

@@ -59,6 +59,7 @@ export interface ThreadEgressReceipt {
   blockedRequests: number;
   tokenizedValues: number;
   survivingValues: number;
+  ambiguousEntityLinks: number;
 }
 
 /** Server-only encrypted provider key payload persisted by the storage backend. */

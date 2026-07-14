@@ -12,6 +12,11 @@ import {
   FICTA_TRACE_CAPTURE_PATH,
 } from "@serovaai/ficta-protocol";
 import { describe, expect, it, vi } from "vitest";
+import {
+  type ProtectionRecord,
+  protectionRecordSurfaces,
+  type StructuredRegistrySourceCapabilities,
+} from "../src/engine/protection.js";
 import type { DetectorPlugin, RegistrySourcePlugin } from "../src/plugins/index.js";
 
 const AWS = "AKIAIOSFODNN7EXAMPLE";
@@ -64,6 +69,27 @@ function anthropicInputDelta(index: number, partial_json: string): string {
   })}\n\n`;
 }
 
+function proofOrganization(
+  entityId: string,
+  canonicalValue: string,
+): Extract<ProtectionRecord, { protectionKind: "entity" }> {
+  return {
+    protectionKind: "entity",
+    entityId,
+    entityType: "organization",
+    canonical: { formId: `${entityId}:canonical`, value: canonicalValue, kind: "legal_name" },
+    forms: [],
+    provenance: "registry",
+    meta: {
+      name: `managed-registry:${entityId}`,
+      value: canonicalValue,
+      source: "managed-registry-file",
+      kind: "custom",
+      confidence: "exact",
+    },
+  };
+}
+
 describe("proxy hardening", () => {
   it("returns a values-free egress proof only to the matching trusted scope", async () => {
     const originalEnv = {
@@ -84,15 +110,48 @@ describe("proxy hardening", () => {
         res.end(JSON.stringify({ ok: true }));
       });
     });
-    const fixturePlugin: RegistrySourcePlugin = {
+    const records: ProtectionRecord[] = [
+      {
+        protectionKind: "literal",
+        protectionId: "proof-secret",
+        value: PROOF_SECRET,
+        authority: "registry",
+        confidence: "exact",
+        meta: { name: "PROOF_SECRET", value: PROOF_SECRET, source: "fixture", kind: "secret", confidence: "exact" },
+      },
+      proofOrganization("northstar-biologics", "Northstar Biologics Ltd"),
+      proofOrganization("northstar-finance", "Northstar Finance LLC"),
+    ];
+    const fixturePlugin: RegistrySourcePlugin & StructuredRegistrySourceCapabilities = {
       kind: "registry-source",
       name: "egress-proof-fixture",
       config: { bindings: [], sections: [], envDefaults: {} },
       setup: { registrySources: () => [] },
       discover: () => [],
-      loadValues: () => [
-        { name: "PROOF_SECRET", value: PROOF_SECRET, source: "fixture", kind: "secret", confidence: "exact" },
-      ],
+      loadValues: () => records.flatMap(protectionRecordSurfaces),
+      loadProtectionRecords: () => records,
+      fatalLoadErrors: true,
+    };
+    const detector: DetectorPlugin = {
+      kind: "detector",
+      name: "proof-detector",
+      bodyDetectionView: "content",
+      detectText: (text) => {
+        const value = "Northstar";
+        const start = text.indexOf(value);
+        return start < 0
+          ? []
+          : [
+              {
+                name: "organization",
+                value,
+                source: "fixture-detector",
+                kind: "pii",
+                confidence: "high",
+                spans: [{ start, end: start + value.length }],
+              },
+            ];
+      },
     };
     let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
     try {
@@ -101,7 +160,7 @@ describe("proxy hardening", () => {
       process.env.FICTA_LOG_LEVEL = "silent";
       process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-egress-proof-"));
       const { startProxy } = await import("../src/server.js");
-      proxy = await startProxy({ port: 0, plugins: [fixturePlugin] });
+      proxy = await startProxy({ port: 0, plugins: [fixturePlugin, detector] });
 
       const scope = "thread-evidence-scope";
       const eventId = "11111111-1111-4111-8111-111111111111";
@@ -112,11 +171,15 @@ describe("proxy hardening", () => {
           [FICTA_SCOPE_HEADER]: scope,
           [FICTA_EGRESS_EVENT_HEADER]: eventId,
         },
-        body: JSON.stringify({ model: "gpt-test", messages: [{ role: "user", content: PROOF_SECRET }] }),
+        body: JSON.stringify({
+          model: "gpt-test",
+          messages: [{ role: "user", content: `${PROOF_SECRET} Northstar` }],
+        }),
       });
       expect(chat.status).toBe(200);
       await chat.text();
       expect(receivedBody).not.toContain(PROOF_SECRET);
+      expect(receivedBody).not.toContain("Northstar");
       expect(receivedHeaders[FICTA_SCOPE_HEADER]).toBeUndefined();
       expect(receivedHeaders[FICTA_EGRESS_EVENT_HEADER]).toBeUndefined();
 
@@ -126,6 +189,9 @@ describe("proxy hardening", () => {
       const proofText = await proof.text();
       expect(proof.status).toBe(200);
       expect(proofText).not.toContain(PROOF_SECRET);
+      expect(proofText).not.toContain("Northstar");
+      expect(proofText).not.toContain("northstar-biologics");
+      expect(proofText).not.toContain("northstar-finance");
       expect(JSON.parse(proofText)).toMatchObject({
         ok: true,
         proof: {
@@ -133,16 +199,23 @@ describe("proxy hardening", () => {
           outcome: "forwarded",
           screening: "completed",
           model: "gpt-test",
-          redactedValues: 1,
+          redactedValues: 2,
           survivingValues: 0,
-          labels: [
+          ambiguousEntityLinks: 1,
+          labels: expect.arrayContaining([
             expect.objectContaining({
               name: "PROOF_SECRET",
               source: "fixture",
               redactedValues: 1,
               survivingValues: 0,
             }),
-          ],
+            expect.objectContaining({
+              name: "organization",
+              source: "fixture-detector",
+              redactedValues: 1,
+              survivingValues: 0,
+            }),
+          ]),
         },
       });
 

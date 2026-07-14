@@ -261,6 +261,7 @@ describe("protection engine plugins", () => {
       body: JSON.stringify({ content: SECRET }),
       count: 0,
       leaks: 0,
+      ambiguousEntityLinks: 0,
       hits: [],
       leakHits: [],
     });

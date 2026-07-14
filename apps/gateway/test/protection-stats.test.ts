@@ -19,6 +19,8 @@ function validPayload() {
         keptOutOfModelValues: 1,
         restoredValues: 1,
         withheldFromToolsValues: 0,
+        ambiguousEntityLinks: 1,
+        ambiguousEntityLinkRequests: 1,
       },
       byModel: [bucket("gpt-5-mini")],
       bySurface: [bucket("body")],
@@ -38,6 +40,7 @@ function validPayload() {
           redactedValues: 1,
           survivingValues: 0,
           blocked: false,
+          ambiguousEntityLinks: 1,
           redactedHits: [{ name: "EMAIL", source: "pii-regex", plugin: "pii", kind: "pii", confidence: "high" }],
           survivingHits: [],
         },
@@ -73,6 +76,8 @@ describe("isProtectionStatsOk", () => {
       keptOutOfModelValues: 0,
       restoredValues: 0,
       withheldFromToolsValues: 0,
+      ambiguousEntityLinks: 0,
+      ambiguousEntityLinkRequests: 0,
     };
     payload.stats.byModel = [];
     payload.stats.bySurface = [];

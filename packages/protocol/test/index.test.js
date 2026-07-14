@@ -9,6 +9,7 @@ import {
   FICTA_SCOPE_HEADER,
   FICTA_TRACE_CAPTURE_HEADER,
   FICTA_TRACE_CAPTURE_PATH,
+  isEgressProofOk,
   isManagedRegistryFile,
   isProtectionPreviewOk,
   isProtectionStatsOk,
@@ -43,6 +44,8 @@ function statsPayload() {
         keptOutOfModelValues: 1,
         restoredValues: 1,
         withheldFromToolsValues: 0,
+        ambiguousEntityLinks: 1,
+        ambiguousEntityLinkRequests: 1,
       },
       byModel: [bucket("gpt-5-mini")],
       bySurface: [bucket("body")],
@@ -62,6 +65,7 @@ function statsPayload() {
           redactedValues: 1,
           survivingValues: 0,
           blocked: false,
+          ambiguousEntityLinks: 1,
           redactedHits: [{ name: "EMAIL", source: "pii-regex", plugin: "pii", kind: "pii", confidence: "high" }],
           survivingHits: [],
         },
@@ -214,6 +218,27 @@ describe("runtime guards", () => {
     detectorBlock.stats.events[0].blockReason = "detector_unavailable";
     detectorBlock.stats.events[0].redactedValues = 0;
     assert.equal(isProtectionStatsOk(detectorBlock), true);
+  });
+
+  it("validates values-free ambiguity counts in egress proofs", () => {
+    const payload = {
+      ok: true,
+      service: "ficta",
+      proof: {
+        eventId: "11111111-1111-4111-8111-111111111111",
+        at: "2026-07-14T00:00:00.000Z",
+        outcome: "forwarded",
+        screening: "completed",
+        model: "gpt-test",
+        redactedValues: 1,
+        survivingValues: 0,
+        ambiguousEntityLinks: 1,
+        labels: [],
+      },
+    };
+    assert.equal(isEgressProofOk(payload), true);
+    delete payload.proof.ambiguousEntityLinks;
+    assert.equal(isEgressProofOk(payload), false);
   });
 
   it("validates runtime trace capture status", () => {

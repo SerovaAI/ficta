@@ -360,6 +360,7 @@ export function isEgressProofOk(value) {
     typeof proof.model === "string" &&
     typeof proof.redactedValues === "number" &&
     typeof proof.survivingValues === "number" &&
+    isNonNegativeInteger(proof.ambiguousEntityLinks) &&
     Array.isArray(proof.labels) &&
     proof.labels.every(isEgressProofLabel)
   );
@@ -408,7 +409,9 @@ function isTotals(value) {
     typeof value.blockedRequests === "number" &&
     typeof value.keptOutOfModelValues === "number" &&
     typeof value.restoredValues === "number" &&
-    typeof value.withheldFromToolsValues === "number"
+    typeof value.withheldFromToolsValues === "number" &&
+    isNonNegativeInteger(value.ambiguousEntityLinks) &&
+    isNonNegativeInteger(value.ambiguousEntityLinkRequests)
   );
 }
 
@@ -462,6 +465,7 @@ function isEvent(value) {
     typeof value.redactedValues === "number" &&
     typeof value.survivingValues === "number" &&
     typeof value.blocked === "boolean" &&
+    isNonNegativeInteger(value.ambiguousEntityLinks) &&
     (value.blockReason === undefined || (value.blocked === true && value.blockReason === "detector_unavailable")) &&
     Array.isArray(value.redactedHits) &&
     value.redactedHits.every(isHit) &&
