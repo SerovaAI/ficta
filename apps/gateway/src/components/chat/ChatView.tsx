@@ -38,6 +38,7 @@ import {
 } from "@/lib/models";
 import { withOneShotProtectionTicket } from "@/lib/protection-connection";
 import { type GatewayProtectionPreview, previewProtection } from "@/lib/protection-preview";
+import { automaticProtectionValues, protectionValueCoverage } from "@/lib/protection-review-value";
 import { type ProtectionStatus, requiredRegistryBlock } from "@/lib/protection-status";
 import { fetchProxyConfig } from "@/lib/proxy-config";
 import {
@@ -457,6 +458,16 @@ export function ChatView({
         preview,
         newlyProtectedValues: protectionReview.newlyProtectedValues.filter((entry) => entry !== value),
       });
+      const remainingCoverage = protectionValueCoverage({
+        value,
+        protectedValues: [],
+        ...automaticProtectionValues(protectionReview.text, preview.findings),
+      });
+      if (remainingCoverage === "registry") {
+        setProtectionReviewNotice("Removed from chat protections. The workspace registry still protects this phrase.");
+      } else if (remainingCoverage === "detected") {
+        setProtectionReviewNotice("Removed from chat protections. Automatic detection still protects this phrase.");
+      }
     } catch (err) {
       if (!protectionPreviewIsCurrent(request.generation) || isAbortError(err)) return;
       setProtectionReviewError(err instanceof Error ? err.message : "That chat protection could not be removed.");

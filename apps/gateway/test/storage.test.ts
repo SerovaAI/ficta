@@ -404,6 +404,9 @@ describe("threads + messages", () => {
     expect(
       await store.removeThreadProtectedValues("preview-owner", "org-preview", "draft-thread", ["Project Copper Kite"]),
     ).toEqual(["Northstar account 47"]);
+    expect(
+      await store.addThreadProtectedValues("preview-owner", "org-preview", "draft-thread", ["Project Copper Kite"]),
+    ).toEqual(["Northstar account 47", "Project Copper Kite"]);
 
     await store.saveThreadSnapshot("preview-owner", "org-preview", "draft-thread", [
       textMessage("preview-message", "user", "Review Project Copper Kite"),
