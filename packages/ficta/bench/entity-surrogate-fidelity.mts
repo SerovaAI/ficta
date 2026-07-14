@@ -30,6 +30,36 @@ interface ProviderResult {
   fragmentCount: number;
 }
 
+interface ScoreResult {
+  parsed: boolean;
+  scores: {
+    exactPartyFields: number;
+    entityAttribution: number;
+    legalFacts: number;
+    tokenPreservationRecall: number;
+    tokenMutationCount: number;
+    residualTokenCountAfterRestore: number;
+  };
+  identityExact: Record<string, boolean>;
+  entityAttribution: Record<string, boolean>;
+  factExact: Record<string, boolean>;
+  expectedTokenCount: number;
+  exactListedTokenCount: number;
+  unknownTokens: string[];
+  response: string;
+  restoredResponse: string;
+}
+
+interface LiveContext {
+  provider: ProviderTarget["provider"];
+  model: string;
+  style: SurrogateStyle;
+  transport: Transport;
+  run: number;
+}
+
+type LiveResult = (LiveContext & { fragmentCount: number } & ScoreResult) | (LiveContext & { error: string });
+
 interface ExpectedAnswer {
   client_token: string;
   counterparty_token: string;
@@ -59,23 +89,26 @@ const fixture = await loadEntityFidelityFixture();
 const rendered = options.styles.map((style) => renderEntityFidelityFixture(fixture, style));
 const offline = rendered.map((item) => characterizeRenderedFixture(fixture, item));
 
-const live = [];
+const live: LiveResult[] = [];
 for (const target of options.targets) {
   assertApiKey(target.provider);
   for (const item of rendered) {
     for (const transport of options.transports) {
       for (let run = 1; run <= options.runs; run += 1) {
-        const { prompt, expected } = evaluationPrompt(item, transport);
-        const result = await callProvider(target, prompt, transport);
-        live.push({
+        const context: LiveContext = {
           provider: target.provider,
           model: target.model,
           style: item.style,
           transport,
           run,
-          fragmentCount: result.fragmentCount,
-          ...scoreResponse(item, expected, result.response),
-        });
+        };
+        try {
+          const { prompt, expected } = evaluationPrompt(item, transport);
+          const result = await callProvider(target, prompt, transport);
+          live.push({ ...context, fragmentCount: result.fragmentCount, ...scoreResponse(item, expected, result.response) });
+        } catch (error) {
+          live.push({ ...context, error: errorMessage(error) });
+        }
       }
     }
   }
@@ -129,7 +162,7 @@ function evaluationPrompt(
   };
 }
 
-function scoreResponse(renderedFixture: RenderedFixture, expected: ExpectedAnswer, response: string): object {
+function scoreResponse(renderedFixture: RenderedFixture, expected: ExpectedAnswer, response: string): ScoreResult {
   const answer = parseModelAnswer(response);
   const identityFields = ["client_token", "counterparty_token", "supplier_duty_token", "notice_sender_token"] as const;
   const factFields = ["damages_cap", "cure_period", "interest_rate", "notice_date", "arbitration_duration"] as const;

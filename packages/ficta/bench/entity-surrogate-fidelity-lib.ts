@@ -285,4 +285,17 @@ function validateFixture(fixture: EntityFidelityFixture): void {
   for (const fact of fixture.mustRemainVisible) {
     if (!sourceText.includes(fact)) throw new Error(`Document is missing legal-fidelity fact ${JSON.stringify(fact)}`);
   }
+  const evaluationSurfaces = [
+    fixture.evaluation.clientSurface,
+    fixture.evaluation.counterpartySurface,
+    fixture.evaluation.supplierDutySurface,
+    fixture.evaluation.noticeSenderSurface,
+  ];
+  for (const surface of evaluationSurfaces) {
+    if (!sourceText.includes(surface))
+      throw new Error(`Document is missing evaluation surface ${JSON.stringify(surface)}`);
+  }
+  for (const fact of Object.values(fixture.evaluation.facts)) {
+    if (!sourceText.includes(fact)) throw new Error(`Document is missing evaluation fact ${JSON.stringify(fact)}`);
+  }
 }
