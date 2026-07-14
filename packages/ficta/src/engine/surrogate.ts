@@ -19,10 +19,25 @@ export interface SurrogateHint {
   kind?: ProtectedValue["kind"];
 }
 
+export interface EntitySurrogateInput {
+  protectionContextId: string;
+  entityId: string;
+  entityType: "organization" | "person";
+  exactSurface: string;
+}
+
+export interface EntitySurrogate {
+  token: string;
+  entityTag: string;
+  surfaceTag: string;
+}
+
 export interface SurrogateStrategy {
   /** Deterministically mint the surrogate token for a value. `hint` steers typed surrogates; the
    *  opaque strategy ignores it. */
   mint(value: string, hint?: SurrogateHint): string;
+  /** Present only on the gated Phase 4 strategy; literal-only strategies deliberately omit it. */
+  mintEntity?(input: EntitySurrogateInput): EntitySurrogate;
   /** Global regex matching one complete surrogate token; used to scan text/JSON on restore. */
   readonly pattern: RegExp;
   /** Upper bound on a token's length; used for streaming hold-back at chunk/fragment edges. */
@@ -34,6 +49,10 @@ export interface SurrogateStrategy {
 const HEX_PREFIX = "FICTA_";
 const HEX_LEN = 32;
 const HEX_TOTAL = HEX_PREFIX.length + HEX_LEN;
+const ENTITY_TAG_LEN = 12;
+const ENTITY_PATTERN_SOURCE = `${HEX_PREFIX}(?:ORG|PERSON)_[A-Z2-7]{${ENTITY_TAG_LEN}}_[A-Z2-7]{${ENTITY_TAG_LEN}}`;
+const ENTITY_MAX_LENGTH = `${HEX_PREFIX}PERSON_${"A".repeat(ENTITY_TAG_LEN)}_${"A".repeat(ENTITY_TAG_LEN)}`.length;
+const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 const ENV_SURROGATE_KEY = process.env.FICTA_SURROGATE_KEY;
 // One key per process by default (same value → same surrogate across turns). Set
@@ -94,6 +113,39 @@ export function typedSurrogateStrategy(key: string = DEFAULT_KEY): SurrogateStra
 }
 
 /**
+ * Add context-bounded entity-family tokens while delegating every literal to the selected shipped
+ * strategy. Phase 4 callers opt into this wrapper explicitly; Phase 5 decides when registry entity
+ * records use it by default.
+ */
+export function entityFamilySurrogateStrategy(
+  literal: SurrogateStrategy = surrogateStrategy(),
+  key: string = DEFAULT_KEY,
+): SurrogateStrategy {
+  const pattern = new RegExp(`(?:${literal.pattern.source}|${ENTITY_PATTERN_SOURCE})`, "g");
+  return {
+    mint: (value, hint) => literal.mint(value, hint),
+    mintEntity(input) {
+      const type = input.entityType === "organization" ? "ORG" : "PERSON";
+      const entityTag = hmacBase32(key, canonicalEncode("ficta.entity.v1", input.protectionContextId, input.entityId));
+      const surfaceTag = hmacBase32(
+        key,
+        canonicalEncode("ficta.surface.v1", input.protectionContextId, input.entityId, input.exactSurface),
+      );
+      return {
+        token: `${HEX_PREFIX}${type}_${entityTag}_${surfaceTag}`,
+        entityTag,
+        surfaceTag,
+      };
+    },
+    pattern,
+    maxLength: Math.max(literal.maxLength, ENTITY_MAX_LENGTH),
+    isPotentialPrefix(text) {
+      return literal.isPotentialPrefix(text) || isPotentialEntityPrefix(text);
+    },
+  };
+}
+
+/**
  * Select the surrogate token style from the environment: `typed` → {@link typedSurrogateStrategy};
  * anything else (default) → the opaque {@link hexSurrogateStrategy}. Kept opaque by default so the
  * token shape only changes when explicitly opted in.
@@ -122,6 +174,46 @@ function surrogateType(hint?: SurrogateHint): string {
     default:
       return "REDACTED";
   }
+}
+
+function hmacBase32(key: string, payload: Uint8Array): string {
+  const digest = createHmac("sha256", key).update(payload).digest();
+  let buffer = 0;
+  let bits = 0;
+  let output = "";
+  for (const byte of digest) {
+    buffer = (buffer << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      output += BASE32_ALPHABET[(buffer >>> (bits - 5)) & 31];
+      bits -= 5;
+      if (output.length === ENTITY_TAG_LEN) return output;
+    }
+  }
+  throw new Error("HMAC digest was too short for an entity-family tag");
+}
+
+function canonicalEncode(...fields: string[]): Uint8Array {
+  const parts: Buffer[] = [];
+  for (const field of fields) {
+    const value = Buffer.from(field, "utf8");
+    const length = Buffer.allocUnsafe(4);
+    length.writeUInt32BE(value.length);
+    parts.push(length, value);
+  }
+  return Buffer.concat(parts);
+}
+
+function isPotentialEntityPrefix(text: string): boolean {
+  if (!text || text.length >= ENTITY_MAX_LENGTH) return false;
+  for (const prefix of [`${HEX_PREFIX}ORG_`, `${HEX_PREFIX}PERSON_`]) {
+    if (prefix.startsWith(text)) return true;
+    if (!text.startsWith(prefix)) continue;
+    const remainder = text.slice(prefix.length);
+    if (remainder.length <= ENTITY_TAG_LEN) return /^[A-Z2-7]*$/u.test(remainder);
+    return remainder[ENTITY_TAG_LEN] === "_" && /^[A-Z2-7]{12}_[A-Z2-7]{0,11}$/u.test(remainder);
+  }
+  return false;
 }
 
 /**

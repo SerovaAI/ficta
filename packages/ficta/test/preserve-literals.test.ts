@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { buildPreservationInstruction, withPreservationInstruction } from "../src/engine/preserve-literals.js";
 import { Vault } from "../src/engine/vault.js";
 
-const SURR = ["FICTA_62a02923eca8d0f518581ade81bcb579", "FICTA_e0ba46ccd8719363bd0443dea6de3a4d"];
+const SURR = [
+  "FICTA_62a02923eca8d0f518581ade81bcb579",
+  "FICTA_e0ba46ccd8719363bd0443dea6de3a4d",
+  "FICTA_ORG_45SZ6UEHCLPT_ZWQCH5ASZWWH",
+];
 
 describe("buildPreservationInstruction", () => {
   it("lists every surrogate and forbids truncation/ellipsis", () => {

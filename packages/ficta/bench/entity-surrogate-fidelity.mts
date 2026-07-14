@@ -124,7 +124,7 @@ console.log(
       phase: "0-characterization",
       fixture: fixture.name,
       mode: options.targets.length === 0 ? "offline" : "live",
-      note: "Candidate entity-family rendering exists only in this benchmark. It is not wired into shipped engine behavior.",
+      note: "Entity-family rendering has a gated engine path and is not the shipped default before the release gate.",
       offline,
       live,
     },
