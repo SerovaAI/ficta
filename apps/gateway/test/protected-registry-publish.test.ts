@@ -1,6 +1,7 @@
 import { isRegistryReloadOk } from "@serovaai/ficta-protocol";
 import { describe, expect, it } from "vitest";
-import { renderManagedRegistryFile, verifyRegistryReload } from "@/lib/storage/protected-registry";
+import { verifyRegistryReload } from "@/lib/storage/protected-registry";
+import { renderManagedRegistryFile } from "@/lib/storage/protected-registry-render.server";
 import type { ProtectedRegistryEntry } from "@/lib/storage/types";
 
 function registryEntry(patch: Partial<ProtectedRegistryEntry> = {}): ProtectedRegistryEntry {
