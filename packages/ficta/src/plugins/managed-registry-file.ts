@@ -45,6 +45,11 @@ interface ParsedManagedRegistry {
   revision: string;
 }
 
+interface ParsedManagedRegistryFile {
+  stat: ManagedRegistryFileStat;
+  registry: ParsedManagedRegistry;
+}
+
 const PLUGIN_NAME = "managed-registry-file";
 const DEFAULT_MANAGED_REGISTRY_FILE = ".data/protected-registry.json";
 const DEFAULT_ENABLED = "1";
@@ -90,7 +95,7 @@ function loadManagedRegistryValues(): ProtectedValue[] {
   const values: ProtectedValue[] = [];
   const records: ProtectionRecord[] = [];
   const seenValues = new Set<string>();
-  const parsedFiles: Array<{ stat: ManagedRegistryFileStat; registry: ParsedManagedRegistry }> = [];
+  const parsedFiles: ParsedManagedRegistryFile[] = [];
 
   if (!stats.enabled) {
     cachedKey = key;
@@ -133,7 +138,13 @@ function loadManagedRegistryValues(): ProtectedValue[] {
     parsedFiles.push({ stat, registry: parsed.registry });
   }
 
-  validateManagedRegistrySet(parsedFiles.map(({ registry }) => registry));
+  try {
+    validateManagedRegistrySet(parsedFiles);
+  } catch (error) {
+    stats.filesErrored++;
+    cachedStats = stats;
+    throw error;
+  }
   for (const { stat, registry } of parsedFiles) {
     for (const entry of registry.entries) {
       const record = protectionRecord(entry);
@@ -393,13 +404,19 @@ function dedupeEntityForms(
   return [...byValue.values()];
 }
 
-function validateManagedRegistrySet(registries: readonly ParsedManagedRegistry[]): void {
-  const ids = new Set<string>();
-  const valueOwners = new Map<string, string>();
-  for (const registry of registries) {
+function validateManagedRegistrySet(files: readonly ParsedManagedRegistryFile[]): void {
+  const idOwners = new Map<string, ManagedRegistryFileStat>();
+  const valueOwners = new Map<string, { entryId: string; stat: ManagedRegistryFileStat }>();
+  for (const { stat, registry } of files) {
     for (const entry of registry.entries) {
-      if (ids.has(entry.id)) throw new Error(`duplicate managed registry id ${entry.id}`);
-      ids.add(entry.id);
+      const idOwner = idOwners.get(entry.id);
+      if (idOwner) {
+        stat.error = "registry conflict";
+        throw new Error(
+          `duplicate managed registry id ${entry.id} in ${stat.file} (already declared in ${idOwner.file})`,
+        );
+      }
+      idOwners.set(entry.id, stat);
       const values =
         entry.protectionKind === "entity"
           ? [entry.canonicalValue, ...entry.forms.map((form) => form.value)]
@@ -407,10 +424,13 @@ function validateManagedRegistrySet(registries: readonly ParsedManagedRegistry[]
       for (const value of values) {
         const normalized = normalizeForm(value);
         const owner = valueOwners.get(normalized);
-        if (owner !== undefined && owner !== entry.id) {
-          throw new Error(`managed registry value is assigned to both ${owner} and ${entry.id}`);
+        if (owner !== undefined && owner.entryId !== entry.id) {
+          stat.error = "registry conflict";
+          throw new Error(
+            `managed registry value in ${stat.file} is assigned to both ${owner.entryId} (${owner.stat.file}) and ${entry.id}`,
+          );
         }
-        valueOwners.set(normalized, entry.id);
+        valueOwners.set(normalized, { entryId: entry.id, stat });
       }
     }
   }

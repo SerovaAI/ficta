@@ -327,7 +327,7 @@ describe("registry plugin discovery", () => {
     process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "1";
     process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = `${first}:${second}`;
 
-    expect(() => loadPluginRegistry()).toThrow("assigned to both entity-1 and entity-2");
+    expect(() => loadPluginRegistry()).toThrow(`managed registry value in ${second}`);
   });
 
   it("rejects literal/entity value ownership conflicts across configured files", () => {
@@ -369,7 +369,27 @@ describe("registry plugin discovery", () => {
     process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "1";
     process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = `${first}:${second}`;
 
-    expect(() => loadPluginRegistry()).toThrow("assigned to both literal-1 and entity-1");
+    expect(() => loadPluginRegistry()).toThrow(`managed registry value in ${second}`);
+  });
+
+  it("identifies the offending file for duplicate ids across configured files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ficta-managed-registry-id-conflict-"));
+    const first = join(dir, "first.json");
+    const second = join(dir, "second.json");
+    const registry = (revision: string, value: string) => ({
+      schema: FICTA_MANAGED_REGISTRY_SCHEMA,
+      revision,
+      generatedBy: "ficta-test",
+      generatedAt: "2026-07-14T00:00:00.000Z",
+      entries: [{ id: "duplicate-id", protectionKind: "literal", value }],
+    });
+    writeFileSync(first, JSON.stringify(registry("duplicate-id-1", "Northstar")), { mode: 0o600 });
+    writeFileSync(second, JSON.stringify(registry("duplicate-id-2", "Proxima")), { mode: 0o600 });
+    process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+    process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "1";
+    process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = `${first}:${second}`;
+
+    expect(() => loadPluginRegistry()).toThrow(`duplicate managed registry id duplicate-id in ${second}`);
   });
 
   it("refuses Doppler commands resolved inside the current working tree", () => {
