@@ -4,7 +4,12 @@ import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "re
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { GatewayProtectionPreview } from "@/lib/protection-preview";
-import { type ProtectionValueError, validateProtectionValue } from "@/lib/protection-review-value";
+import {
+  automaticProtectionValues,
+  normalizeHighlightedProtectionValue,
+  type ProtectionValueError,
+  validateProtectionValue,
+} from "@/lib/protection-review-value";
 import { previewFindingsToAnnotations, protectionTextSegments } from "@/lib/restore-highlights";
 import { cn } from "@/lib/utils";
 import { ProtectionMark } from "./ProtectionMark";
@@ -50,15 +55,7 @@ export function ProtectionReview({
   const [valueError, setValueError] = useState<ProtectionValueError>();
   const counts = useMemo(() => findingCounts(preview.findings), [preview.findings]);
   const findingTotal = counts.registry + counts.detected + counts.user;
-  const confirmedValues = useMemo(
-    () => [
-      ...new Set([
-        ...preview.protectedValues,
-        ...preview.findings.map((finding) => text.slice(finding.start, finding.end)),
-      ]),
-    ],
-    [preview.findings, preview.protectedValues, text],
-  );
+  const automaticValues = useMemo(() => automaticProtectionValues(text, preview.findings), [preview.findings, text]);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -75,12 +72,14 @@ export function ProtectionReview({
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [busy, onBack, onSend]);
 
-  const protectValue = async (rawValue: string) => {
+  const protectValue = async (rawValue: string, source: "selection" | "typed") => {
     if (busy) return false;
+    const value = source === "selection" ? normalizeHighlightedProtectionValue(rawValue) : rawValue;
     const result = validateProtectionValue({
-      value: rawValue,
+      value,
       originalText: text,
-      protectedValues: confirmedValues,
+      protectedValues: preview.protectedValues,
+      ...automaticValues,
     });
     if (!result.ok) {
       setValueError(result.reason);
@@ -102,13 +101,13 @@ export function ProtectionReview({
     if (!selected || selected.rangeCount === 0 || selected.isCollapsed) return;
     const range = selected.getRangeAt(0);
     if (!root.contains(range.commonAncestorContainer)) return;
-    void protectValue(range.toString());
+    void protectValue(range.toString(), "selection");
     selected.removeAllRanges();
   };
 
   const addDraftValue = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (await protectValue(draftValue)) setDraftValue("");
+    if (await protectValue(draftValue, "typed")) setDraftValue("");
   };
 
   return (
@@ -236,7 +235,10 @@ export function ProtectionReview({
                   <button
                     type="button"
                     className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    onClick={() => void onRemove(value)}
+                    onClick={() => {
+                      setValueError(undefined);
+                      void onRemove(value);
+                    }}
                     disabled={busy}
                     aria-label={`Stop protecting ${value} in this chat`}
                   >
@@ -379,8 +381,12 @@ function protectionValueErrorMessage(error: ProtectionValueError): string {
   switch (error) {
     case "empty":
       return "Select or type a phrase first.";
-    case "protected":
-      return "That phrase is already protected.";
+    case "protected-chat":
+      return "That phrase is already protected in this chat.";
+    case "protected-registry":
+      return "That phrase is already protected by the workspace registry.";
+    case "protected-detected":
+      return "That phrase is already covered by automatic detection.";
     case "surrogate":
       return "FICTA tokens are already protected. Select ordinary text instead.";
     case "absent":
