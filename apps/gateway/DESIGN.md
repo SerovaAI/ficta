@@ -3,7 +3,7 @@ name: ficta chat
 description: Company LLM chat UI with visible redaction-proxy protection.
 colors:
   brand-vermilion: "#F1552F"
-  paper: "oklch(1 0 0)"
+  paper: "oklch(0.985 0 0)"
   ink: "oklch(0.145 0 0)"
   panel: "oklch(1 0 0)"
   panel-ink: "oklch(0.145 0 0)"
@@ -123,7 +123,7 @@ The palette is neutral-first, with semantic status color carrying the few moment
 ### Primary
 
 - **Ink** (`oklch(0.145 0 0)`): Primary action background in light mode, foreground text, high-emphasis icons, and selected text.
-- **Paper** (`oklch(1 0 0)`): Main light-mode background and primary button foreground.
+- **Paper** (`oklch(0.985 0 0)`): Main light-mode canvas and primary button foreground. It sits just behind true-white task surfaces so the layout retains a quiet, legible hierarchy.
 - **Protection Emerald** (`#059669`): The protected-state icon color (shield iconography in ProtectionBadge and empty-state framing). Use only when the UI is communicating protection or redaction status.
 - **Brand Vermilion** (`#F1552F`): The ficta mark's brackets only (see Brand Mark below). Never a UI accent, status, or CTA color inside the product.
 

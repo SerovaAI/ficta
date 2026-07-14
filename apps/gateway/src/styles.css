@@ -9,7 +9,9 @@
 /* shadcn/ui neutral theme — CSS variables consumed via @theme inline below. */
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
+  /* A near-white canvas lets true-white task surfaces read as intentional layers without
+     turning the product into a card-heavy dashboard. */
+  --background: oklch(0.985 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);

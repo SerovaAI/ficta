@@ -150,7 +150,7 @@ export function ChatSidebar({
       ) : null}
       <aside
         className={cn(
-          "flex h-dvh w-[260px] shrink-0 flex-col border-r border-border bg-background transition-[width,transform] duration-200",
+          "flex h-dvh w-[260px] shrink-0 flex-col border-r border-border bg-secondary transition-[width,transform] duration-200",
           // Desktop: never hides — full column when open, 48px icon rail when collapsed.
           open ? "md:w-[260px]" : "md:w-12",
           // Mobile: off-canvas overlay drawer that fully hides when closed.
@@ -203,9 +203,10 @@ export function ChatSidebar({
                         to="/chat/$threadId"
                         params={{ threadId: thread.id }}
                         onClick={closeOnMobile}
+                        aria-current={thread.id === activeThreadId ? "page" : undefined}
                         className={cn(
-                          "flex items-center rounded-md py-1.5 pr-9 pl-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [@media(pointer:coarse)]:min-h-11",
-                          thread.id === activeThreadId && "bg-accent text-accent-foreground",
+                          "flex items-center rounded-md py-1.5 pr-9 pl-2 text-sm text-muted-foreground transition-[color,background-color,box-shadow] hover:bg-background hover:text-foreground [@media(pointer:coarse)]:min-h-11",
+                          thread.id === activeThreadId && "bg-card font-medium text-foreground shadow-xs",
                         )}
                       >
                         <span className="truncate">{thread.title}</span>
