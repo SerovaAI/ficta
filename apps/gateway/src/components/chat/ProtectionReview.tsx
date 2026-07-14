@@ -386,10 +386,10 @@ export function ProtectionReview({
           ) : null}
         </div>
         <div>
-          <Button type="button" size="sm" onClick={onSend} disabled={busy} autoFocus>
+          <Button type="button" variant="protection" size="sm" onClick={onSend} disabled={busy} autoFocus>
             {busy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Check className="size-4" aria-hidden />}
             Send protected
-            <span className="hidden text-primary-foreground/70 text-xs sm:inline">Ctrl/⌘ Enter</span>
+            <span className="hidden text-xs opacity-70 sm:inline">Ctrl/⌘ Enter</span>
           </Button>
         </div>
       </div>
