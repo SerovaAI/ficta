@@ -25,6 +25,7 @@ coverage/
 .pi-subagents
 apps/gateway/.impeccable
 
-# private strategy / GTM notes (not for the public repo)
+# accidental private-material spill / temporary local scratch only;
+# canonical internal docs belong in private SerovaAI/ficta-internal
 notes/
 .impeccable

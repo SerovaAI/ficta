@@ -69,13 +69,14 @@ honest there too.
 - **Usability for coding agents.** Path-like tokens on the query string and in the request body are preserved so legitimate path parameters and agent tool calls (`cd`, `Read`, `Edit`) aren't mangled — a registered value inside a real path is far more likely a path segment than a secret. Request **headers** are the exception: they rarely carry a legitimate local path, so a registered value inside a slash-path in a header is redacted, closing that leak surface at no ergonomic cost.
 - **Local only.** Registry values and surrogate mappings are kept in memory for the local proxy session and are not intentionally sent anywhere except where explicitly restored locally. The proxy-internal surrogate key is not passed to child agent processes.
 
-## Positioning guardrails
+## Public-claim guardrails
 
-When publishing or explaining ficta:
+When documenting or explaining ficta:
 
-- Lead with registered exact values from managed registry files, `.env`, process env, and Doppler.
+- Scope the strongest guarantee to registered exact values from managed registry files, `.env`,
+  process env, and Doppler.
 - Do not present ficta as full DLP, compliance tooling, or a substitute for enterprise controls.
-- Do not lead with PII; detector plugins are best-effort additions, not the core promise.
+- Describe PII detector plugins as best-effort additions, not as exact-match protection.
 - Do not claim "never leaks" or "secure" without the covered-surface exact-match scope above.
 - Do not market tool-execution exfiltration protection unless OS/container/agent controls are part
   of the setup.

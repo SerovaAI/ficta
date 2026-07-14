@@ -1,10 +1,10 @@
-# Threat model — PII chat gateway (Product B)
+# Threat model — Ficta Gateway PII handling
 
 > Addendum to [`threat-model.md`](./threat-model.md), scoped to the sensitive-data chat gateway
 > (`apps/gateway`). The base threat model still governs; this states **the gateway's promise in its own
 > words** so its best-effort boundary is never borrowed from the CLI's stronger exact-match promise.
 
-## The promise (say exactly this)
+## Promise
 
 For a firm running the gateway **inside its own perimeter**, ficta attempts to **reduce** the
 personal information that reaches the model vendor by detecting PII in outgoing chat/document text,
@@ -17,8 +17,9 @@ that scope.
 
 ## Trust boundary
 
-- **Hide data from the LLM vendor only.** The firm's own users (lawyers) are trusted with client PII;
-  the vendor is not. Redaction happens on the egress hop to the vendor; restore happens locally.
+- **Hide data from the LLM vendor only.** The operator's own authorized users are trusted with the
+  submitted PII; the vendor is not. Redaction happens on the egress hop to the vendor; restore happens
+  locally.
 - **Self-hosted.** The gateway runs in the firm's environment; registered values and detected spans
   are replaced before the provider hop. The model vendor still receives the tokenized transcript and
   any content outside those spans. If the gateway is run as a third-party hosted service, this threat
@@ -29,7 +30,7 @@ that scope.
 **Strong (inherited from the base threat model):** the firm's **registered values** — a loaded
 client/matter roster, party names, matter IDs — get the base exact-match promise: replaced before
 covered surfaces leave, and **fail-closed blocked** if one would be forwarded verbatim in a surface
-ficta is supposed to redact. This is the layer to lead the demo with.
+ficta is supposed to redact.
 
 **Best-effort (this document):** **detected PII** — the regex backend (email, US SSN, Luhn card) and
 the Presidio sidecar (deterministic recognizers plus NER for names, locations, organizations, phones,
@@ -105,12 +106,12 @@ POPIA/GDPR data-minimization posture by reducing personal information sent to a 
 **not** DLP, **not** a compliance certification, and confers no compliance status on its own. The firm
 remains the responsible party for its obligations.
 
-## Positioning guardrails
+## Public-claim guardrails
 
-- Lead with the strong layer (registered client roster), not the best-effort PII layer.
-- Say **reduction**, never **elimination** / "PII never reaches the model" / "secure".
-- State the self-hosted assumption whenever the trust argument is made.
-- Do not let the CLI's exact-match, fail-closed language attach to detected PII.
+- Describe registered-value exact matching separately from best-effort PII detection.
+- Say **reduction**, never **elimination** or "PII never reaches the model."
+- State the self-hosted assumption whenever describing the trust boundary.
+- Do not apply the CLI's exact-match, fail-closed language to detected PII.
 
 ## See also
 

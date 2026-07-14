@@ -26,12 +26,23 @@ Rules:
 - When unsure whether a change is meaningful, add a short changeset.
 - Releasing is automated: on merge to `main`, CI opens a "Version Packages" PR; merging that PR publishes to npm. Never bump versions or edit changelogs by hand.
 
-## Private notes
+## Private material
 
-The top-level `notes/` folder is gitignored (`.gitignore`) and never committed to the public repo.
+Everything tracked in `SerovaAI/ficta` is public and must be suitable for publication. This includes
+source, tests, fixtures, pull-request context, and all documentation under `packages/ficta/docs/`,
+which is also included in the published npm package.
 
-- Any documentation or notes that should stay out of the public repo — competitive analysis, GTM/positioning, pricing, red-team findings, unreleased-strategy docs, internal teardowns — belong in `notes/`, not in `packages/ficta/docs/` (which is public and published).
-- Everything under `packages/ficta/docs/` is public. Before writing internal-only content there, put it in `notes/` instead.
-- Public docs must not link into `notes/` (the link would dangle for anyone reading the published repo). Inline the needed substance instead. Private docs in `notes/` may freely link to public docs via relative paths (e.g. `../packages/ficta/README.md`).
-- Follow the same kebab-case `.md` convention as the public docs.
-- Moving a file into `notes/` only makes it private going forward — it stays in prior git history. If a doc was already committed publicly, privatizing it does not scrub the history.
+- Competitive analysis, GTM/positioning, pricing, red-team findings, internal specifications,
+  unreleased strategy, and internal teardowns belong in the private `SerovaAI/ficta-internal`
+  repository, not anywhere tracked in this repository.
+- If you do not have access to `SerovaAI/ficta-internal`, do not add private material here or create a
+  local canonical substitute. Stop and ask a maintainer for access or for the material to be placed
+  there.
+- Public product documentation must not link to private-repository resources because those links are
+  unavailable to public readers. Internal documentation may link back to public Ficta docs using
+  stable GitHub URLs.
+- The gitignored top-level `notes/` path is only an accidental-spill and temporary local-scratch
+  safeguard. It is not a canonical documentation location; move anything worth retaining to
+  `SerovaAI/ficta-internal` promptly.
+- Moving or deleting content only makes it private going forward. Material already committed to this
+  repository remains in public Git history unless the history is separately rewritten.

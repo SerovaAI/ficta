@@ -617,22 +617,6 @@ are enforced at both the registry-load and request-time-detection seams and are 
 startup banner and `ficta doctor`. The older `registry.min_len` filter still applies as a silent
 default of 8 (short values overmatch normal text) but is no longer a setup prompt.
 
-## Candidate registry sources (not built yet)
-
-These are plausible future `loadValues()` sources that fit the same launch-time exact-match
-contract as `doppler-cli`. Listed as candidates only — none ship today.
-
-- **`varlock`** — load exact values from a [varlock](https://varlock.dev/) project so its
-  `@sensitive` schema values are protected on the wire. varlock's own boundary is keeping
-  secrets out of *files* the agent reads; a ficta source would extend that to *covered model
-  requests*, the same shape as Doppler. Likely implemented by resolving values at launch (e.g.
-  `varlock load --format json` or reading the resolved `@sensitive` keys) and returning them as
-  `ProtectedValue`s. The boundary split: varlock keeps `@sensitive` values out of *files* the agent
-  reads, while ficta redacts them *in flight* to the provider — complementary, not overlapping.
-
-Anyone adding one should keep it launch-time, timeout the external call, and never print values —
-same rules as the built-in sources.
-
 ## Optional detector plugins
 
 Detector plugins run during request redaction. They are useful for high-confidence unknown secrets

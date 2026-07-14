@@ -24,7 +24,7 @@ If you cannot or do not want to comply with the AGPL — for example you want to
 based on this app without releasing your modifications, or embed it in a proprietary product — a
 **commercial license is available**.
 
-Contact: **stef@serova.ai** (a dedicated `licensing@` alias can replace this).
+Contact: **hello@ficta.sh**.
 
 > Note: offering a commercial license requires the licensor to hold or have consolidated copyright in
 > the code (directly or via a contributor license agreement). Keep this in mind before accepting
@@ -33,5 +33,5 @@ Contact: **stef@serova.ai** (a dedicated `licensing@` alias can replace this).
 ## Scope
 
 This dual-license applies to **`apps/gateway` only**. The published engine + CLI package
-[`packages/ficta`](../../packages/ficta) (**Product A**) remains **MIT** — see
+[`packages/ficta`](../../packages/ficta) remains **MIT** — see
 [`../../packages/ficta/LICENSE`](../../packages/ficta/LICENSE).

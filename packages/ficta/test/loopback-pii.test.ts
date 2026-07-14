@@ -16,9 +16,10 @@ import { piiPlugin } from "../src/plugins/index.js";
 // CI-safe end-to-end proof: drive detected PII (not registered secrets) through the *real* proxy
 // HTTP handler — detect → tokenize → wire → fake-model reply → restore → client. No API key and no
 // network egress: the "upstream" is a loopback node:http server. This is the regression guard behind
-// the pilot claim that PII never crosses the wire in the clear and comes back restored, and that one
-// request's detected PII can never be restored into another request's response. Engine-level scope
-// semantics live in scope.test.ts; this asserts the same guarantees survive the full transport.
+// the documented transport boundary: detected PII is tokenized on the model-facing wire and restored
+// locally, and one request's detected PII can never be restored into another request's response.
+// Engine-level scope semantics live in scope.test.ts; this asserts the same guarantees survive the
+// full transport.
 
 const EMAIL = "jane.doe@example.com";
 const SSN = "123-45-6789";

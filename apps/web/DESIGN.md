@@ -113,7 +113,7 @@ The ficta site is a dark, precise marketing surface for ficta Gateway, built aro
 
 The system is bolder than the ficta product UI (large fluid display type, a focused product demo, atmospheric color washes) but shares its anti-theater DNA. It explicitly rejects cybersecurity theater (padlocks, shields, matrix green, fear copy), flashy AI-SaaS landing grammar (gradient text, glassmorphism, orbs, hero-metric blocks, identical icon-card grids), and generic enterprise-security styling. Expressiveness lives in typography, the stamp, and the interaction between the Values and Model will see views — never in adjectives or security imagery.
 
-Layout is a single scannable page: Gateway leads the hero, conversion path, and dominant product section; the open-source engine appears later as an inspectability/proof band with install, GitHub, npm, docs, and threat-model links. Use a 72rem (`max-w-6xl`) container, generous section padding (80px, 112px at desktop), hairline top-borders separating sections instead of background shifts, and content capped at readable measures (`max-w-2xl` intros, `max-w-xl` hero prose). Motion is a single entrance vocabulary — `.animate-rise`, a 14px rise-and-fade on `cubic-bezier(0.22, 1, 0.36, 1)` — gated on `prefers-reduced-motion: no-preference` so the page is fully visible by default and the animation only enhances.
+Layout is a single scannable page: the Gateway workflow appears first, followed later by the open-source engine's install, GitHub, npm, docs, and threat-model links. Use a 72rem (`max-w-6xl`) container, generous section padding (80px, 112px at desktop), hairline top-borders separating sections instead of background shifts, and content capped at readable measures (`max-w-2xl` intros, `max-w-xl` hero prose). Motion is a single entrance vocabulary — `.animate-rise`, a 14px rise-and-fade on `cubic-bezier(0.22, 1, 0.36, 1)` — gated on `prefers-reduced-motion: no-preference` so the page is fully visible by default and the animation only enhances.
 
 **Key Characteristics:**
 
@@ -121,7 +121,7 @@ Layout is a single scannable page: Gateway leads the hero, conversion path, and 
 - One vermilion accent carrying both brand identity and every CTA; one mint signal reserved for real values that remain local and affirmative checks.
 - Fragment Mono for everything "on the wire" (wordmark, install command, tokens, kickers); Hanken Grotesk for everything human.
 - Flat, hairline-bordered surfaces; a single dramatic shadow under the one floating object (the Gateway review).
-- Gateway is the offer; OSS is the proof layer. Never present them as equal product cards.
+- Keep Gateway and the OSS CLI clearly distinguished so their different user flows and protection boundaries remain legible.
 - Honest copy as a design element: limits stated plainly, in body type, on the page.
 
 ## 2. Colors
@@ -255,7 +255,7 @@ A mono one-liner in a hairline-bordered, `10px`-radius, Panel-60% bar: muted `$`
 
 - **Don't** ship cybersecurity theater: no padlocks-as-decoration, shields, hooded figures, neon-green matrix aesthetics, or fear-based copy. (Lucide `Lock`/`ShieldCheck` appear only as small semantic markers next to wire labels and the enterprise kicker.)
 - **Don't** use flashy AI-SaaS landing grammar: no gradient text, no glassmorphism cards (the header's backdrop-blur is the single sanctioned blur), no orb/bokeh backgrounds, no hero-metric blocks, no identical icon-card grids.
-- **Don't** present the OSS CLI and Gateway as equal product choices. Gateway is the page's commercial offer; OSS is the inspectable engine and developer path underneath it.
+- **Don't** blur the OSS CLI and Gateway into one workflow or imply that their protection boundaries are interchangeable.
 - **Don't** over-claim in copy or visuals; "best-effort" stays "best-effort", and nothing may imply guarantees beyond tokenization + local restore.
 - **Don't** add a light theme, per-section uppercase eyebrows (the label register is reserved for mono kickers with real meaning), side-stripe borders, or numbered markers outside the workflow and governance sequences, where order carries actual information.
 - **Don't** use Restored Mint for generic success or links, vermilion for dividers or decorative icons, or Signal Red for anything but genuine errors.
