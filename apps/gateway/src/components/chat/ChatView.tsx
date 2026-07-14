@@ -28,6 +28,7 @@ import {
   type TextAttachment,
   textAttachmentFromFile,
 } from "@/lib/file-attachments";
+import { greetingName } from "@/lib/greeting";
 import {
   DEFAULT_REASONING_EFFORT,
   MODELS,
@@ -109,6 +110,7 @@ export function ChatView({
   const queryClient = useQueryClient();
   const auth = useAuthState();
   const admin = isAdmin(auth);
+  const personalizedGreetingName = greetingName(auth);
   const instance = useInstanceSettings();
   const sidebar = useSidebar();
   const protectionStatus = useProtectionStatus();
@@ -764,6 +766,7 @@ export function ChatView({
             onPickSuggestion={pickSuggestion}
             restoreDisplayMode={restoreDisplayMode}
             protectionStatus={protectionStatus}
+            greetingName={personalizedGreetingName}
           />
 
           {error ? (

@@ -15,6 +15,7 @@ export function MessageList({
   onPickSuggestion,
   restoreDisplayMode,
   protectionStatus,
+  greetingName,
 }: {
   messages: UIMessage[];
   isLoading: boolean;
@@ -22,6 +23,7 @@ export function MessageList({
   onPickSuggestion: (prompt: string) => void;
   restoreDisplayMode: RestoreHighlightDisplayMode;
   protectionStatus?: ProtectionStatus;
+  greetingName?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -62,7 +64,12 @@ export function MessageList({
     return (
       <div ref={scrollRef} className="flex flex-1 flex-col overflow-y-auto">
         <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4">
-          <EmptyState suggestions={suggestions} onPick={onPickSuggestion} protectionStatus={protectionStatus} />
+          <EmptyState
+            suggestions={suggestions}
+            onPick={onPickSuggestion}
+            protectionStatus={protectionStatus}
+            greetingName={greetingName}
+          />
         </div>
       </div>
     );
