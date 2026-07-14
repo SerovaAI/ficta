@@ -105,6 +105,11 @@ export type ProtectedRegistryFormKind = (typeof PROTECTED_REGISTRY_FORM_KINDS)[n
 
 export const PROTECTED_REGISTRY_FORM_BOUNDARIES = ["substring", "token"] as const;
 export type ProtectedRegistryFormBoundary = (typeof PROTECTED_REGISTRY_FORM_BOUNDARIES)[number];
+export const PROTECTED_REGISTRY_FORMS_MAX = 20;
+
+export function normalizeProtectedRegistryValue(value: string): string {
+  return value.normalize("NFC").replace(/\s+/gu, " ").trim().toLowerCase();
+}
 
 export interface ProtectedRegistryEntryForm {
   value: string;

@@ -705,7 +705,10 @@ describe("user exclusion list", () => {
       config: { bindings: [], sections: [], envDefaults: {} },
       setup: { registrySources: () => [] },
       discover: () => [],
-      loadValues: () => [],
+      loadValues: () => [
+        { name: "BLOCKED_RECORD", value: "structured-secret-value", source: "structured-fixture" },
+        { name: "BLOCKED_RECORD", value: "structured-secret-alias", source: "structured-fixture" },
+      ],
       loadProtectionRecords: () => [
         {
           protectionKind: "literal" as const,

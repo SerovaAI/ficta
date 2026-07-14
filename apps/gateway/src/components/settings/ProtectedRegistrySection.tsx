@@ -15,6 +15,7 @@ import {
   saveProtectedRegistryEntry,
 } from "@/lib/storage/protected-registry";
 import {
+  normalizeProtectedRegistryValue,
   PROTECTED_REGISTRY_ENTITY_TYPES,
   PROTECTED_REGISTRY_ENTRY_STATUSES,
   PROTECTED_REGISTRY_FORM_BOUNDARIES,
@@ -74,7 +75,13 @@ export function ProtectedRegistrySection({ showHeader = true }: { showHeader?: b
 
   const approvedEntries = useMemo(() => entries?.filter((entry) => entry.status === "approved") ?? [], [entries]);
   const approvedValues = useMemo(
-    () => approvedEntries.reduce((total, entry) => total + 1 + entry.forms.length, 0),
+    () =>
+      approvedEntries.reduce((total, entry) => {
+        const canonical = normalizeProtectedRegistryValue(entry.value);
+        return (
+          total + 1 + entry.forms.filter((form) => normalizeProtectedRegistryValue(form.value) !== canonical).length
+        );
+      }, 0),
     [approvedEntries],
   );
 
@@ -757,6 +764,7 @@ function EntityFormsEditor({ forms, onChange }: { forms: DraftForm[]; onChange: 
           />
           <Select
             id={`protected-registry-form-kind-${index}`}
+            aria-label={`Form ${index + 1} kind`}
             value={form.kind}
             onChange={(kind) => update(index, { kind: kind as ProtectedRegistryEntryForm["kind"] })}
           >
@@ -768,6 +776,7 @@ function EntityFormsEditor({ forms, onChange }: { forms: DraftForm[]; onChange: 
           </Select>
           <Select
             id={`protected-registry-form-boundary-${index}`}
+            aria-label={`Form ${index + 1} boundary`}
             value={form.boundary}
             onChange={(boundary) => update(index, { boundary: boundary as ProtectedRegistryEntryForm["boundary"] })}
           >

@@ -382,7 +382,13 @@ export async function startProxy(
       const { revisions, ...managed } = managedRegistryLoadCounts();
       const revision = expectedRevision && revisions.includes(expectedRevision) ? expectedRevision : undefined;
       log.info(
-        { added: reloaded.added, total: reloaded.total, ...managed, revisionConfirmed: revision !== undefined },
+        {
+          added: reloaded.added,
+          total: reloaded.total,
+          restartRequired: reloaded.restartRequired,
+          ...managed,
+          revisionConfirmed: revision !== undefined,
+        },
         `🔄 registry reload: +${reloaded.added} value(s), ${reloaded.total} total`,
       );
       const response: RegistryReloadOk = {

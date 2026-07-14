@@ -162,7 +162,7 @@ export function loadPluginRegistry(
   let policyExcluded = 0;
   const policyExcludedBySource: Record<string, number> = {};
   const policyExcludedValues: PluginRegistrySnapshot["policyExcludedValues"] = [];
-  const diagnosedExcludedValues = new Set<string>();
+  const diagnosedExcludedNames = new Set<string>();
 
   if (userExclusion.invalidNames.length > 0) {
     // status "available" renders as a note without tripping strict-mode error gates (which key off "error").
@@ -194,7 +194,7 @@ export function loadPluginRegistry(
         const excludedBy = protectedValueExcludedBy(candidate, registryPolicy);
         if (excludedBy) {
           recordPolicyExclusion(candidate, excludedBy, {
-            diagnosedExcludedValues,
+            diagnosedExcludedNames,
             policyExcludedBySource,
             policyExcludedValues,
             increment: () => policyExcluded++,
@@ -211,7 +211,7 @@ export function loadPluginRegistry(
         const excludedBy = protectedValueExcludedBy(meta, registryPolicy);
         if (excludedBy) {
           recordPolicyExclusion(meta, excludedBy, {
-            diagnosedExcludedValues,
+            diagnosedExcludedNames,
             policyExcludedBySource,
             policyExcludedValues,
             increment: () => policyExcluded++,
@@ -254,16 +254,15 @@ function recordPolicyExclusion(
   value: ProtectedValue,
   rule: EffectiveRegistryExclusionRule,
   diagnostics: {
-    diagnosedExcludedValues: Set<string>;
+    diagnosedExcludedNames: Set<string>;
     policyExcludedBySource: Record<string, number>;
     policyExcludedValues: PluginRegistrySnapshot["policyExcludedValues"];
     increment(): void;
   },
 ): void {
   const plugin = value.plugin ?? "unknown";
-  const key = JSON.stringify([value.name, value.value, value.source, plugin, rule.plugin, rule.id]);
-  if (diagnostics.diagnosedExcludedValues.has(key)) return;
-  diagnostics.diagnosedExcludedValues.add(key);
+  if (diagnostics.diagnosedExcludedNames.has(value.name)) return;
+  diagnostics.diagnosedExcludedNames.add(value.name);
   diagnostics.increment();
   diagnostics.policyExcludedBySource[value.source] = (diagnostics.policyExcludedBySource[value.source] ?? 0) + 1;
   diagnostics.policyExcludedValues.push({ name: value.name, source: value.source, plugin, rule });

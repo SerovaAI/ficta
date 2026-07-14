@@ -335,6 +335,16 @@ describe("runtime guards", () => {
       }),
       false,
     );
+    assert.equal(
+      isManagedRegistryFile({
+        ...file,
+        entries: [
+          { id: "entry-1", protectionKind: "literal", value: "Caf\u00e9" },
+          { id: "entry-2", protectionKind: "literal", value: "Cafe\u0301" },
+        ],
+      }),
+      false,
+    );
   });
 
   it("validates protection previews", () => {

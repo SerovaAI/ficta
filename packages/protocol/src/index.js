@@ -203,7 +203,7 @@ function isManagedRegistryEntityForm(value) {
 
 /** @param {string} value */
 function normalizeManagedRegistryForm(value) {
-  return value.replace(/\s+/gu, " ").trim().toLowerCase();
+  return value.normalize("NFC").replace(/\s+/gu, " ").trim().toLowerCase();
 }
 
 /** @param {unknown} value */

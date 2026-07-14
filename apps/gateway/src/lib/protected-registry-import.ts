@@ -1,9 +1,11 @@
 import {
+  normalizeProtectedRegistryValue,
   PROTECTED_REGISTRY_ENTITY_TYPES,
   PROTECTED_REGISTRY_ENTRY_STATUSES,
   PROTECTED_REGISTRY_ENTRY_TYPES,
   PROTECTED_REGISTRY_FORM_BOUNDARIES,
   PROTECTED_REGISTRY_FORM_KINDS,
+  PROTECTED_REGISTRY_FORMS_MAX,
   PROTECTED_REGISTRY_PROTECTION_KINDS,
   type ProtectedRegistryEntityType,
   type ProtectedRegistryEntryForm,
@@ -184,7 +186,7 @@ function parseForms(value: string): { forms: ProtectedRegistryEntryForm[]; error
     if (!(PROTECTED_REGISTRY_FORM_BOUNDARIES as readonly string[]).includes(boundary)) {
       return { forms: [], error: `form boundary "${boundary}" is not supported` };
     }
-    const key = formValue.toLocaleLowerCase();
+    const key = normalizeProtectedRegistryValue(formValue);
     if (seen.has(key)) continue;
     seen.add(key);
     forms.push({
@@ -192,6 +194,9 @@ function parseForms(value: string): { forms: ProtectedRegistryEntryForm[]; error
       kind: kind as ProtectedRegistryEntryForm["kind"],
       boundary: boundary as ProtectedRegistryEntryForm["boundary"],
     });
+    if (forms.length > PROTECTED_REGISTRY_FORMS_MAX) {
+      return { forms: [], error: `use at most ${PROTECTED_REGISTRY_FORMS_MAX} forms per entry` };
+    }
   }
   return { forms };
 }

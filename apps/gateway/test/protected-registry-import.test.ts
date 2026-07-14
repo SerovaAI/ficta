@@ -62,6 +62,7 @@ describe("protected registry import parser", () => {
         "literal,,M-1,client,,",
         "literal,,M-2,unsupported,Acme,",
         "entity,organization,M-3,client,Northstar,Northstar~short_name~word",
+        "literal,,M-4,client,Northstar,Northstar~alias~token",
       ].join("\n"),
     );
 
@@ -70,6 +71,17 @@ describe("protected registry import parser", () => {
       "Row 2 was skipped because value is blank.",
       'Row 3 was skipped because type "unsupported" is not supported.',
       'Row 4 was skipped because form boundary "word" is not supported.',
+      "Row 5 was skipped because literal forms must use substring boundaries.",
     ]);
+  });
+
+  it("rejects rows with more than the supported number of deduplicated forms", () => {
+    const forms = Array.from({ length: 21 }, (_, index) => `Form ${index}~alias~substring`).join(";");
+    const result = parseProtectedRegistryImport(
+      `protection_kind,entity_type,value,forms\nentity,organization,Northstar,"${forms}"`,
+    );
+
+    expect(result.entries).toEqual([]);
+    expect(result.warnings).toEqual(["Row 2 was skipped because use at most 20 forms per entry."]);
   });
 });

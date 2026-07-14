@@ -417,7 +417,7 @@ function validateManagedRegistrySet(registries: readonly ParsedManagedRegistry[]
 }
 
 function normalizeForm(value: string): string {
-  return value.replace(/\s+/gu, " ").trim().toLowerCase();
+  return value.normalize("NFC").replace(/\s+/gu, " ").trim().toLowerCase();
 }
 
 function formId(entityId: string, value: string): string {

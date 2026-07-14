@@ -15,12 +15,14 @@ import { requireAdminScope, requireScope } from "@/lib/auth/guards.server";
 import { SerialTaskQueue, writePrivateFileAtomic } from "./private-file.server";
 import { getStorage } from "./storage.server";
 import {
+  normalizeProtectedRegistryValue,
   PROTECTED_REGISTRY_ENTITY_TYPES,
   PROTECTED_REGISTRY_ENTRY_SOURCES,
   PROTECTED_REGISTRY_ENTRY_STATUSES,
   PROTECTED_REGISTRY_ENTRY_TYPES,
   PROTECTED_REGISTRY_FORM_BOUNDARIES,
   PROTECTED_REGISTRY_FORM_KINDS,
+  PROTECTED_REGISTRY_FORMS_MAX,
   PROTECTED_REGISTRY_PROTECTION_KINDS,
   type ProtectedRegistryEntry,
   type ProtectedRegistryEntryInput,
@@ -29,7 +31,6 @@ import {
 
 const ENTRY_IMPORT_MAX = 500;
 const FIELD_MAX = 500;
-const FORMS_PER_ENTRY_MAX = 20;
 const DEFAULT_MANAGED_REGISTRY_FILE = ".data/protected-registry.json";
 
 export interface ProtectedRegistryExport {
@@ -341,10 +342,12 @@ function normalizeForms(formsValue: unknown): ProtectedRegistryEntry["forms"] {
     const value = readString(record, "value", { required: true });
     const kind = readEnum(record.kind, PROTECTED_REGISTRY_FORM_KINDS, "form kind");
     const boundary = readEnum(record.boundary, PROTECTED_REGISTRY_FORM_BOUNDARIES, "form boundary");
-    const key = normalizeRegistryValue(value);
+    const key = normalizeProtectedRegistryValue(value);
     const current = forms.get(key);
     if (!current || current.boundary === "token") forms.set(key, { value, kind, boundary });
-    if (forms.size > FORMS_PER_ENTRY_MAX) throw new Error(`use at most ${FORMS_PER_ENTRY_MAX} forms per entry`);
+    if (forms.size > PROTECTED_REGISTRY_FORMS_MAX) {
+      throw new Error(`use at most ${PROTECTED_REGISTRY_FORMS_MAX} forms per entry`);
+    }
   }
   return [...forms.values()];
 }
@@ -359,8 +362,8 @@ export function renderManagedRegistryFile(entries: ProtectedRegistryEntry[]): {
   let values = 0;
   entries.forEach((entry) => {
     if (entry.protectionKind === "entity") {
-      const canonical = normalizeRegistryValue(entry.value);
-      const forms = entry.forms.filter((form) => normalizeRegistryValue(form.value) !== canonical);
+      const canonical = normalizeProtectedRegistryValue(entry.value);
+      const forms = entry.forms.filter((form) => normalizeProtectedRegistryValue(form.value) !== canonical);
       registryEntries.push({
         id: entry.id,
         protectionKind: "entity",
@@ -379,7 +382,7 @@ export function renderManagedRegistryFile(entries: ProtectedRegistryEntry[]): {
     });
     values++;
     for (const form of entry.forms.filter(
-      (form) => normalizeRegistryValue(form.value) !== normalizeRegistryValue(entry.value),
+      (form) => normalizeProtectedRegistryValue(form.value) !== normalizeProtectedRegistryValue(entry.value),
     )) {
       registryEntries.push({
         id: literalFormId(entry.id, form.value),
@@ -408,12 +411,8 @@ export function renderManagedRegistryFile(entries: ProtectedRegistryEntry[]): {
 }
 
 function literalFormId(entryId: string, value: string): string {
-  const digest = createHash("sha256").update(normalizeRegistryValue(value)).digest("hex").slice(0, 16);
+  const digest = createHash("sha256").update(normalizeProtectedRegistryValue(value)).digest("hex").slice(0, 16);
   return `${entryId}:form:${digest}`;
-}
-
-function normalizeRegistryValue(value: string): string {
-  return value.replace(/\s+/gu, " ").trim().toLowerCase();
 }
 
 function managedRegistryPath(): string {
