@@ -74,13 +74,6 @@ export function TopBar({
   const restoreToggle = restorePrivacyToggleLabels(restoreDisplayMode);
   const protection = protectionPresentation(protectionStatus);
   const ProtectionIcon = protection.tone === "good" ? ShieldCheck : AlertTriangle;
-  const traceToggle = threadTraceToggleLabels({
-    enabled: threadTraceEnabled,
-    disabled: threadTraceControlDisabled,
-    loading: threadTraceControlLoading,
-    error: threadTraceError,
-    valueAudit: traceAuditEnabled,
-  });
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
       <div className="mx-auto flex h-14 w-full max-w-3xl items-center justify-between gap-3 px-4">
@@ -143,6 +136,34 @@ export function TopBar({
                   </DropdownMenuItem>
                 )
               ) : null}
+              {onToggleReviewBeforeSend && threadTraceControlVisible && onToggleThreadTrace ? (
+                <DropdownMenuSeparator />
+              ) : null}
+              {threadTraceControlVisible && onToggleThreadTrace ? (
+                <DropdownMenuItem onSelect={onToggleThreadTrace} disabled={threadTraceControlLoading}>
+                  {threadTraceControlLoading ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                  ) : threadTraceError ? (
+                    <CircleAlert className="size-4 text-destructive" aria-hidden />
+                  ) : threadTraceControlDisabled ? (
+                    <CircleOff className="size-4" aria-hidden />
+                  ) : threadTraceEnabled ? (
+                    <CircleDot className="size-4" aria-hidden />
+                  ) : (
+                    <Circle className="size-4" aria-hidden />
+                  )}
+                  <span className="min-w-0 flex-1">Diagnostic trace</span>
+                  <span className="text-xs text-muted-foreground">
+                    {traceMenuStatus({
+                      enabled: threadTraceEnabled,
+                      disabled: threadTraceControlDisabled,
+                      loading: threadTraceControlLoading,
+                      error: threadTraceError,
+                      valueAudit: traceAuditEnabled,
+                    })}
+                  </span>
+                </DropdownMenuItem>
+              ) : null}
               {threadTraceError ? (
                 <span className="sr-only" role="status" aria-live="polite">
                   Trace capture setting wasn't saved.
@@ -169,38 +190,6 @@ export function TopBar({
               ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
-          {threadTraceControlVisible && onToggleThreadTrace ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onToggleThreadTrace}
-                  disabled={threadTraceControlLoading}
-                  aria-label={traceToggle.ariaLabel}
-                  className={traceTriggerClass({
-                    enabled: threadTraceEnabled,
-                    disabled: threadTraceControlDisabled,
-                    error: threadTraceError,
-                  })}
-                >
-                  {threadTraceControlLoading ? (
-                    <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                  ) : threadTraceError ? (
-                    <CircleAlert className="size-3.5" aria-hidden />
-                  ) : threadTraceControlDisabled ? (
-                    <CircleOff className="size-3.5" aria-hidden />
-                  ) : threadTraceEnabled ? (
-                    <CircleDot className="size-3.5" aria-hidden />
-                  ) : (
-                    <Circle className="size-3.5" aria-hidden />
-                  )}
-                  <span className="hidden max-w-40 truncate text-xs min-[360px]:inline">{traceToggle.label}</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{traceToggle.tooltip}</TooltipContent>
-            </Tooltip>
-          ) : null}
         </div>
         <div className="flex items-center">
           <Tooltip>
@@ -297,20 +286,24 @@ function protectionTriggerClass(tone: ProtectionTone): string {
   return "border-border bg-secondary text-secondary-foreground hover:bg-secondary/80";
 }
 
-function traceTriggerClass({
+function traceMenuStatus({
   enabled,
   disabled,
+  loading,
   error,
+  valueAudit,
 }: {
   enabled: boolean;
   disabled: boolean;
+  loading: boolean;
   error: boolean;
+  valueAudit: boolean;
 }): string {
-  if (error) return "border-destructive/50 text-destructive hover:bg-destructive/10";
-  if (enabled)
-    return "border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100 dark:hover:bg-amber-950/50";
-  if (disabled) return "border-border text-muted-foreground hover:bg-secondary";
-  return "border-border bg-secondary text-secondary-foreground hover:bg-secondary/80";
+  if (loading) return "Checking…";
+  if (error) return "Retry";
+  if (disabled) return "Set up";
+  if (enabled) return valueAudit ? "Bodies + values" : "Bodies";
+  return "Off";
 }
 
 function protectionIconClass(tone: ProtectionTone): string {
