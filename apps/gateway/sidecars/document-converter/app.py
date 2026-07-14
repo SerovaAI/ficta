@@ -68,8 +68,9 @@ def _markitdown_markdown(data: bytes, filename: str) -> str:
         return markdown
 
     # MarkItDown extracts PDF text but ignores embedded signature images. Annotate only when every
-    # extracted underscore rule maps one-to-one to the probe's page geometry; otherwise preserve the
-    # converter output exactly rather than risk labeling the wrong form field.
+    # extracted underscore rule maps one-to-one to the probe's page geometry and every rule is a
+    # candidate, making Markdown reading-order differences irrelevant. Otherwise preserve the converter
+    # output exactly rather than risk labeling the wrong form field.
     try:
         from signature_probe import annotate_pdf_markdown
 

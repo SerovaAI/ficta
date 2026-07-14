@@ -227,21 +227,12 @@ def annotate_pdf_markdown(markdown: str, source: str | Path | BinaryIO) -> str:
 
 
 def annotate_markdown(markdown: str, signature_states: Sequence[bool]) -> str:
-    """Map ordered PDF rule states to Markdown, failing closed on any mismatch."""
+    """Annotate only an all-candidate rule set, where Markdown order cannot matter."""
 
     matches = list(MARKDOWN_RULE_PATTERN.finditer(markdown))
-    if len(matches) != len(signature_states):
+    if len(matches) != len(signature_states) or not all(signature_states):
         return markdown
-
-    state_index = 0
-
-    def replace(match: re.Match[str]) -> str:
-        nonlocal state_index
-        has_signature_candidate = signature_states[state_index]
-        state_index += 1
-        return SIGNATURE_MARKER if has_signature_candidate else match.group(0)
-
-    return MARKDOWN_RULE_PATTERN.sub(replace, markdown)
+    return MARKDOWN_RULE_PATTERN.sub(SIGNATURE_MARKER, markdown)
 
 
 def _append_rule(rules: list[Box], run: Sequence[Mapping[str, Any]], minimum: int) -> None:

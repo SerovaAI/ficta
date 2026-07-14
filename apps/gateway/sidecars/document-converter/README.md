@@ -69,11 +69,12 @@ rules that overlap embedded images, a useful signal for evaluating image-backed 
 does not send data over the network, identify a signer, validate authenticity, or cover
 scanned/flattened signatures.
 
-The MarkItDown PDF path also uses this signal during `/convert`. When the probe's ordered rules match
-the converted Markdown one-to-one, image-overlapped rules become `[signature-like mark present]`.
-Unsigned rules remain unchanged. If detection fails or the rule counts differ, the converter returns
-MarkItDown's original output unchanged rather than risk annotating the wrong field. Other file types and
-the Docling backend are unaffected.
+The MarkItDown PDF path also uses this signal during `/convert`. When the probe's rule count matches the
+converted Markdown and every long rule is an image-overlapped candidate, the rules become
+`[signature-like mark present]`. Requiring an all-candidate set makes PDF-to-Markdown reading-order
+differences irrelevant. If any rule is unsigned, detection fails, or the counts differ, the converter
+returns MarkItDown's original output unchanged rather than risk annotating the wrong field. Other file
+types and the Docling backend are unaffected.
 
 Run it inside the converter image so the PDF bytes remain local and the diagnostic uses the same
 `pdfplumber` version as the sidecar:

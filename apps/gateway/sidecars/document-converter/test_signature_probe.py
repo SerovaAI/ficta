@@ -147,13 +147,19 @@ class AnalysisTests(unittest.TestCase):
 
 
 class MarkdownAnnotationTests(unittest.TestCase):
-    def test_replaces_only_rules_with_signature_candidates(self) -> None:
-        unsigned = "_" * 12
-        signed = "_" * 16
+    def test_replaces_every_rule_when_every_rule_is_a_candidate(self) -> None:
+        first = "_" * 12
+        second = "_" * 16
 
-        markdown = annotate_markdown(f"Unsigned: {unsigned}\nSigned: {signed}", [False, True])
+        markdown = annotate_markdown(f"First: {first}\nSecond: {second}", [True, True])
 
-        self.assertEqual(markdown, f"Unsigned: {unsigned}\nSigned: {SIGNATURE_MARKER}")
+        self.assertEqual(markdown, f"First: {SIGNATURE_MARKER}\nSecond: {SIGNATURE_MARKER}")
+
+    def test_mixed_candidate_states_preserve_markdown_regardless_of_order(self) -> None:
+        markdown = "First: " + "_" * 12 + "\nSecond: " + "_" * 16
+
+        self.assertIs(annotate_markdown(markdown, [False, True]), markdown)
+        self.assertIs(annotate_markdown(markdown, [True, False]), markdown)
 
     def test_handles_markdown_escaped_underscore_rules(self) -> None:
         escaped_rule = r"\_\_\_\_\_\_\_\_\_\_\_\_"
