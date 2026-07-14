@@ -1,8 +1,8 @@
 import { envFlag, type RestoreIntoToolsPolicy, restoreIntoToolsPolicy } from "./env-flags.js";
 import { expansionSpans, flexiblePatternSource } from "./expander.js";
 import type { ProtectedValueKind } from "./plugins/types.js";
-import type { RestoreOrigin } from "./redaction-engine.js";
-import { type SurrogateStrategy, surrogateStrategy } from "./surrogate.js";
+import { RedactionInvariantError, type RestoreOrigin } from "./redaction-engine.js";
+import { type EntitySurrogate, type SurrogateStrategy, surrogateStrategy } from "./surrogate.js";
 
 /**
  * The vault: redact registered/detected values → surrogates on the way up, restore them on the
@@ -28,6 +28,11 @@ export interface VaultValue {
   kind?: ProtectedValueKind;
   /** Engine-internal matching policy; public ProtectedValue producers never need to set this. */
   wordBounded?: boolean;
+}
+
+export interface VaultEntityValue extends VaultValue {
+  entityId: string;
+  entityType: "organization" | "person";
 }
 
 export interface VaultTraceValue {
@@ -76,6 +81,8 @@ export class SurrogateTable {
   private readonly wordBoundedForms = new Set<string>();
   readonly toSur = new Map<string, string>();
   readonly toVal = new Map<string, string>();
+  private readonly entityToSur = new Map<string, string>();
+  private readonly entityTagOwners = new Map<string, string>();
 
   constructor(
     readonly surrogate: SurrogateStrategy,
@@ -100,6 +107,23 @@ export class SurrogateTable {
     this.toSur.set(value, surrogate);
     this.toVal.set(surrogate, value);
     return true;
+  }
+
+  ensureEntityToken(item: VaultEntityValue, surrogate: EntitySurrogate): boolean {
+    const key = entitySurfaceKey(item.entityId, item.value);
+    if (this.entityToSur.has(key)) return false;
+    this.entityToSur.set(key, surrogate.token);
+    this.entityTagOwners.set(surrogate.entityTag, item.entityId);
+    this.toVal.set(surrogate.token, item.value);
+    return true;
+  }
+
+  entityToken(entityId: string, surface: string): string | undefined {
+    return this.entityToSur.get(entitySurfaceKey(entityId, surface));
+  }
+
+  entityTagOwner(entityTag: string): string | undefined {
+    return this.entityTagOwners.get(entityTag);
   }
 
   /**
@@ -174,8 +198,9 @@ export abstract class VaultView {
    * on its one response, so for a request scope this equals that response's restore count.
    */
   readonly restored = new Set<string>();
+  private readonly restoredSurrogates = new Map<string, string>();
 
-  protected constructor(private readonly layers: readonly [SurrogateTable, ...SurrogateTable[]]) {}
+  protected constructor(protected readonly layers: readonly [SurrogateTable, ...SurrogateTable[]]) {}
 
   /** How many distinct values this view has restored into responses so far. */
   get restoredCount(): number {
@@ -189,6 +214,7 @@ export abstract class VaultView {
    * symmetrically to {@link restoredCount} so the proxy can log what was held back.
    */
   readonly withheldFromTools = new Set<string>();
+  private readonly withheldSurrogates = new Map<string, string>();
 
   /** How many distinct values were withheld from tool-call arguments in this view's responses. */
   get withheldFromToolsCount(): number {
@@ -245,7 +271,7 @@ export abstract class VaultView {
     return undefined;
   }
 
-  private valueFor(surrogate: string): string | undefined {
+  protected valueFor(surrogate: string): string | undefined {
     for (const layer of this.layers) {
       const value = layer.toVal.get(surrogate);
       if (value !== undefined) return value;
@@ -284,16 +310,34 @@ export abstract class VaultView {
 
   /** Raw value → surrogate/provenance mapping for trace-only audit sidecars. */
   traceValues(values: Iterable<string>): VaultTraceValue[] {
+    return this.traceValuesWithSurrogates(values);
+  }
+
+  traceRestoredValues(): VaultTraceValue[] {
+    return this.traceValuesWithSurrogates(this.restored, this.restoredSurrogates);
+  }
+
+  traceWithheldValues(): VaultTraceValue[] {
+    return this.traceValuesWithSurrogates(this.withheldFromTools, this.withheldSurrogates);
+  }
+
+  private traceValuesWithSurrogates(
+    values: Iterable<string>,
+    preferred: ReadonlyMap<string, string> = new Map(),
+  ): VaultTraceValue[] {
     const out: VaultTraceValue[] = [];
     const seen = new Set<string>();
     for (const value of values) {
       if (!value || seen.has(value)) continue;
       seen.add(value);
       const entry: VaultTraceValue = { value };
-      const found = this.surrogateEntryFor(value);
+      const preferredSurrogate = preferred.get(value);
+      const found = preferredSurrogate
+        ? { surrogate: preferredSurrogate, provenance: this.provenanceFor(preferredSurrogate) }
+        : this.surrogateEntryFor(value);
       if (found) {
         entry.surrogate = found.surrogate;
-        entry.provenance = found.provenance;
+        if (found.provenance) entry.provenance = found.provenance;
       }
       out.push(entry);
     }
@@ -356,7 +400,7 @@ export abstract class VaultView {
       if (skip.has(m)) return m;
       const value = this.valueFor(m);
       if (value === undefined) return m;
-      this.restored.add(value);
+      this.recordRestored(value, m);
       return markRestoredValue(value, m, this.restoreOriginFor(m), opts.markers);
     });
   }
@@ -378,11 +422,11 @@ export abstract class VaultView {
       if (value === undefined) return m; // unmapped placeholder — pass through untouched
       const restoreHere = policy === "all" || (policy === "detected" && this.provenanceFor(m) === "detected");
       if (restoreHere) {
-        this.restored.add(value);
+        this.recordRestored(value, m);
         return value;
       }
       withheldSink.add(m);
-      this.withheldFromTools.add(value);
+      this.recordWithheld(value, m);
       return m;
     });
   }
@@ -444,7 +488,7 @@ export abstract class VaultView {
         if (value === undefined) continue;
         withheld ??= new Set();
         withheld.add(token);
-        this.withheldFromTools.add(value);
+        this.recordWithheld(value, token);
       }
     }
     return withheld ?? EMPTY_SKIP;
@@ -463,7 +507,7 @@ export abstract class VaultView {
       if (skip.has(m)) return m;
       const value = this.valueFor(m);
       if (value === undefined) return m;
-      this.restored.add(value);
+      this.recordRestored(value, m);
       return jsonStringEscape(markRestoredValue(value, m, this.restoreOriginFor(m), opts.markers));
     });
   }
@@ -545,6 +589,29 @@ export abstract class VaultView {
       if (this.valueFor(token) !== undefined) out.push(token);
     }
     return out;
+  }
+
+  protected assertEntitySurrogateAvailable(item: VaultEntityValue, surrogate: EntitySurrogate): void {
+    for (const layer of this.layers) {
+      const owner = layer.entityTagOwner(surrogate.entityTag);
+      if (owner !== undefined && owner !== item.entityId) {
+        throw new RedactionInvariantError("entity-family entity-tag collision");
+      }
+    }
+    const existingValue = this.valueFor(surrogate.token);
+    if (existingValue !== undefined && existingValue !== item.value) {
+      throw new RedactionInvariantError("entity-family complete-token collision");
+    }
+  }
+
+  private recordRestored(value: string, surrogate: string): void {
+    this.restored.add(value);
+    this.restoredSurrogates.set(value, surrogate);
+  }
+
+  private recordWithheld(value: string, surrogate: string): void {
+    this.withheldFromTools.add(value);
+    this.withheldSurrogates.set(value, surrogate);
   }
 
   /**
@@ -664,8 +731,8 @@ export class Vault extends VaultView {
    * instead of fresh ones: the view itself stays per-request (its `restored` accounting is fresh)
    * while both value↔surrogate dictionaries are shared across the scope key's requests.
    */
-  beginScope(detected?: SurrogateTable, registryDerived?: SurrogateTable): ScopedVault {
-    return new ScopedVault(this.permanent, detected, registryDerived);
+  beginScope(detected?: SurrogateTable, registryDerived?: SurrogateTable, protectionContextId?: string): ScopedVault {
+    return new ScopedVault(this.permanent, detected, registryDerived, protectionContextId);
   }
 
   /** A detached detected-PII layer sharing this vault's strategy, for persistent keyed scopes. */
@@ -695,6 +762,7 @@ export class ScopedVault extends VaultView {
     permanent: SurrogateTable,
     detected: SurrogateTable = new SurrogateTable(permanent.surrogate, "detected"),
     registryDerived: SurrogateTable = new SurrogateTable(permanent.surrogate, "permanent"),
+    private readonly protectionContextId?: string,
   ) {
     const userProtected = new SurrogateTable(permanent.surrogate, "permanent", "user");
     // Registry-derived forms (e.g. the caps twin of a registered secret found in a request body)
@@ -737,6 +805,34 @@ export class ScopedVault extends VaultView {
     const token = layer.toSur.get(value.value);
     if (token === undefined) throw new Error("resolved surface did not mint a surrogate");
     return token;
+  }
+
+  /** Register one exact entity surface under its context-bounded composite identity. */
+  registerResolvedEntitySurface(
+    value: VaultEntityValue,
+    authority: "registry" | "detected",
+    addMatchForm: boolean,
+  ): string {
+    const mintEntity = this.surrogate.mintEntity;
+    if (!mintEntity || !this.protectionContextId) {
+      throw new RedactionInvariantError("entity-family rendering requires a trusted protection context");
+    }
+    const surrogate = mintEntity({
+      protectionContextId: this.protectionContextId,
+      entityId: value.entityId,
+      entityType: value.entityType,
+      exactSurface: value.value,
+    });
+    this.assertEntitySurrogateAvailable(value, surrogate);
+    const layer = authority === "registry" ? this.registryDerived : this.detected;
+    const existing = layer.entityToken(value.entityId, value.value);
+    if (existing !== undefined && existing !== surrogate.token) {
+      throw new RedactionInvariantError("entity-family context changed for a retained mapping");
+    }
+    if (addMatchForm) layer.addMatchForm(value);
+    else layer.ensureToken(value);
+    layer.ensureEntityToken(value, surrogate);
+    return existing ?? surrogate.token;
   }
 
   /** Whether a resolver claim is outside existing surrogate tokens and preserved filesystem paths. */
@@ -1035,6 +1131,10 @@ function surrogateSpans(text: string, pattern: RegExp): ReadonlyArray<readonly [
   const re = new RegExp(pattern.source, "g");
   for (let m = re.exec(text); m !== null; m = re.exec(text)) spans.push([m.index, m.index + m[0].length]);
   return spans.length === 0 ? NO_SPANS : spans;
+}
+
+function entitySurfaceKey(entityId: string, surface: string): string {
+  return JSON.stringify([entityId, surface]);
 }
 
 const NO_SPANS: ReadonlyArray<readonly [number, number]> = [];

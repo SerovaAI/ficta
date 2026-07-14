@@ -42,6 +42,7 @@ import {
   type TextRedactionContext,
   type TextRedactionDetails,
 } from "./redaction-engine.js";
+import { entityFamilySurrogateStrategy, surrogateStrategy } from "./surrogate.js";
 import { type BodyLeaf, type ScopedVault, type SurrogateTable, Vault, visitBodyLeaves } from "./vault.js";
 import type { Wire } from "./wire.js";
 import { bufferedRestoreAdapterFor, sseRestoreAdapterFor } from "./wire-restore.js";
@@ -56,6 +57,8 @@ export interface ProtectionEngineOptions {
    * fence against *external* plugins lives in the public `loadPluginRegistry` (see plugins/index.ts).
    */
   trusted?: ReadonlySet<FictaPluginBase>;
+  /** Phase 4 verification gate. Phase 5 enables this inherently for structured entity records. */
+  entityFamilyRendering?: boolean;
 }
 
 /** How long a keyed scope's detected PII may sit idle in memory before it is dropped. */
@@ -118,6 +121,7 @@ export class ProtectionEngine implements RedactionEngine {
   private readonly hasDetectors: boolean;
   private readonly vault: Vault;
   private readonly policy: RegistryPolicy;
+  private readonly entityFamilyRendering: boolean;
   /** Metadata for permanent (registered) values only; detected-value metadata lives on each scope. */
   private readonly metadataByValue = new Map<string, ProtectedValue[]>();
   /** Resolver inputs retain logical registry identities while the vault continues to own flattened surfaces. */
@@ -155,6 +159,7 @@ export class ProtectionEngine implements RedactionEngine {
     // calling pluginsHaveDetectors (which would re-validate every plugin).
     this.hasDetectors = this.plugins.some((plugin) => Boolean(plugin.detectText));
     this.policy = this.registrySnapshot.registryPolicy;
+    this.entityFamilyRendering = opts.entityFamilyRendering === true;
     // registry.values are already policy-filtered by loadPluginRegistry; caller-supplied opts.values
     // pass through the same enforced exclusions so every ingress into the vault is consistent.
     const admittedOptions = admit(opts.values ?? [], this.policy);
@@ -164,7 +169,7 @@ export class ProtectionEngine implements RedactionEngine {
     this.permanentClaims = entityClaimsFromProtectionRecords([...this.registrySnapshot.records, ...optionRecords]);
     for (const record of this.registrySnapshot.records) this.activeRegistryRecords.set(recordKey(record), record);
     this.registrySize = values.length;
-    this.vault = new Vault(values);
+    this.vault = new Vault(values, this.entityFamilyRendering ? entityFamilySurrogateStrategy() : surrogateStrategy());
     applyRecordBoundaries(this.vault, this.registrySnapshot.records);
   }
 
@@ -260,10 +265,11 @@ export class ProtectionEngine implements RedactionEngine {
       this.policy,
       this.metadataByValue,
       this.permanentClaims,
-      this.vault.beginScope(state.detected, state.registryDerived),
+      this.vault.beginScope(state.detected, state.registryDerived, this.entityFamilyRendering ? scopeKey : undefined),
       state.metadata,
       state.seenLeaves,
       state.tokenOnly,
+      this.entityFamilyRendering,
       identifierHash(scopeKey),
     );
   }
@@ -366,6 +372,8 @@ class ProtectionRequestScope implements RequestScope {
     private readonly seenLeaves?: Set<string>,
     /** Resolver-clipped surfaces retain restore metadata but never become future entity candidates. */
     private readonly tokenOnly = new Set<string>(),
+    /** Phase 4 gated renderer; unkeyed scopes and the Phase 5 default remain literal. */
+    private readonly entityFamilyRendering = false,
     /** One-way correlation boundary for values-free local ambiguity diagnostics. */
     private readonly protectionContextHash?: string,
     /** Explicit caller selections are re-seeded per request, never retained by a keyed scope. */
@@ -480,6 +488,7 @@ class ProtectionRequestScope implements RequestScope {
     for (const { value } of detection.detections) remember(this.detectedMetadata, value);
     const replacements = new Map<number, string>();
     const owners = new Map<string, EntityClaim>();
+    const renderedSurrogates = new Map<string, string>();
     const found = new Set<string>();
     const resolvedTrace: ProtectionTraceOccurrence[] = [];
     const matchSurfaces = new Set(
@@ -495,13 +504,27 @@ class ProtectionRequestScope implements RequestScope {
           wordBounded: occurrenceWordBounded(occurrence),
         };
         const userProtected = this.userProtectedMetadata.has(occurrence.entity.canonical);
-        const token = userProtected
-          ? this.vault.registerUserProtectedSurface(surface, matchSurfaces.has(occurrence.surface))
-          : this.vault.registerResolvedSurface(
-              surface,
-              occurrence.mention.resolverAuthority,
-              matchSurfaces.has(occurrence.surface),
-            );
+        const token =
+          this.entityFamilyRendering &&
+          !userProtected &&
+          occurrence.entity.protectionKind === "entity" &&
+          occurrence.entity.entityType
+            ? this.vault.registerResolvedEntitySurface(
+                {
+                  ...surface,
+                  entityId: occurrence.entity.id,
+                  entityType: occurrence.entity.entityType,
+                },
+                occurrence.mention.resolverAuthority,
+                matchSurfaces.has(occurrence.surface),
+              )
+            : userProtected
+              ? this.vault.registerUserProtectedSurface(surface, matchSurfaces.has(occurrence.surface))
+              : this.vault.registerResolvedSurface(
+                  surface,
+                  occurrence.mention.resolverAuthority,
+                  matchSurfaces.has(occurrence.surface),
+                );
         if (traceOccurrences) {
           resolvedTrace.push({
             ...this.hitFromProtectedValue(occurrence.meta),
@@ -516,6 +539,7 @@ class ProtectionRequestScope implements RequestScope {
                 : "detected",
           });
         }
+        renderedSurrogates.set(occurrence.surface, token);
         found.add(occurrence.surface);
         const owner = owners.get(occurrence.surface);
         const occurrenceClaim: EntityClaim = {
@@ -559,7 +583,7 @@ class ProtectionRequestScope implements RequestScope {
       ambiguousEntityLinks: ambiguityDiagnostics.length,
     };
     if (traceValues) {
-      if (found.size > 0) details.traceValues = this.traceValuesForOwnedValues(found, owners);
+      if (found.size > 0) details.traceValues = this.traceValuesForOwnedValues(found, owners, renderedSurrogates);
       if (leakValues.length > 0) details.traceLeakValues = this.traceValuesForOwnedValues(leakValues, leakOwners);
     }
     if (traceOccurrences && resolvedTrace.length > 0) {
@@ -634,8 +658,8 @@ class ProtectionRequestScope implements RequestScope {
 
   traceRestoreDetails(): RestoreTraceDetails {
     return {
-      restored: this.traceValuesFor(this.vault.restored),
-      withheldFromTools: this.traceValuesFor(this.vault.withheldFromTools),
+      restored: this.traceEntries(this.vault.traceRestoredValues()),
+      withheldFromTools: this.traceEntries(this.vault.traceWithheldValues()),
     };
   }
 
@@ -744,14 +768,18 @@ class ProtectionRequestScope implements RequestScope {
   private traceValuesForOwnedValues(
     values: Iterable<string>,
     owners: ReadonlyMap<string, EntityClaim>,
+    renderedSurrogates: ReadonlyMap<string, string> = new Map(),
   ): ProtectionTraceValue[] {
     return this.vault.traceValues(values).map((entry) => {
       const owner = owners.get(entry.value);
       const meta = owner?.meta ?? this.storedMetadataFor(entry.value);
       const hit = meta === undefined ? unknownHit() : this.hitFromProtectedValue(meta);
       const trace: ProtectionTraceValue = { ...hit, value: entry.value, valueSha256: valueHash(entry.value) };
-      if (entry.surrogate !== undefined) trace.surrogate = entry.surrogate;
-      if (entry.provenance !== undefined) trace.provenance = entry.provenance;
+      const rendered = renderedSurrogates.get(entry.value);
+      if (rendered !== undefined) trace.surrogate = rendered;
+      else if (entry.surrogate !== undefined) trace.surrogate = entry.surrogate;
+      if (owner) trace.provenance = owner.mention.resolverAuthority === "detected" ? "detected" : "permanent";
+      else if (entry.provenance !== undefined) trace.provenance = entry.provenance;
       return trace;
     });
   }
@@ -764,7 +792,11 @@ class ProtectionRequestScope implements RequestScope {
   }
 
   private traceValuesFor(values: Iterable<string>): ProtectionTraceValue[] {
-    return this.vault.traceValues(values).map((entry) => {
+    return this.traceEntries(this.vault.traceValues(values));
+  }
+
+  private traceEntries(entries: ReturnType<ScopedVault["traceValues"]>): ProtectionTraceValue[] {
+    return entries.map((entry) => {
       const value = this.storedMetadataFor(entry.value);
       const hit = value === undefined ? unknownHit() : this.hitFromProtectedValue(value);
       const trace: ProtectionTraceValue = {

@@ -1151,7 +1151,7 @@ const PROTECTION_TICKET_TTL_MS = 5 * 60_000;
 const PROTECTION_TICKETS_MAX = 256;
 const PROTECTION_TICKETS_PER_SCOPE_MAX = 8;
 const REQUIRED_AUTH_HEADER_NAMES = new Set(["authorization", "proxy-authorization", "x-api-key", "cookie"]);
-const SURROGATE_RE = /FICTA_[0-9a-f]{32}/;
+const SURROGATE_RE = /FICTA_(?:[0-9a-f]{32}|[A-Z0-9]{1,12}_[0-9a-f]{32}|(?:ORG|PERSON)_[A-Z2-7]{12}_[A-Z2-7]{12})/;
 
 interface SurfaceRedaction {
   count: number;
