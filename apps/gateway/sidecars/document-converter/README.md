@@ -61,3 +61,28 @@ export FICTA_DOC_CONVERTER_BACKEND=markitdown   # informational on the Node side
 
 If the sidecar is down or unset, document uploads fail closed: the file is not attached and the composer
 tells the user to paste the text instead.
+
+## Signature candidate detection
+
+`signature_probe.py` is a local, read-only diagnostic for text-based PDFs. It reports long underscore
+rules that overlap embedded images, a useful signal for evaluating image-backed signature fields. It
+does not send data over the network, identify a signer, validate authenticity, or cover
+scanned/flattened signatures.
+
+The MarkItDown PDF path also uses this signal during `/convert`. When the probe's rule count matches the
+converted Markdown and every long rule is an image-overlapped candidate, the rules become
+`[signature-like mark present]`. Requiring an all-candidate set makes PDF-to-Markdown reading-order
+differences irrelevant. If any rule is unsigned, detection fails, or the counts differ, the converter
+returns MarkItDown's original output unchanged rather than risk annotating the wrong field. Other file
+types and the Docling backend are unaffected.
+
+Run it inside the converter image so the PDF bytes remain local and the diagnostic uses the same
+`pdfplumber` version as the sidecar:
+
+```sh
+docker run --rm -i ficta-doc-converter python signature_probe.py - < agreement.pdf
+```
+
+The JSON output contains only page numbers, bounding boxes, overlap ratios, and aggregate counts. It
+never includes extracted document text or image bytes. A reported item is only a signature candidate,
+not proof that the document was signed.

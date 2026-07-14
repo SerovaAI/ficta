@@ -8,7 +8,8 @@ RUN apt-get update \
 WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py ./
+COPY app.py signature_probe.py test_signature_probe.py ./
+RUN python -m unittest -v test_signature_probe.py
 
 ENV CONVERTER_BACKEND=markitdown
 EXPOSE 5003

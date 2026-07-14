@@ -63,7 +63,21 @@ def _markitdown_markdown(data: bytes, filename: str) -> str:
     # markitdown sniffs type from the stream/extension; give it the original name as a hint.
     stream = io.BytesIO(data)
     result = md.convert_stream(stream, file_extension=_ext(filename))
-    return (result.text_content or "").strip()
+    markdown = (result.text_content or "").strip()
+    if _ext(filename) != ".pdf":
+        return markdown
+
+    # MarkItDown extracts PDF text but ignores embedded signature images. Annotate only when every
+    # extracted underscore rule maps one-to-one to the probe's page geometry and every rule is a
+    # candidate, making Markdown reading-order differences irrelevant. Otherwise preserve the converter
+    # output exactly rather than risk labeling the wrong form field.
+    try:
+        from signature_probe import annotate_pdf_markdown
+
+        return annotate_pdf_markdown(markdown, io.BytesIO(data))
+    except Exception as exc:  # noqa: BLE001 - signature enrichment must never break base conversion
+        print(f"signature annotation skipped: {type(exc).__name__}")
+        return markdown
 
 
 def _docling_markdown(data: bytes, filename: str) -> str:
