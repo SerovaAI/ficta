@@ -1,3 +1,4 @@
+import { type EntityFidelityScores, evaluateEntityFidelityGate } from "./entity-surrogate-fidelity-gate.js";
 import {
   characterizeRenderedFixture,
   entityIdForToken,
@@ -22,6 +23,7 @@ interface Options {
   transports: Transport[];
   targets: ProviderTarget[];
   runs: number;
+  requirePass: boolean;
   help: boolean;
 }
 
@@ -32,14 +34,7 @@ interface ProviderResult {
 
 interface ScoreResult {
   parsed: boolean;
-  scores: {
-    exactPartyFields: number;
-    entityAttribution: number;
-    legalFacts: number;
-    tokenPreservationRecall: number;
-    tokenMutationCount: number;
-    residualTokenCountAfterRestore: number;
-  };
+  scores: EntityFidelityScores;
   identityExact: Record<string, boolean>;
   entityAttribution: Record<string, boolean>;
   factExact: Record<string, boolean>;
@@ -89,9 +84,9 @@ const fixture = await loadEntityFidelityFixture();
 const rendered = options.styles.map((style) => renderEntityFidelityFixture(fixture, style));
 const offline = rendered.map((item) => characterizeRenderedFixture(fixture, item));
 
+for (const target of options.targets) assertApiKey(target.provider);
 const live: LiveResult[] = [];
 for (const target of options.targets) {
-  assertApiKey(target.provider);
   for (const item of rendered) {
     for (const transport of options.transports) {
       for (let run = 1; run <= options.runs; run += 1) {
@@ -118,20 +113,22 @@ for (const target of options.targets) {
   }
 }
 
-console.log(
-  JSON.stringify(
-    {
-      phase: "0-characterization",
-      fixture: fixture.name,
-      mode: options.targets.length === 0 ? "offline" : "live",
-      note: "Entity-family rendering is active for structured entities in trusted keyed request bodies.",
-      offline,
-      live,
-    },
-    null,
-    2,
-  ),
-);
+const expectedLiveResults = options.targets.length * options.styles.length * options.transports.length * options.runs;
+const gate = options.targets.length > 0 ? evaluateEntityFidelityGate(live, expectedLiveResults) : undefined;
+const report = {
+  phase: "0-characterization",
+  fixture: fixture.name,
+  mode: options.targets.length === 0 ? "offline" : "live",
+  note: "Entity-family rendering is active for structured entities in trusted keyed request bodies.",
+  offline,
+  live,
+  gate,
+};
+console.log(JSON.stringify(report, null, 2));
+if (options.requirePass && gate?.passed !== true) {
+  console.error(`Entity fidelity release gate failed with ${gate?.failures.length ?? 0} failure(s).`);
+  process.exitCode = 1;
+}
 
 function evaluationPrompt(
   renderedFixture: RenderedFixture,
@@ -441,12 +438,24 @@ function parseOptions(args: string[]): Options {
   let selectedStyles = styles;
   let selectedTransports = transports;
   let runs = 1;
+  let runsExplicit = false;
+  let requirePass = false;
+  let liveMatrix = false;
   let help = false;
 
   for (const arg of args) {
     if (arg === "--") continue;
     if (arg === "--help" || arg === "-h") {
       help = true;
+      continue;
+    }
+    if (arg === "--require-pass") {
+      requirePass = true;
+      continue;
+    }
+    if (arg === "--live-matrix") {
+      liveMatrix = true;
+      requirePass = true;
       continue;
     }
     if (arg.startsWith("--openai-model=")) {
@@ -474,20 +483,53 @@ function parseOptions(args: string[]): Options {
       continue;
     }
     if (arg.startsWith("--runs=")) {
-      runs = Number(requiredValue(arg));
-      if (!Number.isSafeInteger(runs) || runs < 1 || runs > 20)
-        throw new Error("--runs must be an integer from 1 to 20");
+      runs = parseRuns(requiredValue(arg), "--runs");
+      runsExplicit = true;
       continue;
     }
     throw new Error(`Unknown argument ${arg}; run with --help`);
   }
-  return { styles: selectedStyles, transports: selectedTransports, targets, runs, help };
+
+  if (help) {
+    return {
+      styles: selectedStyles,
+      transports: selectedTransports,
+      targets: [],
+      runs,
+      requirePass: false,
+      help: true,
+    };
+  }
+  if (liveMatrix) {
+    if (targets.length > 0) throw new Error("--live-matrix cannot be combined with explicit model flags");
+    targets.push(
+      { provider: "openai", model: requiredEnvironment("FICTA_MATRIX_OPENAI_MODEL") },
+      { provider: "anthropic", model: requiredEnvironment("FICTA_MATRIX_ANTHROPIC_MODEL") },
+    );
+    if (!runsExplicit) runs = parseRuns(process.env.FICTA_MATRIX_RUNS?.trim() || "3", "FICTA_MATRIX_RUNS");
+  }
+  if (requirePass && targets.length === 0) throw new Error("--require-pass requires at least one live provider model");
+  return { styles: selectedStyles, transports: selectedTransports, targets, runs, requirePass, help };
 }
 
 function requiredValue(arg: string): string {
   const value = arg.slice(arg.indexOf("=") + 1).trim();
   if (!value) throw new Error(`${arg.slice(0, arg.indexOf("="))} requires a value`);
   return value;
+}
+
+function requiredEnvironment(name: "FICTA_MATRIX_OPENAI_MODEL" | "FICTA_MATRIX_ANTHROPIC_MODEL"): string {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`--live-matrix requires ${name}`);
+  return value;
+}
+
+function parseRuns(value: string, source: string): number {
+  const runs = Number(value);
+  if (!Number.isSafeInteger(runs) || runs < 1 || runs > 20) {
+    throw new Error(`${source} must be an integer from 1 to 20`);
+  }
+  return runs;
 }
 
 function assertApiKey(provider: ProviderTarget["provider"]): void {
@@ -529,8 +571,15 @@ Options:
   --styles=opaque,typed,entity-family  Compare a subset (default: all)
   --transports=buffered,stream,tool    Compare a subset (default: all)
   --runs=1                              Runs per provider/style, from 1 to 20 (default: 1)
+  --require-pass                        Exit non-zero unless every live score passes the strict gate
+  --live-matrix                         Read both models from FICTA_MATRIX_* and require a strict pass
   --help                               Show this help
 
 No provider is contacted unless its --*-model flag is present. A default live run makes nine
-requests per provider (three styles by three transports).`);
+requests per provider (three styles by three transports).
+
+Release matrix (three runs by default; override with FICTA_MATRIX_RUNS):
+  OPENAI_API_KEY=... ANTHROPIC_API_KEY=... \\
+  FICTA_MATRIX_OPENAI_MODEL=<model> FICTA_MATRIX_ANTHROPIC_MODEL=<model> \\
+  pnpm check:entity-fidelity-live`);
 }

@@ -69,6 +69,7 @@
     "bench": "tsx bench/redaction-bench.mts",
     "bench:entity": "tsx bench/entity-redaction-bench.mts",
     "bench:entity-fidelity": "tsx bench/entity-surrogate-fidelity.mts",
+    "check:entity-fidelity-live": "tsx bench/entity-surrogate-fidelity.mts --live-matrix",
     "bench:pii-ner": "tsx bench/pii-ner-benchmark.mts",
     "bench:e2e": "tsx bench/e2e-bench.mts",
     "typecheck": "tsc --noEmit"
