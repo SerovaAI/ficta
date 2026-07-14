@@ -10,6 +10,7 @@
     "//turbo": "Turbo-managed: cached, parallel across all packages. See turbo.json",
     "build": "turbo run build",
     "check": "turbo run check",
+    "check:entity-fidelity-live": "pnpm --filter @serovaai/ficta check:entity-fidelity-live",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "//pnpm": "pnpm-orchestrated: interactive / write / dev servers, not cached",

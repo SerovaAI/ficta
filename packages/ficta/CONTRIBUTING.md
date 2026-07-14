@@ -67,6 +67,20 @@ pnpm build
 - If a change touches request handling, include coverage for the relevant surfaces: body, query
   string, non-auth headers, auth-header passthrough, fail-closed blocking, and restore behavior.
 
+The entity-fidelity provider matrix is an opt-in local release test, not part of CI. Configure the
+`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `FICTA_MATRIX_OPENAI_MODEL`, and
+`FICTA_MATRIX_ANTHROPIC_MODEL` environment variables in your local shell, then run:
+
+```sh
+pnpm check:entity-fidelity-live > .context/entity-fidelity-matrix.json
+```
+
+It runs every surrogate style over buffered, streaming, and forced-tool transports three times by
+default (`FICTA_MATRIX_RUNS` may be set from 1–20). Every provider result must parse and achieve
+perfect party, attribution, legal-fact, and token-preservation scores with no mutated or residual
+tokens. The command exits non-zero when any row fails, and the report stays in the gitignored
+`.context` directory for local review without publishing provider results or credentials.
+
 ## Security-sensitive changes
 
 Please be extra conservative with changes that:
