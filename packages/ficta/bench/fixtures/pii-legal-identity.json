@@ -70,6 +70,17 @@
     ]
   },
   {
+    "name": "repeated-linked-organization-aliases",
+    "text": "Northstar alleges that Proxima shipped the affected lots. Northstar later notified Proxima. Client: Northstar Biologics (Pty) Ltd. Vendor: Proxima Medical Supplies CC.",
+    "expected": [
+      { "value": "Northstar", "entity": "ORGANIZATION" },
+      { "value": "Proxima", "entity": "ORGANIZATION" },
+      { "value": "Northstar Biologics (Pty) Ltd", "entity": "ORGANIZATION" },
+      { "value": "Proxima Medical Supplies CC", "entity": "ORGANIZATION" }
+    ],
+    "mustRemainVisible": ["affected lots", "later notified"]
+  },
+  {
     "name": "legal-negative-controls",
     "text": "The Borrower grants a Security Interest. Authorisations are due within 10 business days. Capital Sum is ZAR 800 000. The Supreme Court has jurisdiction and arbitration starts after two months.",
     "expected": [],

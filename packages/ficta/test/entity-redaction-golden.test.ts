@@ -21,6 +21,7 @@ describe("entity redaction golden fixtures", () => {
     expect(redacted.leaks).toBe(0);
     expect(redacted.body).not.toContain("Project Copper Kite");
     expect(redacted.body).not.toContain("Proxima Medical");
+    expect(redacted.body).toContain("ZAR 8,750,000");
     expect(redacted.hits).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "CONFIDENTIAL_PROJECT_NAME", source: "golden-registry" }),

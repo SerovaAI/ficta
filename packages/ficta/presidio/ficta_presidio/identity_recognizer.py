@@ -121,6 +121,22 @@ BUSINESS_DESIGNATORS = {
     "ventures",
 }
 
+LEGAL_ENTITY_DESIGNATORS = {
+    "cc",
+    "company",
+    "corp",
+    "corporation",
+    "fzco",
+    "inc",
+    "incorporated",
+    "limited",
+    "llc",
+    "llp",
+    "ltd",
+    "plc",
+    "pty",
+}
+
 WORD = re.compile(r"[^\W\d_][\w'’.-]*", re.UNICODE)
 LETTER_SPACED = re.compile(r"(?:[^\W\d_][ \t]+){3,}[^\W\d_](?:[ \t]+[^\W\d_])*", re.UNICODE)
 COMPANY_REGISTRATION = re.compile(
@@ -177,6 +193,7 @@ class _FictaIdentityMixin:
         if "ORGANIZATION" in requested:
             accepted.extend(_designator_organizations(text))
             accepted.extend(_tabular_organizations(text))
+            accepted.extend(_linked_single_word_organization_aliases(text, raw, accepted))
             accepted.extend(_organization_aliases(text, accepted))
         accepted.extend(_ocr_identity_fields(text, requested))
         return [_result(self.name, candidate) for candidate in _dedupe(accepted)]
@@ -347,6 +364,50 @@ def _organization_aliases(text: str, accepted: Iterable[Candidate]) -> list[Cand
         regex = re.compile(rf"\b(?:The\s+{stem}|{stem}\s+(?:{suffixes}))\b", re.I)
         for match in regex.finditer(text):
             out.append(Candidate("ORGANIZATION", match.start(), match.end(), 0.9))
+    return out
+
+
+def _linked_single_word_organization_aliases(
+    text: str, raw: Iterable[Candidate], accepted: Iterable[Candidate]
+) -> list[Candidate]:
+    """Admit repeated NER aliases which uniquely name a fuller organization in this document."""
+    full_organizations = [
+        candidate
+        for candidate in accepted
+        if candidate.entity_type == "ORGANIZATION"
+        and len(_words(text[candidate.start : candidate.end])) > 1
+    ]
+
+    canonical_by_alias: dict[str, set[tuple[str, ...]]] = {}
+    for candidate in full_organizations:
+        words = [_normalize_word(word) for word in _words(text[candidate.start : candidate.end])]
+        if words and words[0] == "the":
+            words = words[1:]
+        while words and words[-1] in LEGAL_ENTITY_DESIGNATORS:
+            words.pop()
+        identity = tuple(words)
+        if identity:
+            canonical_by_alias.setdefault(identity[0], set()).add(identity)
+
+    singleton_by_alias: dict[str, dict[tuple[int, int], Candidate]] = {}
+    for candidate in raw:
+        if candidate.entity_type != "ORGANIZATION":
+            continue
+        words = _words(text[candidate.start : candidate.end])
+        if len(words) != 1:
+            continue
+        if any(
+            organization.start <= candidate.start and candidate.end <= organization.end
+            for organization in full_organizations
+        ):
+            continue
+        alias = _normalize_word(words[0])
+        singleton_by_alias.setdefault(alias, {})[(candidate.start, candidate.end)] = candidate
+
+    out: list[Candidate] = []
+    for alias, candidates in singleton_by_alias.items():
+        if len(candidates) >= 2 and len(canonical_by_alias.get(alias, ())) == 1:
+            out.extend(candidates.values())
     return out
 
 

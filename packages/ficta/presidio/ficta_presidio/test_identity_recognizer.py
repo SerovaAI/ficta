@@ -12,6 +12,9 @@ class IdentityRecognizerTest(unittest.TestCase):
             Candidate(entity_type, text.index(value), text.index(value) + len(value), 0.85)
             for value, entity_type in values
         ]
+        return self.finalize_candidates(text, candidates, entities)
+
+    def finalize_candidates(self, text, candidates, entities=None):
         results = self.recognizer._finalize(text, candidates, entities or [])
         return {(result.entity_type, text[result.start : result.end]) for result in results}
 
@@ -111,6 +114,78 @@ class IdentityRecognizerTest(unittest.TestCase):
         found = self.finalize(text, [("BLUE LANTERN FINANCE LIMITED", "ORGANIZATION")])
         self.assertIn(("ORGANIZATION", "blue lantern capital"), found)
         self.assertNotIn(("ORGANIZATION", "blue capital"), found)
+
+    def test_repeated_single_word_organization_aliases_link_to_full_names(self):
+        text = (
+            "Northstar notified Proxima. Northstar later contacted Proxima. "
+            "Client: Northstar Biologics. Vendor: Proxima Medical Supplies CC."
+        )
+        first_northstar = text.index("Northstar")
+        second_northstar = text.index("Northstar", first_northstar + 1)
+        first_proxima = text.index("Proxima")
+        second_proxima = text.index("Proxima", first_proxima + 1)
+        candidates = [
+            Candidate("ORGANIZATION", first_northstar, first_northstar + len("Northstar"), 0.85),
+            Candidate("ORGANIZATION", second_northstar, second_northstar + len("Northstar"), 0.85),
+            Candidate("ORGANIZATION", first_proxima, first_proxima + len("Proxima"), 0.85),
+            Candidate("ORGANIZATION", second_proxima, second_proxima + len("Proxima"), 0.85),
+            Candidate(
+                "ORGANIZATION",
+                text.index("Northstar Biologics"),
+                text.index("Northstar Biologics") + len("Northstar Biologics"),
+                0.85,
+            ),
+            Candidate(
+                "ORGANIZATION",
+                text.index("Proxima Medical Supplies CC"),
+                text.index("Proxima Medical Supplies CC") + len("Proxima Medical Supplies CC"),
+                0.85,
+            ),
+        ]
+
+        results = self.recognizer._finalize(text, candidates, [])
+        found = [(result.entity_type, text[result.start : result.end]) for result in results]
+
+        self.assertEqual(found.count(("ORGANIZATION", "Northstar")), 2)
+        self.assertEqual(found.count(("ORGANIZATION", "Proxima")), 2)
+
+    def test_single_ambiguous_word_does_not_link_to_full_organization(self):
+        text = "Blue raised a query. Company: BLUE LANTERN FINANCE LIMITED."
+        found = self.finalize(
+            text,
+            [("Blue", "ORGANIZATION"), ("BLUE LANTERN FINANCE LIMITED", "ORGANIZATION")],
+        )
+
+        self.assertNotIn(("ORGANIZATION", "Blue"), found)
+        self.assertIn(("ORGANIZATION", "BLUE LANTERN FINANCE LIMITED"), found)
+
+    def test_repeated_alias_requires_one_canonical_organization(self):
+        text = (
+            "Northstar raised a query. Northstar requested a response. "
+            "Vendor: Northstar Biologics Ltd. Supplier: Northstar Security Ltd."
+        )
+        first_alias = text.index("Northstar")
+        second_alias = text.index("Northstar", first_alias + 1)
+        candidates = [
+            Candidate("ORGANIZATION", first_alias, first_alias + len("Northstar"), 0.85),
+            Candidate("ORGANIZATION", second_alias, second_alias + len("Northstar"), 0.85),
+            Candidate(
+                "ORGANIZATION",
+                text.index("Northstar Biologics Ltd"),
+                text.index("Northstar Biologics Ltd") + len("Northstar Biologics Ltd"),
+                0.85,
+            ),
+            Candidate(
+                "ORGANIZATION",
+                text.index("Northstar Security Ltd"),
+                text.index("Northstar Security Ltd") + len("Northstar Security Ltd"),
+                0.85,
+            ),
+        ]
+
+        found = self.finalize_candidates(text, candidates)
+
+        self.assertNotIn(("ORGANIZATION", "Northstar"), found)
 
     def test_dates_addresses_and_ocr_are_context_bound(self):
         text = (
