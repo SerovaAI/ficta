@@ -115,6 +115,8 @@ export class SurrogateTable {
     this.entityToSur.set(key, surrogate.token);
     this.entityTagOwners.set(surrogate.entityTag, item.entityId);
     this.toVal.set(surrogate.token, item.value);
+    // Keep toSur on the literal token: raw text surfaces and unlinked mentions deliberately stay
+    // literal while resolved structured-body occurrences select their composite token via entityToSur.
     return true;
   }
 

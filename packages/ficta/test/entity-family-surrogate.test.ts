@@ -178,6 +178,22 @@ describe("gated engine entity-family rendering", () => {
     expect(gatedUnkeyedResult.body).not.toContain("FICTA_PERSON_");
   });
 
+  it("keeps raw text surfaces literal after the same value renders as a body entity", async () => {
+    const scope = fixtureEngine(true).beginRequest(CONTEXT);
+    const body = JSON.stringify({ content: "Northstar approved." });
+
+    const bodyResult = await scope.redactBodyDetailed(body);
+    const headerResult = await scope.redactTextDetailed("Northstar", {
+      surface: "header",
+      preservePaths: false,
+    });
+
+    expect(bodyResult.body).toMatch(/FICTA_ORG_[A-Z2-7]{12}_[A-Z2-7]{12}/u);
+    expect(headerResult.text).toMatch(/^FICTA_[0-9a-f]{32}$/u);
+    expect(scope.restoreJson(bodyResult.body)).toBe(body);
+    expect(scope.restoreText(headerResult.text)).toBe("Northstar");
+  });
+
   it("cannot correlate or restore a family token from another protection context", async () => {
     const engine = fixtureEngine(true);
     const first = engine.beginRequest("thread:first");
