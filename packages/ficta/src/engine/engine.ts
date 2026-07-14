@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { detectorFailClosed } from "./detection-policy.js";
-import { linkDetectedEntityClaims } from "./entity-linker.js";
+import { type EntityLinkAnchorIndex, entityLinkAnchorIndex, linkDetectedEntityClaims } from "./entity-linker.js";
 import { expandEntities, expansionSpans } from "./expander.js";
 import {
   type EntityClaim,
@@ -349,6 +349,12 @@ export class ProtectionEngine implements RedactionEngine {
  * PII is garbage-collected and can never be restored into a later request's response.
  */
 class ProtectionRequestScope implements RequestScope {
+  private registryLinkingCache?: {
+    permanentClaimsLength: number;
+    registryClaims: EntityClaim[];
+    anchorIndex: EntityLinkAnchorIndex;
+  };
+
   constructor(
     private readonly plugins: readonly RedactionPlugin[],
     private readonly policy: RegistryPolicy,
@@ -367,6 +373,7 @@ class ProtectionRequestScope implements RequestScope {
   ) {}
 
   registerProtectedValues(values: readonly ProtectedValue[]): void {
+    let changed = false;
     for (const candidate of values) {
       const value = candidate.value.trim();
       if (!value) continue;
@@ -380,7 +387,9 @@ class ProtectionRequestScope implements RequestScope {
       };
       remember(this.userProtectedMetadata, protectedValue);
       this.vault.registerUserProtectedSurface(protectedValue, true);
+      changed = true;
     }
+    if (changed) this.registryLinkingCache = undefined;
   }
 
   async redactBodyDetailed(body: string, ctx: BodyRedactionContext = {}): Promise<BodyRedactionDetails> {
@@ -400,7 +409,7 @@ class ProtectionRequestScope implements RequestScope {
     });
     if (seen && detection.complete) for (const hash of hashes) seen.add(hash);
 
-    const registryClaims = [...this.permanentClaims, ...claimsFromMetadata(this.userProtectedMetadata, "registry")];
+    const { registryClaims, anchorIndex } = this.registryLinkingState();
     const detectedByValue = new Map<string, ProtectedValue>();
     for (const [value, metas] of this.detectedMetadata) {
       if (this.tokenOnly.has(value)) continue;
@@ -409,7 +418,7 @@ class ProtectionRequestScope implements RequestScope {
     }
     for (const { value } of detection.detections) detectedByValue.set(value.value, value);
     const detectedClaims = linkDetectedEntityClaims(
-      registryClaims,
+      anchorIndex,
       claimsFromValues([...detectedByValue.values()], "detected"),
     );
     const detectedClaimByValue = new Map(detectedClaims.map((claim) => [claim.meta.value, claim]));
@@ -560,6 +569,22 @@ class ProtectionRequestScope implements RequestScope {
       details.traceAmbiguousEntityLinks = ambiguityDiagnostics;
     }
     return details;
+  }
+
+  private registryLinkingState(): {
+    registryClaims: readonly EntityClaim[];
+    anchorIndex: EntityLinkAnchorIndex;
+  } {
+    const cached = this.registryLinkingCache;
+    if (cached && cached.permanentClaimsLength === this.permanentClaims.length) return cached;
+    const registryClaims = [...this.permanentClaims, ...claimsFromMetadata(this.userProtectedMetadata, "registry")];
+    const refreshed = {
+      permanentClaimsLength: this.permanentClaims.length,
+      registryClaims,
+      anchorIndex: entityLinkAnchorIndex(registryClaims),
+    };
+    this.registryLinkingCache = refreshed;
+    return refreshed;
   }
 
   async redactTextDetailed(text: string, ctx: TextRedactionContext = {}): Promise<TextRedactionDetails> {

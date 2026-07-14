@@ -1,5 +1,7 @@
 import type { AmbiguousEntityLink, Entity, EntityClaim } from "./occurrence.js";
 
+export type EntityLinkAnchorIndex = ReadonlyMap<string, readonly Entity[]>;
+
 const ORGANIZATION_LABEL = "organization";
 const ORGANIZATION_SHORT_NAME_RULE = "organization_short_name";
 const LEGAL_ENTITY_DESIGNATORS = new Set([
@@ -40,11 +42,15 @@ const LEXICAL_WORDS_RE = /[\p{L}\p{M}\p{N}]+(?:['’.-][\p{L}\p{M}\p{N}]+)*/gu;
  * rule yields exactly one entity. Identity changes; detector trust and metadata deliberately do not.
  */
 export function linkDetectedEntityClaims(
-  registryClaims: readonly EntityClaim[],
+  anchors: EntityLinkAnchorIndex,
   detectedClaims: readonly EntityClaim[],
 ): EntityClaim[] {
-  const anchors = organizationAnchorIndex(registryClaims);
   return detectedClaims.map((claim) => linkDetectedClaim(claim, anchors));
+}
+
+/** Build the immutable organization-anchor lookup shared by detector linking passes. */
+export function entityLinkAnchorIndex(claims: readonly EntityClaim[]): EntityLinkAnchorIndex {
+  return organizationAnchorIndex(claims);
 }
 
 function linkDetectedClaim(claim: EntityClaim, anchors: ReadonlyMap<string, readonly Entity[]>): EntityClaim {

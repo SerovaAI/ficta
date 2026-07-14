@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ProtectionEngine } from "../src/engine/engine.js";
-import { linkDetectedEntityClaims } from "../src/engine/entity-linker.js";
+import { entityLinkAnchorIndex, linkDetectedEntityClaims } from "../src/engine/entity-linker.js";
 import type { EntityClaim } from "../src/engine/occurrence.js";
 import {
   entityClaimsFromProtectionRecords,
@@ -21,7 +21,7 @@ describe("registered-anchor entity linking", () => {
     const anchor = entityClaim(entityRecord("northstar", "The Northstar Biologics (Pty) Ltd"));
     const detected = detectedClaim("Northstar", "high");
 
-    const [linked] = linkDetectedEntityClaims([anchor], [detected]);
+    const [linked] = linkDetectedEntityClaims(entityLinkAnchorIndex([anchor]), [detected]);
 
     expect(linked?.entity.id).toBe("northstar");
     expect(linked?.meta).toBe(detected.meta);
@@ -43,8 +43,9 @@ describe("registered-anchor entity linking", () => {
       ]),
     );
 
-    expect(linkDetectedEntityClaims([anchor], [detectedClaim("Global", "exact")])[0]?.entity.id).toBe("lantern");
-    expect(linkDetectedEntityClaims([anchor], [detectedClaim("Blue", "high")])[0]?.entity.id).toBe("lantern");
+    const anchors = entityLinkAnchorIndex([anchor]);
+    expect(linkDetectedEntityClaims(anchors, [detectedClaim("Global", "exact")])[0]?.entity.id).toBe("lantern");
+    expect(linkDetectedEntityClaims(anchors, [detectedClaim("Blue", "high")])[0]?.entity.id).toBe("lantern");
   });
 
   it("keeps ambiguous aliases literal and records every candidate without an arbitrary tie-break", () => {
@@ -54,7 +55,7 @@ describe("registered-anchor entity linking", () => {
     ];
     const detected = detectedClaim("Northstar", "high");
 
-    const [ambiguous] = linkDetectedEntityClaims(anchors, [detected]);
+    const [ambiguous] = linkDetectedEntityClaims(entityLinkAnchorIndex(anchors), [detected]);
 
     expect(ambiguous?.entity.id).toBe(detected.entity.id);
     expect(ambiguous?.mention.linkSource).toBe("none");
@@ -75,7 +76,7 @@ describe("registered-anchor entity linking", () => {
       detectedClaim("Unregistered", "high"),
     ];
 
-    const linked = linkDetectedEntityClaims([organization, person], claims);
+    const linked = linkDetectedEntityClaims(entityLinkAnchorIndex([organization, person]), claims);
 
     expect(linked.map((claim) => claim.entity.id)).toEqual(claims.map((claim) => claim.entity.id));
     expect(linked.every((claim) => claim.mention.linkSource === "none")).toBe(true);
