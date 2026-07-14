@@ -2,8 +2,11 @@ import type { ProtectedValue, ProtectionConfidence } from "./plugins/types.js";
 import { RedactionInvariantError } from "./redaction-engine.js";
 
 export type EntityAuthority = "registry" | "detected";
+export type EntityProvenance = "registry" | "detector";
 export type OccurrenceOrigin = "detector" | "expansion" | "clipped";
 export type EntityFormBoundary = "substring" | "token";
+export type MentionDetectionSource = "registry" | "detector";
+export type MentionLinkSource = "explicit_form" | "deterministic_alias" | "none";
 
 /** A declared non-canonical form with an explicit matching boundary policy. */
 export interface EntityForm {
@@ -14,22 +17,39 @@ export interface EntityForm {
 /** One logical protected thing; declared aliases/forms share the same stable identity and policy. */
 export interface Entity {
   readonly id: string;
+  readonly protectionKind: "literal" | "entity";
+  readonly provenance: EntityProvenance;
+  readonly entityType?: "organization" | "person";
   /** Full canonical values always match as unbounded substrings, preserving exact registry semantics. */
   readonly canonical: string;
   /** Additional full forms or short aliases; short aliases must opt into token boundaries explicitly. */
   readonly forms: readonly EntityForm[];
-  readonly authority: EntityAuthority;
+}
+
+/** Trust belongs to one mention claim, independently of the identity it may reference. */
+export interface MentionTrust {
+  readonly detectionSource: MentionDetectionSource;
+  readonly detectionConfidence: ProtectionConfidence;
+  readonly linkSource: MentionLinkSource;
+  readonly linkConfidence?: "exact" | "high";
+  readonly resolverAuthority: EntityAuthority;
+  readonly protectionEligible: boolean;
+}
+
+/** One entity plus the mention-local evidence used when it claims a range. */
+export interface EntityClaim {
+  readonly entity: Entity;
   readonly meta: ProtectedValue;
+  readonly mention: MentionTrust;
 }
 
 /** One exact UTF-16 range in a redactable body leaf. */
-export interface Occurrence {
+export interface Occurrence extends EntityClaim {
   readonly leaf: number;
   readonly start: number;
   readonly end: number;
   readonly surface: string;
   readonly origin: OccurrenceOrigin;
-  readonly entity: Entity;
 }
 
 /** A non-overlapping resolver output segment with one authoritative owner. */
@@ -39,11 +59,10 @@ export interface ResolvedOccurrence extends Occurrence {
 }
 
 /** A detector occurrence expressed in the synthetic `leaves.join("\n")` coordinate space. */
-export interface JoinedOccurrence {
+export interface JoinedOccurrence extends EntityClaim {
   readonly start: number;
   readonly end: number;
   readonly origin: OccurrenceOrigin;
-  readonly entity: Entity;
 }
 
 interface WinningSlice {
@@ -146,6 +165,8 @@ export function mapJoinedOffsets(
         surface: text.slice(localStart, localEnd),
         origin: joined.origin,
         entity: joined.entity,
+        meta: joined.meta,
+        mention: joined.mention,
       });
     }
     base += text.length + (i + 1 < leaves.length ? 1 : 0);
@@ -210,6 +231,8 @@ function finalizeSlice(
     surface,
     origin: clipped ? "clipped" : slice.source.origin,
     entity: slice.source.entity,
+    meta: slice.source.meta,
+    mention: slice.source.mention,
     clipped,
     ...(clippedBy ? { clippedBy } : {}),
   };
@@ -220,8 +243,8 @@ function clippingAuthority(source: Occurrence, claims: readonly Occurrence[]): E
   for (const candidate of claims) {
     if (sameOccurrence(candidate, source) || candidate.end <= source.start || candidate.start >= source.end) continue;
     if (comparePriority(candidate, source) >= 0) continue;
-    if (!authority || AUTHORITY_RANK[candidate.entity.authority] > AUTHORITY_RANK[authority]) {
-      authority = candidate.entity.authority;
+    if (!authority || AUTHORITY_RANK[candidate.mention.resolverAuthority] > AUTHORITY_RANK[authority]) {
+      authority = candidate.mention.resolverAuthority;
     }
   }
   return authority;
@@ -230,12 +253,15 @@ function clippingAuthority(source: Occurrence, claims: readonly Occurrence[]): E
 /** Negative means `a` wins. Every field is safe metadata except span coordinates/surface length. */
 function comparePriority(a: Occurrence, b: Occurrence): number {
   return (
-    AUTHORITY_RANK[b.entity.authority] - AUTHORITY_RANK[a.entity.authority] ||
-    confidenceRank(b.entity.meta.confidence) - confidenceRank(a.entity.meta.confidence) ||
+    AUTHORITY_RANK[b.mention.resolverAuthority] - AUTHORITY_RANK[a.mention.resolverAuthority] ||
+    confidenceRank(b.mention.detectionConfidence) - confidenceRank(a.mention.detectionConfidence) ||
     b.end - b.start - (a.end - a.start) ||
     a.start - b.start ||
-    compareText(a.entity.meta.source, b.entity.meta.source) ||
+    compareText(a.meta.source, b.meta.source) ||
     compareText(a.entity.id, b.entity.id) ||
+    compareText(a.mention.detectionSource, b.mention.detectionSource) ||
+    compareText(a.mention.linkSource, b.mention.linkSource) ||
+    compareText(a.mention.linkConfidence ?? "", b.mention.linkConfidence ?? "") ||
     ORIGIN_RANK[b.origin] - ORIGIN_RANK[a.origin] ||
     compareText(a.surface, b.surface)
   );
@@ -252,7 +278,14 @@ function sameOccurrence(a: Occurrence, b: Occurrence): boolean {
     a.end === b.end &&
     a.surface === b.surface &&
     a.origin === b.origin &&
-    a.entity.id === b.entity.id
+    a.entity.id === b.entity.id &&
+    a.meta.source === b.meta.source &&
+    a.mention.detectionSource === b.mention.detectionSource &&
+    a.mention.detectionConfidence === b.mention.detectionConfidence &&
+    a.mention.linkSource === b.mention.linkSource &&
+    a.mention.linkConfidence === b.mention.linkConfidence &&
+    a.mention.resolverAuthority === b.mention.resolverAuthority &&
+    a.mention.protectionEligible === b.mention.protectionEligible
   );
 }
 
@@ -275,10 +308,16 @@ function validateOccurrence(occurrence: Occurrence): void {
 }
 
 function validateEntityIds(occurrences: readonly Occurrence[]): void {
-  const identities = new Map<string, Pick<Entity, "canonical" | "authority">>();
+  const identities = new Map<string, Pick<Entity, "canonical" | "protectionKind" | "provenance" | "entityType">>();
   for (const { entity } of occurrences) {
     const existing = identities.get(entity.id);
-    if (existing && (existing.canonical !== entity.canonical || existing.authority !== entity.authority)) {
+    if (
+      existing &&
+      (existing.canonical !== entity.canonical ||
+        existing.protectionKind !== entity.protectionKind ||
+        existing.provenance !== entity.provenance ||
+        existing.entityType !== entity.entityType)
+    ) {
       throw new Error("entity id has conflicting identity");
     }
     identities.set(entity.id, entity);

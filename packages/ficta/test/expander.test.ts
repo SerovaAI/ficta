@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { expandEntities, expansionSpans } from "../src/engine/expander.js";
-import type { Entity } from "../src/engine/occurrence.js";
+import type { Entity, EntityClaim } from "../src/engine/occurrence.js";
 
 describe("expansionSpans", () => {
   it("returns re-anchored UTF-16 ranges for case and single-line whitespace variants", () => {
@@ -31,25 +31,27 @@ describe("expansionSpans", () => {
 
 describe("expandEntities", () => {
   it("expands canonical and alias forms into leaf-local occurrences with one entity owner", () => {
-    const entity = fixtureEntity({
-      id: "registry:acme",
-      canonical: "Acme Holdings",
-      forms: [
-        { value: "Acme Holdings", boundary: "token" },
-        { value: "AH", boundary: "token" },
-        { value: "AH", boundary: "token" },
-      ],
-      authority: "registry",
-    });
+    const claim = fixtureEntity(
+      {
+        id: "registry:acme",
+        canonical: "Acme Holdings",
+        forms: [
+          { value: "Acme Holdings", boundary: "token" },
+          { value: "AH", boundary: "token" },
+          { value: "AH", boundary: "token" },
+        ],
+      },
+      "registry",
+    );
     const leaves = ["ACME HOLDINGS retained AH.", "AHEAD is unrelated; Acme Holdings signed."];
-    const occurrences = expandEntities(leaves, [entity]);
+    const occurrences = expandEntities(leaves, [claim]);
 
     expect(
       occurrences.map(({ leaf, surface, origin, entity: owner }) => ({ leaf, surface, origin, id: owner.id })),
     ).toEqual([
-      { leaf: 0, surface: "ACME HOLDINGS", origin: "expansion", id: entity.id },
-      { leaf: 1, surface: "Acme Holdings", origin: "expansion", id: entity.id },
-      { leaf: 0, surface: "AH", origin: "expansion", id: entity.id },
+      { leaf: 0, surface: "ACME HOLDINGS", origin: "expansion", id: claim.entity.id },
+      { leaf: 1, surface: "Acme Holdings", origin: "expansion", id: claim.entity.id },
+      { leaf: 0, surface: "AH", origin: "expansion", id: claim.entity.id },
     ]);
     for (const occurrence of occurrences) {
       expect(leaves[occurrence.leaf]?.slice(occurrence.start, occurrence.end)).toBe(occurrence.surface);
@@ -57,20 +59,22 @@ describe("expandEntities", () => {
   });
 
   it("keeps digit-bearing registry values out of case expansion", () => {
-    const entity = fixtureEntity({ canonical: "Matter NSB-2026", forms: [], authority: "registry" });
-    expect(expandEntities(["MATTER NSB-2026", "tagMatter NSB-2026tag"], [entity])).toEqual([
+    const claim = fixtureEntity({ canonical: "Matter NSB-2026", forms: [] }, "registry");
+    expect(expandEntities(["MATTER NSB-2026", "tagMatter NSB-2026tag"], [claim])).toEqual([
       expect.objectContaining({ leaf: 1, surface: "Matter NSB-2026" }),
     ]);
   });
 
   it("preserves the detected lowercase-single-word guard but expands multi-token names", () => {
-    const will = fixtureEntity({ id: "detected:will", canonical: "Will", forms: [], authority: "detected" });
-    const person = fixtureEntity({
-      id: "detected:person",
-      canonical: "Avery Example",
-      forms: [],
-      authority: "detected",
-    });
+    const will = fixtureEntity({ id: "detected:will", canonical: "Will", forms: [] }, "detected");
+    const person = fixtureEntity(
+      {
+        id: "detected:person",
+        canonical: "Avery Example",
+        forms: [],
+      },
+      "detected",
+    );
     const surfaces = expandEntities(
       ["Will signed; we will proceed; WILL approved; avery example signed."],
       [will, person],
@@ -83,19 +87,33 @@ describe("expandEntities", () => {
   });
 });
 
-function fixtureEntity(overrides: Partial<Entity>): Entity {
+function fixtureEntity(
+  overrides: Partial<Entity>,
+  authority: EntityClaim["mention"]["resolverAuthority"] = "detected",
+): EntityClaim {
+  const canonical = overrides.canonical ?? "Fixture Entity";
   return {
-    id: "fixture",
-    canonical: "Fixture Entity",
-    forms: [],
-    authority: "detected",
+    entity: {
+      id: "fixture",
+      protectionKind: "literal",
+      provenance: authority === "registry" ? "registry" : "detector",
+      canonical,
+      forms: [],
+      ...overrides,
+    },
     meta: {
       name: "person",
-      value: overrides.canonical ?? "Fixture Entity",
+      value: canonical,
       source: "fixture",
       kind: "pii",
       confidence: "high",
     },
-    ...overrides,
+    mention: {
+      detectionSource: authority === "registry" ? "registry" : "detector",
+      detectionConfidence: "high",
+      linkSource: "none",
+      resolverAuthority: authority,
+      protectionEligible: true,
+    },
   };
 }

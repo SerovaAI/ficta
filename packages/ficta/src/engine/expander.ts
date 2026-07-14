@@ -1,4 +1,4 @@
-import type { Entity, EntityForm, Occurrence } from "./occurrence.js";
+import type { Entity, EntityClaim, EntityForm, Occurrence } from "./occurrence.js";
 
 export interface ExpansionOptions {
   caseInsensitive?: boolean;
@@ -39,16 +39,18 @@ export function expansionSpans(text: string, value: string, opts: ExpansionOptio
  * when word/name-like; detected entities retain today's case expansion with the lowercase-single-word
  * false-positive guard.
  */
-export function expandEntities(leaves: readonly string[], entities: readonly Entity[]): Occurrence[] {
+export function expandEntities(leaves: readonly string[], claims: readonly EntityClaim[]): Occurrence[] {
   const occurrences: Occurrence[] = [];
   const seen = new Set<string>();
 
-  for (const entity of entities) {
+  for (const claim of claims) {
+    if (!claim.mention.protectionEligible) continue;
+    const { entity } = claim;
     const forms = matchingForms(entity);
     for (const form of forms) {
       // Registered opaque/digit-bearing forms retain exact-case matching. Detected values retain
       // their existing case expansion because the detector has already admitted the entity.
-      const caseInsensitive = entity.authority === "detected" || isCaseExpandable(form.value);
+      const caseInsensitive = claim.mention.resolverAuthority === "detected" || isCaseExpandable(form.value);
       for (let leaf = 0; leaf < leaves.length; leaf++) {
         const text = leaves[leaf];
         if (text === undefined) continue;
@@ -57,7 +59,7 @@ export function expandEntities(leaves: readonly string[], entities: readonly Ent
           wordBounded: form.boundary === "token",
         })) {
           if (
-            entity.authority === "detected" &&
+            claim.mention.resolverAuthority === "detected" &&
             isLowercaseSingleWord(span.surface) &&
             !isLowercaseSingleWord(form.value)
           ) {
@@ -66,7 +68,7 @@ export function expandEntities(leaves: readonly string[], entities: readonly Ent
           const key = `${entity.id}\0${leaf}\0${span.start}\0${span.end}`;
           if (seen.has(key)) continue;
           seen.add(key);
-          occurrences.push({ leaf, ...span, origin: "expansion", entity });
+          occurrences.push({ leaf, ...span, origin: "expansion", ...claim });
         }
       }
     }
