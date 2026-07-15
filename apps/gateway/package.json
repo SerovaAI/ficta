@@ -21,6 +21,7 @@
     "@fontsource-variable/hanken-grotesk": "^5.2.8",
     "@fontsource/fragment-mono": "^5.2.8",
     "@serovaai/ficta-protocol": "workspace:^",
+    "@streamdown/mermaid": "^1.0.2",
     "@tailwindcss/vite": "4.3.2",
     "@tanstack/ai": "latest",
     "@tanstack/ai-anthropic": "latest",

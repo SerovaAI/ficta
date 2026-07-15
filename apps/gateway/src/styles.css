@@ -2,6 +2,7 @@
 
 /* Let Tailwind detect the utility classes Streamdown emits (relative to this file). */
 @source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/@streamdown/mermaid/dist/*.js";
 
 /* Enable class-based dark mode: `.dark` on <html> flips the palette. */
 @custom-variant dark (&:is(.dark *));

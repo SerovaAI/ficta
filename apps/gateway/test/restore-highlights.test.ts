@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { restoreHighlightPresentation } from "@/components/chat/Markdown";
 import {
   hasVisibleRestorations,
+  markdownCodeRegions,
   normalizeProtectionAnnotations,
   parseRestoreHighlightText,
   previewFindingsToAnnotations,
@@ -150,6 +151,128 @@ describe("renderVisibleHighlights", () => {
     ]);
     expect(result.highlighted).toBe(false);
     expect(result.html).toBe("Nothing to see here");
+  });
+});
+
+describe("markdownCodeRegions", () => {
+  function regionSlices(text: string): string[] {
+    return markdownCodeRegions(text).map((region) => text.slice(region.start, region.end));
+  }
+
+  it("finds a closed backtick fence including both fence lines", () => {
+    expect(regionSlices("before\n```\ncode Aurora\n```\nafter")).toEqual(["```\ncode Aurora\n```"]);
+  });
+
+  it("extends an unterminated fence to end of text (streaming rule)", () => {
+    expect(regionSlices("before\n```\ncode Aurora")).toEqual(["```\ncode Aurora"]);
+  });
+
+  it("supports tilde fences and closers longer than the opener", () => {
+    expect(regionSlices("~~~info\ncode\n~~~\ntail")).toEqual(["~~~info\ncode\n~~~"]);
+    expect(regionSlices("```js\ncode\n`````\ntail")).toEqual(["```js\ncode\n`````"]);
+  });
+
+  it("rejects a backtick fence whose info string contains a backtick", () => {
+    // "``` a`b" is not a fence opener; the runs form inline spans within the paragraph instead.
+    const regions = markdownCodeRegions("``` a`b ``` c\nprose");
+    expect(regions.every((region) => region.start < "``` a`b ``` c".length)).toBe(true);
+  });
+
+  it("finds inline backtick spans, honoring run-length matching", () => {
+    expect(regionSlices("use `Aurora` here")).toEqual(["`Aurora`"]);
+    expect(regionSlices("say ``a ` Aurora`` ok")).toEqual(["``a ` Aurora``"]);
+  });
+
+  it("treats an unmatched backtick as code to end of paragraph only", () => {
+    expect(regionSlices("a ` b Aurora\n\nAurora again")).toEqual(["` b Aurora"]);
+  });
+
+  it("finds indented code blocks after a blank line but not paragraph continuations", () => {
+    expect(regionSlices("para\n\n    Aurora --> Beacon\n    line2\nafter")).toEqual([
+      "    Aurora --> Beacon\n    line2",
+    ]);
+    expect(regionSlices("para start\n    Aurora continued")).toEqual([]);
+  });
+
+  it("finds fences inside blockquotes", () => {
+    expect(regionSlices("> ```\n> Aurora\n> ```")).toEqual(["> ```\n> Aurora\n> ```"]);
+  });
+});
+
+describe("code-region highlight suppression", () => {
+  const surrogate = "FICTA_ORG_45SZ6UEHCLPT_ZWQCH5ASZWWH";
+  const aurora = { value: "Aurora Corp", surrogate, origin: "detected" as const };
+
+  it("never injects tags inside a closed fence; values-mode output is byte-identical", () => {
+    const text = "```\nAurora Corp --> Beacon Ltd\n```";
+    const result = renderVisibleHighlights(text, [aurora]);
+    expect(result.html).toBe(text);
+    expect(result.highlighted).toBe(false);
+    expect(result.html).not.toContain("<ficta-");
+  });
+
+  it("wraps the prose occurrence while leaving the fenced diagram occurrence untouched", () => {
+    const text = "Parties:\n\n```\nAurora Corp --> Beacon Ltd\n```\n\nAurora Corp retained the firm.";
+    const result = renderVisibleHighlights(text, [aurora]);
+    expect(result.highlighted).toBe(true);
+    expect(result.html).toBe(
+      "Parties:\n\n```\nAurora Corp --> Beacon Ltd\n```\n\n" +
+        "<ficta-protection-restored-detected>Aurora Corp</ficta-protection-restored-detected> retained the firm.",
+    );
+  });
+
+  it("suppresses tags after an unclosed fence mid-stream and after it closes", () => {
+    const streaming = "Intro Aurora Corp\n```\ndiagram Aurora Corp";
+    const streamed = renderVisibleHighlights(streaming, [aurora]);
+    expect(streamed.html).toBe(
+      "Intro <ficta-protection-restored-detected>Aurora Corp</ficta-protection-restored-detected>\n" +
+        "```\ndiagram Aurora Corp",
+    );
+    const finished = renderVisibleHighlights(`${streaming}\n\`\`\``, [aurora]);
+    expect(finished.html.match(/<ficta-/g)).toHaveLength(1);
+    expect(finished.html).toContain("diagram Aurora Corp\n```");
+  });
+
+  it("still highlights after a line that only looks like a fence (backtick in info string)", () => {
+    const result = renderVisibleHighlights("``` a`b ``` c\n\nAurora Corp here", [aurora]);
+    expect(result.html).toContain(
+      "<ficta-protection-restored-detected>Aurora Corp</ficta-protection-restored-detected>",
+    );
+  });
+
+  it("never injects tags inside inline code", () => {
+    const result = renderVisibleHighlights("see `Aurora Corp` for details", [aurora]);
+    expect(result.html).toBe("see `Aurora Corp` for details");
+    expect(result.highlighted).toBe(false);
+  });
+
+  it("suppresses inside indented code but not paragraph continuation lines", () => {
+    const indented = renderVisibleHighlights("Diagram:\n\n    Aurora Corp --> Beacon Ltd", [aurora]);
+    expect(indented.html).not.toContain("<ficta-");
+    const continuation = renderVisibleHighlights("The client\n    Aurora Corp agreed", [aurora]);
+    expect(continuation.html).toContain(
+      "<ficta-protection-restored-detected>Aurora Corp</ficta-protection-restored-detected>",
+    );
+  });
+
+  it("suppresses a value that straddles a code-region boundary, byte-identical output", () => {
+    const text = "Aurora`x` docs";
+    const result = renderVisibleHighlights(text, [{ value: "Aurora`x", surrogate, origin: "detected" }]);
+    expect(result.html).toBe(text);
+    expect(result.highlighted).toBe(false);
+  });
+
+  it("substitutes the bare surrogate token inside code in surrogates mode", () => {
+    const result = renderVisibleHighlights("```\nAurora Corp --> Beacon Ltd\n```", [aurora], "surrogates");
+    expect(result.html).toBe(`\`\`\`\n${surrogate} --> Beacon Ltd\n\`\`\``);
+    expect(result.highlighted).toBe(false);
+    expect(result.html).not.toContain("<ficta-");
+  });
+
+  it("suppresses inside blockquoted fences", () => {
+    const result = renderVisibleHighlights("> ```\n> Aurora Corp\n> ```", [aurora]);
+    expect(result.html).not.toContain("<ficta-");
+    expect(result.highlighted).toBe(false);
   });
 });
 

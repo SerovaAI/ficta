@@ -282,6 +282,129 @@ export function hasVisibleRestorations(visibleText: string, restorations: readon
   return restorations.some((restoration) => restoration.value.length > 0 && visibleText.includes(restoration.value));
 }
 
+export interface MarkdownCodeRegion {
+  start: number;
+  end: number;
+}
+
+const BLOCKQUOTE_PREFIX = /^(?: {0,3}> ?)+/;
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
+const INDENTED_CODE_START = /^(?: {4,}|\t)\S/;
+const INDENTED_CODE_CONTINUE = /^(?: {4,}|\t)/;
+const BLANK_LINE = /^[ \t]*$/;
+
+/**
+ * Conservative scan of the markdown code regions in `text`: fenced blocks (``` / ~~~, including inside
+ * blockquotes), indented code blocks, and inline backtick spans. Markdown renders code verbatim, so any
+ * custom tag injected into these regions would surface as literal text; the highlight renderer uses this
+ * to skip tag injection there.
+ *
+ * Unterminated constructs extend to end-of-text (fences) or end-of-paragraph (backtick runs), mirroring
+ * how Streamdown's remend repairs incomplete markdown mid-stream — so a render during streaming never
+ * injects tags into a region the finished text will treat as code. Every ambiguity is resolved toward
+ * "code": a false positive merely loses a highlight, while a false negative corrupts visible text.
+ *
+ * Known conservative misses (all fail toward a lost highlight, never corruption): backslash-escaped
+ * backticks in prose, list content indented ≥4 spaces after a blank line, and indented code inside
+ * blockquotes (treated as prose). List-nested fences without a preceding blank line are matched by the
+ * normal fence rules only up to 3 spaces of indentation.
+ */
+export function markdownCodeRegions(text: string): MarkdownCodeRegion[] {
+  const regions: MarkdownCodeRegion[] = [];
+  let openFence: { char: string; len: number; start: number } | null = null;
+  let indented: { start: number; end: number } | null = null;
+  let prevBlank = true;
+
+  const flushIndented = () => {
+    if (indented) {
+      regions.push({ start: indented.start, end: indented.end });
+      indented = null;
+    }
+  };
+
+  let lineStart = 0;
+  while (lineStart <= text.length) {
+    const newline = text.indexOf("\n", lineStart);
+    const lineEnd = newline === -1 ? text.length : newline;
+    const line = text.slice(lineStart, lineEnd);
+    const stripped = line.replace(BLOCKQUOTE_PREFIX, "");
+    const blank = BLANK_LINE.test(line);
+
+    if (openFence) {
+      const closeRun = stripped.match(FENCE_CLOSE)?.[1];
+      if (closeRun?.startsWith(openFence.char) && closeRun.length >= openFence.len) {
+        regions.push({ start: openFence.start, end: lineEnd });
+        openFence = null;
+      }
+    } else {
+      const open = stripped.match(FENCE_OPEN);
+      const openRun = open?.[1];
+      const infoString = open?.[2] ?? "";
+      if (openRun && !(openRun.startsWith("`") && infoString.includes("`"))) {
+        flushIndented();
+        openFence = { char: openRun.charAt(0), len: openRun.length, start: lineStart };
+      } else if (indented) {
+        if (INDENTED_CODE_CONTINUE.test(line) && !blank) indented.end = lineEnd;
+        else if (!blank) flushIndented();
+      } else if (prevBlank && INDENTED_CODE_START.test(line)) {
+        indented = { start: lineStart, end: lineEnd };
+      }
+    }
+
+    prevBlank = blank;
+    if (newline === -1) break;
+    lineStart = newline + 1;
+  }
+
+  const unterminatedFence: { start: number } | null = openFence;
+  if (unterminatedFence) regions.push({ start: unterminatedFence.start, end: text.length });
+  flushIndented();
+
+  // Pass 2: inline backtick spans over the text not already claimed as a code block, scanned per
+  // paragraph (a code span cannot cross a blank line). A run of N backticks is closed by the next run of
+  // exactly N; with no closer, the rest of the paragraph is conservatively treated as code.
+  const blockRegions = [...regions];
+  let gapStart = 0;
+  for (const region of [...blockRegions, { start: text.length, end: text.length }]) {
+    if (region.start > gapStart) scanInlineCodeSpans(text, gapStart, region.start, regions);
+    gapStart = Math.max(gapStart, region.end);
+  }
+
+  regions.sort((a, b) => a.start - b.start);
+  return regions;
+}
+
+function scanInlineCodeSpans(text: string, from: number, to: number, regions: MarkdownCodeRegion[]): void {
+  const gap = text.slice(from, to);
+  const paragraphBreak = /\n[ \t]*\n/g;
+  let chunkStart = 0;
+  for (;;) {
+    const separator = paragraphBreak.exec(gap);
+    const chunkEnd = separator ? separator.index : gap.length;
+    scanInlineCodeChunk(gap.slice(chunkStart, chunkEnd), from + chunkStart, regions);
+    if (!separator) return;
+    chunkStart = separator.index + separator[0].length;
+  }
+}
+
+function scanInlineCodeChunk(chunk: string, offset: number, regions: MarkdownCodeRegion[]): void {
+  const runs = [...chunk.matchAll(/`+/g)];
+  for (let i = 0; i < runs.length; ) {
+    const open = runs[i];
+    if (!open) return;
+    const openStart = offset + open.index;
+    const closeIndex = runs.findIndex((run, j) => j > i && run[0].length === open[0].length);
+    const close = closeIndex === -1 ? undefined : runs[closeIndex];
+    if (!close) {
+      regions.push({ start: openStart, end: offset + chunk.length });
+      return;
+    }
+    regions.push({ start: openStart, end: offset + close.index + close[0].length });
+    i = closeIndex + 1;
+  }
+}
+
 /**
  * Render `visibleText` to markdown with each located restoration wrapped in an origin-specific custom tag
  * (value in `values` mode, surrogate in `surrogates` mode). This is the ONLY place the tag/sentinel
@@ -296,7 +419,13 @@ export function renderVisibleHighlights(
   return renderProtectionHighlights(visibleText, restorationsToAnnotations(visibleText, restorations), displayMode);
 }
 
-/** Render validated durable annotations as safe custom tags for Streamdown. */
+/**
+ * Render validated durable annotations as safe custom tags for Streamdown. Spans intersecting a markdown
+ * code region get no tag — code renders verbatim, so a tag there would surface as literal text; the plain
+ * value (or bare surrogate in `surrogates` mode, unescaped for the same reason) is emitted instead and
+ * only the highlight is lost. Known limitation: a value inside a link destination/title still gets a tag,
+ * which breaks the link's parse but renders as a mark rather than literal tag text.
+ */
 export function renderProtectionHighlights(
   visibleText: string,
   annotations: readonly ProtectionHighlightAnnotation[],
@@ -305,18 +434,28 @@ export function renderProtectionHighlights(
   const spans = normalizeProtectionAnnotations(visibleText, annotations);
   if (spans.length === 0) return { html: visibleText, highlighted: false };
 
+  const codeRegions = markdownCodeRegions(visibleText);
+  const intersectsCode = (start: number, end: number) =>
+    codeRegions.some((region) => region.start < end && region.end > start);
+
   let out = "";
   let cursor = 0;
+  let injected = false;
   for (const annotation of spans) {
     const { start, end, surrogate, origin, direction } = annotation;
     out += visibleText.slice(cursor, start);
     const visible = displayMode === "surrogates" ? surrogate : visibleText.slice(start, end);
-    const tag = protectionHighlightTag(direction, origin);
-    out += `<${tag}>${escapeHtml(visible)}</${tag}>`;
+    if (intersectsCode(start, end)) {
+      out += visible;
+    } else {
+      const tag = protectionHighlightTag(direction, origin);
+      out += `<${tag}>${escapeHtml(visible)}</${tag}>`;
+      injected = true;
+    }
     cursor = end;
   }
   out += visibleText.slice(cursor);
-  return { html: out, highlighted: true };
+  return { html: out, highlighted: injected };
 }
 
 export function stripRestoreHighlightMarkers<T>(value: T): T {
