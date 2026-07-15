@@ -92,6 +92,7 @@ import {
   proxyConfigEditState,
   proxyConfigLockedFields,
 } from "./proxy-config-edit.js";
+import { decodeRequestBody, RequestBodyDecodeError } from "./request-encoding.js";
 
 export interface ProxyHandle {
   port: number;
@@ -584,7 +585,20 @@ export async function startProxy(
     let requestModel = "unknown";
 
     if (method !== "GET" && method !== "HEAD") {
-      const bodyText = await c.req.raw.text();
+      // Decode a compressed request body (e.g. Pi zstd-compresses its Codex-backend POSTs) so
+      // redaction screens the real text — the alternative is screening mojibake and forwarding a
+      // corrupted body. Undecodable bodies are refused outright: opaque bytes cannot be screened.
+      let bodyText: string;
+      try {
+        const raw = new Uint8Array(await c.req.raw.arrayBuffer());
+        const decodedBody = decodeRequestBody(raw, headers.get("content-encoding"));
+        // The upstream request carries the decoded body, so the coding header must not survive.
+        if (decodedBody.decoded) headers.delete("content-encoding");
+        bodyText = new TextDecoder().decode(decodedBody.body);
+      } catch (err) {
+        if (err instanceof RequestBodyDecodeError) return refusedRequestEncodingResponse(c, err, method, url.pathname);
+        throw err;
+      }
       if (requestedProtectionTicket && preparedProtectionTicket) {
         const stillCurrent = protectionTickets.get(requestedProtectionTicket);
         if (
@@ -1555,6 +1569,28 @@ function blockedInvariantResponse(c: Context, reason: string, n?: number): Respo
       },
     },
     500,
+  );
+}
+
+/** Fail-closed 415 for a request body the proxy could not decode and therefore could not screen. */
+function refusedRequestEncodingResponse(
+  c: Context,
+  err: RequestBodyDecodeError,
+  method: string,
+  path: string,
+): Response {
+  log.error(
+    { method, path, encoding: err.encoding },
+    `🛑 BLOCKED — request body could not be decoded (content-encoding: ${err.encoding}); refusing to forward unscreened bytes`,
+  );
+  return c.json(
+    {
+      error: {
+        type: "ficta_request_encoding",
+        message: `ficta refused to forward: ${err.message}`,
+      },
+    },
+    415,
   );
 }
 
