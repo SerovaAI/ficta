@@ -17,6 +17,7 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { isAdmin } from "@/lib/auth/types";
 import { useAuthState } from "@/lib/auth/useAuthState";
+import { chatErrorMessage } from "@/lib/chat-error-copy";
 import { hasComposerDraft } from "@/lib/composer-submit";
 import {
   extractDocumentAttachment,
@@ -771,7 +772,7 @@ export function ChatView({
 
           {error ? (
             <div className="pb-2">
-              <ErrorBanner message={error.message} onRetry={isLoading ? undefined : regenerate} />
+              <ErrorBanner message={chatErrorMessage(error)} onRetry={isLoading ? undefined : regenerate} />
             </div>
           ) : null}
 
