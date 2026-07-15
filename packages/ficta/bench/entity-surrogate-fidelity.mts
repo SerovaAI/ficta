@@ -175,8 +175,15 @@ function scoreResponse(renderedFixture: RenderedFixture, expected: ExpectedAnswe
         entityIdForToken(renderedFixture, answer[field]) === entityIdForToken(renderedFixture, expected[field]),
     ]),
   );
+  // Facts test that redaction left the value VISIBLE, not the model's phrasing discipline: accept an
+  // answer that contains the expected phrase after normalization ("within 30 calendar days." for
+  // "30 calendar days"). The opaque baseline failed strict equality the same way entity-family did,
+  // so strictness here measured scorer noise, not token damage. Party/token fields stay byte-exact.
   const factExact = Object.fromEntries(
-    factFields.map((field) => [field, normalized(answer?.[field]) === normalized(expected[field])]),
+    factFields.map((field) => {
+      const answerText = normalized(answer?.[field]);
+      return [field, answerText.length > 0 && answerText.includes(normalized(expected[field]))];
+    }),
   );
   const expectedTokens = new Set(
     renderedFixture.mappings

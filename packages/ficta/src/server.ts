@@ -92,7 +92,7 @@ import {
   proxyConfigEditState,
   proxyConfigLockedFields,
 } from "./proxy-config-edit.js";
-import { decodeRequestBody, RequestBodyDecodeError } from "./request-encoding.js";
+import { decodeRequestBody, MAX_ENCODED_BYTES, RequestBodyDecodeError } from "./request-encoding.js";
 
 export interface ProxyHandle {
   port: number;
@@ -595,8 +595,9 @@ export async function startProxy(
       // redaction screens the real text — the alternative is screening mojibake and forwarding a
       // corrupted body. Undecodable bodies are refused outright: opaque bytes cannot be screened.
       let bodyText: string;
+      const raw = await readBoundedRequestBody(c.req.raw);
+      if (raw === null) return refusedRequestTooLargeResponse(c, method, url.pathname);
       try {
-        const raw = new Uint8Array(await c.req.raw.arrayBuffer());
         const decodedBody = decodeRequestBody(raw, headers.get("content-encoding"));
         // The upstream request carries the decoded body, so the coding header must not survive.
         if (decodedBody.decoded) headers.delete("content-encoding");
@@ -982,8 +983,18 @@ export async function startProxy(
     // listener keeps node from routing upgrades to the request handler; the immediate 426 lets
     // WS-first clients with an HTTP fallback (e.g. Pi's Codex transport) retry over SSE at once.
     server.on("upgrade", (req: { url?: string }, socket: { end: (data: string) => void }) => {
+      // An upgrade URL can carry credentials in its query string (e.g. ?api_key=…), so log only
+      // the pathname, and omit it entirely when the request-target does not parse.
+      let path: string | undefined;
+      if (req.url !== undefined) {
+        try {
+          path = new URL(req.url, "http://ficta.invalid").pathname;
+        } catch {
+          path = undefined;
+        }
+      }
       log.info(
-        { path: req.url },
+        { path },
         "⤴ refused WebSocket upgrade — ficta does not proxy WebSockets; client should retry over HTTP",
       );
       socket.end("HTTP/1.1 426 Upgrade Required\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
@@ -1600,6 +1611,59 @@ function refusedWebSocketUpgradeResponse(c: Context, path: string): Response {
       },
     },
     426,
+  );
+}
+
+/**
+ * Buffer the request body while enforcing MAX_ENCODED_BYTES during the read itself — a declared
+ * Content-Length over the cap is rejected before any byte is consumed, and a chunked stream is
+ * cancelled the moment it exceeds the cap, so an oversized upload can never be buffered whole.
+ * Returns null when the body is too large.
+ */
+async function readBoundedRequestBody(req: Request): Promise<Uint8Array | null> {
+  const declared = req.headers.get("content-length");
+  if (declared !== null && Number(declared) > MAX_ENCODED_BYTES) return null;
+  if (!req.body) return new Uint8Array(await req.arrayBuffer());
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_ENCODED_BYTES) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
+/** Fail-closed 413 for a request body larger than the proxy is willing to buffer and screen. */
+function refusedRequestTooLargeResponse(c: Context, method: string, path: string): Response {
+  log.error(
+    { method, path },
+    `🛑 BLOCKED — request body exceeds ${MAX_ENCODED_BYTES} bytes; refusing to buffer unscreenable data`,
+  );
+  return c.json(
+    {
+      error: {
+        type: "ficta_request_too_large",
+        message: `ficta refused to forward: request body exceeds ${MAX_ENCODED_BYTES} bytes`,
+      },
+    },
+    413,
   );
 }
 

@@ -1,4 +1,4 @@
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import { brotliCompressSync, deflateRawSync, deflateSync, gzipSync, zstdCompressSync } from "node:zlib";
 import { describe, expect, it, vi } from "vitest";
@@ -136,6 +136,54 @@ describe("proxy request decompression", () => {
       const forwarded = JSON.parse(receivedBody) as { messages: Array<{ content: string }> };
       expect(receivedBody).not.toContain(AWS);
       expect(forwarded.messages[0]?.content).toContain("the key is FICTA_");
+    } finally {
+      proxy?.close();
+      await close(upstream);
+      restoreEnv?.();
+    }
+  });
+
+  it("refuses a request whose declared Content-Length exceeds the buffering cap", async () => {
+    let upstreamHits = 0;
+    const upstream = createServer((_req, res) => {
+      upstreamHits++;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end("{}");
+    });
+    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let restoreEnv: (() => void) | undefined;
+    try {
+      const upstreamPort = await listen(upstream);
+      vi.resetModules();
+      restoreEnv = setEnv({
+        FICTA_UPSTREAM: `http://127.0.0.1:${upstreamPort}`,
+        FICTA_LOG_LEVEL: "silent",
+      });
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0 });
+
+      // fetch() computes Content-Length itself, so speak node:http to declare a gigabyte body
+      // without sending one — the proxy must refuse from the header alone, before any body byte.
+      const status = await new Promise<number>((resolve, reject) => {
+        const req = httpRequest(
+          {
+            host: "127.0.0.1",
+            port: proxy?.port,
+            method: "POST",
+            path: "/v1/chat/completions",
+            headers: { "content-type": "application/json", "content-length": String(1024 ** 3) },
+          },
+          (res) => {
+            res.resume();
+            resolve(res.statusCode ?? 0);
+            req.destroy();
+          },
+        );
+        req.on("error", reject); // no-op once resolved
+        req.flushHeaders();
+      });
+      expect(status).toBe(413);
+      expect(upstreamHits).toBe(0);
     } finally {
       proxy?.close();
       await close(upstream);

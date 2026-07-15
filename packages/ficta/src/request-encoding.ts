@@ -21,7 +21,9 @@ const MAX_DECODED_BYTES = 256 * 1024 * 1024;
 
 // The compressed input is bounded at the same ceiling — compression never legitimately grows a
 // body past its decoded size by more than a rounding error, so anything larger is hostile.
-const MAX_ENCODED_BYTES = MAX_DECODED_BYTES;
+// Exported so the server can enforce the same cap while streaming the body in, before it is
+// ever buffered whole.
+export const MAX_ENCODED_BYTES = MAX_DECODED_BYTES;
 
 // Real clients apply one coding, occasionally two. A longer chain buys nothing legitimate but lets
 // an attacker demand MAX_DECODED_BYTES of synchronous decompression work per listed coding.
