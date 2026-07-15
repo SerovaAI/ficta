@@ -158,9 +158,11 @@ still restores byte-for-byte. The token reveals coarse type and within-chat same
 user-selected phrases, ambiguous links, and detector-only entities continue to use ordinary literal
 surrogates.
 
-Each chat starts with **Review before send** on, so **Send** opens an inline protection review before any
-provider request starts. Users can turn it off for the current chat and turn it back on whenever they want
-another review. An admin can lock review on under **Admin > General**. Users can inspect
+Each chat starts in **Adaptive** review mode. Every send is analyzed before provider traffic starts; a message
+with no protection findings continues immediately, while a message with registry, detected-identity, or
+chat-protected findings opens the inline review. Users can instead choose **Off** for no preview or **Always**
+to review every send. An admin can set **Off**, **Adaptive**, or **Always** as the minimum permitted mode under
+**Admin > General**. Users can inspect
 the original message, switch to the exact surrogate-bearing text the model will see, and select a missed phrase
 to copy, protect throughout that chat, or protect and suggest for workspace review in one explicit action. Users
 can also type a missed phrase. Chat selections remain user/thread-scoped and do not silently change workspace
@@ -168,13 +170,14 @@ policy. **Suggest for workspace** adds review-only rows to the existing Protecte
 an admin may edit, approve, and publish them. Stored chat selections are treated as sensitive
 application data alongside the restored transcript and are deleted with the thread.
 
-Automatic review findings cover identity and attribution, not every confidential business term.
+Adaptive review responds to analyzer findings; it does not guarantee that every confidential business term will
+be recognized. Automatic findings cover identity and attribution, not every confidential business term.
 Users can select or type an amount, project name, code, or clause when it also needs exact protection.
 
-Each confirmation is a short-lived, single-use capability bound to the authenticated user, workspace, chat,
+Each preview ticket is a short-lived, single-use capability bound to the authenticated user, workspace, chat,
 and exact current message. The proxy rejects edited content, replayed confirmations, and confirmations from a
-different chat. Several independently reviewed tabs may remain valid at once. Admin-required review is also
-enforced by the server API, not only by the browser controls.
+different chat. Several independently previewed tabs may remain valid at once. An administrator minimum of
+Adaptive or Always is also enforced by the server API, not only by the browser controls.
 
 One Gateway + proxy deployment serves one organization: the proxy's permanent registry is
 process-global. With `AUTH_PROVIDER=workos`, set `FICTA_GATEWAY_ORG_ID` to the deployment's WorkOS
@@ -224,7 +227,7 @@ names still belong in the exact-match registry.
 Plain text attachments are read in the browser and inlined into the chat request. PDF/DOCX uploads go
 through the document-converter sidecar (`FICTA_DOC_CONVERTER_URL`) via `POST /api/extract`, then the
 extracted Markdown is inlined and redacted through the same path. A prompt is optional: an attachment-only
-draft uses a generic review instruction and follows the chat's **Review before send** setting.
+draft uses a generic review instruction and follows the chat's review mode.
 
 In a source checkout, root `pnpm dev` starts/reuses the default converter on `http://127.0.0.1:5003`.
 Outside that wrapper, use `pnpm sidecars` or run `apps/gateway/sidecars/document-converter` yourself.

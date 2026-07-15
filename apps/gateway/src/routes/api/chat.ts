@@ -16,6 +16,7 @@ import {
   type Provider,
   type ReasoningEffort,
 } from "../../lib/models";
+import { type ProtectionReviewMode, protectionReviewRequiresPreview } from "../../lib/protection-review-mode";
 import { recordProtectionStatsTrend } from "../../lib/protection-stats.server";
 import { MissingKeyError, ProviderKeyDecryptionError, resolveProviderApiKey } from "../../lib/provider-keys.server";
 import { proxyBaseUrl } from "../../lib/proxy-base.server";
@@ -238,8 +239,8 @@ export function resolveChatTraceEnabled({
 }
 
 export function requiresProtectionReviewTicket(
-  instance: { protectionReviewRequired?: boolean },
+  instance: { protectionReviewMinimum?: ProtectionReviewMode },
   protectionTicket: string | undefined,
 ): boolean {
-  return instance.protectionReviewRequired === true && !protectionTicket;
+  return protectionReviewRequiresPreview(instance.protectionReviewMinimum ?? "off") && !protectionTicket;
 }

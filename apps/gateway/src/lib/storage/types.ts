@@ -7,6 +7,7 @@
 
 import type { EgressProof, ProtectionStatsSnapshot, ProtectionStatsTotals } from "@serovaai/ficta-protocol";
 import type { Provider, ReasoningEffort } from "@/lib/models";
+import type { ProtectionReviewMode } from "@/lib/protection-review-mode";
 
 /** Per-user preferences. All fields optional; reads merge over code defaults so a fresh user is valid. */
 export interface UserSettings {
@@ -24,8 +25,8 @@ export interface InstanceSettings {
   allowedModels?: string[];
   /** Empty-chat suggestion prompts. Undefined = defaults; empty array = hide prompt buttons. */
   suggestedPrompts?: string[];
-  /** When true, protection review is locked on. Otherwise each chat starts on and the user may turn it off. */
-  protectionReviewRequired?: boolean;
+  /** Lowest protection-review mode a chat may use. Undefined means no administrator-enforced minimum. */
+  protectionReviewMinimum?: ProtectionReviewMode;
 }
 
 /** Client-visible metadata for a workspace provider key. Never includes plaintext or ciphertext. */

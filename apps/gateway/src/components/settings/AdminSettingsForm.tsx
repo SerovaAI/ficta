@@ -1,10 +1,23 @@
 import { useRouter } from "@tanstack/react-router";
-import { Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { MODELS } from "@/lib/models";
+import {
+  isProtectionReviewMode,
+  PROTECTION_REVIEW_MODES,
+  type ProtectionReviewMode,
+  protectionReviewModeLabel,
+} from "@/lib/protection-review-mode";
 import { updateInstanceSettings } from "@/lib/storage/settings";
 import {
   type InstanceSettings,
@@ -71,7 +84,9 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
   const [modelsStatus, setModelsStatus] = useState<SaveStatus>("idle");
   const [promptsStatus, setPromptsStatus] = useState<SaveStatus>("idle");
   const [reviewStatus, setReviewStatus] = useState<SaveStatus>("idle");
-  const [reviewRequired, setReviewRequiredState] = useState(settings.protectionReviewRequired === true);
+  const [reviewMinimum, setReviewMinimumState] = useState<ProtectionReviewMode>(
+    settings.protectionReviewMinimum ?? "off",
+  );
   const [modelsError, setModelsError] = useState("Couldn't save model availability.");
   const [promptsError, setPromptsError] = useState("Couldn't save suggested prompts.");
   const savedName = useRef(settings.instanceName ?? "");
@@ -93,8 +108,8 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
   }, [settings]);
 
   useEffect(() => {
-    setReviewRequiredState(settings.protectionReviewRequired === true);
-  }, [settings.protectionReviewRequired]);
+    setReviewMinimumState(settings.protectionReviewMinimum ?? "off");
+  }, [settings.protectionReviewMinimum]);
 
   useEffect(() => {
     const next = promptDraftsFromSettings(settings);
@@ -186,16 +201,16 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
     }
   };
 
-  const setReviewRequired = async (required: boolean) => {
-    const previous = reviewRequired;
-    setReviewRequiredState(required);
+  const setReviewMinimum = async (minimum: ProtectionReviewMode) => {
+    const previous = reviewMinimum;
+    setReviewMinimumState(minimum);
     setReviewStatus("saving");
     try {
-      await updateInstanceSettings({ data: { protectionReviewRequired: required } });
+      await updateInstanceSettings({ data: { protectionReviewMinimum: minimum } });
       refreshRouteData(router);
       setReviewStatus("idle");
     } catch {
-      setReviewRequiredState(previous);
+      setReviewMinimumState(previous);
       setReviewStatus("error");
     }
   };
@@ -277,20 +292,10 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
 
       <SettingRow
         label="Protection review"
-        description="Review starts on for each chat. Require it to prevent users from turning it off."
+        description="Set the least protective review mode users may choose. Each chat starts in Adaptive."
       >
         <div className="space-y-1">
-          <label
-            htmlFor="protection-review-required"
-            className="flex cursor-pointer items-center gap-2.5 text-sm [@media(pointer:coarse)]:min-h-11"
-          >
-            <Checkbox
-              id="protection-review-required"
-              checked={reviewRequired}
-              onCheckedChange={(state) => void setReviewRequired(state === true)}
-            />
-            <span className="font-medium">Require review before every send</span>
-          </label>
+          <ReviewMinimumPicker value={reviewMinimum} onChange={(mode) => void setReviewMinimum(mode)} />
           <InlineStatus status={reviewStatus} error="Couldn't save protection review settings." />
         </div>
       </SettingRow>
@@ -334,4 +339,48 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
       </SettingRow>
     </section>
   );
+}
+
+function ReviewMinimumPicker({
+  value,
+  onChange,
+}: {
+  value: ProtectionReviewMode;
+  onChange: (mode: ProtectionReviewMode) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-1.5">
+          <span className="font-medium">{protectionReviewModeLabel(value)}</span>
+          <ChevronDown className="size-3.5 opacity-60" aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-72">
+        <DropdownMenuRadioGroup
+          value={value}
+          onValueChange={(mode) => {
+            if (isProtectionReviewMode(mode)) onChange(mode);
+          }}
+        >
+          {PROTECTION_REVIEW_MODES.map((mode) => (
+            <DropdownMenuRadioItem key={mode} value={mode} className="items-start py-2">
+              <span>
+                <span className="block font-medium">{protectionReviewModeLabel(mode)}</span>
+                <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
+                  {minimumModeDescription(mode)}
+                </span>
+              </span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function minimumModeDescription(mode: ProtectionReviewMode): string {
+  if (mode === "off") return "Users may choose any review mode.";
+  if (mode === "adaptive") return "Every send must be analyzed; findings open review.";
+  return "Every send must open review before continuing.";
 }

@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { optionalScope, requireAdminScope, requireUserId } from "@/lib/auth/guards.server";
 import { isReasoningEffort, MODELS } from "@/lib/models";
+import { isProtectionReviewMode } from "@/lib/protection-review-mode";
 import { getStorage } from "./storage.server";
 import { type InstanceSettings, modelKey, normalizeSuggestedPrompts, type UserSettings } from "./types";
 
@@ -40,7 +41,7 @@ function validateUserPatch(input: unknown): Partial<UserSettings> {
   return patch;
 }
 
-function validateInstancePatch(input: unknown): Partial<InstanceSettings> {
+export function validateInstancePatch(input: unknown): Partial<InstanceSettings> {
   const i = asObject(input);
   const patch: Partial<InstanceSettings> = {};
   if ("instanceName" in i) {
@@ -59,9 +60,9 @@ function validateInstancePatch(input: unknown): Partial<InstanceSettings> {
   if ("suggestedPrompts" in i) {
     patch.suggestedPrompts = normalizeSuggestedPrompts(i.suggestedPrompts);
   }
-  if ("protectionReviewRequired" in i) {
-    if (typeof i.protectionReviewRequired !== "boolean") throw new Error("invalid protectionReviewRequired");
-    patch.protectionReviewRequired = i.protectionReviewRequired;
+  if ("protectionReviewMinimum" in i) {
+    if (!isProtectionReviewMode(i.protectionReviewMinimum)) throw new Error("invalid protectionReviewMinimum");
+    patch.protectionReviewMinimum = i.protectionReviewMinimum;
   }
   return patch;
 }

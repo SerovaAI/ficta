@@ -40,6 +40,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     onStop,
     isLoading,
     isExtracting,
+    isCheckingProtection,
     disabledReason,
     model,
     onModelChange,
@@ -88,13 +89,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const canSend = canSubmitComposerDraft({
     value,
     attachmentCount: attachments.length,
-    isLoading,
+    isLoading: isLoading || isCheckingProtection === true,
     isExtracting,
     disabledReason,
   });
 
   return (
-    <div className="border-t border-border bg-background">
+    <div className="border-t border-border bg-background" aria-busy={isCheckingProtection}>
       <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {uploadWarning && uploadWarning.length > 0 ? (
           <div
@@ -137,8 +138,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   type="button"
                   className="flex size-6 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 [@media(pointer:coarse)]:size-11"
                   onClick={() => onRemoveAttachment(attachment.id)}
-                  disabled={Boolean(review)}
-                  title={review ? "Return to editing to remove this attachment" : undefined}
+                  disabled={Boolean(review) || isCheckingProtection}
+                  title={
+                    review
+                      ? "Return to editing to remove this attachment"
+                      : isCheckingProtection
+                        ? "Wait for the protection check to finish"
+                        : undefined
+                  }
                   aria-label={`Remove ${attachment.name}`}
                 >
                   <X className="size-3" aria-hidden />
@@ -177,7 +184,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               variant="ghost"
               className="col-start-1 row-start-1 size-8 rounded-lg"
               onClick={() => fileInputRef.current?.click()}
-              disabled={isLoading || isExtracting}
+              disabled={isLoading || isExtracting || isCheckingProtection}
               aria-label="Attach a file"
             >
               <Paperclip className="size-4" aria-hidden />
@@ -185,6 +192,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             <textarea
               ref={ref}
               value={value}
+              disabled={isCheckingProtection}
               rows={1}
               aria-label="Message"
               placeholder="Paste a document, attach a text file, or ask a question…"
@@ -205,7 +213,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 onReasoningEffortChange={onReasoningEffortChange}
                 defaultModel={defaultModel}
                 defaultReasoningEffort={defaultReasoningEffort}
-                disabled={isLoading || isExtracting}
+                disabled={isLoading || isExtracting || isCheckingProtection}
               />
             </div>
             {isLoading ? (
@@ -218,6 +226,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 aria-label="Stop"
               >
                 <Square className="size-4 fill-current" aria-hidden />
+              </Button>
+            ) : isCheckingProtection ? (
+              <Button
+                type="button"
+                size="icon"
+                className="col-start-3 row-start-1 size-8 rounded-lg sm:col-start-4"
+                disabled
+                aria-label="Checking protection"
+              >
+                <Loader2 className="size-4 animate-spin" aria-hidden />
               </Button>
             ) : (
               <Button
@@ -234,6 +252,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           </div>
         )}
         {disabledReason ? <p className="mt-2 text-center text-xs text-muted-foreground">{disabledReason}</p> : null}
+        {isCheckingProtection ? (
+          <span className="sr-only" role="status" aria-live="polite">
+            Checking protection before sending…
+          </span>
+        ) : null}
       </div>
     </div>
   );
@@ -246,6 +269,8 @@ type ComposerProps = {
   onStop: () => void;
   isLoading: boolean;
   isExtracting?: boolean;
+  /** Keeps the composer stable but immutable while Adaptive review analyzes the exact draft. */
+  isCheckingProtection?: boolean;
   /** When set, sending is blocked (protection unavailable/paused) and this explains why. */
   disabledReason?: string;
   model: ModelChoice;
