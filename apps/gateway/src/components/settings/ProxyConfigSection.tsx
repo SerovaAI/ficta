@@ -42,7 +42,13 @@ const PII_BACKEND_LABELS: Record<PiiBackendName, { label: string; description: s
  * Admin editor for the ficta proxy's safety posture. Reads and writes go through admin-gated server
  * functions (see proxy-config.ts); the browser never talks directly to the loopback proxy.
  */
-export function ProxyConfigSection() {
+export function ProxyConfigSection({
+  focusRuntimeTraceCapture = false,
+  onRuntimeTraceCaptureFocused,
+}: {
+  focusRuntimeTraceCapture?: boolean;
+  onRuntimeTraceCaptureFocused?: () => void;
+}) {
   const [config, setConfig] = useState<ProxyConfig>();
   const [draft, setDraft] = useState<EditableProxyConfigValues>();
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
@@ -222,6 +228,8 @@ export function ProxyConfigSection() {
           traceSaveStatus={traceSaveStatus}
           traceSaveError={traceSaveError}
           onTraceCaptureChange={changeRuntimeTraceCapture}
+          focusRuntimeTraceCapture={focusRuntimeTraceCapture}
+          onRuntimeTraceCaptureFocused={onRuntimeTraceCaptureFocused}
         />
       )}
     </section>
@@ -238,6 +246,8 @@ function ConfigEditor({
   traceSaveStatus,
   traceSaveError,
   onTraceCaptureChange,
+  focusRuntimeTraceCapture,
+  onRuntimeTraceCaptureFocused,
 }: {
   config: Extract<ProxyConfig, { ok: true }>;
   draft: EditableProxyConfigValues;
@@ -252,10 +262,26 @@ function ConfigEditor({
   traceSaveStatus: SaveStatus;
   traceSaveError: string;
   onTraceCaptureChange: (enabled: boolean) => void;
+  focusRuntimeTraceCapture: boolean;
+  onRuntimeTraceCaptureFocused?: () => void;
 }) {
+  const runtimeTraceControlRef = useRef<HTMLButtonElement>(null);
   const { detection, transport } = config.config;
   const edit = config.edit;
   const disabled = edit.disabled;
+
+  useEffect(() => {
+    if (!focusRuntimeTraceCapture) return;
+    const frame = window.requestAnimationFrame(() => {
+      const control = runtimeTraceControlRef.current;
+      if (!control) return;
+      control.focus({ preventScroll: true });
+      control.scrollIntoView({ block: "center" });
+      onRuntimeTraceCaptureFocused?.();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusRuntimeTraceCapture, onRuntimeTraceCaptureFocused]);
+
   const set = <K extends EditableProxyConfigKey>(key: K, value: EditableProxyConfigValues[K]) => {
     onFieldChange(key, value);
   };
@@ -425,6 +451,7 @@ function ConfigEditor({
       >
         <BooleanControl
           id="proxy-runtime-trace-capture"
+          controlRef={runtimeTraceControlRef}
           checked={transport.traceCapture.enabled}
           disabled={traceSaveStatus === "saving"}
           onChange={onTraceCaptureChange}
@@ -553,12 +580,14 @@ function BackendCheckboxGroup({
 
 function BooleanControl({
   id,
+  controlRef,
   checked,
   disabled,
   locked,
   onChange,
 }: {
   id: string;
+  controlRef?: React.Ref<HTMLButtonElement>;
   checked: boolean;
   disabled?: boolean;
   locked?: string;
@@ -567,7 +596,7 @@ function BooleanControl({
   return (
     <div className="space-y-1">
       <label htmlFor={id} className="flex cursor-pointer items-center justify-end gap-2.5 text-sm">
-        <Switch id={id} checked={checked} disabled={disabled} onCheckedChange={onChange} />
+        <Switch ref={controlRef} id={id} checked={checked} disabled={disabled} onCheckedChange={onChange} />
         <span className={checked ? "font-medium" : "text-muted-foreground"}>{onOff(checked)}</span>
       </label>
       <LockedText>{locked}</LockedText>
