@@ -230,7 +230,14 @@ export class ProtectionStats {
 export function renderProtectionStatsSummary(snapshot: ProtectionStatsSnapshot): string {
   const total = snapshot.totals.keptOutOfModelValues;
   const lines = [`🔒 ficta — kept ${total} ${plural(total, "protected value")} out of the model this session`];
-  if (snapshot.totals.events === 0) return `${lines.join("\n")}\n`;
+  const residuals = snapshot.totals.residualSurrogateValues ?? 0;
+  const residualLine =
+    residuals > 0 ? `   unrestored surrogate tokens: ${residuals} (model-mutated or invented)` : undefined;
+  if (snapshot.totals.events === 0) {
+    // No redaction events, but residual debris is still worth reporting — it must not be suppressed.
+    if (residualLine) lines.push(residualLine);
+    return `${lines.join("\n")}\n`;
+  }
 
   const blocked = snapshot.totals.blockedRequests > 0 ? `, blocked ${snapshot.totals.blockedRequests}` : "";
   lines.push(`   affected requests: ${snapshot.totals.affectedRequests}${blocked}`);
@@ -239,10 +246,7 @@ export function renderProtectionStatsSummary(snapshot: ProtectionStatsSnapshot):
       `   ambiguous entity links: ${snapshot.totals.ambiguousEntityLinks} across ${snapshot.totals.ambiguousEntityLinkRequests} ${plural(snapshot.totals.ambiguousEntityLinkRequests, "request")}`,
     );
   }
-  const residuals = snapshot.totals.residualSurrogateValues ?? 0;
-  if (residuals > 0) {
-    lines.push(`   unrestored surrogate tokens: ${residuals} (model-mutated or invented; see restore-mutation notes)`);
-  }
+  if (residualLine) lines.push(residualLine);
 
   const modelLine = formatTopBuckets(
     snapshot.byModel.filter((bucket) => bucket.name !== "unknown"),

@@ -3,9 +3,9 @@
 // Restore is exact string match (vault.ts `restoreTextExcept`): a token that matches the surrogate
 // shape but is not in the dictionary is returned UNCHANGED, and a token whose shape is broken is not
 // matched at all. Either way it is passed through — never fuzzily mapped to a value. These tests pin
-// that pass-through behavior; the Part B Phase 1 guard OBSERVES the debris without changing it
-// (counts asserted in residual-guard.test.ts). The load-bearing invariant is the safety one: a
-// mutated surrogate must NEVER restore to the real secret.
+// that pass-through behavior (residual counting is asserted separately in residual-guard.test.ts).
+// The load-bearing invariant is the safety one: a mutated surrogate must NEVER restore to the real
+// secret.
 
 import { afterEach, describe, expect, it } from "vitest";
 import { typedSurrogateStrategy } from "../src/engine/surrogate.js";
@@ -59,12 +59,12 @@ describe("restore hardening — mutated surrogate never yields the real secret (
     });
   }
 
-  it("passes a shape-valid but unknown token through unchanged (the residual case Part B targets)", () => {
+  it("passes a shape-valid but unknown token through unchanged (the residual case)", () => {
     const { vault, surrogate } = opaqueVault();
     const residual = flipLastHex(surrogate);
     const out = vault.restoreText(residual);
     expect(out).not.toContain(SECRET);
-    expect(out).toBe(residual); // forwarded unchanged; Phase 1 counts it (residual-guard.test.ts)
+    expect(out).toBe(residual); // forwarded unchanged; counted as a residual (residual-guard.test.ts)
     expect(out).toMatch(SURROGATE_SHAPE); // still looks like a real token to a downstream reader
   });
 

@@ -231,12 +231,12 @@ export abstract class VaultView {
 
   /**
    * Distinct surrogate-shaped tokens that survived restore with no dictionary mapping — the model
-   * mutated, truncated, or invented them (e.g. the observed wildcard family reference
+   * mutated, truncated, or invented them (e.g. a wildcard family reference like
    * `FICTA_ORG_<entityTag>_*`). Exact-match restore correctly leaves them alone, so each one reached
    * the client as visible token debris. Values-free by construction: the set holds token text only,
-   * never a protected value. Part B Phase 1 of the restore-mutation hardening: observe and count —
-   * response bytes are unchanged. Deliberately withheld tool-argument placeholders do NOT land here
-   * (they map in the dictionary and are filtered out).
+   * never a protected value. Observe-and-count only — response bytes are unchanged. Deliberately
+   * withheld tool-argument placeholders do NOT land here (they map in the dictionary and are
+   * filtered out).
    */
   readonly residualSurrogates = new Set<string>();
 
@@ -524,7 +524,10 @@ export abstract class VaultView {
     adapter: BufferedRestoreAdapter = NOOP_BUFFERED_RESTORE_ADAPTER,
     opts: RestoreOptions = {},
   ): string {
-    if (!this.hasSurrogates || !body) return body;
+    if (!this.hasSurrogates || !body) {
+      this.noteResiduals(body); // an empty vault still observes token debris in complete bodies
+      return body;
+    }
     let parsed: unknown;
     try {
       parsed = JSON.parse(body);

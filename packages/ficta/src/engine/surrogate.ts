@@ -215,18 +215,19 @@ function isPotentialEntityPrefix(text: string): boolean {
   return false;
 }
 
-// --- residual-surrogate detection (restore-mutation hardening Part B, Phase 1) --------------------
+// --- residual-surrogate detection ----------------------------------------------------------------
 
 /**
- * An entity-family token reference the model invented or truncated: a complete entity tag with a
- * missing or invalid surface tag. Observed live 2026-07-15 — a model narrating about token families
- * wrote `FICTA_ORG_<entityTag>_*` as a wildcard. The first alternative catches the tag followed by a
- * dangling `_` (wildcard/truncation); the second catches the bare tag ending at a word boundary.
- * Shorter truncations (partial tags) are deliberately out of scope: matching them would flag prose
- * that merely mentions the token prefix (e.g. documentation about ficta itself).
+ * An entity-family token reference a model invented or truncated: a complete entity tag with a
+ * missing or invalid surface tag (e.g. a wildcard family reference like `FICTA_ORG_<entityTag>_*`).
+ * The first alternative catches the tag followed by a dangling `_` (wildcard/truncation); the second
+ * catches the bare tag, requiring a hard word boundary — no ASCII alphanumeric or underscore may
+ * follow, so a tag embedded inside a longer identifier never matches. Shorter truncations (partial
+ * tags) are deliberately out of scope: matching them would flag prose that merely mentions the token
+ * prefix (e.g. documentation about ficta itself).
  */
 const ENTITY_FRAGMENT_SOURCE =
-  `${HEX_PREFIX}(?:ORG|PERSON)_[A-Z2-7]{${ENTITY_TAG_LEN}}` + `(?:_(?![A-Z2-7]{${ENTITY_TAG_LEN}})|(?![A-Z2-7_]))`;
+  `${HEX_PREFIX}(?:ORG|PERSON)_[A-Z2-7]{${ENTITY_TAG_LEN}}` + `(?:_(?![A-Z2-7]{${ENTITY_TAG_LEN}})|(?![0-9A-Za-z_]))`;
 
 /**
  * Longest text a residual candidate can span; streaming scans must see this much right context

@@ -1,10 +1,8 @@
-// Residual-surrogate guard, Phase 1 (observe/count) — notes/spec-restore-mutation-hardening.md Part B.
-//
-// A surrogate-shaped token that survives restore with no dictionary mapping is a known restore
-// failure: the model mutated, truncated, or invented it (live evidence 2026-07-15: a model narrating
-// about entity-token families wrote `FICTA_ORG_<entityTag>_*`). Phase 1 counts that debris per view
-// without changing a single response byte — restore-mutation.test.ts keeps pinning the pass-through
-// behavior; this file pins the observability on top of it.
+// Residual-surrogate observability: a surrogate-shaped token that survives restore with no
+// dictionary mapping is a known restore failure — the model mutated, truncated, or invented it
+// (e.g. a wildcard family reference like `FICTA_ORG_<entityTag>_*`). The vault counts that debris
+// per view without changing a single response byte — restore-mutation.test.ts keeps pinning the
+// pass-through behavior; this file pins the observability on top of it.
 
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -47,7 +45,7 @@ describe("residual guard — buffered restoreText", () => {
     const { vault, surrogate } = opaqueVault();
     const residual = flipLastHex(surrogate);
     const out = vault.restoreText(`before ${residual} after`);
-    expect(out).toBe(`before ${residual} after`); // Phase 1: observe only, bytes unchanged
+    expect(out).toBe(`before ${residual} after`); // observe only, bytes unchanged
     expect(vault.residualSurrogateCount).toBe(1);
     expect(vault.residualSurrogates.has(residual)).toBe(true);
   });
@@ -65,7 +63,7 @@ describe("residual guard — buffered restoreText", () => {
     expect(vault.residualSurrogateCount).toBe(1);
   });
 
-  it("counts the observed wildcard entity-family reference (the 2026-07-15 live case)", () => {
+  it("counts a wildcard entity-family reference", () => {
     const { vault } = opaqueVault();
     vault.restoreText(`multiple FICTA_ORG_${ENTITY_TAG}_* tokens refer to the client`);
     expect(vault.residualSurrogateCount).toBe(1);
@@ -91,6 +89,12 @@ describe("residual guard — buffered restoreText", () => {
     expect(vault.residualSurrogateCount).toBe(0);
   });
 
+  it("ignores an entity tag embedded inside a longer identifier", () => {
+    const { vault } = opaqueVault();
+    vault.restoreText(`identifiers like FICTA_ORG_${ENTITY_TAG}family or FICTA_ORG_${ENTITY_TAG}9 are not tags`);
+    expect(vault.residualSurrogateCount).toBe(0);
+  });
+
   it("does not count a known token deliberately left in place (tool-arg withholding skip)", () => {
     const { vault, surrogate } = opaqueVault();
     const body = JSON.stringify({ arguments: `use ${surrogate}` });
@@ -102,6 +106,13 @@ describe("residual guard — buffered restoreText", () => {
   it("observes debris even when the vault holds no surrogates at all", () => {
     const vault = new Vault([]);
     vault.restoreText(`echoed FICTA_${"0".repeat(31)}1 from an older session`);
+    expect(vault.residualSurrogateCount).toBe(1);
+  });
+
+  it("observes debris in a JSON body restored through an empty vault", () => {
+    const vault = new Vault([]);
+    const body = JSON.stringify({ note: `echoed FICTA_${"0".repeat(31)}1` });
+    expect(vault.restoreJson(body)).toBe(body);
     expect(vault.residualSurrogateCount).toBe(1);
   });
 });

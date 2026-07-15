@@ -852,7 +852,7 @@ export async function startProxy(
       // A surrogate-shaped token with no dictionary mapping survived restore — the model mutated,
       // truncated, or invented it, and the client received it as-is. Restore correctly refused to
       // guess (exact-match only); surfacing the count turns silent token debris into an operator
-      // signal. Observe-only: response bytes are unchanged (restore-mutation hardening, Part B P1).
+      // signal. Observe-only: response bytes are unchanged.
       const residuals = scope.residualSurrogateCount;
       if (residuals > 0) {
         log.warn({ reqId: n, residuals }, `⚠️ ${residuals} unrestored surrogate token(s) left in response`);

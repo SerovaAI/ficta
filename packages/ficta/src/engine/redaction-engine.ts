@@ -139,7 +139,7 @@ export interface RequestScope {
   /**
    * Distinct surrogate-shaped tokens that survived this request's restore with no dictionary mapping
    * (model-mutated, truncated, or invented — token debris forwarded to the client as-is). Values-free
-   * observability for the restore-mutation hardening; read alongside {@link restoredCount} to log the
+   * restore-failure observability; read alongside {@link restoredCount} to log the
    * `⚠️ N unrestored surrogate token(s)` line.
    */
   readonly residualSurrogateCount: number;

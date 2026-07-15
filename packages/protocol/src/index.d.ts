@@ -161,7 +161,7 @@ export interface ProtectionStatsTotals {
   /**
    * Surrogate-shaped tokens that survived restore with no dictionary mapping — mutated, truncated,
    * or invented by the model (e.g. a wildcard family reference) and forwarded to the client as-is.
-   * Values-free token count. Optional: emitted by ficta ≥ the restore-mutation Phase 1 release.
+   * Values-free token count. Optional: absent from snapshots written by older ficta versions.
    */
   residualSurrogateValues?: number;
   /** Ambiguous inferred organization mention occurrences protected through the literal path. */
