@@ -1,6 +1,6 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   agentCommands,
@@ -202,6 +202,57 @@ describe("agent integration plugins", () => {
 
     await plan.cleanup?.();
     expect(existsSync(agentDir)).toBe(false);
+  });
+
+  it("places the Pi mirror beside the real agent dir so relative package sources keep resolving", async () => {
+    // Layout: parent/agent (real dir), parent/tools/ext (a local extension referenced as ../tools/ext).
+    const parent = mkdtempSync(join(tmpdir(), "ficta-pi-parent-"));
+    const sourceDir = join(parent, "agent");
+    mkdirSync(sourceDir);
+    mkdirSync(join(parent, "tools", "ext"), { recursive: true });
+    writeFileSync(join(sourceDir, "settings.json"), '{"packages":["../tools/ext"]}');
+
+    const plan = piAgent.configureLaunch({
+      baseUrl: BASE,
+      args: ["-p", "hello"],
+      realExecutable: "/bin/pi",
+      env: { PI_CODING_AGENT_DIR: sourceDir },
+      cwd: process.cwd(),
+    });
+    const agentDir = plan.env.PI_CODING_AGENT_DIR as string;
+
+    // Sibling of the real dir — Pi resolves "../tools/ext" against the agent dir with plain path
+    // math, so only a same-parent mirror keeps it pointing at the real extension.
+    expect(dirname(agentDir)).toBe(parent);
+    expect(resolve(agentDir, "../tools/ext")).toBe(join(parent, "tools", "ext"));
+    expect(existsSync(resolve(agentDir, "../tools/ext"))).toBe(true);
+
+    await plan.cleanup?.();
+    expect(existsSync(agentDir)).toBe(false);
+  });
+
+  it("sweeps orphaned Pi mirrors older than a day but leaves fresh ones", () => {
+    const parent = mkdtempSync(join(tmpdir(), "ficta-pi-parent-"));
+    const sourceDir = join(parent, "agent");
+    mkdirSync(sourceDir);
+    const stale = join(parent, ".ficta-pi-stale");
+    const fresh = join(parent, ".ficta-pi-fresh");
+    mkdirSync(stale);
+    mkdirSync(fresh);
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    utimesSync(stale, twoDaysAgo, twoDaysAgo);
+
+    const plan = piAgent.configureLaunch({
+      baseUrl: BASE,
+      args: ["-p", "hello"],
+      realExecutable: "/bin/pi",
+      env: { PI_CODING_AGENT_DIR: sourceDir },
+      cwd: process.cwd(),
+    });
+
+    expect(existsSync(stale)).toBe(false);
+    expect(existsSync(fresh)).toBe(true);
+    return plan.cleanup?.();
   });
 
   it("piModelsConfig overrides built-in providers and preserves custom ones", () => {

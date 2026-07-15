@@ -3,6 +3,7 @@ import {
   characterizeRenderedFixture,
   type EntityFidelityFixture,
   entityIdForToken,
+  factValueMatches,
   loadEntityFidelityFixture,
   mutateToken,
   type RenderedFixture,
@@ -96,6 +97,33 @@ describe("Phase 0 entity-surrogate legal fidelity", () => {
     expect(restored).toBe(mutated);
     expect(restored).not.toContain("Northstar");
     expect(entityIdForToken(candidate, mutated)).toBeUndefined();
+  });
+});
+
+describe("Phase 0 entity-surrogate fact matching", () => {
+  it("accepts the expected value inside benign phrasing after normalization", () => {
+    expect(factValueMatches("within 30 calendar days.", "30 calendar days")).toBe(true);
+    expect(factValueMatches("Interest accrues at 2% per month", "2% per month")).toBe(true);
+    expect(factValueMatches("30  Calendar\nDays", "30 calendar days")).toBe(true);
+    expect(factValueMatches("no later than 30 calendar days", "30 calendar days")).toBe(true);
+  });
+
+  it("rejects the expected value embedded in a longer number", () => {
+    expect(factValueMatches("130 calendar days", "30 calendar days")).toBe(false);
+    expect(factValueMatches("within 130 calendar days", "30 calendar days")).toBe(false);
+  });
+
+  it("rejects negated statements of the expected value", () => {
+    expect(factValueMatches("not 30 calendar days", "30 calendar days")).toBe(false);
+    expect(factValueMatches("never 30 calendar days", "30 calendar days")).toBe(false);
+    expect(factValueMatches("no longer 30 calendar days", "30 calendar days")).toBe(false);
+  });
+
+  it("never passes on an empty or non-string answer or expectation", () => {
+    expect(factValueMatches("30 calendar days", "")).toBe(false);
+    expect(factValueMatches("30 calendar days", "   ")).toBe(false);
+    expect(factValueMatches("", "30 calendar days")).toBe(false);
+    expect(factValueMatches(undefined, "30 calendar days")).toBe(false);
   });
 });
 

@@ -2,6 +2,7 @@ import { type EntityFidelityScores, evaluateEntityFidelityGate } from "./entity-
 import {
   characterizeRenderedFixture,
   entityIdForToken,
+  factValueMatches,
   loadEntityFidelityFixture,
   type RenderedFixture,
   renderEntityFidelityFixture,
@@ -176,14 +177,11 @@ function scoreResponse(renderedFixture: RenderedFixture, expected: ExpectedAnswe
     ]),
   );
   // Facts test that redaction left the value VISIBLE, not the model's phrasing discipline: accept an
-  // answer that contains the expected phrase after normalization ("within 30 calendar days." for
+  // answer containing the expected phrase as a standalone value ("within 30 calendar days." for
   // "30 calendar days"). The opaque baseline failed strict equality the same way entity-family did,
   // so strictness here measured scorer noise, not token damage. Party/token fields stay byte-exact.
   const factExact = Object.fromEntries(
-    factFields.map((field) => {
-      const answerText = normalized(answer?.[field]);
-      return [field, answerText.length > 0 && answerText.includes(normalized(expected[field]))];
-    }),
+    factFields.map((field) => [field, factValueMatches(answer?.[field], expected[field])]),
   );
   const expectedTokens = new Set(
     renderedFixture.mappings
@@ -555,10 +553,6 @@ function assertApiKey(provider: ProviderTarget["provider"]): void {
   if (provider === "anthropic" && !process.env.ANTHROPIC_API_KEY) {
     throw new Error("--anthropic-model requires ANTHROPIC_API_KEY");
   }
-}
-
-function normalized(value: unknown): string {
-  return typeof value === "string" ? value.trim().replace(/\s+/gu, " ").toLowerCase() : "";
 }
 
 function rate(values: boolean[]): number {

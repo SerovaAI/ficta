@@ -1,6 +1,15 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { AgentIntegration, AgentIntegrationPlugin } from "./agent-types.js";
 
 export const claudeAgent: AgentIntegration = {
@@ -66,7 +75,7 @@ export const piAgent: AgentIntegration = {
     // startup before model selection. So we point Pi at a throwaway agent dir that
     // mirrors the user's real auth/settings but swaps in a ficta-routed models.json.
     const sourceDir = piSourceAgentDir(env);
-    const dir = mkdtempSync(join(tmpdir(), "ficta-pi-"));
+    const dir = makePiMirrorDir(sourceDir);
     const sourceModels = mirrorPiAgentDir(sourceDir, dir);
     writeFileSync(join(dir, "models.json"), piModelsConfig(baseUrl, sourceModels), { mode: 0o600 });
     return {
@@ -163,6 +172,48 @@ function readCodexConfig(env: NodeJS.ProcessEnv): string | undefined {
     return readFileSync(join(codexHome(env), "config.toml"), "utf8");
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * Create the ephemeral mirror as a sibling of the real agent dir, not under tmpdir(): Pi resolves
+ * relative local package sources in settings.json (e.g. "../../src/tools/pi-wt") against the agent
+ * dir by pure path math and silently skips missing paths, so a mirror elsewhere makes those
+ * extensions vanish. A sibling sits at the same depth in the same parent, so every relative source
+ * resolves to the same target; ./-style sources hit the mirrored symlinks. Falls back to tmpdir()
+ * when the parent is missing or unwritable (accepting the relative-source skip there).
+ */
+function makePiMirrorDir(sourceDir: string): string {
+  const parent = dirname(sourceDir);
+  sweepStalePiMirrors(parent);
+  try {
+    return mkdtempSync(join(parent, ".ficta-pi-"));
+  } catch {
+    return mkdtempSync(join(tmpdir(), "ficta-pi-"));
+  }
+}
+
+const STALE_PI_MIRROR_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Mirrors normally die with the launch's cleanup(); this reaps ones orphaned by a killed session.
+ * The age threshold keeps it from touching a concurrent session's live mirror.
+ */
+function sweepStalePiMirrors(parent: string): void {
+  let names: string[];
+  try {
+    names = readdirSync(parent);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (!name.startsWith(".ficta-pi-")) continue;
+    const path = join(parent, name);
+    try {
+      if (Date.now() - statSync(path).mtimeMs > STALE_PI_MIRROR_MS) rmSync(path, { recursive: true, force: true });
+    } catch {
+      // Best effort; a mirror we cannot stat or remove is left for the next sweep.
+    }
   }
 }
 

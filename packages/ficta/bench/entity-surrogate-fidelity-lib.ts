@@ -212,6 +212,36 @@ export function surrogateLikeTokens(text: string): string[] {
   return [...text.matchAll(SURROGATE_LIKE)].map((match) => match[0]);
 }
 
+/**
+ * True when the expected fact value appears in the answer as a standalone value. Matching is
+ * whitespace-normalized and case-insensitive — facts test that redaction left the value VISIBLE,
+ * not the model's phrasing discipline, so "within 30 calendar days." passes for "30 calendar
+ * days" — but the value must not sit inside a longer token ("130 calendar days"), must not be
+ * negated ("not 30 calendar days"), and an empty expected value never matches.
+ */
+export function factValueMatches(answer: unknown, expected: unknown): boolean {
+  const answerText = normalizedFactText(answer);
+  const expectedText = normalizedFactText(expected);
+  if (answerText.length === 0 || expectedText.length === 0) return false;
+  for (let from = 0; ; ) {
+    const at = answerText.indexOf(expectedText, from);
+    if (at === -1) return false;
+    from = at + 1;
+    const before = at > 0 ? (answerText[at - 1] ?? "") : "";
+    const after = answerText[at + expectedText.length] ?? "";
+    if (FACT_WORD_CHAR.test(before) || FACT_WORD_CHAR.test(after)) continue;
+    if (FACT_NEGATION_BEFORE.test(answerText.slice(0, at))) continue;
+    return true;
+  }
+}
+
+const FACT_WORD_CHAR = /[\p{L}\p{N}]/u;
+const FACT_NEGATION_BEFORE = /\b(?:not|no|never|no longer)\s+$/u;
+
+function normalizedFactText(value: unknown): string {
+  return typeof value === "string" ? value.trim().replace(/\s+/gu, " ").toLowerCase() : "";
+}
+
 function hmacBase32(payload: Uint8Array): string {
   const digest = createHmac("sha256", EVALUATION_KEY).update(payload).digest();
   let buffer = 0;
