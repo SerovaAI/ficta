@@ -400,11 +400,15 @@ export function ChatView({
     });
   };
 
-  const beginProtectionReview = async (text: string, action: "send" | "reload" = "send") => {
+  const beginProtectionReview = async (text: string, action: "send" | "reload" = "send", contentIsComposed = false) => {
     const trimmed = text.trim();
-    const content = action === "send" ? messageWithAttachments(trimmed, attachments) : trimmed;
+    const content = contentIsComposed
+      ? text
+      : action === "send"
+        ? messageWithAttachments(trimmed, attachments)
+        : trimmed;
     if (!content.trim() || isLoading || isExtracting || protectionReviewLoading || startingThread.current) return;
-    protectionReviewAttempt.current = { text, action };
+    protectionReviewAttempt.current = { text: content, action };
     setProtectionReview(undefined);
     setProtectionReviewError("");
     setProtectionReviewNotice("");
@@ -428,7 +432,7 @@ export function ChatView({
 
   const retryProtectionReview = () => {
     const attempt = protectionReviewAttempt.current;
-    if (attempt) void beginProtectionReview(attempt.text, attempt.action);
+    if (attempt) void beginProtectionReview(attempt.text, attempt.action, true);
   };
 
   // Gate the raw dispatch on protection posture so the Send affordance can't outrun the banner: a blocked

@@ -96,6 +96,7 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
   const nameSeq = useRef(0);
   const modelsSeq = useRef(0);
   const promptsSeq = useRef(0);
+  const reviewSavePending = useRef(false);
 
   useEffect(() => {
     const next = settings.instanceName ?? "";
@@ -202,7 +203,9 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
   };
 
   const setReviewMinimum = async (minimum: ProtectionReviewMode) => {
+    if (reviewSavePending.current || minimum === reviewMinimum) return;
     const previous = reviewMinimum;
+    reviewSavePending.current = true;
     setReviewMinimumState(minimum);
     setReviewStatus("saving");
     try {
@@ -212,6 +215,8 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
     } catch {
       setReviewMinimumState(previous);
       setReviewStatus("error");
+    } finally {
+      reviewSavePending.current = false;
     }
   };
 
@@ -295,7 +300,11 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
         description="Set the least protective review mode users may choose. Each chat starts in Adaptive."
       >
         <div className="space-y-1">
-          <ReviewMinimumPicker value={reviewMinimum} onChange={(mode) => void setReviewMinimum(mode)} />
+          <ReviewMinimumPicker
+            value={reviewMinimum}
+            disabled={reviewStatus === "saving"}
+            onChange={(mode) => void setReviewMinimum(mode)}
+          />
           <InlineStatus status={reviewStatus} error="Couldn't save protection review settings." />
         </div>
       </SettingRow>
@@ -343,15 +352,17 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
 
 function ReviewMinimumPicker({
   value,
+  disabled,
   onChange,
 }: {
   value: ProtectionReviewMode;
+  disabled?: boolean;
   onChange: (mode: ProtectionReviewMode) => void;
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1.5">
+        <Button variant="outline" size="sm" className="gap-1.5" disabled={disabled}>
           <span className="font-medium">{protectionReviewModeLabel(value)}</span>
           <ChevronDown className="size-3.5 opacity-60" aria-hidden />
         </Button>
@@ -364,7 +375,7 @@ function ReviewMinimumPicker({
           }}
         >
           {PROTECTION_REVIEW_MODES.map((mode) => (
-            <DropdownMenuRadioItem key={mode} value={mode} className="items-start py-2">
+            <DropdownMenuRadioItem key={mode} value={mode} disabled={disabled} className="items-start py-2">
               <span>
                 <span className="block font-medium">{protectionReviewModeLabel(mode)}</span>
                 <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
