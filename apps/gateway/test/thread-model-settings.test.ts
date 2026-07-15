@@ -42,6 +42,19 @@ describe("thread model settings", () => {
     expect(resolved.reasoningEffort).toBe("minimal");
   });
 
+  it("uses the catalog fallback when no allowed model still exists", () => {
+    const resolved = resolveThreadModelSettings(
+      { defaultModel: { provider: "openai", model: "gpt-5" }, defaultReasoningEffort: "low" },
+      { allowedModels: ["openai/retired-model"] },
+      saved("gpt-5.6-sol", "max"),
+    );
+
+    expect(resolved.choice).toBe(MODELS[0]);
+    expect(resolved.choice.model).not.toBe("gpt-5");
+    expect(resolved.choice.model).not.toBe("gpt-5.6-sol");
+    expect(resolved.reasoningEffort).toBe("low");
+  });
+
   it("ignores stale models and normalizes reasoning for the resolved catalog model", () => {
     const stale = { provider: "openai", model: "retired-model", reasoningEffort: "max" } as ThreadModelSettings;
     const resolved = resolveThreadModelSettings(

@@ -339,9 +339,7 @@ export function ChatView({
       upsertThreadSummary(current, tid, persistable, modelSettingsRef.current),
     );
     try {
-      await saveThread({
-        data: { threadId: tid, messages: persistable.map(uiToStored), modelSettings: modelSettingsRef.current },
-      });
+      await saveThread({ data: { threadId: tid, messages: persistable.map(uiToStored) } });
       void invalidateThreads(queryClient);
       setSaveWarning(false);
     } catch (err) {

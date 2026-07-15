@@ -102,7 +102,7 @@ export interface Storage {
     traceEnabled?: boolean,
     modelSettings?: ThreadModelSettings,
   ): Promise<void>;
-  /** Creates the thread if missing (title from the first user message), then snapshot-upserts messages. */
+  /** Creates the thread if missing (including initial model settings), then snapshot-upserts messages. */
   saveThreadSnapshot(
     userId: string,
     orgId: string,

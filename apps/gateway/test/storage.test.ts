@@ -616,6 +616,32 @@ describe("threads + messages", () => {
     const updated = await store.getThread("model-owner", "org-model", "model-thread");
     expect(updated?.thread.modelSettings).toEqual(solSettings);
     expect(updated?.thread.updatedAt).toBe(updatedAt);
+
+    // A response finishing after the picker save may carry the older controls captured at send time.
+    await store.saveThreadSnapshot(
+      "model-owner",
+      "org-model",
+      "model-thread",
+      [textMessage("m", "user", "model")],
+      miniSettings,
+    );
+    expect((await store.getThread("model-owner", "org-model", "model-thread"))?.thread.modelSettings).toEqual(
+      solSettings,
+    );
+
+    // The initial start request is also fire-and-forget and may arrive after the picker mutation.
+    await store.startThread(
+      "model-owner",
+      "org-model",
+      "model-thread",
+      textMessage("m", "user", "model"),
+      false,
+      miniSettings,
+    );
+    expect((await store.getThread("model-owner", "org-model", "model-thread"))?.thread.modelSettings).toEqual(
+      solSettings,
+    );
+
     await expect(store.setThreadModelSettings("mallory", "org-model", "model-thread", miniSettings)).rejects.toThrow(
       "thread not found",
     );

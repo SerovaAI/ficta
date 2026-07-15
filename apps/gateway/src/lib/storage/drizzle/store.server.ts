@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gte, inArray, lt, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
 import type { Provider } from "@/lib/models";
 import { deriveThreadTitleFromText, THREAD_TITLE_MAX } from "@/lib/thread-title";
 import { type Storage, ThreadProtectionLimitError } from "../storage.server";
@@ -541,9 +541,16 @@ export function createStorage(): Storage {
             .set({
               updatedAt: new Date(),
               ...(traceEnabled ? { traceEnabled: true } : {}),
-              ...(modelSettings ? { modelSettings } : {}),
             })
             .where(eq(threads.id, threadId));
+          // A snapshot may have won the create race without model settings. Fill that gap only while it is
+          // still null, so this delayed starter can never replace a newer picker mutation.
+          if (modelSettings) {
+            await tx
+              .update(threads)
+              .set({ modelSettings })
+              .where(and(eq(threads.id, threadId), isNull(threads.modelSettings)));
+          }
         } else {
           await tx
             .insert(threads)
@@ -567,10 +574,9 @@ export function createStorage(): Storage {
         if (existing) {
           // A thread id is client-generated; refuse to write into someone else's thread or workspace.
           if (existing.userId !== userId || existing.orgId !== orgId) throw new Error("thread not found");
-          await tx
-            .update(threads)
-            .set({ updatedAt: new Date(), ...(modelSettings ? { modelSettings } : {}) })
-            .where(eq(threads.id, threadId));
+          // Model settings are creation-only here. Picker changes use setThreadModelSettings, so a lagging
+          // transcript snapshot cannot overwrite a newer selection.
+          await tx.update(threads).set({ updatedAt: new Date() }).where(eq(threads.id, threadId));
         } else {
           await tx.insert(threads).values({ id: threadId, userId, orgId, title: deriveTitle(snapshot), modelSettings });
         }
