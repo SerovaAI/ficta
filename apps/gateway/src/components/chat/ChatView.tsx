@@ -40,6 +40,12 @@ import {
 import { withOneShotProtectionTicket } from "@/lib/protection-connection";
 import { type GatewayProtectionPreview, previewProtection } from "@/lib/protection-preview";
 import { type ProtectionReviewDestination, runProtectionReviewAction } from "@/lib/protection-review-action";
+import {
+  effectiveProtectionReviewMode,
+  type ProtectionReviewMode,
+  protectionPreviewOutcome,
+  protectionReviewRequiresPreview,
+} from "@/lib/protection-review-mode";
 import { automaticProtectionValues, protectionValueCoverage } from "@/lib/protection-review-value";
 import { type ProtectionStatus, requiredRegistryBlock } from "@/lib/protection-status";
 import { fetchProxyConfig } from "@/lib/proxy-config";
@@ -134,7 +140,7 @@ export function ChatView({
   const [activeThreadId, setActiveThreadId] = useState(threadId);
   const [threadTraceEnabled, setThreadTraceEnabledState] = useState(initialThreadTraceEnabled ?? false);
   const [threadTraceError, setThreadTraceError] = useState(false);
-  const [reviewBeforeSend, setReviewBeforeSend] = useState(true);
+  const [reviewMode, setReviewMode] = useState<ProtectionReviewMode>("adaptive");
   const [traceCapture, setTraceCapture] = useState({
     loaded: false,
     known: false,
@@ -144,6 +150,7 @@ export function ChatView({
   const [saveWarning, setSaveWarning] = useState(false);
   const pendingProtectionTicket = useRef<string | undefined>(undefined);
   const protectionPreviewRequest = useRef<{ generation: number; controller?: AbortController }>({ generation: 0 });
+  const protectionReviewAttempt = useRef<{ text: string; action: "send" | "reload" } | undefined>(undefined);
   const [protectionReview, setProtectionReview] = useState<{
     text: string;
     preview: GatewayProtectionPreview;
@@ -224,7 +231,8 @@ export function ChatView({
   useEffect(() => {
     cancelProtectionPreview();
     pendingProtectionTicket.current = undefined;
-    setReviewBeforeSend(true);
+    protectionReviewAttempt.current = undefined;
+    setReviewMode("adaptive");
     setThreadTraceError(false);
     setProtectionReview(undefined);
     setProtectionReviewLoading(false);
@@ -338,8 +346,8 @@ export function ChatView({
 
   // Whether the current protection posture allows sending, blocks it, or needs a one-time acknowledgement.
   const posture = sendPosture(protectionStatus);
-  const protectionReviewRequired = instance.protectionReviewRequired === true;
-  const reviewBeforeSendEnabled = protectionReviewRequired || reviewBeforeSend;
+  const reviewMinimum = instance.protectionReviewMinimum ?? "off";
+  const effectiveReviewMode = effectiveProtectionReviewMode(reviewMode, reviewMinimum);
 
   const dispatchContent = (
     content: string,
@@ -370,10 +378,37 @@ export function ChatView({
     });
   };
 
-  const beginProtectionReview = async (text: string, action: "send" | "reload" = "send") => {
+  const dispatchProtectionPreview = (content: string, preview: GatewayProtectionPreview, action: "send" | "reload") => {
+    protectionReviewAttempt.current = undefined;
+    const annotations = previewFindingsToAnnotations(content, preview.findings);
+    setProtectionReview(undefined);
+    setProtectionReviewError("");
+    setProtectionReviewNotice("");
+    if (action === "send") {
+      dispatchContent(content, preview.ticket, annotations);
+      return;
+    }
+    const updatedMessages = replaceLatestUserProtectionAnnotations(messagesRef.current, annotations);
+    messagesRef.current = updatedMessages;
+    setMessages(updatedMessages);
+    const assistantPosition = latestAssistantPosition(updatedMessages);
+    if (assistantPosition !== -1) clearRestoreHighlightsAtPosition(assistantPosition);
+    pendingProtectionTicket.current = preview.ticket;
+    const reloadPromise = reload();
+    void reloadPromise.finally(() => {
+      if (pendingProtectionTicket.current === preview.ticket) pendingProtectionTicket.current = undefined;
+    });
+  };
+
+  const beginProtectionReview = async (text: string, action: "send" | "reload" = "send", contentIsComposed = false) => {
     const trimmed = text.trim();
-    const content = action === "send" ? messageWithAttachments(trimmed, attachments) : trimmed;
+    const content = contentIsComposed
+      ? text
+      : action === "send"
+        ? messageWithAttachments(trimmed, attachments)
+        : trimmed;
     if (!content.trim() || isLoading || isExtracting || protectionReviewLoading || startingThread.current) return;
+    protectionReviewAttempt.current = { text: content, action };
     setProtectionReview(undefined);
     setProtectionReviewError("");
     setProtectionReviewNotice("");
@@ -382,6 +417,10 @@ export function ChatView({
     try {
       const preview = await previewProtection({ threadId: tid, text: content, signal: request.controller.signal });
       if (!protectionPreviewIsCurrent(request.generation)) return;
+      if (protectionPreviewOutcome(effectiveReviewMode, preview.findings.length) === "send") {
+        dispatchProtectionPreview(content, preview, action);
+        return;
+      }
       setProtectionReview({ text: content, preview, newlyProtectedValues: [], action });
     } catch (err) {
       if (!protectionPreviewIsCurrent(request.generation) || isAbortError(err)) return;
@@ -389,6 +428,11 @@ export function ChatView({
     } finally {
       if (protectionPreviewIsCurrent(request.generation)) setProtectionReviewLoading(false);
     }
+  };
+
+  const retryProtectionReview = () => {
+    const attempt = protectionReviewAttempt.current;
+    if (attempt) void beginProtectionReview(attempt.text, attempt.action, true);
   };
 
   // Gate the raw dispatch on protection posture so the Send affordance can't outrun the banner: a blocked
@@ -400,14 +444,14 @@ export function ChatView({
       setConfirmSendOpen(true);
       return;
     }
-    if (reviewBeforeSendEnabled) void beginProtectionReview(text);
+    if (protectionReviewRequiresPreview(effectiveReviewMode)) void beginProtectionReview(text);
     else dispatchContent(messageWithAttachments(text.trim(), attachments));
   };
 
   const confirmPassthroughSend = () => {
     setPassthroughAck(true);
     setConfirmSendOpen(false);
-    if (reviewBeforeSendEnabled) void beginProtectionReview(input);
+    if (protectionReviewRequiresPreview(effectiveReviewMode)) void beginProtectionReview(input);
     else dispatchContent(messageWithAttachments(input.trim(), attachments));
   };
 
@@ -523,32 +567,13 @@ export function ChatView({
 
   const sendProtected = () => {
     if (!protectionReview || protectionReviewLoading) return;
-    const content = protectionReview.text;
-    const ticket = protectionReview.preview.ticket;
-    const annotations = previewFindingsToAnnotations(content, protectionReview.preview.findings);
-    const action = protectionReview.action;
-    setProtectionReview(undefined);
-    setProtectionReviewError("");
-    setProtectionReviewNotice("");
-    if (action === "send") {
-      dispatchContent(content, ticket, annotations);
-      return;
-    }
-    const updatedMessages = replaceLatestUserProtectionAnnotations(messagesRef.current, annotations);
-    messagesRef.current = updatedMessages;
-    setMessages(updatedMessages);
-    const assistantPosition = latestAssistantPosition(updatedMessages);
-    if (assistantPosition !== -1) clearRestoreHighlightsAtPosition(assistantPosition);
-    pendingProtectionTicket.current = ticket;
-    const reloadPromise = reload();
-    void reloadPromise.finally(() => {
-      if (pendingProtectionTicket.current === ticket) pendingProtectionTicket.current = undefined;
-    });
+    dispatchProtectionPreview(protectionReview.text, protectionReview.preview, protectionReview.action);
   };
 
   const closeProtectionReview = () => {
     cancelProtectionPreview();
     pendingProtectionTicket.current = undefined;
+    protectionReviewAttempt.current = undefined;
     setProtectionReview(undefined);
     setProtectionReviewLoading(false);
     setProtectionReviewError("");
@@ -670,6 +695,7 @@ export function ChatView({
     if (hasDraft && !window.confirm("Discard your unsent message and start a new chat?")) return;
     cancelProtectionPreview();
     pendingProtectionTicket.current = undefined;
+    protectionReviewAttempt.current = undefined;
 
     // Start a genuinely new thread: navigate to `/`, which mounts a fresh ChatView with a new thread id.
     // (clear() alone would reuse this id and overwrite the current thread, and the URL may already be
@@ -690,7 +716,7 @@ export function ChatView({
 
   const regenerate = () => {
     const latestUserText = latestUserMessageText(messagesRef.current);
-    if (reviewBeforeSendEnabled && latestUserText) {
+    if (protectionReviewRequiresPreview(effectiveReviewMode) && latestUserText) {
       void beginProtectionReview(latestUserText, "reload");
       return;
     }
@@ -716,9 +742,10 @@ export function ChatView({
       suggestValues={protectionReview.newlyProtectedValues}
       modelSummary={reviewModelSummary}
     />
-  ) : protectionReviewLoading ? (
+  ) : protectionReviewLoading && effectiveReviewMode === "always" ? (
     <ProtectionReviewLoading onBack={closeProtectionReview} />
   ) : undefined;
+  const checkingProtection = protectionReviewLoading && !protectionReview && effectiveReviewMode === "adaptive";
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -746,11 +773,9 @@ export function ChatView({
             threadTraceError={threadTraceError}
             traceAuditEnabled={traceCapture.traceAudit}
             onToggleThreadTrace={toggleThreadTrace}
-            reviewBeforeSend={reviewBeforeSendEnabled}
-            reviewBeforeSendRequired={protectionReviewRequired}
-            onToggleReviewBeforeSend={() => {
-              if (!protectionReviewRequired) setReviewBeforeSend((enabled) => !enabled);
-            }}
+            reviewMode={reviewMode}
+            reviewMinimum={reviewMinimum}
+            onReviewModeChange={setReviewMode}
             restoreDisplayMode={restoreDisplayMode}
             restoreHighlightsAvailable={restoreHighlightsAvailable}
             onToggleRestoreDisplay={() =>
@@ -781,7 +806,7 @@ export function ChatView({
 
           {protectionReviewError && !reviewContent ? (
             <div className="pb-2">
-              <ErrorBanner message={protectionReviewError} onRetry={() => void beginProtectionReview(input)} />
+              <ErrorBanner message={protectionReviewError} onRetry={retryProtectionReview} />
             </div>
           ) : null}
           <Composer
@@ -795,6 +820,7 @@ export function ChatView({
             onStop={stop}
             isLoading={isLoading}
             isExtracting={isExtracting}
+            isCheckingProtection={checkingProtection}
             disabledReason={posture.kind === "blocked" ? posture.reason : undefined}
             model={model}
             onModelChange={chooseModel}

@@ -8,8 +8,6 @@ import {
   Eye,
   EyeOff,
   FileCheck2,
-  ListChecks,
-  ListTodo,
   Loader2,
   LockKeyhole,
   Moon,
@@ -23,11 +21,21 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { type ProtectionTone, protectionPresentation } from "@/lib/protection-copy";
+import {
+  effectiveProtectionReviewMode,
+  isProtectionReviewMode,
+  PROTECTION_REVIEW_MODES,
+  type ProtectionReviewMode,
+  protectionReviewModeAllowed,
+  protectionReviewModeLabel,
+} from "@/lib/protection-review-mode";
 import type { ProtectionStatus } from "@/lib/protection-status";
 import type { RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
 import { useTheme } from "@/lib/use-theme";
@@ -43,9 +51,9 @@ export function TopBar({
   threadTraceError = false,
   traceAuditEnabled = false,
   onToggleThreadTrace,
-  reviewBeforeSend = true,
-  reviewBeforeSendRequired = false,
-  onToggleReviewBeforeSend,
+  reviewMode = "adaptive",
+  reviewMinimum = "off",
+  onReviewModeChange,
   restoreDisplayMode = "values",
   restoreHighlightsAvailable = false,
   onToggleRestoreDisplay,
@@ -62,9 +70,9 @@ export function TopBar({
   threadTraceError?: boolean;
   traceAuditEnabled?: boolean;
   onToggleThreadTrace?: () => void;
-  reviewBeforeSend?: boolean;
-  reviewBeforeSendRequired?: boolean;
-  onToggleReviewBeforeSend?: () => void;
+  reviewMode?: ProtectionReviewMode;
+  reviewMinimum?: ProtectionReviewMode;
+  onReviewModeChange?: (mode: ProtectionReviewMode) => void;
   restoreDisplayMode?: RestoreHighlightDisplayMode;
   restoreHighlightsAvailable?: boolean;
   onToggleRestoreDisplay?: () => void;
@@ -73,6 +81,7 @@ export function TopBar({
   const { theme, toggle } = useTheme();
   const restoreToggle = restorePrivacyToggleLabels(restoreDisplayMode);
   const protection = protectionPresentation(protectionStatus);
+  const effectiveReviewMode = effectiveProtectionReviewMode(reviewMode, reviewMinimum);
   const ProtectionIcon = protection.tone === "good" ? ShieldCheck : AlertTriangle;
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
@@ -117,26 +126,47 @@ export function TopBar({
                 </span>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {onToggleReviewBeforeSend ? (
-                reviewBeforeSendRequired ? (
-                  <DropdownMenuLabel className="flex items-center gap-2 font-normal">
-                    <LockKeyhole className="size-4 text-muted-foreground" aria-hidden />
-                    <span className="min-w-0 flex-1">Review before sending</span>
-                    <span className="text-xs text-muted-foreground">Required</span>
+              {onReviewModeChange ? (
+                <>
+                  <DropdownMenuLabel className="px-2 py-2 font-normal">
+                    <span className="flex items-center justify-between gap-3">
+                      <span className="font-medium">Review mode</span>
+                      <span className="text-xs text-muted-foreground">
+                        {protectionReviewModeLabel(effectiveReviewMode)}
+                      </span>
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                      Adaptive checks every send and pauses only when protected values are found.
+                    </span>
                   </DropdownMenuLabel>
-                ) : (
-                  <DropdownMenuItem onSelect={onToggleReviewBeforeSend}>
-                    {reviewBeforeSend ? (
-                      <ListChecks className="size-4" aria-hidden />
-                    ) : (
-                      <ListTodo className="size-4" aria-hidden />
-                    )}
-                    <span className="min-w-0 flex-1">Review before sending</span>
-                    <span className="text-xs text-muted-foreground">{reviewBeforeSend ? "On" : "Off"}</span>
-                  </DropdownMenuItem>
-                )
+                  <DropdownMenuRadioGroup
+                    value={effectiveReviewMode}
+                    onValueChange={(mode) => {
+                      if (isProtectionReviewMode(mode) && protectionReviewModeAllowed(mode, reviewMinimum)) {
+                        onReviewModeChange(mode);
+                      }
+                    }}
+                  >
+                    {PROTECTION_REVIEW_MODES.map((mode) => {
+                      const allowed = protectionReviewModeAllowed(mode, reviewMinimum);
+                      return (
+                        <DropdownMenuRadioItem key={mode} value={mode} disabled={!allowed} className="items-start py-2">
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-1.5 font-medium">
+                              {protectionReviewModeLabel(mode)}
+                              {!allowed ? <LockKeyhole className="size-3.5" aria-hidden /> : null}
+                            </span>
+                            <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
+                              {reviewModeDescription(mode, allowed)}
+                            </span>
+                          </span>
+                        </DropdownMenuRadioItem>
+                      );
+                    })}
+                  </DropdownMenuRadioGroup>
+                </>
               ) : null}
-              {onToggleReviewBeforeSend && threadTraceControlVisible && onToggleThreadTrace ? (
+              {onReviewModeChange && threadTraceControlVisible && onToggleThreadTrace ? (
                 <DropdownMenuSeparator />
               ) : null}
               {threadTraceControlVisible && onToggleThreadTrace ? (
@@ -311,4 +341,11 @@ function protectionIconClass(tone: ProtectionTone): string {
   if (tone === "warning") return "size-4 text-amber-700 dark:text-amber-300";
   if (tone === "danger") return "size-4 text-red-700 dark:text-red-300";
   return "size-4 text-muted-foreground";
+}
+
+function reviewModeDescription(mode: ProtectionReviewMode, allowed: boolean): string {
+  if (!allowed) return "Unavailable below the administrator minimum.";
+  if (mode === "off") return "Send without checking for review findings.";
+  if (mode === "adaptive") return "Review only when protected values are found.";
+  return "Review every message before it is sent.";
 }

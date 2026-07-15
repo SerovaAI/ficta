@@ -59,10 +59,12 @@ describe("instance settings", () => {
     await store.patchInstanceSettings(ORG, { instanceName: "Acme" });
     await store.patchInstanceSettings(ORG, { allowedModels: ["openai/gpt-5"] });
     await store.patchInstanceSettings(ORG, { suggestedPrompts: ["Summarize this."] });
+    await store.patchInstanceSettings(ORG, { protectionReviewMinimum: "adaptive" });
     expect(await store.getInstanceSettings(ORG)).toEqual({
       instanceName: "Acme",
       allowedModels: ["openai/gpt-5"],
       suggestedPrompts: ["Summarize this."],
+      protectionReviewMinimum: "adaptive",
     });
   });
 

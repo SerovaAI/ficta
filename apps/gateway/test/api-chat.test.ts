@@ -52,9 +52,11 @@ describe("messagesForModel", () => {
 });
 
 describe("requiresProtectionReviewTicket", () => {
-  it("fails closed when an administrator requires review", () => {
-    expect(requiresProtectionReviewTicket({ protectionReviewRequired: true }, undefined)).toBe(true);
-    expect(requiresProtectionReviewTicket({ protectionReviewRequired: true }, "ticket")).toBe(false);
+  it("fails closed when an administrator requires analysis or review", () => {
+    expect(requiresProtectionReviewTicket({ protectionReviewMinimum: "adaptive" }, undefined)).toBe(true);
+    expect(requiresProtectionReviewTicket({ protectionReviewMinimum: "always" }, undefined)).toBe(true);
+    expect(requiresProtectionReviewTicket({ protectionReviewMinimum: "always" }, "ticket")).toBe(false);
+    expect(requiresProtectionReviewTicket({ protectionReviewMinimum: "off" }, undefined)).toBe(false);
     expect(requiresProtectionReviewTicket({}, undefined)).toBe(false);
   });
 });
