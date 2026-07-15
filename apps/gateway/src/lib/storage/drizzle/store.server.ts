@@ -12,6 +12,7 @@ import type {
   StoredMessage,
   ThreadEgressEvent,
   ThreadEgressReceipt,
+  ThreadModelSettings,
   ThreadSummary,
   UserSettings,
 } from "../types";
@@ -528,7 +529,7 @@ export function createStorage(): Storage {
       return thread ?? null;
     },
 
-    async startThread(userId, orgId, threadId, message, traceEnabled = false) {
+    async startThread(userId, orgId, threadId, message, traceEnabled = false, modelSettings) {
       const db = await getDb();
       await db.transaction(async (tx) => {
         const [existing] = await tx.select().from(threads).where(eq(threads.id, threadId));
@@ -537,10 +538,16 @@ export function createStorage(): Storage {
           if (existing.userId !== userId || existing.orgId !== orgId) throw new Error("thread not found");
           await tx
             .update(threads)
-            .set({ updatedAt: new Date(), ...(traceEnabled ? { traceEnabled: true } : {}) })
+            .set({
+              updatedAt: new Date(),
+              ...(traceEnabled ? { traceEnabled: true } : {}),
+              ...(modelSettings ? { modelSettings } : {}),
+            })
             .where(eq(threads.id, threadId));
         } else {
-          await tx.insert(threads).values({ id: threadId, userId, orgId, title: deriveTitle([message]), traceEnabled });
+          await tx
+            .insert(threads)
+            .values({ id: threadId, userId, orgId, title: deriveTitle([message]), traceEnabled, modelSettings });
         }
 
         await tx
@@ -553,16 +560,19 @@ export function createStorage(): Storage {
       });
     },
 
-    async saveThreadSnapshot(userId, orgId, threadId, snapshot) {
+    async saveThreadSnapshot(userId, orgId, threadId, snapshot, modelSettings) {
       const db = await getDb();
       await db.transaction(async (tx) => {
         const [existing] = await tx.select().from(threads).where(eq(threads.id, threadId));
         if (existing) {
           // A thread id is client-generated; refuse to write into someone else's thread or workspace.
           if (existing.userId !== userId || existing.orgId !== orgId) throw new Error("thread not found");
-          await tx.update(threads).set({ updatedAt: new Date() }).where(eq(threads.id, threadId));
+          await tx
+            .update(threads)
+            .set({ updatedAt: new Date(), ...(modelSettings ? { modelSettings } : {}) })
+            .where(eq(threads.id, threadId));
         } else {
-          await tx.insert(threads).values({ id: threadId, userId, orgId, title: deriveTitle(snapshot) });
+          await tx.insert(threads).values({ id: threadId, userId, orgId, title: deriveTitle(snapshot), modelSettings });
         }
 
         // Snapshot semantics: the incoming list is the whole truth. Drop rows it no longer contains
@@ -586,6 +596,16 @@ export function createStorage(): Storage {
             });
         }
       });
+    },
+
+    async setThreadModelSettings(userId, orgId, threadId, modelSettings) {
+      const db = await getDb();
+      const updated = await db
+        .update(threads)
+        .set({ modelSettings })
+        .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)))
+        .returning();
+      if (updated.length === 0) throw new Error("thread not found");
     },
 
     async renameThread(userId, orgId, threadId, title) {
@@ -785,6 +805,7 @@ function toProtectedRegistryEntry(row: {
 function toThreadSummary(row: {
   id: string;
   title: string;
+  modelSettings: ThreadModelSettings | null;
   traceEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -792,6 +813,7 @@ function toThreadSummary(row: {
   return {
     id: row.id,
     title: row.title,
+    ...(row.modelSettings ? { modelSettings: row.modelSettings } : {}),
     traceEnabled: row.traceEnabled,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

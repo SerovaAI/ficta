@@ -71,6 +71,13 @@
       "when": 1784036136419,
       "tag": "0009_reflective_mole_man",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784093019239,
+      "tag": "0010_curly_spirit",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,7 @@ import type {
   ProtectedRegistryProtectionKind,
   ProtectionStatsTotals,
   ThreadEgressEvent,
+  ThreadModelSettings,
   UserSettings,
 } from "../types";
 
@@ -136,6 +137,7 @@ export const threads = pgTable(
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull().default("local"),
     title: text("title").notNull().default("New chat"),
+    modelSettings: jsonb("model_settings").$type<ThreadModelSettings>(),
     traceEnabled: boolean("trace_enabled").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
