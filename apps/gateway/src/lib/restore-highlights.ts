@@ -394,7 +394,13 @@ function scanInlineCodeChunk(chunk: string, offset: number, regions: MarkdownCod
     const open = runs[i];
     if (!open) return;
     const openStart = offset + open.index;
-    const closeIndex = runs.findIndex((run, j) => j > i && run[0].length === open[0].length);
+    let closeIndex = -1;
+    for (let j = i + 1; j < runs.length; j += 1) {
+      if (runs[j]?.[0].length === open[0].length) {
+        closeIndex = j;
+        break;
+      }
+    }
     const close = closeIndex === -1 ? undefined : runs[closeIndex];
     if (!close) {
       regions.push({ start: openStart, end: offset + chunk.length });
@@ -435,8 +441,14 @@ export function renderProtectionHighlights(
   if (spans.length === 0) return { html: visibleText, highlighted: false };
 
   const codeRegions = markdownCodeRegions(visibleText);
-  const intersectsCode = (start: number, end: number) =>
-    codeRegions.some((region) => region.start < end && region.end > start);
+  // Spans and regions are both sorted by start and non-overlapping, so a single advancing cursor
+  // suffices: a region ending at or before this span's start can never intersect a later span either.
+  let regionIndex = 0;
+  const intersectsCode = (start: number, end: number): boolean => {
+    while (regionIndex < codeRegions.length && (codeRegions[regionIndex]?.end ?? 0) <= start) regionIndex += 1;
+    const region = codeRegions[regionIndex];
+    return region !== undefined && region.start < end;
+  };
 
   let out = "";
   let cursor = 0;
