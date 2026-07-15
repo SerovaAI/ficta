@@ -2,6 +2,7 @@ import { type EntityFidelityScores, evaluateEntityFidelityGate } from "./entity-
 import {
   characterizeRenderedFixture,
   entityIdForToken,
+  factValueMatches,
   loadEntityFidelityFixture,
   type RenderedFixture,
   renderEntityFidelityFixture,
@@ -175,8 +176,12 @@ function scoreResponse(renderedFixture: RenderedFixture, expected: ExpectedAnswe
         entityIdForToken(renderedFixture, answer[field]) === entityIdForToken(renderedFixture, expected[field]),
     ]),
   );
+  // Facts test that redaction left the value VISIBLE, not the model's phrasing discipline: accept an
+  // answer containing the expected phrase as a standalone value ("within 30 calendar days." for
+  // "30 calendar days"). The opaque baseline failed strict equality the same way entity-family did,
+  // so strictness here measured scorer noise, not token damage. Party/token fields stay byte-exact.
   const factExact = Object.fromEntries(
-    factFields.map((field) => [field, normalized(answer?.[field]) === normalized(expected[field])]),
+    factFields.map((field) => [field, factValueMatches(answer?.[field], expected[field])]),
   );
   const expectedTokens = new Set(
     renderedFixture.mappings
@@ -217,7 +222,9 @@ async function callProvider(target: ProviderTarget, prompt: string, transport: T
 async function callOpenAi(model: string, prompt: string, transport: Transport): Promise<ProviderResult> {
   const url = "https://api.openai.com/v1/responses";
   const headers = { authorization: `Bearer ${process.env.OPENAI_API_KEY}` };
-  const base = { model, input: prompt, max_output_tokens: 800, store: false };
+  // Reasoning models (gpt-5 family) spend output budget on reasoning items before any output_text;
+  // 800 starved them into status=incomplete with zero visible output.
+  const base = { model, input: prompt, max_output_tokens: 4096, store: false };
 
   if (transport === "stream") {
     const events = await postSse(url, headers, { ...base, stream: true });
@@ -267,7 +274,14 @@ function openAiOutputText(response: unknown): string {
       }
     }
   }
-  if (text.length === 0) throw new Error("OpenAI response contained no output_text blocks");
+  if (text.length === 0) {
+    const status = typeof response.status === "string" ? response.status : "unknown";
+    const reason =
+      isRecord(response.incomplete_details) && typeof response.incomplete_details.reason === "string"
+        ? ` (${response.incomplete_details.reason})`
+        : "";
+    throw new Error(`OpenAI response contained no output_text blocks; status ${status}${reason}`);
+  }
   return text.join("");
 }
 
@@ -277,7 +291,7 @@ async function callAnthropic(model: string, prompt: string, transport: Transport
     "anthropic-version": "2023-06-01",
     "x-api-key": process.env.ANTHROPIC_API_KEY ?? "",
   };
-  const base = { model, max_tokens: 800, messages: [{ role: "user", content: prompt }] };
+  const base = { model, max_tokens: 4096, messages: [{ role: "user", content: prompt }] };
 
   if (transport === "stream") {
     const events = await postSse(url, headers, { ...base, stream: true });
@@ -539,10 +553,6 @@ function assertApiKey(provider: ProviderTarget["provider"]): void {
   if (provider === "anthropic" && !process.env.ANTHROPIC_API_KEY) {
     throw new Error("--anthropic-model requires ANTHROPIC_API_KEY");
   }
-}
-
-function normalized(value: unknown): string {
-  return typeof value === "string" ? value.trim().replace(/\s+/gu, " ").toLowerCase() : "";
 }
 
 function rate(values: boolean[]): number {
