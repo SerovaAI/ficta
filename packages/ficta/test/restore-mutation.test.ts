@@ -3,9 +3,9 @@
 // Restore is exact string match (vault.ts `restoreTextExcept`): a token that matches the surrogate
 // shape but is not in the dictionary is returned UNCHANGED, and a token whose shape is broken is not
 // matched at all. Either way it is passed through — never fuzzily mapped to a value. These tests pin
-// that behavior so a future residual-surrogate guard (see notes/spec-restore-mutation-hardening.md,
-// Part B) is an intentional change, not an accidental one. The load-bearing invariant is the safety
-// one: a mutated surrogate must NEVER restore to the real secret.
+// that pass-through behavior; the Part B Phase 1 guard OBSERVES the debris without changing it
+// (counts asserted in residual-guard.test.ts). The load-bearing invariant is the safety one: a
+// mutated surrogate must NEVER restore to the real secret.
 
 import { afterEach, describe, expect, it } from "vitest";
 import { typedSurrogateStrategy } from "../src/engine/surrogate.js";
@@ -64,7 +64,7 @@ describe("restore hardening — mutated surrogate never yields the real secret (
     const residual = flipLastHex(surrogate);
     const out = vault.restoreText(residual);
     expect(out).not.toContain(SECRET);
-    expect(out).toBe(residual); // TODAY: silently forwarded. Part B's guard should flag/strip this.
+    expect(out).toBe(residual); // forwarded unchanged; Phase 1 counts it (residual-guard.test.ts)
     expect(out).toMatch(SURROGATE_SHAPE); // still looks like a real token to a downstream reader
   });
 
@@ -92,7 +92,7 @@ describe("restore hardening — mutated surrogate in a stream (restoreStream)", 
     const cut = text.indexOf(residual) + 8;
     const out = await transformText(vault.restoreStream(), [text.slice(0, cut), text.slice(cut)]);
     expect(out).not.toContain(SECRET);
-    expect(out).toContain("FICTA_"); // residual survives to the client today
+    expect(out).toContain("FICTA_"); // residual survives to the client (counted, not yet stripped)
   });
 
   it("does not leak the secret when a token is truncated at the end of the stream", async () => {

@@ -158,6 +158,12 @@ export interface ProtectionStatsTotals {
   keptOutOfModelValues: number;
   restoredValues: number;
   withheldFromToolsValues: number;
+  /**
+   * Surrogate-shaped tokens that survived restore with no dictionary mapping — mutated, truncated,
+   * or invented by the model (e.g. a wildcard family reference) and forwarded to the client as-is.
+   * Values-free token count. Optional: emitted by ficta ≥ the restore-mutation Phase 1 release.
+   */
+  residualSurrogateValues?: number;
   /** Ambiguous inferred organization mention occurrences protected through the literal path. */
   ambiguousEntityLinks: number;
   /** Distinct requests containing at least one ambiguous inferred organization mention. */

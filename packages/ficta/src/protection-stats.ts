@@ -54,6 +54,7 @@ export class ProtectionStats {
   private readonly events: ProtectionStatsEvent[] = [];
   private restoredValuesTotal = 0;
   private withheldFromToolsValuesTotal = 0;
+  private residualSurrogateValuesTotal = 0;
   readonly path: string;
   private readonly captureDir?: () => string | undefined;
 
@@ -72,15 +73,28 @@ export class ProtectionStats {
     return this.withheldFromToolsValuesTotal;
   }
 
+  /** Cumulative unmapped surrogate-shaped tokens that survived restore this run (values-free). */
+  get residualSurrogateValues(): number {
+    return this.residualSurrogateValuesTotal;
+  }
+
   /**
-   * Record a response's restore outcome: how many distinct values went back in, and how many were
-   * held back from tool-call arguments (restore-into-tools withholding). Totals-only — restore has
-   * no per-hit event record the way redaction does. Skips the disk write when there is nothing new.
+   * Record a response's restore outcome: how many distinct values went back in, how many were held
+   * back from tool-call arguments (restore-into-tools withholding), and how many surrogate-shaped
+   * tokens survived restore unmapped (model-mutated/invented — token debris the client received).
+   * Totals-only — restore has no per-hit event record the way redaction does. Skips the disk write
+   * when there is nothing new.
    */
-  recordRestore(outcome: { restoredValues: number; withheldFromToolsValues: number }): void {
-    if (outcome.restoredValues <= 0 && outcome.withheldFromToolsValues <= 0) return;
+  recordRestore(outcome: {
+    restoredValues: number;
+    withheldFromToolsValues: number;
+    residualSurrogateValues?: number;
+  }): void {
+    const residuals = outcome.residualSurrogateValues ?? 0;
+    if (outcome.restoredValues <= 0 && outcome.withheldFromToolsValues <= 0 && residuals <= 0) return;
     this.restoredValuesTotal += Math.max(0, outcome.restoredValues);
     this.withheldFromToolsValuesTotal += Math.max(0, outcome.withheldFromToolsValues);
+    this.residualSurrogateValuesTotal += Math.max(0, residuals);
     this.write();
   }
 
@@ -172,6 +186,7 @@ export class ProtectionStats {
       keptOutOfModelValues,
       restoredValues: this.restoredValuesTotal,
       withheldFromToolsValues: this.withheldFromToolsValuesTotal,
+      residualSurrogateValues: this.residualSurrogateValuesTotal,
       ambiguousEntityLinks,
       ambiguousEntityLinkRequests: ambiguousRequestKeys.size,
     };
@@ -223,6 +238,10 @@ export function renderProtectionStatsSummary(snapshot: ProtectionStatsSnapshot):
     lines.push(
       `   ambiguous entity links: ${snapshot.totals.ambiguousEntityLinks} across ${snapshot.totals.ambiguousEntityLinkRequests} ${plural(snapshot.totals.ambiguousEntityLinkRequests, "request")}`,
     );
+  }
+  const residuals = snapshot.totals.residualSurrogateValues ?? 0;
+  if (residuals > 0) {
+    lines.push(`   unrestored surrogate tokens: ${residuals} (model-mutated or invented; see restore-mutation notes)`);
   }
 
   const modelLine = formatTopBuckets(

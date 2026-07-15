@@ -137,6 +137,14 @@ export interface RequestScope {
   readonly withheldFromToolsCount: number;
 
   /**
+   * Distinct surrogate-shaped tokens that survived this request's restore with no dictionary mapping
+   * (model-mutated, truncated, or invented — token debris forwarded to the client as-is). Values-free
+   * observability for the restore-mutation hardening; read alongside {@link restoredCount} to log the
+   * `⚠️ N unrestored surrogate token(s)` line.
+   */
+  readonly residualSurrogateCount: number;
+
+  /**
    * Raw restore audit for explicit trace/debug runs. This includes protected values and must only be
    * written when runtime capture and raw-value auditing (`FICTA_TRACE_AUDIT=1`) are enabled, never
    * surfaced in normal stats.
