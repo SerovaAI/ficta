@@ -849,8 +849,20 @@ export async function startProxy(
       if (withheld > 0) {
         log.warn({ reqId: n, withheld }, `🛡️ withheld ${withheld} value(s) from tool-call arguments`);
       }
-      // Persist both counts so withholds are visible beyond this log line (protection-stats.json, /__ficta/status).
-      stats.recordRestore({ restoredValues: restored, withheldFromToolsValues: withheld });
+      // A surrogate-shaped token with no dictionary mapping survived restore — the model mutated,
+      // truncated, or invented it, and the client received it as-is. Restore correctly refused to
+      // guess (exact-match only); surfacing the count turns silent token debris into an operator
+      // signal. Observe-only: response bytes are unchanged.
+      const residuals = scope.residualSurrogateCount;
+      if (residuals > 0) {
+        log.warn({ reqId: n, residuals }, `⚠️ ${residuals} unrestored surrogate token(s) left in response`);
+      }
+      // Persist the counts so they are visible beyond this log line (protection-stats.json, /__ficta/status).
+      stats.recordRestore({
+        restoredValues: restored,
+        withheldFromToolsValues: withheld,
+        residualSurrogateValues: residuals,
+      });
       writeProtectionTraceAudit(n, traceRedactions, scope, "completed", captureTraceAudit);
     };
 

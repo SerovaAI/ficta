@@ -2,7 +2,13 @@ import { envFlag, type RestoreIntoToolsPolicy, restoreIntoToolsPolicy } from "./
 import { expansionSpans, flexiblePatternSource } from "./expander.js";
 import type { ProtectedValueKind } from "./plugins/types.js";
 import { RedactionInvariantError, type RestoreOrigin } from "./redaction-engine.js";
-import { type EntitySurrogate, type SurrogateStrategy, surrogateStrategy } from "./surrogate.js";
+import {
+  type EntitySurrogate,
+  RESIDUAL_MAX_LENGTH,
+  residualSurrogatePattern,
+  type SurrogateStrategy,
+  surrogateStrategy,
+} from "./surrogate.js";
 
 /**
  * The vault: redact registered/detected values → surrogates on the way up, restore them on the
@@ -223,6 +229,64 @@ export abstract class VaultView {
     return this.withheldFromTools.size;
   }
 
+  /**
+   * Distinct surrogate-shaped tokens that survived restore with no dictionary mapping — the model
+   * mutated, truncated, or invented them (e.g. a wildcard family reference like
+   * `FICTA_ORG_<entityTag>_*`). Exact-match restore correctly leaves them alone, so each one reached
+   * the client as visible token debris. Values-free by construction: the set holds token text only,
+   * never a protected value. Observe-and-count only — response bytes are unchanged. Deliberately
+   * withheld tool-argument placeholders do NOT land here (they map in the dictionary and are
+   * filtered out).
+   */
+  readonly residualSurrogates = new Set<string>();
+
+  /** How many distinct unmapped surrogate-shaped tokens survived restore in this view's responses. */
+  get residualSurrogateCount(): number {
+    return this.residualSurrogates.size;
+  }
+
+  /**
+   * Record unmapped surrogate-shaped tokens in restored output. `acceptEnd` bounds acceptance for
+   * streaming callers: a candidate ending after it may still be completed (or reclassified) by text
+   * that has not arrived yet, so only matches ending at or before `acceptEnd` are recorded. Buffered
+   * callers pass complete text and use the default (accept everything).
+   */
+  private noteResiduals(text: string, acceptEnd: number = text.length): void {
+    if (!text || !text.includes("FICTA_")) return;
+    for (const match of text.matchAll(residualSurrogatePattern())) {
+      const token = match[0];
+      if (match.index + token.length > acceptEnd) continue;
+      if (this.valueFor(token) !== undefined) continue; // known token — withheld or skipped by design
+      this.residualSurrogates.add(token);
+    }
+  }
+
+  /**
+   * Streaming residual scan. Holds the last {@link RESIDUAL_MAX_LENGTH} chars back from acceptance so
+   * a token still arriving is never misclassified (e.g. an entity tag whose surface tag is in the
+   * next chunk would otherwise count as a fragment). The retained window is re-scanned on the next
+   * feed; {@link residualSurrogates} is a set of token strings, so overlap re-matches deduplicate.
+   */
+  protected residualScanner(): { feed(text: string): void; end(): void } {
+    const HOLD = RESIDUAL_MAX_LENGTH;
+    let pending = "";
+    return {
+      feed: (text: string): void => {
+        if (!text) return;
+        pending += text;
+        if (pending.length <= HOLD * 2) return;
+        this.noteResiduals(pending, pending.length - HOLD);
+        // Keep 2×HOLD: deferred candidates end within the last HOLD chars and start at most one
+        // token length before that, so no candidate can straddle the cut.
+        pending = pending.slice(pending.length - HOLD * 2);
+      },
+      end: (): void => {
+        this.noteResiduals(pending);
+        pending = "";
+      },
+    };
+  }
+
   /** Shared across all layers (a single injected strategy), so any layer's is the strategy. */
   protected get surrogate(): SurrogateStrategy {
     return this.layers[0].surrogate;
@@ -384,9 +448,16 @@ export abstract class VaultView {
     return out;
   }
 
-  /** Restore surrogates → real values in a chunk of text. */
+  /**
+   * Restore surrogates → real values in a complete text. Scans the result for residual (unmapped)
+   * surrogate-shaped tokens, so callers must pass whole texts — the streaming paths use
+   * {@link restoreTextExcept} internally plus a hold-back {@link residualScanner} on emitted output,
+   * because a chunk tail can end mid-token and must not be classified early.
+   */
   restoreText(text: string, opts: RestoreOptions = {}): string {
-    return this.restoreTextExcept(text, EMPTY_SKIP, opts);
+    const out = this.restoreTextExcept(text, EMPTY_SKIP, opts);
+    this.noteResiduals(out);
+    return out;
   }
 
   /**
@@ -453,7 +524,10 @@ export abstract class VaultView {
     adapter: BufferedRestoreAdapter = NOOP_BUFFERED_RESTORE_ADAPTER,
     opts: RestoreOptions = {},
   ): string {
-    if (!this.hasSurrogates || !body) return body;
+    if (!this.hasSurrogates || !body) {
+      this.noteResiduals(body); // an empty vault still observes token debris in complete bodies
+      return body;
+    }
     let parsed: unknown;
     try {
       parsed = JSON.parse(body);
@@ -502,9 +576,12 @@ export abstract class VaultView {
    * the body-wide restore cannot undo the withholding (mirror of {@link restoreTextExcept}).
    */
   restoreJsonText(text: string, skip: ReadonlySet<string> = EMPTY_SKIP, opts: RestoreOptions = {}): string {
-    if (!this.hasSurrogates || !text) return text;
+    if (!this.hasSurrogates || !text) {
+      this.noteResiduals(text); // an empty vault still observes token debris in complete payloads
+      return text;
+    }
     const markerSpans = completeRestoreMarkerSpans(text, opts.markers, { includeJsonEscaped: true });
-    return text.replace(this.surrogate.pattern, (m, index: number) => {
+    const out = text.replace(this.surrogate.pattern, (m, index: number) => {
       if (overlapsSpan(markerSpans, index, index + m.length)) return m;
       if (skip.has(m)) return m;
       const value = this.valueFor(m);
@@ -512,6 +589,8 @@ export abstract class VaultView {
       this.recordRestored(value, m);
       return jsonStringEscape(markRestoredValue(value, m, this.restoreOriginFor(m), opts.markers));
     });
+    this.noteResiduals(out); // callers pass complete JSON payloads (whole bodies / whole SSE records)
+    return out;
   }
 
   /**
@@ -626,17 +705,24 @@ export abstract class VaultView {
     const HOLD = this.surrogate.maxLength - 1; // max partial surrogate; a full token is maxLength chars
     let buf = "";
     const self = this;
+    // Residuals are scanned on the EMITTED output, not the working buffer: the buffer tail can end
+    // mid-token, and an incomplete token must not be classified until its right context has arrived.
+    const residuals = this.residualScanner();
     return new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
         // Restore complete surrogates in the full buffer; only a partial token can remain at the tail.
-        buf = self.restoreText(buf + decoder.decode(chunk, { stream: true }), opts);
+        buf = self.restoreTextExcept(buf + decoder.decode(chunk, { stream: true }), EMPTY_SKIP, opts);
         if (buf.length > HOLD) {
-          controller.enqueue(encoder.encode(buf.slice(0, buf.length - HOLD)));
+          const emitted = buf.slice(0, buf.length - HOLD);
+          residuals.feed(emitted);
+          controller.enqueue(encoder.encode(emitted));
           buf = buf.slice(buf.length - HOLD);
         }
       },
       flush(controller) {
-        buf = self.restoreText(buf + decoder.decode(), opts);
+        buf = self.restoreTextExcept(buf + decoder.decode(), EMPTY_SKIP, opts);
+        residuals.feed(buf);
+        residuals.end();
         if (buf) controller.enqueue(encoder.encode(buf));
       },
     });
@@ -670,8 +756,11 @@ export abstract class VaultView {
     // the UI never surfaces. The split is by path in restoreSseRecord: the fragment path restores with
     // markers (`displayText` + the marker-aware `restoreExcept`), the no-fragment metadata/replay path
     // restores plainly (`plainText` + `restoreJsonExcept`). `[DONE]` and flushed tails use `plainText`.
-    const plainText = (text: string) => this.restoreText(text);
-    const displayText = opts.markers ? (text: string) => this.restoreText(text, opts) : plainText;
+    // Non-scanning restores: SSE fragment reassembly calls these on pending-tail + fragment text
+    // whose end can be mid-token, so residual observation happens on the encoded OUTPUT instead
+    // (every emitted byte funnels through the stream's single encode point).
+    const plainText = (text: string) => this.restoreTextExcept(text, EMPTY_SKIP);
+    const displayText = opts.markers ? (text: string) => this.restoreTextExcept(text, EMPTY_SKIP, opts) : plainText;
     return createSseRestoreStream(
       plainText,
       adapter,
@@ -688,6 +777,7 @@ export abstract class VaultView {
         restoreToolArg: (text, withheldSink) => this.restoreToolArgText(text, policy, withheldSink),
       },
       displayText,
+      this.residualScanner(),
     );
   }
 }
@@ -933,6 +1023,9 @@ function createSseRestoreStream(
   /** Restore used for human-facing `kind: "text"` fragments only. Defaults to the plain `restoreText`;
    *  the highlight-marker variant is threaded here so decoration never lands on non-text fields. */
   restoreDisplayText: (text: string) => string = restoreText,
+  /** Residual-surrogate observer fed every emitted byte (tokens never split across emitted records:
+   *  fragment reassembly stitches them before emission), finalized when the stream flushes. */
+  residuals?: { feed(text: string): void; end(): void },
 ): TransformStream<Uint8Array, Uint8Array> {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
@@ -940,7 +1033,9 @@ function createSseRestoreStream(
   let buf = "";
 
   const encode = (text: string, controller: TransformStreamDefaultController<Uint8Array>): void => {
-    if (text) controller.enqueue(encoder.encode(text));
+    if (!text) return;
+    residuals?.feed(text);
+    controller.enqueue(encoder.encode(text));
   };
 
   return new TransformStream<Uint8Array, Uint8Array>({
@@ -963,6 +1058,7 @@ function createSseRestoreStream(
         encode(restoreSseRecord(buf, pending, restoreText, adapter, surrogate, tool, restoreDisplayText), controller);
       }
       encode(flushPendingSseFragments(pending, restoreText), controller);
+      residuals?.end();
     },
   });
 }

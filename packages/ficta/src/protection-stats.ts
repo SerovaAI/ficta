@@ -54,6 +54,7 @@ export class ProtectionStats {
   private readonly events: ProtectionStatsEvent[] = [];
   private restoredValuesTotal = 0;
   private withheldFromToolsValuesTotal = 0;
+  private residualSurrogateValuesTotal = 0;
   readonly path: string;
   private readonly captureDir?: () => string | undefined;
 
@@ -72,15 +73,28 @@ export class ProtectionStats {
     return this.withheldFromToolsValuesTotal;
   }
 
+  /** Cumulative unmapped surrogate-shaped tokens that survived restore this run (values-free). */
+  get residualSurrogateValues(): number {
+    return this.residualSurrogateValuesTotal;
+  }
+
   /**
-   * Record a response's restore outcome: how many distinct values went back in, and how many were
-   * held back from tool-call arguments (restore-into-tools withholding). Totals-only — restore has
-   * no per-hit event record the way redaction does. Skips the disk write when there is nothing new.
+   * Record a response's restore outcome: how many distinct values went back in, how many were held
+   * back from tool-call arguments (restore-into-tools withholding), and how many surrogate-shaped
+   * tokens survived restore unmapped (model-mutated/invented — token debris the client received).
+   * Totals-only — restore has no per-hit event record the way redaction does. Skips the disk write
+   * when there is nothing new.
    */
-  recordRestore(outcome: { restoredValues: number; withheldFromToolsValues: number }): void {
-    if (outcome.restoredValues <= 0 && outcome.withheldFromToolsValues <= 0) return;
+  recordRestore(outcome: {
+    restoredValues: number;
+    withheldFromToolsValues: number;
+    residualSurrogateValues?: number;
+  }): void {
+    const residuals = outcome.residualSurrogateValues ?? 0;
+    if (outcome.restoredValues <= 0 && outcome.withheldFromToolsValues <= 0 && residuals <= 0) return;
     this.restoredValuesTotal += Math.max(0, outcome.restoredValues);
     this.withheldFromToolsValuesTotal += Math.max(0, outcome.withheldFromToolsValues);
+    this.residualSurrogateValuesTotal += Math.max(0, residuals);
     this.write();
   }
 
@@ -172,6 +186,7 @@ export class ProtectionStats {
       keptOutOfModelValues,
       restoredValues: this.restoredValuesTotal,
       withheldFromToolsValues: this.withheldFromToolsValuesTotal,
+      residualSurrogateValues: this.residualSurrogateValuesTotal,
       ambiguousEntityLinks,
       ambiguousEntityLinkRequests: ambiguousRequestKeys.size,
     };
@@ -215,7 +230,14 @@ export class ProtectionStats {
 export function renderProtectionStatsSummary(snapshot: ProtectionStatsSnapshot): string {
   const total = snapshot.totals.keptOutOfModelValues;
   const lines = [`🔒 ficta — kept ${total} ${plural(total, "protected value")} out of the model this session`];
-  if (snapshot.totals.events === 0) return `${lines.join("\n")}\n`;
+  const residuals = snapshot.totals.residualSurrogateValues ?? 0;
+  const residualLine =
+    residuals > 0 ? `   unrestored surrogate tokens: ${residuals} (model-mutated or invented)` : undefined;
+  if (snapshot.totals.events === 0) {
+    // No redaction events, but residual debris is still worth reporting — it must not be suppressed.
+    if (residualLine) lines.push(residualLine);
+    return `${lines.join("\n")}\n`;
+  }
 
   const blocked = snapshot.totals.blockedRequests > 0 ? `, blocked ${snapshot.totals.blockedRequests}` : "";
   lines.push(`   affected requests: ${snapshot.totals.affectedRequests}${blocked}`);
@@ -224,6 +246,7 @@ export function renderProtectionStatsSummary(snapshot: ProtectionStatsSnapshot):
       `   ambiguous entity links: ${snapshot.totals.ambiguousEntityLinks} across ${snapshot.totals.ambiguousEntityLinkRequests} ${plural(snapshot.totals.ambiguousEntityLinkRequests, "request")}`,
     );
   }
+  if (residualLine) lines.push(residualLine);
 
   const modelLine = formatTopBuckets(
     snapshot.byModel.filter((bucket) => bucket.name !== "unknown"),

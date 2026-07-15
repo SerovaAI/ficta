@@ -215,6 +215,41 @@ function isPotentialEntityPrefix(text: string): boolean {
   return false;
 }
 
+// --- residual-surrogate detection ----------------------------------------------------------------
+
+/**
+ * An entity-family token reference a model invented or truncated: a complete entity tag with a
+ * missing or invalid surface tag (e.g. a wildcard family reference like `FICTA_ORG_<entityTag>_*`).
+ * The first alternative catches the tag followed by a dangling `_` (wildcard/truncation); the second
+ * catches the bare tag, requiring a hard word boundary — no ASCII alphanumeric or underscore may
+ * follow, so a tag embedded inside a longer identifier never matches. Shorter truncations (partial
+ * tags) are deliberately out of scope: matching them would flag prose that merely mentions the token
+ * prefix (e.g. documentation about ficta itself).
+ */
+const ENTITY_FRAGMENT_SOURCE =
+  `${HEX_PREFIX}(?:ORG|PERSON)_[A-Z2-7]{${ENTITY_TAG_LEN}}` + `(?:_(?![A-Z2-7]{${ENTITY_TAG_LEN}})|(?![0-9A-Za-z_]))`;
+
+/**
+ * Longest text a residual candidate can span; streaming scans must see this much right context
+ * beyond a candidate before classifying it (a shorter tail could still grow into a complete token).
+ */
+export const RESIDUAL_MAX_LENGTH = Math.max(ENTITY_MAX_LENGTH, TYPED_TOTAL);
+
+/**
+ * Matches every surrogate-shaped token ficta has ever emitted — opaque hex, typed, and entity-family
+ * — plus entity-family fragments, independent of the active strategy (a transcript can echo tokens
+ * minted under another style or process). Complete-entity precedes the fragment alternative so a
+ * whole token is never classified as its own fragment. Fresh instance per call: global regexes are
+ * stateful. Used only for post-restore residual observation; a match with no dictionary mapping is a
+ * token the model mutated, truncated, or invented, reaching the client as-is.
+ */
+export function residualSurrogatePattern(): RegExp {
+  const entity = ENTITY_PATTERN_SOURCE;
+  const typed = `${HEX_PREFIX}[A-Z0-9]{1,${MAX_TYPE_LEN}}_[0-9a-f]{${HEX_LEN}}`;
+  const hex = `${HEX_PREFIX}[0-9a-f]{${HEX_LEN}}`;
+  return new RegExp(`(?:${entity}|${ENTITY_FRAGMENT_SOURCE}|${typed}|${hex})`, "g");
+}
+
 /**
  * Detector category (`ProtectedValue.name`, lowercase-hyphenated) → short surrogate type. Adapted and
  * condensed from Presidio's anonymizer entity taxonomy, keyed on the names ficta's detectors actually
