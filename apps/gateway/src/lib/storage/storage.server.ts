@@ -10,6 +10,7 @@ import type {
   StoredMessage,
   ThreadEgressEvent,
   ThreadEgressReceipt,
+  ThreadModelSettings,
   ThreadSummary,
   UserSettings,
 } from "./types";
@@ -99,9 +100,23 @@ export interface Storage {
     threadId: string,
     message: StoredMessage,
     traceEnabled?: boolean,
+    modelSettings?: ThreadModelSettings,
   ): Promise<void>;
-  /** Creates the thread if missing (title from the first user message), then snapshot-upserts messages. */
-  saveThreadSnapshot(userId: string, orgId: string, threadId: string, messages: StoredMessage[]): Promise<void>;
+  /** Creates the thread if missing (including initial model settings), then snapshot-upserts messages. */
+  saveThreadSnapshot(
+    userId: string,
+    orgId: string,
+    threadId: string,
+    messages: StoredMessage[],
+    modelSettings?: ThreadModelSettings,
+  ): Promise<void>;
+  /** Persists composer model controls without reordering the chat in history. */
+  setThreadModelSettings(
+    userId: string,
+    orgId: string,
+    threadId: string,
+    modelSettings: ThreadModelSettings,
+  ): Promise<void>;
   /** Admin-only server functions call this to mark future requests in a thread for raw trace/audit capture. */
   setThreadTraceEnabled(userId: string, orgId: string, threadId: string, traceEnabled: boolean): Promise<void>;
   renameThread(userId: string, orgId: string, threadId: string, title: string): Promise<void>;

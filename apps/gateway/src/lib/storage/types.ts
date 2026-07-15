@@ -17,6 +17,13 @@ export interface UserSettings {
   defaultReasoningEffort?: ReasoningEffort;
 }
 
+/** The model controls last selected for one saved chat. */
+export interface ThreadModelSettings {
+  provider: Provider;
+  model: string;
+  reasoningEffort: ReasoningEffort;
+}
+
 /** Instance-wide (admin-owned) settings. One row, shared by everyone on this deployment. */
 export interface InstanceSettings {
   /** Shown in the header in place of "ficta". */
@@ -183,6 +190,8 @@ export function resolveSuggestedPrompts(instance: InstanceSettings): string[] {
 export interface ThreadSummary {
   id: string;
   title: string;
+  /** Undefined on legacy chats until their model controls are next saved. */
+  modelSettings?: ThreadModelSettings;
   /** Admin-controlled raw trace/audit capture for future requests in this thread. */
   traceEnabled: boolean;
   createdAt: string;

@@ -13,6 +13,7 @@ import type {
   ProtectionStatsSnapshot,
   ProtectionStatsTotals,
   StoredMessage,
+  ThreadModelSettings,
 } from "@/lib/storage/types";
 
 let store: Storage;
@@ -52,6 +53,16 @@ describe("user settings", () => {
 });
 
 const ORG = "local";
+const miniSettings: ThreadModelSettings = {
+  provider: "openai",
+  model: "gpt-5-mini",
+  reasoningEffort: "medium",
+};
+const solSettings: ThreadModelSettings = {
+  provider: "openai",
+  model: "gpt-5.6-sol",
+  reasoningEffort: "xhigh",
+};
 
 describe("instance settings", () => {
   it("is one row per workspace that merges patches", async () => {
@@ -453,10 +464,11 @@ describe("threads + messages", () => {
       textMessage("m1", "user", "How do I redact secrets?"),
       textMessage("m2", "assistant", "Like so."),
     ];
-    await store.saveThreadSnapshot("owner", ORG, "t1", messages);
+    await store.saveThreadSnapshot("owner", ORG, "t1", messages, miniSettings);
 
     const loaded = await store.getThread("owner", ORG, "t1");
     expect(loaded?.thread.title).toBe("How do I redact secrets?");
+    expect(loaded?.thread.modelSettings).toEqual(miniSettings);
     expect(loaded?.thread.traceEnabled).toBe(false);
     expect(loaded?.messages.map((m) => m.id)).toEqual(["m1", "m2"]);
     expect(loaded?.messages[0]?.parts).toEqual([{ type: "text", text: "How do I redact secrets?" }]);
@@ -588,6 +600,64 @@ describe("threads + messages", () => {
     await expect(store.setThreadTraceEnabled("mallory", "org-trace", "trace-thread", false)).rejects.toThrow();
     await expect(store.setThreadTraceEnabled("trace-owner", "other-org", "trace-thread", false)).rejects.toThrow();
     expect((await store.getThread("trace-owner", "org-trace", "trace-thread"))?.thread.traceEnabled).toBe(true);
+  });
+
+  it("updates model settings without reordering the thread and enforces ownership", async () => {
+    await store.startThread(
+      "model-owner",
+      "org-model",
+      "model-thread",
+      textMessage("m", "user", "model"),
+      false,
+      miniSettings,
+    );
+    const updatedAt = (await store.getThread("model-owner", "org-model", "model-thread"))?.thread.updatedAt;
+
+    await store.setThreadModelSettings("model-owner", "org-model", "model-thread", solSettings);
+
+    const updated = await store.getThread("model-owner", "org-model", "model-thread");
+    expect(updated?.thread.modelSettings).toEqual(solSettings);
+    expect(updated?.thread.updatedAt).toBe(updatedAt);
+
+    // A response finishing after the picker save may carry the older controls captured at send time.
+    await store.saveThreadSnapshot(
+      "model-owner",
+      "org-model",
+      "model-thread",
+      [textMessage("m", "user", "model")],
+      miniSettings,
+    );
+    expect((await store.getThread("model-owner", "org-model", "model-thread"))?.thread.modelSettings).toEqual(
+      solSettings,
+    );
+
+    // The initial start request is also fire-and-forget and may arrive after the picker mutation.
+    await store.startThread(
+      "model-owner",
+      "org-model",
+      "model-thread",
+      textMessage("m", "user", "model"),
+      false,
+      miniSettings,
+    );
+    expect((await store.getThread("model-owner", "org-model", "model-thread"))?.thread.modelSettings).toEqual(
+      solSettings,
+    );
+
+    await expect(store.setThreadModelSettings("mallory", "org-model", "model-thread", miniSettings)).rejects.toThrow(
+      "thread not found",
+    );
+    await expect(
+      store.setThreadModelSettings("model-owner", "other-org", "model-thread", miniSettings),
+    ).rejects.toThrow("thread not found");
+  });
+
+  it("loads legacy threads without model settings", async () => {
+    await store.saveThreadSnapshot("legacy-owner", "org-legacy", "legacy-thread", [textMessage("m", "user", "legacy")]);
+
+    expect((await store.getThread("legacy-owner", "org-legacy", "legacy-thread"))?.thread.modelSettings).toBe(
+      undefined,
+    );
   });
 
   it("can create a new thread with trace capture already enabled", async () => {

@@ -31,7 +31,6 @@ import {
 import { greetingName } from "@/lib/greeting";
 import {
   DEFAULT_REASONING_EFFORT,
-  MODELS,
   type ModelChoice,
   normalizeReasoningEffort,
   REASONING_EFFORTS,
@@ -59,15 +58,10 @@ import { reportRestoreValidation } from "@/lib/restore-validation";
 import { uiToStored } from "@/lib/storage/messages";
 import { suggestProtectedRegistryEntries } from "@/lib/storage/protected-registry";
 import { invalidateThreads, threadKeys } from "@/lib/storage/threadQueries";
-import { saveThread, setThreadTraceEnabled, startThread } from "@/lib/storage/threads";
-import {
-  type InstanceSettings,
-  isModelAllowed,
-  modelKey,
-  type ThreadSummary,
-  type UserSettings,
-} from "@/lib/storage/types";
+import { saveThread, setThreadModelSettings, setThreadTraceEnabled, startThread } from "@/lib/storage/threads";
+import type { ThreadModelSettings, ThreadSummary, UserSettings } from "@/lib/storage/types";
 import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
+import { resolveThreadModelSettings, toThreadModelSettings } from "@/lib/thread-model-settings";
 import { deriveThreadTitleFromText } from "@/lib/thread-title";
 import { shouldClearThreadTrace } from "@/lib/trace-capture";
 import { useProtectionStatus } from "@/lib/use-protection-status";
@@ -83,19 +77,6 @@ import { draftWithSuggestion } from "./suggestionDraft";
 import { ThreadEvidenceDialog } from "./ThreadEvidenceDialog";
 import { TopBar } from "./TopBar";
 
-/** Pick the model a new chat opens on: the user's default if the instance still allows it, else the first
- * allowed model, else the first model (allow-list can't be empty in practice — empty means "all"). */
-function initialModel(userSettings: UserSettings | undefined, instance: InstanceSettings): ModelChoice {
-  const allowed = MODELS.filter((m) => isModelAllowed(instance, modelKey(m)));
-  const dm = userSettings?.defaultModel;
-  const preferred = allowed.find((m) => m.provider === dm?.provider && m.model === dm?.model);
-  return preferred ?? allowed[0] ?? MODELS[0];
-}
-
-function initialReasoningEffort(userSettings: UserSettings | undefined, model: ModelChoice): ReasoningEffort {
-  return normalizeReasoningEffort(model, userSettings?.defaultReasoningEffort ?? DEFAULT_REASONING_EFFORT);
-}
-
 /**
  * Owns the conversation: the useChat client, the composer input, and the model choice. A fresh chat on
  * `/` generates its own thread id and, once the first exchange completes, persists a snapshot and syncs
@@ -106,11 +87,13 @@ export function ChatView({
   userSettings,
   threadId,
   initialMessages,
+  initialThreadModelSettings,
   initialThreadTraceEnabled,
 }: {
   userSettings?: UserSettings;
   threadId?: string;
   initialMessages?: UIMessage[];
+  initialThreadModelSettings?: ThreadModelSettings;
   initialThreadTraceEnabled?: boolean;
 } = {}) {
   const queryClient = useQueryClient();
@@ -129,10 +112,20 @@ export function ChatView({
   // Passthrough (unprotected but working) asks for consent once per chat, not on every send.
   const [passthroughAck, setPassthroughAck] = useState(false);
   const [input, setInput] = useState("");
-  const [model, setModel] = useState<ModelChoice>(() => initialModel(userSettings, instance));
-  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(() =>
-    initialReasoningEffort(userSettings, initialModel(userSettings, instance)),
+  const [modelControls, setModelControls] = useState(() =>
+    resolveThreadModelSettings(
+      userSettings,
+      instance,
+      threadId
+        ? (queryClient.getQueryData<ThreadModelSettings>(threadKeys.modelSettings(threadId)) ??
+            initialThreadModelSettings)
+        : undefined,
+    ),
   );
+  const model = modelControls.choice;
+  const reasoningEffort = modelControls.reasoningEffort;
+  const modelSettingsRef = useRef(toThreadModelSettings(model, reasoningEffort));
+  modelSettingsRef.current = toThreadModelSettings(model, reasoningEffort);
   const [restoreDisplayMode, setRestoreDisplayMode] = useState<RestoreHighlightDisplayMode>("values");
   const [attachments, setAttachments] = useState<TextAttachment[]>([]);
   const [uploadWarning, setUploadWarning] = useState<string[]>();
@@ -148,6 +141,9 @@ export function ChatView({
     traceAudit: false,
   });
   const [saveWarning, setSaveWarning] = useState(false);
+  const [modelSettingsSaveWarning, setModelSettingsSaveWarning] = useState(false);
+  const modelSettingsSaveQueue = useRef<Promise<void>>(Promise.resolve());
+  const modelSettingsSaveSequence = useRef(0);
   const pendingProtectionTicket = useRef<string | undefined>(undefined);
   const protectionPreviewRequest = useRef<{ generation: number; controller?: AbortController }>({ generation: 0 });
   const protectionReviewAttempt = useRef<{ text: string; action: "send" | "reload" } | undefined>(undefined);
@@ -218,9 +214,45 @@ export function ChatView({
     protectionPreviewRequest.current.generation === generation &&
     protectionPreviewRequest.current.controller?.signal.aborted === false;
 
+  const rememberThreadModelSettings = (settings: ThreadModelSettings) => {
+    const persistedThreadId = activeThreadId;
+    if (!persistedThreadId) return;
+    queryClient.setQueryData(threadKeys.modelSettings(persistedThreadId), settings);
+    queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) =>
+      current?.map((thread) => (thread.id === persistedThreadId ? { ...thread, modelSettings: settings } : thread)),
+    );
+
+    const sequence = modelSettingsSaveSequence.current + 1;
+    modelSettingsSaveSequence.current = sequence;
+    const queued = modelSettingsSaveQueue.current
+      .catch(() => undefined)
+      .then(() => setThreadModelSettings({ data: { threadId: persistedThreadId, modelSettings: settings } }));
+    modelSettingsSaveQueue.current = queued;
+    void queued.then(
+      () => {
+        if (modelSettingsSaveSequence.current === sequence) setModelSettingsSaveWarning(false);
+      },
+      (err) => {
+        console.warn("Failed to save chat model settings", err);
+        if (modelSettingsSaveSequence.current === sequence) setModelSettingsSaveWarning(true);
+      },
+    );
+  };
+
   const chooseModel = (choice: ModelChoice) => {
-    setModel(choice);
-    setReasoningEffort((current) => normalizeReasoningEffort(choice, current));
+    if (choice.provider === model.provider && choice.model === model.model) return;
+    const nextReasoningEffort = normalizeReasoningEffort(choice, reasoningEffort);
+    const settings = toThreadModelSettings(choice, nextReasoningEffort);
+    setModelControls({ choice, reasoningEffort: nextReasoningEffort });
+    rememberThreadModelSettings(settings);
+  };
+
+  const chooseReasoningEffort = (next: ReasoningEffort) => {
+    const nextReasoningEffort = normalizeReasoningEffort(model, next);
+    if (nextReasoningEffort === reasoningEffort) return;
+    const settings = toThreadModelSettings(model, nextReasoningEffort);
+    setModelControls({ choice: model, reasoningEffort: nextReasoningEffort });
+    rememberThreadModelSettings(settings);
   };
 
   useEffect(() => {
@@ -312,7 +344,7 @@ export function ChatView({
     if (snapshot.length === 0) return;
     const persistable = prepareMessagesForPersistence(snapshot);
     queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) =>
-      upsertThreadSummary(current, tid, persistable),
+      upsertThreadSummary(current, tid, persistable, modelSettingsRef.current),
     );
     try {
       await saveThread({ data: { threadId: tid, messages: persistable.map(uiToStored) } });
@@ -326,16 +358,18 @@ export function ChatView({
     }
   };
 
-  const startThreadNow = (message: UIMessage) => {
+  const startThreadNow = (message: UIMessage, modelSettings: ThreadModelSettings) => {
     const snapshot = [...messagesRef.current, message];
     // Show the new chat in the sidebar immediately, but don't touch URL/router or active-thread state while
     // the first stream is starting; those visible navigation updates can disturb TanStack AI's first response.
-    queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) => upsertThreadSummary(current, tid, snapshot));
-    void startThread({ data: { threadId: tid, message: uiToStored(message), traceEnabled: threadTraceEnabled } }).catch(
-      (err) => {
-        console.warn("Failed to start chat thread", err);
-      },
+    queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) =>
+      upsertThreadSummary(current, tid, snapshot, modelSettings),
     );
+    void startThread({
+      data: { threadId: tid, message: uiToStored(message), traceEnabled: threadTraceEnabled, modelSettings },
+    }).catch((err) => {
+      console.warn("Failed to start chat thread", err);
+    });
   };
 
   const persist = (finishedMessage?: UIMessage) => {
@@ -357,6 +391,7 @@ export function ChatView({
     if (!content.trim() || isLoading || isExtracting || startingThread.current) return;
     const outgoingMessage = userMessage(content, annotations);
     const startedMessage = messagesRef.current.length === 0 ? outgoingMessage : undefined;
+    const requestModelSettings = modelSettingsRef.current;
     setInput("");
     setAttachments([]);
     setUploadWarning(undefined);
@@ -371,7 +406,7 @@ export function ChatView({
     // `sendMessage()` awaits TanStack AI's internal onResponse hook before it starts `connection.send()`.
     // A microtask can still run inside that gap, so schedule thread/sidebar/URL work as a macrotask to avoid
     // perturbing the first stream startup path.
-    if (startedMessage) setTimeout(() => startThreadNow(startedMessage), 0);
+    if (startedMessage) setTimeout(() => startThreadNow(startedMessage, requestModelSettings), 0);
     void sendPromise.finally(() => {
       if (pendingProtectionTicket.current === protectionTicket) pendingProtectionTicket.current = undefined;
       startingThread.current = false;
@@ -800,7 +835,14 @@ export function ChatView({
             </div>
           ) : null}
 
-          {saveWarning ? <SaveWarningNotice onDismiss={() => setSaveWarning(false)} /> : null}
+          {saveWarning || modelSettingsSaveWarning ? (
+            <SaveWarningNotice
+              onDismiss={() => {
+                setSaveWarning(false);
+                setModelSettingsSaveWarning(false);
+              }}
+            />
+          ) : null}
 
           <ProtectionNotice status={protectionStatus} />
 
@@ -825,7 +867,7 @@ export function ChatView({
             model={model}
             onModelChange={chooseModel}
             reasoningEffort={reasoningEffort}
-            onReasoningEffortChange={setReasoningEffort}
+            onReasoningEffortChange={chooseReasoningEffort}
             defaultModel={userSettings?.defaultModel}
             defaultReasoningEffort={userSettings?.defaultReasoningEffort ?? DEFAULT_REASONING_EFFORT}
             attachments={attachments}
@@ -970,12 +1012,14 @@ function upsertThreadSummary(
   current: ThreadSummary[] | undefined,
   threadId: string,
   messages: UIMessage[],
+  modelSettings: ThreadModelSettings,
 ): ThreadSummary[] {
   const now = new Date().toISOString();
   const existing = current?.find((thread) => thread.id === threadId);
   const summary: ThreadSummary = {
     id: threadId,
     title: existing?.title ?? deriveTitle(messages),
+    modelSettings,
     traceEnabled: existing?.traceEnabled ?? false,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,

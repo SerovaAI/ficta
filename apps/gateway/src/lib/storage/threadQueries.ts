@@ -3,6 +3,7 @@ import { fetchThreads } from "./threads";
 
 export const threadKeys = {
   all: ["threads"] as const,
+  modelSettings: (threadId: string) => ["threads", threadId, "model-settings"] as const,
 };
 
 export const threadsQueryOptions = {

@@ -1,8 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireAdminScope, requireAuthState, requireScope, scopeFromAuth } from "@/lib/auth/guards.server";
 import { isAdmin } from "@/lib/auth/types";
+import { isReasoningEffort, MODELS, normalizeReasoningEffort } from "@/lib/models";
 import { getStorage } from "./storage.server";
-import type { StoredMessage, ThreadEgressReceipt, ThreadSummary } from "./types";
+import type { StoredMessage, ThreadEgressReceipt, ThreadModelSettings, ThreadSummary } from "./types";
 
 /**
  * Server functions for chat history. Like settings.ts, each re-derives the caller's scope (userId + the
@@ -37,18 +38,54 @@ function toStoredMessage(input: unknown): StoredMessage {
   };
 }
 
-function validateStart(input: unknown): { threadId: string; message: StoredMessage; traceEnabled: boolean } {
+function toThreadModelSettings(input: unknown): ThreadModelSettings {
+  const i = asObject(input);
+  if (typeof i.provider !== "string" || typeof i.model !== "string" || !isReasoningEffort(i.reasoningEffort)) {
+    throw new Error("invalid model settings");
+  }
+  const choice = MODELS.find((candidate) => candidate.provider === i.provider && candidate.model === i.model);
+  if (!choice) throw new Error("unknown model");
+  return {
+    provider: choice.provider,
+    model: choice.model,
+    reasoningEffort: normalizeReasoningEffort(choice, i.reasoningEffort),
+  };
+}
+
+function optionalThreadModelSettings(input: Record<string, unknown>): ThreadModelSettings | undefined {
+  return input.modelSettings === undefined ? undefined : toThreadModelSettings(input.modelSettings);
+}
+
+function validateStart(input: unknown): {
+  threadId: string;
+  message: StoredMessage;
+  traceEnabled: boolean;
+  modelSettings?: ThreadModelSettings;
+} {
   const i = asObject(input);
   if (typeof i.threadId !== "string" || !i.threadId) throw new Error("invalid threadId");
   if (i.traceEnabled !== undefined && typeof i.traceEnabled !== "boolean") throw new Error("invalid traceEnabled");
-  return { threadId: i.threadId, message: toStoredMessage(i.message), traceEnabled: i.traceEnabled === true };
+  return {
+    threadId: i.threadId,
+    message: toStoredMessage(i.message),
+    traceEnabled: i.traceEnabled === true,
+    modelSettings: optionalThreadModelSettings(i),
+  };
 }
 
-function validateSnapshot(input: unknown): { threadId: string; messages: StoredMessage[] } {
+function validateSnapshot(input: unknown): {
+  threadId: string;
+  messages: StoredMessage[];
+  modelSettings?: ThreadModelSettings;
+} {
   const i = asObject(input);
   if (typeof i.threadId !== "string" || !i.threadId) throw new Error("invalid threadId");
   if (!Array.isArray(i.messages)) throw new Error("invalid messages");
-  return { threadId: i.threadId, messages: i.messages.map(toStoredMessage) };
+  return {
+    threadId: i.threadId,
+    messages: i.messages.map(toStoredMessage),
+    modelSettings: optionalThreadModelSettings(i),
+  };
 }
 
 function validateTraceToggle(input: unknown): { threadId: string; traceEnabled: boolean } {
@@ -56,6 +93,12 @@ function validateTraceToggle(input: unknown): { threadId: string; traceEnabled: 
   if (typeof i.threadId !== "string" || !i.threadId) throw new Error("invalid threadId");
   if (typeof i.traceEnabled !== "boolean") throw new Error("invalid traceEnabled");
   return { threadId: i.threadId, traceEnabled: i.traceEnabled };
+}
+
+function validateModelSettings(input: unknown): { threadId: string; modelSettings: ThreadModelSettings } {
+  const i = asObject(input);
+  if (typeof i.threadId !== "string" || !i.threadId) throw new Error("invalid threadId");
+  return { threadId: i.threadId, modelSettings: toThreadModelSettings(i.modelSettings) };
 }
 
 export const fetchThreads = createServerFn({ method: "GET" }).handler(async (): Promise<ThreadSummary[]> => {
@@ -90,6 +133,7 @@ export const startThread = createServerFn({ method: "POST" })
       data.threadId,
       data.message,
       data.traceEnabled && isAdmin(auth),
+      data.modelSettings,
     );
   });
 
@@ -97,7 +141,14 @@ export const saveThread = createServerFn({ method: "POST" })
   .validator(validateSnapshot)
   .handler(async ({ data }): Promise<void> => {
     const { userId, orgId } = await requireScope();
-    await (await getStorage()).saveThreadSnapshot(userId, orgId, data.threadId, data.messages);
+    await (await getStorage()).saveThreadSnapshot(userId, orgId, data.threadId, data.messages, data.modelSettings);
+  });
+
+export const setThreadModelSettings = createServerFn({ method: "POST" })
+  .validator(validateModelSettings)
+  .handler(async ({ data }): Promise<void> => {
+    const { userId, orgId } = await requireScope();
+    await (await getStorage()).setThreadModelSettings(userId, orgId, data.threadId, data.modelSettings);
   });
 
 export const setThreadTraceEnabled = createServerFn({ method: "POST" })
