@@ -19,13 +19,22 @@ export class RequestBodyDecodeError extends Error {
 // base64 attachments) while still bounding a decompression bomb to something survivable.
 const MAX_DECODED_BYTES = 256 * 1024 * 1024;
 
+// The compressed input is bounded at the same ceiling — compression never legitimately grows a
+// body past its decoded size by more than a rounding error, so anything larger is hostile.
+const MAX_ENCODED_BYTES = MAX_DECODED_BYTES;
+
+// Real clients apply one coding, occasionally two. A longer chain buys nothing legitimate but lets
+// an attacker demand MAX_DECODED_BYTES of synchronous decompression work per listed coding.
+const MAX_CODING_STAGES = 4;
+
 /**
  * Decode a request body per its Content-Encoding header so redaction screens the real text
  * (agents such as Pi zstd-compress their Codex-backend POSTs). Supports the registered HTTP
  * codings node:zlib can decode — gzip, deflate, br, zstd — including comma-separated chains,
  * applied in reverse order of application. Returns the decoded bytes plus whether any coding
  * was removed (when true the caller must drop the Content-Encoding header before forwarding).
- * Throws RequestBodyDecodeError on an unknown coding or undecodable payload.
+ * Throws RequestBodyDecodeError on an unknown coding, an undecodable or oversized payload, or a
+ * coding chain longer than any legitimate client produces.
  */
 export function decodeRequestBody(
   body: Uint8Array,
@@ -36,6 +45,18 @@ export function decodeRequestBody(
     .map((token) => token.trim().toLowerCase())
     .filter((token) => token.length > 0 && token !== "identity");
   if (codings.length === 0 || body.length === 0) return { body, decoded: false };
+  if (codings.length > MAX_CODING_STAGES) {
+    throw new RequestBodyDecodeError(
+      codings.join(","),
+      `request Content-Encoding chain has ${codings.length} codings (limit ${MAX_CODING_STAGES})`,
+    );
+  }
+  if (body.length > MAX_ENCODED_BYTES) {
+    throw new RequestBodyDecodeError(
+      codings.join(","),
+      `compressed request body is ${body.length} bytes (limit ${MAX_ENCODED_BYTES})`,
+    );
+  }
 
   let current = body;
   for (const coding of codings.reverse()) {

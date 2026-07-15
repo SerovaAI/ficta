@@ -217,7 +217,9 @@ async function callProvider(target: ProviderTarget, prompt: string, transport: T
 async function callOpenAi(model: string, prompt: string, transport: Transport): Promise<ProviderResult> {
   const url = "https://api.openai.com/v1/responses";
   const headers = { authorization: `Bearer ${process.env.OPENAI_API_KEY}` };
-  const base = { model, input: prompt, max_output_tokens: 800, store: false };
+  // Reasoning models (gpt-5 family) spend output budget on reasoning items before any output_text;
+  // 800 starved them into status=incomplete with zero visible output.
+  const base = { model, input: prompt, max_output_tokens: 4096, store: false };
 
   if (transport === "stream") {
     const events = await postSse(url, headers, { ...base, stream: true });
@@ -267,7 +269,14 @@ function openAiOutputText(response: unknown): string {
       }
     }
   }
-  if (text.length === 0) throw new Error("OpenAI response contained no output_text blocks");
+  if (text.length === 0) {
+    const status = typeof response.status === "string" ? response.status : "unknown";
+    const reason =
+      isRecord(response.incomplete_details) && typeof response.incomplete_details.reason === "string"
+        ? ` (${response.incomplete_details.reason})`
+        : "";
+    throw new Error(`OpenAI response contained no output_text blocks; status ${status}${reason}`);
+  }
   return text.join("");
 }
 
@@ -277,7 +286,7 @@ async function callAnthropic(model: string, prompt: string, transport: Transport
     "anthropic-version": "2023-06-01",
     "x-api-key": process.env.ANTHROPIC_API_KEY ?? "",
   };
-  const base = { model, max_tokens: 800, messages: [{ role: "user", content: prompt }] };
+  const base = { model, max_tokens: 4096, messages: [{ role: "user", content: prompt }] };
 
   if (transport === "stream") {
     const events = await postSse(url, headers, { ...base, stream: true });

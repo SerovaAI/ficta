@@ -22,6 +22,21 @@ function close(server: ReturnType<typeof createServer>): Promise<void> {
   });
 }
 
+/** Set env vars for a test, returning a restore function that reinstates each prior value. */
+function setEnv(vars: Record<string, string>): () => void {
+  const saved = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(vars)) {
+    saved.set(key, process.env[key]);
+    process.env[key] = value;
+  }
+  return () => {
+    for (const [key, prev] of saved) {
+      if (prev === undefined) delete process.env[key];
+      else process.env[key] = prev;
+    }
+  };
+}
+
 describe("decodeRequestBody", () => {
   const payload = JSON.stringify({ message: "hello compressed world" });
 
@@ -54,6 +69,12 @@ describe("decodeRequestBody", () => {
     expect(text(decoded.body)).toBe(payload);
   });
 
+  it("throws on an excessive coding chain without decoding any stage", () => {
+    const body = new Uint8Array(gzipSync(payload));
+    const chain = Array.from({ length: 64 }, () => "gzip").join(", ");
+    expect(() => decodeRequestBody(body, chain)).toThrow(RequestBodyDecodeError);
+  });
+
   it("throws on an unsupported coding", () => {
     const body = new TextEncoder().encode(payload);
     expect(() => decodeRequestBody(body, "lzma")).toThrow(RequestBodyDecodeError);
@@ -84,15 +105,18 @@ describe("proxy request decompression", () => {
       });
     });
     let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let restoreEnv: (() => void) | undefined;
     try {
       const upstreamPort = await listen(upstream);
       vi.resetModules();
-      process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
-      process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "1";
-      process.env.FICTA_REGISTRY_ENV_FILE_PATHS = "test/fixtures/secrets.env";
-      process.env.FICTA_REGISTRY_PROCESS_ENV_ENABLED = "0";
-      process.env.FICTA_REGISTRY_MIN_LEN = "6";
-      process.env.FICTA_LOG_LEVEL = "silent";
+      restoreEnv = setEnv({
+        FICTA_UPSTREAM: `http://127.0.0.1:${upstreamPort}`,
+        FICTA_REGISTRY_ENV_FILE_ENABLED: "1",
+        FICTA_REGISTRY_ENV_FILE_PATHS: "test/fixtures/secrets.env",
+        FICTA_REGISTRY_PROCESS_ENV_ENABLED: "0",
+        FICTA_REGISTRY_MIN_LEN: "6",
+        FICTA_LOG_LEVEL: "silent",
+      });
       const { startProxy } = await import("../src/server.js");
       proxy = await startProxy({ port: 0 });
 
@@ -115,9 +139,7 @@ describe("proxy request decompression", () => {
     } finally {
       proxy?.close();
       await close(upstream);
-      delete process.env.FICTA_UPSTREAM;
-      delete process.env.FICTA_REGISTRY_ENV_FILE_PATHS;
-      delete process.env.FICTA_REGISTRY_MIN_LEN;
+      restoreEnv?.();
     }
   });
 
@@ -129,11 +151,14 @@ describe("proxy request decompression", () => {
       res.end("{}");
     });
     let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let restoreEnv: (() => void) | undefined;
     try {
       const upstreamPort = await listen(upstream);
       vi.resetModules();
-      process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
-      process.env.FICTA_LOG_LEVEL = "silent";
+      restoreEnv = setEnv({
+        FICTA_UPSTREAM: `http://127.0.0.1:${upstreamPort}`,
+        FICTA_LOG_LEVEL: "silent",
+      });
       const { startProxy } = await import("../src/server.js");
       proxy = await startProxy({ port: 0 });
 
@@ -154,7 +179,7 @@ describe("proxy request decompression", () => {
     } finally {
       proxy?.close();
       await close(upstream);
-      delete process.env.FICTA_UPSTREAM;
+      restoreEnv?.();
     }
   });
 });

@@ -128,6 +128,12 @@ export async function startProxy(
   app.all("*", async (c) => {
     const url = new URL(c.req.url);
     const method = c.req.method;
+    // Belt-and-braces with the socket-level "upgrade" listener below: refuse WebSocket upgrade
+    // attempts locally instead of forwarding a doomed (but authenticated) GET upstream. Clients
+    // with an HTTP fallback (e.g. Pi's Codex transport) retry over SSE immediately.
+    if (c.req.raw.headers.get("upgrade")?.toLowerCase() === "websocket") {
+      return refusedWebSocketUpgradeResponse(c, url.pathname);
+    }
     if (url.pathname === FICTA_HEALTH_PATH) return c.json({ ok: true, service: "ficta" });
     if (url.pathname === FICTA_STATUS_PATH) return c.json(await protectionStatus(engine, stats));
     if (url.pathname === FICTA_PROTECTION_STATS_PATH) return c.json(protectionStatsResponse(stats, url));
@@ -971,6 +977,17 @@ export async function startProxy(
         },
       });
     });
+    // ficta does not proxy WebSockets (frames would bypass redaction), so refuse the handshake at
+    // the socket instead of forwarding a doomed (but authenticated) GET upstream. Registering the
+    // listener keeps node from routing upgrades to the request handler; the immediate 426 lets
+    // WS-first clients with an HTTP fallback (e.g. Pi's Codex transport) retry over SSE at once.
+    server.on("upgrade", (req: { url?: string }, socket: { end: (data: string) => void }) => {
+      log.info(
+        { path: req.url },
+        "⤴ refused WebSocket upgrade — ficta does not proxy WebSockets; client should retry over HTTP",
+      );
+      socket.end("HTTP/1.1 426 Upgrade Required\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+    });
   });
 }
 
@@ -1569,6 +1586,20 @@ function blockedInvariantResponse(c: Context, reason: string, n?: number): Respo
       },
     },
     500,
+  );
+}
+
+/** WebSocket upgrades that reach the request handler (no upgrade dispatch) get the same 426. */
+function refusedWebSocketUpgradeResponse(c: Context, path: string): Response {
+  log.info({ path }, "⤴ refused WebSocket upgrade — ficta does not proxy WebSockets; client should retry over HTTP");
+  return c.json(
+    {
+      error: {
+        type: "ficta_websocket_unsupported",
+        message: "ficta does not proxy WebSocket upgrades; retry the request over HTTP",
+      },
+    },
+    426,
   );
 }
 
