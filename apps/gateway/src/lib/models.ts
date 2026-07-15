@@ -69,9 +69,30 @@ export const MODELS = [
   },
   {
     provider: "anthropic",
+    model: "claude-fable-5",
+    label: "Anthropic",
+    sublabel: "claude-fable-5",
+    reasoningEfforts: [],
+  },
+  {
+    provider: "anthropic",
+    model: "claude-opus-4-8",
+    label: "Anthropic",
+    sublabel: "claude-opus-4-8",
+    reasoningEfforts: [],
+  },
+  {
+    provider: "anthropic",
     model: "claude-sonnet-4-6",
     label: "Anthropic",
     sublabel: "claude-sonnet-4-6",
+    reasoningEfforts: [],
+  },
+  {
+    provider: "anthropic",
+    model: "claude-haiku-4-5",
+    label: "Anthropic",
+    sublabel: "claude-haiku-4-5",
     reasoningEfforts: [],
   },
 ] as const satisfies readonly {

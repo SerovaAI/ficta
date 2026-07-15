@@ -8,6 +8,12 @@ const model = (id: string) => {
   return choice;
 };
 
+const anthropicModel = (id: string) => {
+  const choice = MODELS.find((candidate) => candidate.provider === "anthropic" && candidate.model === id);
+  if (!choice) throw new Error(`missing test model ${id}`);
+  return choice;
+};
+
 describe("model catalog", () => {
   it("keeps gpt-5-mini as the default and adds the full GPT-5.6 family", () => {
     expect(modelKey(MODELS[0])).toBe("openai/gpt-5-mini");
@@ -18,12 +24,29 @@ describe("model catalog", () => {
     ]);
   });
 
+  it("offers the Anthropic four-tier lineup in capability order", () => {
+    expect(MODELS.filter((candidate) => candidate.provider === "anthropic").map(modelKey)).toEqual([
+      "anthropic/claude-fable-5",
+      "anthropic/claude-opus-4-8",
+      "anthropic/claude-sonnet-4-6",
+      "anthropic/claude-haiku-4-5",
+    ]);
+  });
+
   it("exposes new models on unrestricted instances and honors explicit allow-lists", () => {
     const sol = modelKey(model("gpt-5.6-sol"));
     expect(isModelAllowed({}, sol)).toBe(true);
     expect(isModelAllowed({ allowedModels: [] }, sol)).toBe(true);
     expect(isModelAllowed({ allowedModels: ["openai/gpt-5"] }, sol)).toBe(false);
     expect(isModelAllowed({ allowedModels: [sol] }, sol)).toBe(true);
+  });
+
+  it("applies instance allow-lists to newly added Anthropic models", () => {
+    const fable = modelKey(anthropicModel("claude-fable-5"));
+    expect(isModelAllowed({}, fable)).toBe(true);
+    expect(isModelAllowed({ allowedModels: [] }, fable)).toBe(true);
+    expect(isModelAllowed({ allowedModels: ["anthropic/claude-sonnet-4-6"] }, fable)).toBe(false);
+    expect(isModelAllowed({ allowedModels: [fable] }, fable)).toBe(true);
   });
 });
 
