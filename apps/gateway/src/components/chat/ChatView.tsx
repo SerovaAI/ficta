@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CreateWorkspaceDialog } from "@/components/onboarding/CreateWorkspaceDialog";
-import { AdminSettingsDialog } from "@/components/settings/AdminSettingsDialog";
+import { AdminSettingsDialog, type AdminSettingsTarget } from "@/components/settings/AdminSettingsDialog";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -107,6 +107,7 @@ export function ChatView({
   const composerRef = useRef<ComposerHandle>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [adminTarget, setAdminTarget] = useState<AdminSettingsTarget>();
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
   const [confirmSendOpen, setConfirmSendOpen] = useState(false);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
@@ -620,6 +621,7 @@ export function ChatView({
   const toggleThreadTrace = () => {
     if (!admin || !traceCapture.loaded) return;
     if (!traceCapture.rawBodies) {
+      setAdminTarget("runtime-trace-capture");
       setAdminOpen(true);
       return;
     }
@@ -641,6 +643,16 @@ export function ChatView({
           current?.map((thread) => (thread.id === persistedThreadId ? { ...thread, traceEnabled: !next } : thread)),
         );
       });
+  };
+
+  const openAdmin = () => {
+    setAdminTarget(undefined);
+    setAdminOpen(true);
+  };
+
+  const changeAdminOpen = (open: boolean) => {
+    setAdminOpen(open);
+    if (!open) setAdminTarget(undefined);
   };
 
   // Suggestions prime the composer instead of sending: the copy references a document the user still needs
@@ -791,7 +803,7 @@ export function ChatView({
           onToggle={sidebar.toggle}
           onClose={sidebar.close}
           onNewChat={resetChat}
-          onOpenAdmin={() => setAdminOpen(true)}
+          onOpenAdmin={openAdmin}
           onOpenSettings={() => setSettingsOpen(true)}
           onCreateWorkspace={() => setCreateWorkspaceOpen(true)}
           activeThreadId={activeThreadId}
@@ -884,7 +896,7 @@ export function ChatView({
         </div>
 
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} userSettings={userSettings} />
-        <AdminSettingsDialog open={adminOpen} onOpenChange={setAdminOpen} />
+        <AdminSettingsDialog open={adminOpen} onOpenChange={changeAdminOpen} target={adminTarget} />
         <CreateWorkspaceDialog open={createWorkspaceOpen} onOpenChange={setCreateWorkspaceOpen} />
         <ThreadEvidenceDialog open={evidenceOpen} onOpenChange={setEvidenceOpen} threadId={tid} />
 

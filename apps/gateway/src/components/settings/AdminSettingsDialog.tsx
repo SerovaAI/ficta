@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import type * as React from "react";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { isAdmin } from "@/lib/auth/types";
 import { useAuthState } from "@/lib/auth/useAuthState";
@@ -13,6 +13,7 @@ import { ProxyConfigSection } from "./ProxyConfigSection";
 import { RedactionProofSection } from "./RedactionProofSection";
 
 type AdminSection = "general" | "keys" | "registry" | "proxy" | "proof";
+export type AdminSettingsTarget = "runtime-trace-capture";
 
 const SECTION_LABELS: Record<AdminSection, string> = {
   general: "General",
@@ -23,11 +24,33 @@ const SECTION_LABELS: Record<AdminSection, string> = {
 };
 
 /** Admin-only workspace settings. Server functions still enforce access; this guard is for navigation UX. */
-export function AdminSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function AdminSettingsDialog({
+  open,
+  onOpenChange,
+  target,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  target?: AdminSettingsTarget;
+}) {
   const auth = useAuthState();
   const instanceSettings = useInstanceSettings();
   const admin = isAdmin(auth);
   const [section, setSection] = useState<AdminSection>("general");
+  const [pendingFocusTarget, setPendingFocusTarget] = useState<AdminSettingsTarget>();
+
+  useEffect(() => {
+    if (!open) {
+      setPendingFocusTarget(undefined);
+      return;
+    }
+    if (target === "runtime-trace-capture") {
+      setSection("proxy");
+      setPendingFocusTarget(target);
+    }
+  }, [open, target]);
+
+  const clearPendingFocusTarget = useCallback(() => setPendingFocusTarget(undefined), []);
 
   if (!admin) return null;
 
@@ -63,7 +86,12 @@ export function AdminSettingsDialog({ open, onOpenChange }: { open: boolean; onO
             {section === "general" ? <AdminSettingsForm settings={instanceSettings} /> : null}
             {section === "keys" ? <ProviderKeysSection /> : null}
             {section === "registry" ? <ProtectedRegistrySection /> : null}
-            {section === "proxy" ? <ProxyConfigSection /> : null}
+            {section === "proxy" ? (
+              <ProxyConfigSection
+                focusRuntimeTraceCapture={pendingFocusTarget === "runtime-trace-capture"}
+                onRuntimeTraceCaptureFocused={clearPendingFocusTarget}
+              />
+            ) : null}
             {section === "proof" ? <RedactionProofSection /> : null}
           </div>
         </section>
