@@ -16,18 +16,20 @@ export function SettingRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 border-b border-border py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-      <div className="min-w-0 space-y-1">
-        {htmlFor ? (
-          <label htmlFor={htmlFor} className="text-sm font-medium">
-            {label}
-          </label>
-        ) : (
-          <div className="text-sm font-medium">{label}</div>
-        )}
-        {description ? <p className="max-w-64 text-xs text-muted-foreground leading-relaxed">{description}</p> : null}
+    <div className="@container border-b border-border py-4">
+      <div className="flex flex-col gap-3 @lg:grid @lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] @lg:items-start @lg:gap-6">
+        <div className="min-w-0 space-y-1">
+          {htmlFor ? (
+            <label htmlFor={htmlFor} className="text-sm font-medium">
+              {label}
+            </label>
+          ) : (
+            <div className="text-sm font-medium">{label}</div>
+          )}
+          {description ? <p className="max-w-64 text-xs text-muted-foreground leading-relaxed">{description}</p> : null}
+        </div>
+        <div className="min-w-0 @lg:pt-0.5">{children}</div>
       </div>
-      <div className="min-w-0 shrink-0 sm:pt-0.5">{children}</div>
     </div>
   );
 }
