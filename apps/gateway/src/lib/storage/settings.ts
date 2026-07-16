@@ -15,6 +15,7 @@ import { type InstanceSettings, modelKey, normalizeSuggestedPrompts, type UserSe
 
 const MODEL_KEYS = new Set(MODELS.map(modelKey));
 const INSTANCE_NAME_MAX = 60;
+export const RETENTION_DAYS_MAX = 36_500;
 
 function asObject(input: unknown): Record<string, unknown> {
   if (typeof input !== "object" || input === null) throw new Error("invalid settings payload");
@@ -64,7 +65,21 @@ export function validateInstancePatch(input: unknown): Partial<InstanceSettings>
     if (!isProtectionReviewMode(i.protectionReviewMinimum)) throw new Error("invalid protectionReviewMinimum");
     patch.protectionReviewMinimum = i.protectionReviewMinimum;
   }
+  if ("deletedThreadRecoveryDays" in i) {
+    patch.deletedThreadRecoveryDays = retentionDays(i.deletedThreadRecoveryDays, "deletedThreadRecoveryDays");
+  }
+  if ("recordsAuditRetentionDays" in i) {
+    patch.recordsAuditRetentionDays = retentionDays(i.recordsAuditRetentionDays, "recordsAuditRetentionDays");
+  }
   return patch;
+}
+
+function retentionDays(value: unknown, field: string): number | undefined {
+  if (value === undefined || value === null || value === 0) return undefined;
+  if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > RETENTION_DAYS_MAX) {
+    throw new Error(`${field} must be a whole number from 1 to ${RETENTION_DAYS_MAX}`);
+  }
+  return value as number;
 }
 
 export const fetchUserSettings = createServerFn({ method: "GET" }).handler(async (): Promise<UserSettings> => {
@@ -93,6 +108,17 @@ export const fetchInstanceSettings = createServerFn({ method: "GET" }).handler(a
 export const updateInstanceSettings = createServerFn({ method: "POST" })
   .validator(validateInstancePatch)
   .handler(async ({ data }): Promise<InstanceSettings> => {
-    const { orgId } = await requireAdminScope();
-    return (await getStorage()).patchInstanceSettings(orgId, data);
+    const { userId, orgId } = await requireAdminScope();
+    const current = await (await getStorage()).getInstanceSettings(orgId);
+    const nextRecovery =
+      "deletedThreadRecoveryDays" in data ? data.deletedThreadRecoveryDays : current.deletedThreadRecoveryDays;
+    const nextAudit =
+      "recordsAuditRetentionDays" in data ? data.recordsAuditRetentionDays : current.recordsAuditRetentionDays;
+    if (nextRecovery !== undefined && nextAudit === undefined) {
+      throw new Error("Records audit retention is required when deleted-chat recovery is enabled.");
+    }
+    if (nextRecovery !== undefined && nextAudit !== undefined && nextAudit < nextRecovery) {
+      throw new Error("Audit evidence must be retained at least as long as deleted chats.");
+    }
+    return (await getStorage()).patchInstanceSettings(orgId, data, userId);
   });

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gte, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import type { Provider } from "@/lib/models";
 import { deriveThreadTitleFromText, THREAD_TITLE_MAX } from "@/lib/thread-title";
 import { type Storage, ThreadProtectionLimitError } from "../storage.server";
@@ -9,6 +9,10 @@ import type {
   ProtectionStatsDailySummary,
   ProtectionStatsTotals,
   ProviderKeySummary,
+  RecordsAuditEvent,
+  RetainedThreadDetail,
+  RetainedThreadSummary,
+  RetentionSweepResult,
   StoredMessage,
   ThreadEgressEvent,
   ThreadEgressReceipt,
@@ -24,6 +28,7 @@ import {
   protectionStatsCheckpoints,
   protectionStatsDaily,
   providerKeys,
+  recordsAuditEvents,
   threadEgressEvents,
   threadProtectedValues,
   threads,
@@ -35,6 +40,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const THREAD_PROTECTED_VALUES_MAX = 200;
 const THREAD_PROTECTED_VALUE_MAX = 2_000;
 const ABANDONED_PROTECTION_RETENTION_MS = 24 * 60 * 60 * 1_000;
+const RETENTION_SWEEP_BATCH_MAX = 1_000;
 
 /**
  * The Drizzle-backed `Storage` implementation. Speaks the schema in schema.ts; the actual driver (PGlite
@@ -67,15 +73,29 @@ export function createStorage(): Storage {
       return row?.data ?? {};
     },
 
-    async patchInstanceSettings(orgId, patch) {
+    async patchInstanceSettings(orgId, patch, actorUserId) {
       const db = await getDb();
-      const current = await this.getInstanceSettings(orgId);
-      const next: InstanceSettings = { ...current, ...patch };
-      await db
-        .insert(instanceSettings)
-        .values({ id: orgId, data: next })
-        .onConflictDoUpdate({ target: instanceSettings.id, set: { data: next, updatedAt: new Date() } });
-      return next;
+      return db.transaction(async (tx) => {
+        const [row] = await tx.select().from(instanceSettings).where(eq(instanceSettings.id, orgId));
+        const current = row?.data ?? {};
+        const next: InstanceSettings = { ...current, ...patch };
+        await tx
+          .insert(instanceSettings)
+          .values({ id: orgId, data: next })
+          .onConflictDoUpdate({ target: instanceSettings.id, set: { data: next, updatedAt: new Date() } });
+        const recoveryChanged =
+          "deletedThreadRecoveryDays" in patch && patch.deletedThreadRecoveryDays !== current.deletedThreadRecoveryDays;
+        const auditChanged =
+          "recordsAuditRetentionDays" in patch && patch.recordsAuditRetentionDays !== current.recordsAuditRetentionDays;
+        if (actorUserId && (recoveryChanged || auditChanged)) {
+          await appendRecordsAuditEventTx(tx, {
+            orgId,
+            actorUserId,
+            action: "policy_changed",
+          });
+        }
+        return next;
+      });
     },
 
     async listProviderKeySummaries(orgId) {
@@ -270,6 +290,18 @@ export function createStorage(): Storage {
 
     async getThreadEgressReceipt(userId, orgId, threadId) {
       const db = await getDb();
+      const [thread] = await db
+        .select({ id: threads.id })
+        .from(threads)
+        .where(
+          and(
+            eq(threads.id, threadId),
+            eq(threads.userId, userId),
+            eq(threads.orgId, orgId),
+            isNull(threads.deletedAt),
+          ),
+        );
+      if (!thread) throw new Error("thread not found");
       const rows = await db
         .select()
         .from(threadEgressEvents)
@@ -292,6 +324,20 @@ export function createStorage(): Storage {
         survivingValues: events.reduce((total, event) => total + event.survivingValues, 0),
         ambiguousEntityLinks: events.reduce((total, event) => total + event.ambiguousEntityLinks, 0),
       } satisfies ThreadEgressReceipt;
+    },
+
+    async listRecordsAuditEvents(orgId, threadId) {
+      const db = await getDb();
+      const rows = await db
+        .select()
+        .from(recordsAuditEvents)
+        .where(
+          threadId
+            ? and(eq(recordsAuditEvents.orgId, orgId), eq(recordsAuditEvents.threadId, threadId))
+            : eq(recordsAuditEvents.orgId, orgId),
+        )
+        .orderBy(desc(recordsAuditEvents.occurredAt), desc(recordsAuditEvents.id));
+      return rows.map(toRecordsAuditEvent);
     },
 
     async listProtectedRegistryEntries(orgId) {
@@ -406,6 +452,11 @@ export function createStorage(): Storage {
 
     async listThreadProtectedValues(userId, orgId, threadId) {
       const db = await getDb();
+      const [thread] = await db
+        .select({ deletedAt: threads.deletedAt })
+        .from(threads)
+        .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)));
+      if (thread?.deletedAt) throw new Error("thread not found");
       const rows = await db
         .select({ value: threadProtectedValues.value })
         .from(threadProtectedValues)
@@ -436,6 +487,11 @@ export function createStorage(): Storage {
         throw new ThreadProtectionLimitError("A chat-protected value is too long.");
       }
       return db.transaction(async (tx) => {
+        const [thread] = await tx
+          .select({ deletedAt: threads.deletedAt })
+          .from(threads)
+          .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)));
+        if (thread?.deletedAt) throw new Error("thread not found");
         const rows = await tx
           .select({ value: threadProtectedValues.value })
           .from(threadProtectedValues)
@@ -489,12 +545,176 @@ export function createStorage(): Storage {
         );
     },
 
+    async listRetainedThreads(orgId) {
+      const db = await getDb();
+      const rows = await db
+        .select({
+          threadId: threads.id,
+          ownerUserId: threads.userId,
+          createdAt: threads.createdAt,
+          updatedAt: threads.updatedAt,
+          deletedAt: threads.deletedAt,
+          purgeAfter: threads.purgeAfter,
+          messageCount: count(messages.id),
+        })
+        .from(threads)
+        .leftJoin(messages, eq(messages.threadId, threads.id))
+        .where(and(eq(threads.orgId, orgId), sql`${threads.deletedAt} is not null`))
+        .groupBy(threads.id)
+        .orderBy(desc(threads.deletedAt));
+      return rows.flatMap((row): RetainedThreadSummary[] =>
+        row.deletedAt && row.purgeAfter
+          ? [
+              {
+                threadId: row.threadId,
+                ownerUserId: row.ownerUserId,
+                createdAt: row.createdAt.toISOString(),
+                updatedAt: row.updatedAt.toISOString(),
+                deletedAt: row.deletedAt.toISOString(),
+                purgeAfter: row.purgeAfter.toISOString(),
+                messageCount: Number(row.messageCount),
+              },
+            ]
+          : [],
+      );
+    },
+
+    async getRetainedThread(orgId, actorUserId, threadId, reason) {
+      const db = await getDb();
+      return db.transaction(async (tx): Promise<RetainedThreadDetail | null> => {
+        const [thread] = await tx
+          .select()
+          .from(threads)
+          .where(and(eq(threads.id, threadId), eq(threads.orgId, orgId), sql`${threads.deletedAt} is not null`));
+        if (!thread?.deletedAt || !thread.purgeAfter) return null;
+
+        await appendRecordsAuditEventTx(tx, {
+          orgId,
+          threadId,
+          ownerUserId: thread.userId,
+          actorUserId,
+          action: "viewed",
+          reference: reason.reference,
+        });
+        const messageRows = await tx
+          .select()
+          .from(messages)
+          .where(eq(messages.threadId, threadId))
+          .orderBy(messages.orderIdx);
+        return {
+          thread: toThreadSummary(thread),
+          ownerUserId: thread.userId,
+          deletedAt: thread.deletedAt.toISOString(),
+          purgeAfter: thread.purgeAfter.toISOString(),
+          messages: messageRows.map(toStoredMessage),
+        };
+      });
+    },
+
+    async restoreRetainedThread(orgId, actorUserId, threadId, reason) {
+      const db = await getDb();
+      await db.transaction(async (tx) => {
+        const [thread] = await tx
+          .update(threads)
+          .set({ deletedAt: null, purgeAfter: null, updatedAt: new Date() })
+          .where(and(eq(threads.id, threadId), eq(threads.orgId, orgId), sql`${threads.deletedAt} is not null`))
+          .returning();
+        if (!thread) throw new Error("retained thread not found");
+        await appendRecordsAuditEventTx(tx, {
+          orgId,
+          threadId,
+          ownerUserId: thread.userId,
+          actorUserId,
+          action: "restored",
+          reference: reason.reference,
+        });
+      });
+    },
+
+    async runRetentionSweep(now = new Date(), requestedBatchSize = 100) {
+      const db = await getDb();
+      const batchSize = Math.max(1, Math.min(RETENTION_SWEEP_BATCH_MAX, Math.floor(requestedBatchSize)));
+      const settingsRows = await db.select().from(instanceSettings);
+      const results: RetentionSweepResult[] = [];
+      for (const settingsRow of settingsRows) {
+        const auditDays = settingsRow.data.recordsAuditRetentionDays;
+        const startedAt = new Date();
+        let purgedThreads = 0;
+        for (;;) {
+          const purged = await db.transaction(async (tx) => {
+            const candidates = await tx
+              .select({ id: threads.id })
+              .from(threads)
+              .where(
+                and(
+                  eq(threads.orgId, settingsRow.id),
+                  sql`${threads.deletedAt} is not null`,
+                  lte(threads.purgeAfter, now),
+                ),
+              )
+              .orderBy(asc(threads.purgeAfter))
+              .limit(batchSize);
+            let removed = 0;
+            for (const candidate of candidates) {
+              const [thread] = await tx
+                .delete(threads)
+                .where(
+                  and(
+                    eq(threads.id, candidate.id),
+                    eq(threads.orgId, settingsRow.id),
+                    sql`${threads.deletedAt} is not null`,
+                    lte(threads.purgeAfter, now),
+                  ),
+                )
+                .returning();
+              if (!thread) continue;
+              await tx.delete(threadProtectedValues).where(eq(threadProtectedValues.threadId, thread.id));
+              await appendRecordsAuditEventTx(tx, {
+                orgId: settingsRow.id,
+                threadId: thread.id,
+                ownerUserId: thread.userId,
+                actorUserId: "system:retention",
+                action: "purged",
+              });
+              removed += 1;
+            }
+            return removed;
+          });
+          purgedThreads += purged;
+          if (purged < batchSize) break;
+        }
+
+        const auditCutoff = auditDays ? new Date(now.getTime() - auditDays * MS_PER_DAY) : null;
+        const deletedAudit = auditCutoff
+          ? await db
+              .delete(recordsAuditEvents)
+              .where(and(eq(recordsAuditEvents.orgId, settingsRow.id), lt(recordsAuditEvents.occurredAt, auditCutoff)))
+              .returning()
+          : [];
+        const deletedEgress = auditCutoff
+          ? await db
+              .delete(threadEgressEvents)
+              .where(and(eq(threadEgressEvents.orgId, settingsRow.id), lt(threadEgressEvents.occurredAt, auditCutoff)))
+              .returning()
+          : [];
+        results.push({
+          orgId: settingsRow.id,
+          startedAt: startedAt.toISOString(),
+          completedAt: new Date().toISOString(),
+          purgedThreads,
+          purgedAuditEvents: deletedAudit.length,
+          purgedEgressEvents: deletedEgress.length,
+        });
+      }
+      return results;
+    },
+
     async listThreads(userId, orgId) {
       const db = await getDb();
       const rows = await db
         .select()
         .from(threads)
-        .where(and(eq(threads.userId, userId), eq(threads.orgId, orgId)))
+        .where(and(eq(threads.userId, userId), eq(threads.orgId, orgId), isNull(threads.deletedAt)))
         .orderBy(desc(threads.updatedAt));
       return rows.map(toThreadSummary);
     },
@@ -504,29 +724,29 @@ export function createStorage(): Storage {
       const [thread] = await db
         .select()
         .from(threads)
-        .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)));
+        .where(
+          and(
+            eq(threads.id, threadId),
+            eq(threads.userId, userId),
+            eq(threads.orgId, orgId),
+            isNull(threads.deletedAt),
+          ),
+        );
       if (!thread) return null;
       const rows = await db.select().from(messages).where(eq(messages.threadId, threadId)).orderBy(messages.orderIdx);
       return {
         thread: toThreadSummary(thread),
-        messages: rows.map(
-          (r): StoredMessage => ({
-            id: r.id,
-            role: r.role as StoredMessage["role"],
-            parts: r.parts as StoredMessage["parts"],
-            createdAt: r.createdAt.toISOString(),
-          }),
-        ),
+        messages: rows.map(toStoredMessage),
       };
     },
 
     async getThreadOwner(threadId) {
       const db = await getDb();
       const [thread] = await db
-        .select({ userId: threads.userId, orgId: threads.orgId })
+        .select({ userId: threads.userId, orgId: threads.orgId, deletedAt: threads.deletedAt })
         .from(threads)
         .where(eq(threads.id, threadId));
-      return thread ?? null;
+      return thread ? { userId: thread.userId, orgId: thread.orgId, deleted: thread.deletedAt !== null } : null;
     },
 
     async startThread(userId, orgId, threadId, message, traceEnabled = false, modelSettings, detectionJurisdictions) {
@@ -536,6 +756,7 @@ export function createStorage(): Storage {
         if (existing) {
           // A thread id is client-generated; refuse to write into someone else's thread or workspace.
           if (existing.userId !== userId || existing.orgId !== orgId) throw new Error("thread not found");
+          if (existing.deletedAt) throw new Error("thread not found");
           await tx
             .update(threads)
             .set({
@@ -588,6 +809,7 @@ export function createStorage(): Storage {
         if (existing) {
           // A thread id is client-generated; refuse to write into someone else's thread or workspace.
           if (existing.userId !== userId || existing.orgId !== orgId) throw new Error("thread not found");
+          if (existing.deletedAt) throw new Error("thread not found");
           // Model settings are creation-only here. Picker changes use setThreadModelSettings, so a lagging
           // transcript snapshot cannot overwrite a newer selection.
           await tx.update(threads).set({ updatedAt: new Date() }).where(eq(threads.id, threadId));
@@ -623,17 +845,33 @@ export function createStorage(): Storage {
       const updated = await db
         .update(threads)
         .set({ modelSettings })
-        .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)))
+        .where(
+          and(
+            eq(threads.id, threadId),
+            eq(threads.userId, userId),
+            eq(threads.orgId, orgId),
+            isNull(threads.deletedAt),
+          ),
+        )
         .returning();
       if (updated.length === 0) throw new Error("thread not found");
     },
 
     async renameThread(userId, orgId, threadId, title) {
       const db = await getDb();
-      await db
+      const updated = await db
         .update(threads)
         .set({ title: title.slice(0, THREAD_TITLE_MAX) || "New chat", updatedAt: new Date() })
-        .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)));
+        .where(
+          and(
+            eq(threads.id, threadId),
+            eq(threads.userId, userId),
+            eq(threads.orgId, orgId),
+            isNull(threads.deletedAt),
+          ),
+        )
+        .returning();
+      if (updated.length === 0) throw new Error("thread not found");
     },
 
     async setThreadTraceEnabled(userId, orgId, threadId, traceEnabled) {
@@ -641,7 +879,14 @@ export function createStorage(): Storage {
       const updated = await db
         .update(threads)
         .set({ traceEnabled, updatedAt: new Date() })
-        .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)))
+        .where(
+          and(
+            eq(threads.id, threadId),
+            eq(threads.userId, userId),
+            eq(threads.orgId, orgId),
+            isNull(threads.deletedAt),
+          ),
+        )
         .returning();
       if (updated.length === 0) throw new Error("thread not found");
     },
@@ -654,13 +899,49 @@ export function createStorage(): Storage {
       const updated = await db
         .update(threads)
         .set({ detectionJurisdictions: jurisdictions })
-        .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)))
+        .where(
+          and(
+            eq(threads.id, threadId),
+            eq(threads.userId, userId),
+            eq(threads.orgId, orgId),
+            isNull(threads.deletedAt),
+          ),
+        )
         .returning();
       if (updated.length === 0) throw new Error("thread not found");
     },
 
     async deleteThread(userId, orgId, threadId) {
       const db = await getDb();
+      const settings = await this.getInstanceSettings(orgId);
+      const recoveryDays = settings.deletedThreadRecoveryDays;
+      if (recoveryDays) {
+        const deletedAt = new Date();
+        const purgeAfter = new Date(deletedAt.getTime() + recoveryDays * MS_PER_DAY);
+        await db.transaction(async (tx) => {
+          const [thread] = await tx
+            .update(threads)
+            .set({ deletedAt, purgeAfter })
+            .where(
+              and(
+                eq(threads.id, threadId),
+                eq(threads.userId, userId),
+                eq(threads.orgId, orgId),
+                isNull(threads.deletedAt),
+              ),
+            )
+            .returning();
+          if (!thread) throw new Error("thread not found");
+          await appendRecordsAuditEventTx(tx, {
+            orgId,
+            threadId: thread.id,
+            ownerUserId: thread.userId,
+            actorUserId: userId,
+            action: "deleted",
+          });
+        });
+        return;
+      }
       await db.transaction(async (tx) => {
         await tx
           .delete(threadProtectedValues)
@@ -674,9 +955,64 @@ export function createStorage(): Storage {
         // messages cascade via the FK.
         await tx
           .delete(threads)
-          .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)));
+          .where(
+            and(
+              eq(threads.id, threadId),
+              eq(threads.userId, userId),
+              eq(threads.orgId, orgId),
+              isNull(threads.deletedAt),
+            ),
+          );
       });
     },
+  };
+}
+
+type StorageDb = Awaited<ReturnType<typeof getDb>>;
+type StorageTx = Parameters<Parameters<StorageDb["transaction"]>[0]>[0];
+
+async function appendRecordsAuditEventTx(
+  tx: StorageTx,
+  input: {
+    orgId: string;
+    actorUserId: string;
+    action: RecordsAuditEvent["action"];
+    threadId?: string;
+    ownerUserId?: string;
+    reference?: string;
+  },
+): Promise<void> {
+  await tx.insert(recordsAuditEvents).values({
+    id: randomUUID(),
+    orgId: input.orgId,
+    threadId: input.threadId,
+    ownerUserId: input.ownerUserId,
+    actorUserId: input.actorUserId,
+    action: input.action,
+    reference: input.reference,
+    occurredAt: new Date(),
+  });
+}
+
+function toRecordsAuditEvent(row: typeof recordsAuditEvents.$inferSelect): RecordsAuditEvent {
+  return {
+    id: row.id,
+    orgId: row.orgId,
+    ...(row.threadId ? { threadId: row.threadId } : {}),
+    ...(row.ownerUserId ? { ownerUserId: row.ownerUserId } : {}),
+    actorUserId: row.actorUserId,
+    action: row.action,
+    ...(row.reference ? { reference: row.reference } : {}),
+    occurredAt: row.occurredAt.toISOString(),
+  };
+}
+
+function toStoredMessage(row: typeof messages.$inferSelect): StoredMessage {
+  return {
+    id: row.id,
+    role: row.role as StoredMessage["role"],
+    parts: row.parts as StoredMessage["parts"],
+    createdAt: row.createdAt.toISOString(),
   };
 }
 

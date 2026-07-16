@@ -8,6 +8,7 @@ import type {
   ProtectedRegistryEntryType,
   ProtectedRegistryProtectionKind,
   ProtectionStatsTotals,
+  RecordsAuditAction,
   ThreadEgressEvent,
   ThreadModelSettings,
   UserSettings,
@@ -144,8 +145,13 @@ export const threads = pgTable(
     traceEnabled: boolean("trace_enabled").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    purgeAfter: timestamp("purge_after", { withTimezone: true }),
   },
-  (t) => [index("threads_scope_updated_idx").on(t.userId, t.orgId, t.updatedAt.desc())],
+  (t) => [
+    index("threads_scope_updated_idx").on(t.userId, t.orgId, t.updatedAt.desc()),
+    index("threads_retention_idx").on(t.orgId, t.purgeAfter),
+  ],
 );
 
 /** User-selected values remembered for one chat. Kept separate from the workspace registry so a chat
@@ -207,4 +213,23 @@ export const threadEgressEvents = pgTable(
     eventHash: text("event_hash").notNull(),
   },
   (t) => [index("thread_egress_events_scope_thread_idx").on(t.userId, t.orgId, t.threadId, t.occurredAt.desc())],
+);
+
+/** Values-free records lifecycle evidence. No FK: final content purge must leave its audit event behind. */
+export const recordsAuditEvents = pgTable(
+  "records_audit_events",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    threadId: text("thread_id"),
+    ownerUserId: text("owner_user_id"),
+    actorUserId: text("actor_user_id").notNull(),
+    action: text("action").$type<RecordsAuditAction>().notNull(),
+    reference: text("reference"),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("records_audit_events_org_time_idx").on(t.orgId, t.occurredAt.desc()),
+    index("records_audit_events_thread_idx").on(t.orgId, t.threadId, t.occurredAt.desc()),
+  ],
 );

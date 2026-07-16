@@ -85,7 +85,7 @@ export const Route = createFileRoute("/api/chat")({
           threadId ? storage.getThread(userId, orgId, threadId) : Promise.resolve(null),
           threadId ? storage.getThreadOwner(threadId) : Promise.resolve(null),
         ]);
-        if (threadOwner && (threadOwner.userId !== userId || threadOwner.orgId !== orgId)) {
+        if (threadOwner && (threadOwner.userId !== userId || threadOwner.orgId !== orgId || threadOwner.deleted)) {
           return errorResponse(404, "chat not found");
         }
         if (!isModelAllowed(instance, `${provider}/${model}`)) {

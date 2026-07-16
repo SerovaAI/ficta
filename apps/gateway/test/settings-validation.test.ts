@@ -18,4 +18,16 @@ describe("instance settings validation", () => {
     );
     expect(() => validateInstancePatch({ protectionReviewMinimum: true })).toThrow("invalid protectionReviewMinimum");
   });
+
+  it("validates deleted-chat recovery and audit retention day ranges", () => {
+    expect(validateInstancePatch({ deletedThreadRecoveryDays: 30, recordsAuditRetentionDays: 365 })).toEqual({
+      deletedThreadRecoveryDays: 30,
+      recordsAuditRetentionDays: 365,
+    });
+    expect(validateInstancePatch({ deletedThreadRecoveryDays: 0 })).toEqual({
+      deletedThreadRecoveryDays: undefined,
+    });
+    expect(() => validateInstancePatch({ deletedThreadRecoveryDays: 1.5 })).toThrow("whole number");
+    expect(() => validateInstancePatch({ recordsAuditRetentionDays: 36_501 })).toThrow("whole number");
+  });
 });

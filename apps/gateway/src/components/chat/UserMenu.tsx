@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { LogOut, Plus, RefreshCw, Settings, Shield } from "lucide-react";
+import { ArchiveRestore, LogOut, Plus, RefreshCw, Settings, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { switchOrganization } from "@/lib/auth/auth";
 import { organizationsQueryOptions } from "@/lib/auth/organizationQueries";
-import type { AuthUser } from "@/lib/auth/types";
+import { type AuthUser, hasRecordsPermission, RECORDS_PERMISSIONS } from "@/lib/auth/types";
 import { useAuthState } from "@/lib/auth/useAuthState";
 
 type MenuSide = React.ComponentProps<typeof DropdownMenuContent>["side"];
@@ -57,6 +57,7 @@ export function UserMenu({
   showSignOut?: boolean;
 }) {
   const auth = useAuthState();
+  const canListRetainedThreads = hasRecordsPermission(auth, RECORDS_PERMISSIONS.list);
   const canManageWorkspaces = showWorkspaces && auth.organizationMode !== "single";
   const label = user.name ?? user.email;
   const secondaryLabel = description ?? user.email;
@@ -157,6 +158,12 @@ export function UserMenu({
           <DropdownMenuItem onSelect={onOpenAdmin}>
             <Shield className="size-4" aria-hidden />
             Admin
+          </DropdownMenuItem>
+        ) : null}
+        {canListRetainedThreads ? (
+          <DropdownMenuItem onSelect={() => window.location.assign("/records")}>
+            <ArchiveRestore className="size-4" aria-hidden />
+            Records
           </DropdownMenuItem>
         ) : null}
         <DropdownMenuItem onSelect={onOpenSettings}>

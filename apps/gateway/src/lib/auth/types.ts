@@ -45,6 +45,19 @@ export const LOCAL_AUTH_STATE: AuthState = {
   user: LOCAL_AUTH_USER,
 };
 
+export const RECORDS_PERMISSIONS = {
+  list: "retained-threads:list",
+  read: "retained-threads:read",
+  restore: "retained-threads:restore",
+} as const;
+
+export type RecordsPermission = (typeof RECORDS_PERMISSIONS)[keyof typeof RECORDS_PERMISSIONS];
+
+export function hasRecordsPermission(auth: AuthState, permission: RecordsPermission): boolean {
+  if (auth.provider === "none") return true;
+  return auth.user?.permissions?.includes(permission) === true;
+}
+
 /** One organization (tenant) a user belongs to. Client-safe — backs the workspace switcher. */
 export interface OrgSummary {
   id: string;

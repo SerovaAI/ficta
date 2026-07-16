@@ -34,6 +34,56 @@ export interface InstanceSettings {
   suggestedPrompts?: string[];
   /** Lowest protection-review mode a chat may use. Undefined means no administrator-enforced minimum. */
   protectionReviewMinimum?: ProtectionReviewMode;
+  /** Opt-in live-database recovery window for user-deleted chats. Undefined preserves hard deletion. */
+  deletedThreadRecoveryDays?: number;
+  /** Retention window for values-free records and egress audit evidence. Required with recovery. */
+  recordsAuditRetentionDays?: number;
+}
+
+export const RECORDS_AUDIT_ACTIONS = ["deleted", "viewed", "restored", "purged", "policy_changed"] as const;
+export type RecordsAuditAction = (typeof RECORDS_AUDIT_ACTIONS)[number];
+
+export interface RecordsAccessReason {
+  /** Ticket-like reference only; deliberately excludes whitespace/free-form client details. */
+  reference?: string;
+}
+
+export interface RecordsAuditEvent {
+  id: string;
+  orgId: string;
+  threadId?: string;
+  ownerUserId?: string;
+  actorUserId: string;
+  action: RecordsAuditAction;
+  reference?: string;
+  occurredAt: string;
+}
+
+export interface RetainedThreadSummary {
+  threadId: string;
+  ownerUserId: string;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string;
+  purgeAfter: string;
+  messageCount: number;
+}
+
+export interface RetainedThreadDetail {
+  thread: ThreadSummary;
+  ownerUserId: string;
+  deletedAt: string;
+  purgeAfter: string;
+  messages: StoredMessage[];
+}
+
+export interface RetentionSweepResult {
+  orgId: string;
+  startedAt: string;
+  completedAt: string;
+  purgedThreads: number;
+  purgedAuditEvents: number;
+  purgedEgressEvents: number;
 }
 
 /** Client-visible metadata for a workspace provider key. Never includes plaintext or ciphertext. */

@@ -85,6 +85,13 @@
       "when": 1784187670304,
       "tag": "0011_pink_hobgoblin",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784210427478,
+      "tag": "0012_deleted-thread-recovery",
+      "breakpoints": true
     }
   ]
 }

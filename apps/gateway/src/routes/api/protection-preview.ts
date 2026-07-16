@@ -40,7 +40,7 @@ export const Route = createFileRoute("/api/protection-preview")({
         let protectedValues: string[];
         try {
           const owner = await storage.getThreadOwner(input.threadId);
-          if (owner && (owner.userId !== userId || owner.orgId !== orgId)) {
+          if (owner && (owner.userId !== userId || owner.orgId !== orgId || owner.deleted)) {
             return errorResponse(404, "Chat not found.");
           }
           protectedValues =
