@@ -6,31 +6,43 @@ wrapper, run it yourself and point `FICTA_DOC_CONVERTER_URL` at it. It exposes t
 the web client speaks, so the Node side stays backend-agnostic:
 
     POST /convert   multipart/form-data, field `file`   ->   200 {"markdown": "..."}
-    GET  /health                                        ->   200 {"status": "ok", "backend": "..."}
+    POST /render    JSON {"markdown", "filename"?}      ->   200 .docx bytes (attachment)
+    GET  /health                                        ->   200 {"status": "ok", "backend": "...",
+                                                                  "render_backend": "..."}
 
-Backend is chosen with the `CONVERTER_BACKEND` env var:
+Conversion backend is chosen with the `CONVERTER_BACKEND` env var:
   - `markitdown` (default) — light, fast, LLM-oriented. Good on text-based PDFs/DOCX.
   - `docling`             — heavier (layout analysis, table structure, OCR). Better fidelity on scanned
                             or table-heavy legal PDFs, which means better PII recall downstream.
+
+Render backend is chosen with `RENDER_BACKEND` (only `pandoc` today). `RENDER_REFERENCE_DOCX` may
+point at a firm-supplied template .docx whose styles pandoc applies (`--reference-doc`).
 
 Run:  CONVERTER_BACKEND=markitdown uvicorn app:app --host 0.0.0.0 --port 5003
 """
 
 import io
 import os
+import re
+import subprocess
 import tempfile
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel
 
 BACKEND = os.environ.get("CONVERTER_BACKEND", "markitdown").strip().lower()
+RENDER_BACKEND = os.environ.get("RENDER_BACKEND", "pandoc").strip().lower()
+RENDER_REFERENCE_DOCX = os.environ.get("RENDER_REFERENCE_DOCX", "").strip()
+
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 app = FastAPI(title="ficta document-converter", version="1.0")
 
 
 @app.get("/health")
 def health() -> JSONResponse:
-    return JSONResponse({"status": "ok", "backend": BACKEND})
+    return JSONResponse({"status": "ok", "backend": BACKEND, "render_backend": RENDER_BACKEND})
 
 
 @app.post("/convert")
@@ -48,6 +60,62 @@ async def convert(file: UploadFile = File(...)) -> JSONResponse:
         raise HTTPException(status_code=500, detail="conversion failed") from exc
 
     return JSONResponse({"markdown": markdown})
+
+
+class RenderRequest(BaseModel):
+    markdown: str
+    filename: str | None = None
+
+
+@app.post("/render")
+def render(req: RenderRequest) -> Response:
+    if not req.markdown.strip():
+        raise HTTPException(status_code=400, detail="empty markdown")
+
+    try:
+        docx = _render_docx(req.markdown)
+    except Exception as exc:  # noqa: BLE001 — surface a generic 500; details stay server-side
+        # Never echo document text back (pandoc errors can quote input); log the shape only.
+        print(f"render failed: {type(exc).__name__}")
+        raise HTTPException(status_code=500, detail="render failed") from exc
+
+    filename = _safe_docx_filename(req.filename)
+    return Response(
+        content=docx,
+        media_type=DOCX_MIME,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _render_docx(markdown: str) -> bytes:
+    if RENDER_BACKEND != "pandoc":
+        raise RuntimeError(f"unknown RENDER_BACKEND: {RENDER_BACKEND}")
+    return _pandoc_docx(markdown)
+
+
+def _pandoc_docx(markdown: str) -> bytes:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_path = os.path.join(tmpdir, "out.docx")
+        cmd = ["pandoc", "-f", "gfm+smart", "-t", "docx", "--sandbox", "-o", out_path]
+        if RENDER_REFERENCE_DOCX:
+            cmd.append(f"--reference-doc={RENDER_REFERENCE_DOCX}")
+        subprocess.run(
+            cmd,
+            input=markdown.encode("utf-8"),
+            check=True,
+            capture_output=True,
+            timeout=60,
+        )
+        with open(out_path, "rb") as f:
+            return f.read()
+
+
+def _safe_docx_filename(name: str | None) -> str:
+    """Reduce an untrusted (model-suggested) filename to a header-safe .docx basename."""
+    base = os.path.basename((name or "").strip().replace("\\", "/"))
+    stem = re.sub(r"\.docx$", "", base, flags=re.IGNORECASE)
+    stem = re.sub(r"[^\w. ()-]+", "_", stem).strip(". ") or "document"
+    return f"{stem}.docx"
 
 
 def _to_markdown(data: bytes, filename: str) -> str:
