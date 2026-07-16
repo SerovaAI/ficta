@@ -31,6 +31,7 @@ function ThreadPage() {
       initialMessages={thread.messages.map(storedToUi)}
       initialThreadModelSettings={thread.thread.modelSettings}
       initialThreadTraceEnabled={thread.thread.traceEnabled}
+      initialThreadDetectionJurisdictions={thread.thread.detectionJurisdictions}
       userSettings={userSettings}
     />
   );

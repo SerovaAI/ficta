@@ -293,6 +293,45 @@ describe("keyed scopes persist detected PII across a thread's requests", () => {
     expect(seenTexts).toHaveLength(0);
   });
 
+  it("re-sweeps a keyed scope's cached leaves when the detection profile changes", async () => {
+    // A thread's matter (and so its jurisdiction profile) can change between turns while the scope
+    // key stays constant. Leaves swept under the old profile were never offered to the newly
+    // enabled detectors, so the swept-leaf cache must be invalidated — silently keeping it would be
+    // a redaction miss for exactly the content the profile was turned on for.
+    const calls: Array<{ text: string; jurisdictions: readonly string[] }> = [];
+    const recording: DetectorPlugin = {
+      kind: "detector",
+      name: "fixture-profile-detector",
+      detectText: (text, ctx) => {
+        calls.push({ text, jurisdictions: ctx.detectionProfile?.jurisdictions ?? [] });
+        return [];
+      },
+    };
+    const engine = new ProtectionEngine({ plugins: [recording] });
+    const body = JSON.stringify({ content: "NHS Number 943 476 5919" });
+
+    await engine.beginRequest("org:thread-prof").redactBodyDetailed(body);
+    expect(calls[0]).toMatchObject({ jurisdictions: [] });
+
+    // Same content, same profile → swept cache holds, detector not called again.
+    await engine.beginRequest("org:thread-prof").redactBodyDetailed(body);
+    expect(calls).toHaveLength(1);
+
+    // Profile change → cache cleared, the same content is re-offered under the new profile.
+    await engine
+      .beginRequest("org:thread-prof", { detectionProfile: { jurisdictions: ["uk"] } })
+      .redactBodyDetailed(body);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toMatchObject({ jurisdictions: ["uk"] });
+    expect(calls[1]?.text).toContain("NHS Number");
+
+    // Stable under the new profile again.
+    await engine
+      .beginRequest("org:thread-prof", { detectionProfile: { jurisdictions: ["uk"] } })
+      .redactBodyDetailed(body);
+    expect(calls).toHaveLength(2);
+  });
+
   it("does not mark content swept when a fail-open detector was unavailable", async () => {
     let unavailable = true;
     const seenTexts: string[] = [];

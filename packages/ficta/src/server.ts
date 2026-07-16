@@ -5,6 +5,7 @@ import { type HttpBindings, serve } from "@hono/node-server";
 import {
   type EgressProof,
   FICTA_CONFIG_PATH,
+  FICTA_DETECTION_PROFILE_HEADER,
   FICTA_EGRESS_EVENT_HEADER,
   FICTA_EGRESS_PROOF_PATH,
   FICTA_HEALTH_PATH,
@@ -40,8 +41,9 @@ import { loadConfig, resolveTarget, upstreamPolicyIssue } from "./config.js";
 import { configPosture } from "./config-posture.js";
 import { detectorFailClosed } from "./engine/detection-policy.js";
 import { setEngineWarnSink } from "./engine/diagnostics.js";
-import { ProtectionEngine } from "./engine/engine.js";
-import type { ProtectedValue } from "./engine/plugins/types.js";
+import { detectionProfileFingerprint, ProtectionEngine } from "./engine/engine.js";
+import { detectionProfileFromCodes } from "./engine/plugins/pii/jurisdictions.js";
+import type { DetectionProfile, ProtectedValue } from "./engine/plugins/types.js";
 import { withPreservationInstruction } from "./engine/preserve-literals.js";
 import {
   type AmbiguousEntityLinkDiagnostic,
@@ -236,7 +238,8 @@ export async function startProxy(
         );
       }
 
-      const scope = engine.beginRequest(scopeKey);
+      const previewDetectionProfile = detectionProfileFrom(c);
+      const scope = engine.beginRequest(scopeKey, { detectionProfile: previewDetectionProfile });
       const selected = preview.protectedValues ?? [];
       scope.registerProtectedValues(selected.map(userProtectedValue));
       try {
@@ -254,6 +257,7 @@ export async function startProxy(
         const textSha256 = sha256(preview.text);
         protectionTickets.set(ticket, {
           scopeKey,
+          profileFingerprint: detectionProfileFingerprint(previewDetectionProfile),
           protectedValues: selected,
           textSha256,
           expiresAt: now + PROTECTION_TICKET_TTL_MS,
@@ -453,7 +457,8 @@ export async function startProxy(
     // another request's response. A trusted caller may pin a persistent per-thread detected vault
     // via the internal scope header (see scopeKeyFrom); isolation then holds across keys instead.
     const scopeKey = scopeKeyFrom(c);
-    const scope = engine.beginRequest(scopeKey);
+    const detectionProfile = detectionProfileFrom(c);
+    const scope = engine.beginRequest(scopeKey, { detectionProfile });
     const egressEvidence = createEgressEvidence({
       scopeKey,
       eventId: egressEventIdFrom(c),
@@ -463,7 +468,14 @@ export async function startProxy(
     let preparedProtectionTicket: ProtectionTicket | undefined;
     if (requestedProtectionTicket) {
       const prepared = protectionTickets.get(requestedProtectionTicket);
-      if (!prepared || prepared.expiresAt <= Date.now() || prepared.scopeKey !== scopeKey) {
+      if (
+        !prepared ||
+        prepared.expiresAt <= Date.now() ||
+        prepared.scopeKey !== scopeKey ||
+        // A ticket approves the preview's redaction; a different detection profile at send time
+        // would redact differently than what the user reviewed.
+        prepared.profileFingerprint !== detectionProfileFingerprint(detectionProfile)
+      ) {
         if (prepared?.expiresAt !== undefined && prepared.expiresAt <= Date.now()) {
           protectionTickets.delete(requestedProtectionTicket);
         }
@@ -581,6 +593,7 @@ export async function startProxy(
     headers.delete("content-length");
     headers.delete("accept-encoding");
     headers.delete(FICTA_SCOPE_HEADER); // internal routing metadata — must never reach the upstream vendor
+    headers.delete(FICTA_DETECTION_PROFILE_HEADER); // internal detection selector — must never reach upstream
     headers.delete(FICTA_EGRESS_EVENT_HEADER); // internal audit metadata — must never reach the upstream vendor
     headers.delete(FICTA_TRACE_CAPTURE_HEADER); // internal trace/audit selector — must never reach upstream
     headers.delete(FICTA_RESTORE_HIGHLIGHT_HEADER); // client display capability — must never reach upstream
@@ -1030,6 +1043,19 @@ function scopeKeyFrom(c: Context): string | undefined {
 }
 
 const MAX_SCOPE_KEY_LENGTH = 256;
+const MAX_DETECTION_PROFILE_CODES = 8;
+
+/**
+ * The detection-profile seam: a trusted caller (e.g. the Gateway resolving a thread's matter)
+ * widens best-effort PII detection with jurisdiction codes. Additive-only by construction —
+ * unknown codes are dropped and bundles only ever union onto the detection baseline — so a spoofed
+ * header can at worst over-redact. The header is stripped before the request is forwarded upstream.
+ */
+function detectionProfileFrom(c: Context): DetectionProfile | undefined {
+  const raw = c.req.header(FICTA_DETECTION_PROFILE_HEADER)?.trim();
+  if (!raw) return undefined;
+  return detectionProfileFromCodes(raw.split(",").slice(0, MAX_DETECTION_PROFILE_CODES));
+}
 
 function traceCaptureDecisionFrom(
   c: Context,
@@ -1239,6 +1265,8 @@ interface ProtectionTraceAudit {
 
 interface ProtectionTicket {
   scopeKey: string;
+  /** Canonical detection-profile fingerprint the previewed redaction ran under. */
+  profileFingerprint: string;
   protectedValues: string[];
   textSha256: string;
   expiresAt: number;
@@ -1362,8 +1390,8 @@ function userProtectedValue(value: string): ProtectedValue {
   return {
     name: "USER_SELECTED",
     value,
-    source: "gateway-user",
-    plugin: "gateway-preview",
+    source: "user-selected",
+    plugin: "protection-preview",
     kind: "custom",
     confidence: "exact",
   };

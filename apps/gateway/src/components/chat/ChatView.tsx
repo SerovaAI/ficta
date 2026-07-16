@@ -59,7 +59,13 @@ import { reportRestoreValidation } from "@/lib/restore-validation";
 import { uiToStored } from "@/lib/storage/messages";
 import { suggestProtectedRegistryEntries } from "@/lib/storage/protected-registry";
 import { invalidateThreads, threadKeys } from "@/lib/storage/threadQueries";
-import { saveThread, setThreadModelSettings, setThreadTraceEnabled, startThread } from "@/lib/storage/threads";
+import {
+  saveThread,
+  setThreadDetectionJurisdictions,
+  setThreadModelSettings,
+  setThreadTraceEnabled,
+  startThread,
+} from "@/lib/storage/threads";
 import type { ThreadModelSettings, ThreadSummary, UserSettings } from "@/lib/storage/types";
 import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
 import { resolveThreadModelSettings, toThreadModelSettings } from "@/lib/thread-model-settings";
@@ -90,12 +96,14 @@ export function ChatView({
   initialMessages,
   initialThreadModelSettings,
   initialThreadTraceEnabled,
+  initialThreadDetectionJurisdictions,
 }: {
   userSettings?: UserSettings;
   threadId?: string;
   initialMessages?: UIMessage[];
   initialThreadModelSettings?: ThreadModelSettings;
   initialThreadTraceEnabled?: boolean;
+  initialThreadDetectionJurisdictions?: string[];
 } = {}) {
   const queryClient = useQueryClient();
   const auth = useAuthState();
@@ -135,6 +143,9 @@ export function ChatView({
   const [activeThreadId, setActiveThreadId] = useState(threadId);
   const [threadTraceEnabled, setThreadTraceEnabledState] = useState(initialThreadTraceEnabled ?? false);
   const [threadTraceError, setThreadTraceError] = useState(false);
+  const [threadDetectionJurisdictions, setThreadDetectionJurisdictionsState] = useState<string[]>(
+    initialThreadDetectionJurisdictions ?? [],
+  );
   const [reviewMode, setReviewMode] = useState<ProtectionReviewMode>("adaptive");
   const [traceCapture, setTraceCapture] = useState({
     loaded: false,
@@ -146,6 +157,8 @@ export function ChatView({
   const [modelSettingsSaveWarning, setModelSettingsSaveWarning] = useState(false);
   const modelSettingsSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const modelSettingsSaveSequence = useRef(0);
+  const detectionJurisdictionsSaveQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const detectionJurisdictionsSaveSequence = useRef(0);
   const pendingProtectionTicket = useRef<string | undefined>(undefined);
   const protectionPreviewRequest = useRef<{ generation: number; controller?: AbortController }>({ generation: 0 });
   const protectionReviewAttempt = useRef<{ text: string; action: "send" | "reload" } | undefined>(undefined);
@@ -167,8 +180,12 @@ export function ChatView({
       model: model.model,
       reasoningEffort,
       traceEnabled: threadTraceEnabled,
+      // Covers the first send of a new chat, whose thread row may not be persisted yet; the server
+      // prefers the stored thread's value and validates codes against the supported list. Additive
+      // only, so forged codes can at worst over-redact.
+      detectionJurisdictions: threadDetectionJurisdictions,
     }),
-    [model.provider, model.model, reasoningEffort, threadTraceEnabled],
+    [model.provider, model.model, reasoningEffort, threadTraceEnabled, threadDetectionJurisdictions],
   );
   const chatConnection = useMemo(
     () => withOneShotProtectionTicket(fetchServerSentEvents("/api/chat"), pendingProtectionTicket),
@@ -260,6 +277,51 @@ export function ChatView({
   useEffect(() => {
     setThreadTraceEnabledState(initialThreadTraceEnabled ?? false);
   }, [initialThreadTraceEnabled]);
+
+  useEffect(() => {
+    setThreadDetectionJurisdictionsState(initialThreadDetectionJurisdictions ?? []);
+  }, [initialThreadDetectionJurisdictions]);
+
+  const toggleDetectionJurisdiction = (code: string) => {
+    const previous = threadDetectionJurisdictions;
+    const next = previous.includes(code) ? previous.filter((existing) => existing !== code) : [...previous, code];
+    setThreadDetectionJurisdictionsState(next);
+    const persistedThreadId = activeThreadId;
+    // An unsaved chat keeps the choice local; startThreadNow persists it with the first message.
+    if (!persistedThreadId) return;
+    const summaryValue = (jurisdictions: string[]) => (jurisdictions.length > 0 ? jurisdictions : undefined);
+    queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) =>
+      current?.map((thread) =>
+        thread.id === persistedThreadId ? { ...thread, detectionJurisdictions: summaryValue(next) } : thread,
+      ),
+    );
+    // Serialize the full-array writes like rememberThreadModelSettings: each save runs after the
+    // previous one finishes, and only the newest toggle may invalidate queries or roll state back,
+    // so a slow older save can never overwrite or revert a newer selection.
+    const sequence = detectionJurisdictionsSaveSequence.current + 1;
+    detectionJurisdictionsSaveSequence.current = sequence;
+    const queued = detectionJurisdictionsSaveQueue.current
+      .catch(() => undefined)
+      .then(() =>
+        setThreadDetectionJurisdictions({ data: { threadId: persistedThreadId, detectionJurisdictions: next } }),
+      );
+    detectionJurisdictionsSaveQueue.current = queued;
+    void queued.then(
+      () => {
+        if (detectionJurisdictionsSaveSequence.current === sequence) void invalidateThreads(queryClient);
+      },
+      (err) => {
+        console.warn("Failed to update the chat's detection jurisdictions", err);
+        if (detectionJurisdictionsSaveSequence.current !== sequence) return;
+        setThreadDetectionJurisdictionsState(previous);
+        queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) =>
+          current?.map((thread) =>
+            thread.id === persistedThreadId ? { ...thread, detectionJurisdictions: summaryValue(previous) } : thread,
+          ),
+        );
+      },
+    );
+  };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset all chat-scoped review state when the route changes
   useEffect(() => {
@@ -368,7 +430,13 @@ export function ChatView({
       upsertThreadSummary(current, tid, snapshot, modelSettings),
     );
     void startThread({
-      data: { threadId: tid, message: uiToStored(message), traceEnabled: threadTraceEnabled, modelSettings },
+      data: {
+        threadId: tid,
+        message: uiToStored(message),
+        traceEnabled: threadTraceEnabled,
+        modelSettings,
+        detectionJurisdictions: threadDetectionJurisdictions,
+      },
     }).catch((err) => {
       console.warn("Failed to start chat thread", err);
     });
@@ -452,7 +520,12 @@ export function ChatView({
     setProtectionReviewLoading(true);
     const request = startProtectionPreview();
     try {
-      const preview = await previewProtection({ threadId: tid, text: content, signal: request.controller.signal });
+      const preview = await previewProtection({
+        threadId: tid,
+        text: content,
+        detectionJurisdictions: threadDetectionJurisdictions,
+        signal: request.controller.signal,
+      });
       if (!protectionPreviewIsCurrent(request.generation)) return;
       if (protectionPreviewOutcome(effectiveReviewMode, preview.findings.length) === "send") {
         dispatchProtectionPreview(content, preview, action);
@@ -507,6 +580,7 @@ export function ChatView({
             threadId: tid,
             text: protectionReview.text,
             addValues: [value],
+            detectionJurisdictions: threadDetectionJurisdictions,
             signal: request.controller.signal,
           });
           if (!protectionPreviewIsCurrent(request.generation))
@@ -557,6 +631,7 @@ export function ChatView({
         threadId: tid,
         text: protectionReview.text,
         removeValues: [value],
+        detectionJurisdictions: threadDetectionJurisdictions,
         signal: request.controller.signal,
       });
       if (!protectionPreviewIsCurrent(request.generation)) return;
@@ -824,6 +899,8 @@ export function ChatView({
             reviewMode={reviewMode}
             reviewMinimum={reviewMinimum}
             onReviewModeChange={setReviewMode}
+            threadDetectionJurisdictions={threadDetectionJurisdictions}
+            onToggleDetectionJurisdiction={toggleDetectionJurisdiction}
             restoreDisplayMode={restoreDisplayMode}
             restoreHighlightsAvailable={restoreHighlightsAvailable}
             onToggleRestoreDisplay={() =>

@@ -1,3 +1,4 @@
+import { isDetectionJurisdiction } from "@serovaai/ficta-protocol";
 import { createServerFn } from "@tanstack/react-start";
 import { requireAdminScope, requireAuthState, requireScope, scopeFromAuth } from "@/lib/auth/guards.server";
 import { isAdmin } from "@/lib/auth/types";
@@ -56,11 +57,22 @@ function optionalThreadModelSettings(input: Record<string, unknown>): ThreadMode
   return input.modelSettings === undefined ? undefined : toThreadModelSettings(input.modelSettings);
 }
 
+/** Normalized, validated jurisdiction codes; rejects unknown codes loudly rather than narrowing intent. */
+function toDetectionJurisdictions(input: unknown): string[] {
+  if (!Array.isArray(input)) throw new Error("invalid detectionJurisdictions");
+  const codes = [...new Set(input.map((code) => (typeof code === "string" ? code.trim().toLowerCase() : code)))];
+  for (const code of codes) {
+    if (!isDetectionJurisdiction(code)) throw new Error("unknown jurisdiction");
+  }
+  return codes as string[];
+}
+
 function validateStart(input: unknown): {
   threadId: string;
   message: StoredMessage;
   traceEnabled: boolean;
   modelSettings?: ThreadModelSettings;
+  detectionJurisdictions?: string[];
 } {
   const i = asObject(input);
   if (typeof i.threadId !== "string" || !i.threadId) throw new Error("invalid threadId");
@@ -70,6 +82,8 @@ function validateStart(input: unknown): {
     message: toStoredMessage(i.message),
     traceEnabled: i.traceEnabled === true,
     modelSettings: optionalThreadModelSettings(i),
+    detectionJurisdictions:
+      i.detectionJurisdictions === undefined ? undefined : toDetectionJurisdictions(i.detectionJurisdictions),
   };
 }
 
@@ -99,6 +113,12 @@ function validateModelSettings(input: unknown): { threadId: string; modelSetting
   const i = asObject(input);
   if (typeof i.threadId !== "string" || !i.threadId) throw new Error("invalid threadId");
   return { threadId: i.threadId, modelSettings: toThreadModelSettings(i.modelSettings) };
+}
+
+function validateThreadJurisdictions(input: unknown): { threadId: string; detectionJurisdictions: string[] } {
+  const i = asObject(input);
+  if (typeof i.threadId !== "string" || !i.threadId) throw new Error("invalid threadId");
+  return { threadId: i.threadId, detectionJurisdictions: toDetectionJurisdictions(i.detectionJurisdictions) };
 }
 
 export const fetchThreads = createServerFn({ method: "GET" }).handler(async (): Promise<ThreadSummary[]> => {
@@ -134,6 +154,7 @@ export const startThread = createServerFn({ method: "POST" })
       data.message,
       data.traceEnabled && isAdmin(auth),
       data.modelSettings,
+      data.detectionJurisdictions,
     );
   });
 
@@ -156,6 +177,18 @@ export const setThreadTraceEnabled = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<void> => {
     const { userId, orgId } = await requireAdminScope();
     await (await getStorage()).setThreadTraceEnabled(userId, orgId, data.threadId, data.traceEnabled);
+  });
+
+export const setThreadDetectionJurisdictions = createServerFn({ method: "POST" })
+  .validator(validateThreadJurisdictions)
+  .handler(async ({ data }): Promise<void> => {
+    const { userId, orgId } = await requireScope();
+    await (await getStorage()).setThreadDetectionJurisdictions(
+      userId,
+      orgId,
+      data.threadId,
+      data.detectionJurisdictions,
+    );
   });
 
 export const deleteThread = createServerFn({ method: "POST" })

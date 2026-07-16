@@ -10,6 +10,23 @@ export const FICTA_EGRESS_PROOF_PATH = "/__ficta/egress-proof";
 export const FICTA_PROTECTION_PREVIEW_PATH = "/__ficta/protection-preview";
 export const FICTA_PROTECTION_TICKET_HEADER = "x-ficta-protection-ticket";
 export const FICTA_SCOPE_HEADER = "x-ficta-scope";
+/**
+ * Comma-separated jurisdiction codes widening best-effort PII detection for one request.
+ * Additive-only: codes enable extra detectors on top of the global baseline, never disable any,
+ * so a spoofed header can only over-redact. Never forwarded upstream.
+ */
+export const FICTA_DETECTION_PROFILE_HEADER = "x-ficta-detection-profile";
+/** Jurisdiction codes accepted in the detection-profile header; unknown codes are dropped. */
+export const SUPPORTED_DETECTION_JURISDICTIONS = ["za", "uk", "us"];
+const SUPPORTED_DETECTION_JURISDICTION_SET = new Set(SUPPORTED_DETECTION_JURISDICTIONS);
+
+/**
+ * @param {unknown} value
+ * @returns {value is import("./index.js").DetectionJurisdiction}
+ */
+export function isDetectionJurisdiction(value) {
+  return typeof value === "string" && SUPPORTED_DETECTION_JURISDICTION_SET.has(value);
+}
 /** Correlates a Gateway audit record with one proxy request. Never forwarded upstream. */
 export const FICTA_EGRESS_EVENT_HEADER = "x-ficta-egress-event";
 export const FICTA_TRACE_CAPTURE_HEADER = "x-ficta-trace-capture";

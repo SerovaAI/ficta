@@ -1,6 +1,6 @@
 # Threat model — Ficta Gateway PII handling
 
-> Addendum to [`threat-model.md`](./threat-model.md), scoped to the sensitive-data chat gateway
+> Addendum to [`threat-model.md`](../../../packages/ficta/docs/threat-model.md), scoped to the sensitive-data chat gateway
 > (`apps/gateway`). The base threat model still governs; this states **the gateway's promise in its own
 > words** so its best-effort boundary is never borrowed from the CLI's stronger exact-match promise.
 
@@ -90,6 +90,12 @@ This is the load-bearing caveat and must not be blurred:
 ## Intentionally not covered
 
 - **Undetected PII.** Anything the configured backend misses is forwarded verbatim.
+- **PII outside the active detection profile.** Jurisdiction-specific recognizers (e.g. UK NHS/NINO)
+  run only for requests whose trusted `x-ficta-detection-profile` header enables them; a UK
+  identifier in default traffic is undetected-by-design (its recognizer false-positives outside its
+  home jurisdiction). Profiles are strictly additive — a spoofed or wrong profile can widen
+  detection (over-redaction) but never narrow the baseline or affect exact-match registered values —
+  and the header never reaches the provider.
 - **Numeric PII inside JSON.** Detection runs over the redactable string surface; a bare JSON number
   leaf (e.g. an un-quoted card number) is not a rewritable span and is neither tokenized nor treated
   as a leak. Register such values or ensure they arrive as strings.
@@ -104,7 +110,7 @@ This is the load-bearing caveat and must not be blurred:
 - **Document ingestion gaps.** PDF/DOC/DOCX are converted to text before detection; anything the
   converter drops or garbles (scanned images without OCR, complex tables) is detected imperfectly or
   not at all.
-- Everything already out of scope in [`threat-model.md`](./threat-model.md) (auth headers,
+- Everything already out of scope in [`threat-model.md`](../../../packages/ficta/docs/threat-model.md) (auth headers,
   tool-channel egress, binary responses, IDE clients).
 
 ## Compliance framing
@@ -123,4 +129,4 @@ remains the responsible party for its obligations.
 
 ## See also
 
-- [`threat-model.md`](./threat-model.md) — the base promise and non-goals this addendum extends.
+- [`threat-model.md`](../../../packages/ficta/docs/threat-model.md) — the base promise and non-goals this addendum extends.

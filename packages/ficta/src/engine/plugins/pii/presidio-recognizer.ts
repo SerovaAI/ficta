@@ -1,5 +1,6 @@
 import { isRecord } from "../../json.js";
 import type { ProtectedValue } from "../types.js";
+import { effectivePresidioEntities } from "./jurisdictions.js";
 import type { PiiRecognizer } from "./recognizer.js";
 
 /**
@@ -39,7 +40,11 @@ export interface PresidioConfig {
   url: string;
   language: string;
   scoreThreshold: number;
-  /** Entity allowlist (empty = all). Sent to the analyzer and re-applied client-side. */
+  /**
+   * Entity allowlist, sent to the analyzer and re-applied client-side. For the presidio backend an
+   * empty configured list resolves to the default baseline (never "all" — see jurisdictions.ts);
+   * for other presidio-compatible backends (openmed) empty still means all.
+   */
   entities: readonly string[];
   /** Wall-clock budget for the whole detection call (all chunk requests share one deadline). */
   timeoutMs: number;
@@ -86,7 +91,12 @@ export const presidioRecognizer: PiiRecognizer = {
   name: "presidio",
   usesNlp: true,
   async detect(text, ctx) {
-    return detectWithPresidioCompatibleAnalyzer(text, ctx, presidioConfig(), "presidio");
+    // Resolve the request's entity allowlist here so it is ALWAYS explicit and non-empty: the
+    // sidecar registry keeps jurisdiction-specific recognizers loaded (see jurisdictions.ts), and
+    // an /analyze payload without `entities` would run all of them for default traffic.
+    const config = presidioConfig();
+    const entities = effectivePresidioEntities(config.entities, ctx.detectionProfile);
+    return detectWithPresidioCompatibleAnalyzer(text, ctx, { ...config, entities }, "presidio");
   },
 };
 

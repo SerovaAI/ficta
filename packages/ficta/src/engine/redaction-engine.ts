@@ -1,4 +1,10 @@
-import type { DetectTextContext, PluginDiscovery, ProtectedValue, RegistryPolicy } from "./plugins/types.js";
+import type {
+  DetectionProfile,
+  DetectTextContext,
+  PluginDiscovery,
+  ProtectedValue,
+  RegistryPolicy,
+} from "./plugins/types.js";
 import type { Wire } from "./wire.js";
 
 /**
@@ -52,8 +58,12 @@ export interface RedactionEngine {
    * the detected layer persists across the key's requests under TTL/LRU bounds, and the same
    * isolation guarantee holds *across keys*. The engine's own `redactBodyDetailed` /
    * `restoreText` / … operate on a single implicit default scope — the degenerate CLI case.
+   *
+   * `opts.detectionProfile` widens best-effort detection for this scope (additive-only jurisdiction
+   * bundles — see `plugins/pii/jurisdictions.ts`). For keyed scopes a profile change invalidates the
+   * swept-leaf cache so previously skipped content is re-swept under the new profile.
    */
-  beginRequest(scopeKey?: string): RequestScope;
+  beginRequest(scopeKey?: string, opts?: RequestScopeOptions): RequestScope;
 
   // --- Diagnostics / introspection consumed by the proxy startup banner + ProxyHandle. ---
 
@@ -85,6 +95,12 @@ export interface EngineRegistryStatus {
  * then the permanent one. Obtained from {@link RedactionEngine.beginRequest}; used by the proxy for
  * exactly one request and then discarded.
  */
+/** Per-scope options supplied by the trusted caller at {@link RedactionEngine.beginRequest}. */
+export interface RequestScopeOptions {
+  /** Additive-only jurisdiction widening for this scope's best-effort detection. */
+  detectionProfile?: DetectionProfile;
+}
+
 export interface RequestScope {
   /**
    * Admit explicit user-selected values into this trusted scope with registry-strength provenance.

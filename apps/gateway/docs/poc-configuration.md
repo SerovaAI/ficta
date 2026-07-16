@@ -58,7 +58,7 @@ their defaults into the environment merely to make them explicit.
 
 Use environment variables only when the deployment topology changes—for example `FICTA_PROXY_URL`,
 `FICTA_CONFIG_FILE`, `DATABASE_URL`, or the shared managed-registry path. For every policy and backend
-tuning option, see [`../config.toml.example`](../config.toml.example). For authenticated or
+tuning option, see [`packages/ficta/config.toml.example`](../../../packages/ficta/config.toml.example). For authenticated or
 multi-process deployment requirements, see the
 [Gateway operator guide](https://github.com/SerovaAI/ficta/tree/main/apps/gateway#production-like-gateway-setup).
 

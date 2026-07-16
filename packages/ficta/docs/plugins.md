@@ -331,19 +331,39 @@ Config (`[pii.presidio]` ↔ `FICTA_PII_PRESIDIO_*`):
 | `url` | `FICTA_PII_PRESIDIO_URL` | `http://127.0.0.1:5002` | analyzer base URL |
 | `language` | `FICTA_PII_PRESIDIO_LANGUAGE` | `en` | analyzer language |
 | `score_threshold` | `FICTA_PII_PRESIDIO_SCORE_THRESHOLD` | `0.5` | drop spans below this score |
-| `entities` | `FICTA_PII_PRESIDIO_ENTITIES` | *(all)* | entity allowlist |
+| `entities` | `FICTA_PII_PRESIDIO_ENTITIES` | *(default baseline)* | entity allowlist (replaces the baseline) |
 | `timeout_ms` | `FICTA_PII_PRESIDIO_TIMEOUT_MS` | `1500` | total detection budget per request |
 
 (The fail-open/fail-closed behavior when Presidio is unreachable is `[pii] fail_closed`, covered in
 [Failure policy](#failure-policy--core-enforced-global-default--per-detector-override) below.)
 
+**The shipped defaults are a reference profile, not a neutral universal.** The bundled Presidio
+deployment (`presidio/default_recognizers.za.yaml`, `presidio/nlp_engine.za.yaml`) and the built-in
+default entity baseline are tuned for Southern-Africa legal-document workloads: ZA and US identity
+types are detected by default, the recognizer registry includes locale-specific patterns (e.g. a
+`+230` Mauritius phone shape and Afrikaans account-context words), and the identity recognizer is
+tuned against legal-contract prose. Deployments with a different locale or domain should treat this
+as the worked example: set `entities` / `FICTA_PII_PRESIDIO_ENTITIES` to their own allowlist, mount
+their own recognizer YAML into the sidecar, or point Ficta at any Presidio-compatible analyzer they
+operate (see the note above — the analyzer owns its recognizers).
+
 A detected value replaces **every** eligible occurrence of that string in the body. The Presidio
 entity allowlist remains the final category gate. For coding-agent traffic, use an allowlist tuned to
 the workload rather than every available structured recognizer — e.g.
 `entities = ["PERSON", "PHONE_NUMBER", "LOCATION", "EMAIL_ADDRESS"]`. Legal-document deployments
-should also include `DOCUMENT_ID`, `COMPANY_REGISTRATION`, and `DATE_TIME`; leaving `entities = []`
-enables every configured recognizer. Values shorter than 4 chars are dropped regardless, to avoid
-shredding normal prose.
+should also include `DOCUMENT_ID`, `COMPANY_REGISTRATION`, and `DATE_TIME`. Leaving `entities = []`
+selects the built-in **default baseline** (see `engine/plugins/pii/jurisdictions.ts`) — never "every
+loaded recognizer": every `/analyze` request sends an explicit entity allowlist, and
+jurisdiction-specific entities (e.g. the UK set) are included only when the request carries a
+matching detection profile. Values shorter than 4 chars are dropped regardless, to avoid shredding
+normal prose.
+
+**Detection profiles (jurisdiction widening).** A trusted caller may send the internal
+`x-ficta-detection-profile` header (comma-separated codes, e.g. `uk`) to additively widen the
+Presidio allowlist with that jurisdiction's entity bundle for the request's scope, per request and
+without a restart. Profiles are strictly additive — they can enable extra detectors but never
+remove baseline coverage. Unknown codes are dropped, and the header is stripped before the request
+is forwarded upstream.
 
 GLiNER is an evaluation option inside the same Presidio image, not a Ficta backend or default. In a
 source checkout, build with `--build-arg INSTALL_GLINER=1`, run it with

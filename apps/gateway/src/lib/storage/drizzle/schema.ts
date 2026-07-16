@@ -137,6 +137,9 @@ export const threads = pgTable(
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull().default("local"),
     title: text("title").notNull().default("New chat"),
+    /** Jurisdiction codes additively widening best-effort PII detection for this chat (see the
+     * detection-profile header in the protocol package); null/empty = baseline only. */
+    detectionJurisdictions: jsonb("detection_jurisdictions").$type<string[]>(),
     modelSettings: jsonb("model_settings").$type<ThreadModelSettings>(),
     traceEnabled: boolean("trace_enabled").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
