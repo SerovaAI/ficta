@@ -2,6 +2,7 @@ const LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql";
 const REPORT_WINDOW_MS = 10 * 60_000;
 const REPORTS_PER_WINDOW = 5;
 const RATE_LIMIT_BUCKET_MAX = 10_000;
+const LINEAR_REQUEST_TIMEOUT_MS = 10_000;
 
 export interface IssueReportConfig {
   apiKey: string;
@@ -39,6 +40,7 @@ export type LinearIssueResult =
 
 export type IssueReportRateLimitState = Map<string, number[]>;
 
+/** Read the server-only Linear configuration, enabling reports only when both required values exist. */
 export function issueReportConfig(env: NodeJS.ProcessEnv = process.env): IssueReportConfig | null {
   const apiKey = env.FICTA_GATEWAY_LINEAR_API_KEY?.trim();
   const teamId = env.FICTA_GATEWAY_LINEAR_TEAM_ID?.trim();
@@ -47,6 +49,7 @@ export function issueReportConfig(env: NodeJS.ProcessEnv = process.env): IssueRe
   return { apiKey, teamId, ...(buildId ? { buildId } : {}) };
 }
 
+/** Build a normalized Linear issue title from the first non-empty report line. */
 export function issueReportTitle(kind: IssueReportContext["kind"], details: string): string {
   const prefix = kind === "bug" ? "[Bug] " : "[Feedback] ";
   const firstLine = details
@@ -57,6 +60,7 @@ export function issueReportTitle(kind: IssueReportContext["kind"], details: stri
   return `${prefix}${summary}`.slice(0, 100).trimEnd();
 }
 
+/** Format the report and allowlisted diagnostic fields for the Linear issue description. */
 export function issueReportDescription(context: IssueReportContext): string {
   const reporterName = cleanMetadata(context.reporterName) || "Not provided";
   const buildId = cleanMetadata(context.buildId) || "Not provided";
@@ -87,7 +91,7 @@ export function issueReportDescription(context: IssueReportContext): string {
 }
 
 /**
- * Best-effort process-local protection against a signed-in user flooding the pilot Linear team.
+ * Best-effort process-local protection against a signed-in user flooding the configured Linear team.
  * The map stores timestamps only — never report content or identity metadata beyond the opaque scope key.
  */
 export function takeIssueReportQuota(state: IssueReportRateLimitState, scopeKey: string, now = Date.now()): boolean {
@@ -109,11 +113,15 @@ export function takeIssueReportQuota(state: IssueReportRateLimitState, scopeKey:
   return true;
 }
 
+/** Create an issue through Linear's GraphQL API with a bounded request duration. */
 export async function createLinearIssue(
   input: LinearIssueInput,
   config: IssueReportConfig,
   fetchImpl: typeof fetch = fetch,
+  timeoutMs = LINEAR_REQUEST_TIMEOUT_MS,
 ): Promise<LinearIssueResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   try {
     response = await fetchImpl(LINEAR_GRAPHQL_URL, {
@@ -132,9 +140,12 @@ export async function createLinearIssue(
 }`,
         variables: { input },
       }),
+      signal: controller.signal,
     });
   } catch {
     return { ok: false, category: "network" };
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (!response.ok) {

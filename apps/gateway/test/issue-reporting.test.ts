@@ -121,6 +121,8 @@ describe("Linear issue creation", () => {
       expect(body.query).toContain("issueCreate(input: $input)");
       expect(body.query).toContain("issue { identifier }");
       expect(body.variables).toEqual({ input });
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+      expect(init?.signal?.aborted).toBe(false);
       return Response.json({ data: { issueCreate: { success: true, issue: { identifier: "FIC-123" } } } });
     });
 
@@ -161,5 +163,29 @@ describe("Linear issue creation", () => {
         throw new Error("offline");
       }),
     ).resolves.toEqual({ ok: false, category: "network" });
+  });
+
+  it("aborts a stalled Linear request after the configured timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      let requestSignal: AbortSignal | undefined;
+      const stalledFetch = vi.fn<typeof fetch>(async (_url, init) => {
+        requestSignal = init?.signal ?? undefined;
+        return await new Promise<Response>((_resolve, reject) => {
+          requestSignal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), {
+            once: true,
+          });
+        });
+      });
+
+      const result = createLinearIssue(input, config, stalledFetch, 250);
+      await vi.advanceTimersByTimeAsync(250);
+
+      await expect(result).resolves.toEqual({ ok: false, category: "network" });
+      expect(requestSignal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

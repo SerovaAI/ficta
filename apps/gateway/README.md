@@ -47,7 +47,7 @@ Current app capabilities:
 - text-file attachments inlined into chat requests so ficta can redact them;
 - PDF/DOCX conversion through a document-converter sidecar before inlining/redaction;
 - optional WorkOS AuthKit organizations/workspaces (`AUTH_PROVIDER=workos`);
-- optional create-only Linear issue reporting for authenticated pilot users;
+- optional create-only Linear issue reporting for authenticated users;
 - opt-in deleted-chat recovery with independently permissioned records access and automatic live-database purge;
 - open local self-hosting mode (`AUTH_PROVIDER=none`) for development and isolated POCs.
 
@@ -237,7 +237,7 @@ OPENAI_API_KEY=...
 ANTHROPIC_API_KEY=...
 FICTA_GATEWAY_KEY_ENCRYPTION_SECRET=...
 
-# Optional pilot issue reporting (use a create-only, team-restricted Linear personal API key)
+# Optional issue reporting (use a create-only, team-restricted Linear personal API key)
 FICTA_GATEWAY_LINEAR_API_KEY=lin_api_...
 FICTA_GATEWAY_LINEAR_TEAM_ID=...
 FICTA_GATEWAY_BUILD_ID=...
@@ -291,7 +291,7 @@ Web app env:
 | `ANTHROPIC_API_KEY` | Anthropic fallback key; used only when the workspace has no saved Anthropic key | - |
 | `FICTA_GATEWAY_KEY_ENCRYPTION_SECRET` | Secret used to encrypt/decrypt admin-saved workspace provider keys | - |
 | `FICTA_GATEWAY_LINEAR_API_KEY` | Server-only Linear personal API key restricted to **Create issues** and the destination team; enables the report icon together with `FICTA_GATEWAY_LINEAR_TEAM_ID` | - |
-| `FICTA_GATEWAY_LINEAR_TEAM_ID` | UUID of the Linear team that receives pilot reports | - |
+| `FICTA_GATEWAY_LINEAR_TEAM_ID` | UUID of the Linear team that receives issue reports | - |
 | `FICTA_GATEWAY_BUILD_ID` | Optional release or commit identifier attached to issue-report diagnostics | - |
 | `AUTH_PROVIDER` | `none` for open local/self-hosted mode, or `workos` for AuthKit | `none` |
 | `FICTA_GATEWAY_ORG_ID` | WorkOS organization assigned to this single-organization Gateway/proxy deployment; required with `AUTH_PROVIDER=workos` | - |

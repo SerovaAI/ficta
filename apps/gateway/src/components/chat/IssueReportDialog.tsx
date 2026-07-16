@@ -18,6 +18,7 @@ import {
   submitIssueReport,
 } from "@/lib/issue-reporting";
 
+/** Collect and submit a report while preserving the draft across loading and failure states. */
 export function IssueReportDialog({
   open,
   onOpenChange,

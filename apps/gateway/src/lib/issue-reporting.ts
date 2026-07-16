@@ -30,6 +30,7 @@ export type IssueReportResult =
 
 const reportQuota: IssueReportRateLimitState = new Map();
 
+/** Validate and reduce browser input to the report fields accepted by the server boundary. */
 export function validateIssueReportInput(value: unknown): IssueReportInput {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid report payload.");
   const input = value as Record<string, unknown>;

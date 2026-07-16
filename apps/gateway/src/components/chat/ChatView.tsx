@@ -959,7 +959,7 @@ export function ChatView({
               setRestoreDisplayMode((mode) => (mode === "values" ? "surrogates" : "values"))
             }
             onOpenEvidence={() => setEvidenceOpen(true)}
-            onReportIssue={issueReporting.enabled ? () => setIssueReportOpen(true) : undefined}
+            onReportIssue={issueReporting.enabled && auth.user ? () => setIssueReportOpen(true) : undefined}
           />
 
           <MessageList
@@ -1042,12 +1042,14 @@ export function ChatView({
         <AdminSettingsDialog open={adminOpen} onOpenChange={changeAdminOpen} target={adminTarget} />
         <CreateWorkspaceDialog open={createWorkspaceOpen} onOpenChange={setCreateWorkspaceOpen} />
         <ThreadEvidenceDialog open={evidenceOpen} onOpenChange={setEvidenceOpen} threadId={tid} />
-        <IssueReportDialog
-          open={issueReportOpen}
-          onOpenChange={setIssueReportOpen}
-          reporterEmail={auth.user?.email ?? "Unknown reporter"}
-          threadId={tid}
-        />
+        {auth.user ? (
+          <IssueReportDialog
+            open={issueReportOpen}
+            onOpenChange={setIssueReportOpen}
+            reporterEmail={auth.user.email}
+            threadId={tid}
+          />
+        ) : null}
 
         <Dialog open={confirmSendOpen} onOpenChange={setConfirmSendOpen}>
           <DialogContent showCloseButton={false} className="max-w-md">
