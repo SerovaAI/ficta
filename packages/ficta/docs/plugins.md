@@ -291,11 +291,13 @@ is disabled; birth-date recognition is context-bound. The registry retains struc
 such as South African IDs, document identifiers, and Mauritius phones.
 
 - **`pnpm sidecars`** (repo root, ↔ `docker-compose.sidecars.yml`) starts the shared sidecar stack
-  detached with health-gated `--wait` and `--build`: the Gateway document converter plus both PII sidecars.
-  `pnpm sidecars:down` stops them. This is the way to run them outside the dev wrapper — a server, a
-  teammate's machine, a POC box. After pulling recognizer code or Presidio configuration changes,
-  rerun `pnpm sidecars` so the local `ficta-presidio:dev` image is rebuilt and the analyzer is
-  recreated; a plain Compose `up` can reuse the stale local image.
+  detached with health-gated `--wait` and `--build`: the Gateway document converter plus Presidio
+  (compose profiles `gateway` + `engine`). The opt-in OpenMed backend has its own profile — start it
+  with `pnpm sidecars:openmed` when the backend set selects it. `pnpm sidecars:down` stops all
+  profiles. This is the way to run them outside the dev wrapper — a server, a teammate's machine, a
+  POC box. After pulling recognizer code or Presidio configuration changes, rerun `pnpm sidecars` so
+  the local `ficta-presidio:dev` image is rebuilt and the analyzer is recreated; a plain Compose
+  `up` can reuse the stale local image.
 - **Root `pnpm dev`** auto-manages the sidecars for whichever backends `FICTA_PII_BACKENDS`
   selects (force per-sidecar with `FICTA_PII_PRESIDIO_MANAGED` /
   `FICTA_PII_OPENMED_MANAGED`). It reuses anything already healthy at the configured URL — including
@@ -381,9 +383,9 @@ as the `openmed` backend. It speaks OpenMed's own strict API: Ficta calls `POST 
 tokenize/restore; OpenMed's de-identification endpoints are not used.
 
 Upstream publishes a multi-arch service image at `ghcr.io/maziyarpanahi/openmed` (amd64 + arm64,
-cosign-signed), pulled automatically like the Presidio image — `pnpm sidecars` runs it (with
-Presidio) via `docker-compose.sidecars.yml`, and root `pnpm dev` auto-manages it when the backend
-set includes `openmed` (force with `FICTA_PII_OPENMED_MANAGED`; pin a tag or substitute a locally
+cosign-signed), pulled automatically like the Presidio image — `pnpm sidecars:openmed` runs it via
+`docker-compose.sidecars.yml` (its own compose profile, since most setups don't select it), and
+root `pnpm dev` auto-manages it when the backend set includes `openmed` (force with `FICTA_PII_OPENMED_MANAGED`; pin a tag or substitute a locally
 built patched image via `FICTA_PII_OPENMED_IMAGE`). The HuggingFace cache lives in the
 `openmed-hf-cache` Docker volume, so only the first start on a machine pulls the image and downloads
 the model (startup budget `FICTA_PII_OPENMED_STARTUP_TIMEOUT_MS`, default 300000).
