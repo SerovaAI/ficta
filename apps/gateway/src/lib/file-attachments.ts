@@ -3,6 +3,10 @@ export interface TextAttachment {
   name: string;
   size: number;
   content: string;
+  /** "extracted" marks markdown that came out of /api/extract (an uploaded PDF/DOCX). The composer
+   *  appends the document-fence output instruction for these, so a revised contract comes back in a
+   *  downloadable `ficta:document` fence. */
+  origin?: "extracted";
 }
 
 export const MAX_TEXT_ATTACHMENT_BYTES = 512 * 1024;
@@ -149,6 +153,7 @@ export async function extractDocumentAttachment(file: File): Promise<TextAttachm
     name: file.name || "document",
     size: new TextEncoder().encode(markdown).length,
     content: markdown,
+    origin: "extracted",
   };
 }
 

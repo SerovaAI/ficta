@@ -2,16 +2,24 @@
 
 Turns uploaded PDF/DOCX into Markdown so the web UI can attach documents. The extracted Markdown is
 inlined into the chat message and redacted by the ficta proxy on the way to the model — exactly like a
-pasted text file. In a source checkout, root `pnpm dev` starts/reuses this Docker sidecar by default,
-and `pnpm sidecars` runs it detached with the other local sidecars. Outside those workflows, run it and
-point the app at it.
+pasted text file. It also renders Markdown back into `.docx` (`/render`) so the gateway can offer
+"Download as Word" — always from **restored** text the browser already holds, never from model output
+directly, because the proxy does not restore placeholders in binary responses. In a source checkout,
+root `pnpm dev` starts/reuses this Docker sidecar by default, and `pnpm sidecars` runs it detached with
+the other local sidecars. Outside those workflows, run it and point the app at it.
 
 ## Contract
 
 ```
 POST /convert   multipart/form-data, field `file`   ->   200 {"markdown": "..."}
-GET  /health                                         ->   200 {"status": "ok", "backend": "..."}
+POST /render    JSON {"markdown", "filename"?}      ->   200 .docx bytes (attachment)
+GET  /health                                         ->   200 {"status": "ok", "backend": "...",
+                                                              "render_backend": "..."}
 ```
+
+`/render` returns 400 on empty markdown and a generic 500 on failure — error responses never echo
+document text. The optional `filename` is untrusted: it is reduced to a safe basename and forced to
+a `.docx` extension.
 
 ## Backends
 
@@ -19,6 +27,11 @@ GET  /health                                         ->   200 {"status": "ok", "
 | ------------------- | ---------- | ---------------------------------------------------------------------- |
 | `markitdown` (def.) | markitdown | Light/fast. Good on text-based PDFs/DOCX.                              |
 | `docling`           | docling    | Heavy (layout + tables + OCR). Better on scanned/table-heavy PDFs — and better PII recall, since format-anchored entities (SSNs, cards) survive extraction more reliably. Uncomment `docling` in `requirements.txt`. |
+
+Rendering (`/render`) is backed by pandoc (`RENDER_BACKEND=pandoc`, the only backend today): real
+Word heading styles (navigable outline), `numbering.xml`-backed multilevel lists (clause
+hierarchies), GFM tables → Word tables. Set `RENDER_REFERENCE_DOCX` to a template `.docx` path to
+render in a firm's house style (pandoc `--reference-doc`); unset, pandoc's default styles apply.
 
 ## Run
 
@@ -36,7 +49,9 @@ docker build -t ficta-doc-converter apps/gateway/sidecars/document-converter
 docker run --rm -p 5003:5003 ficta-doc-converter
 ```
 
-Local:
+Local (`/render` additionally needs the `pandoc` binary on PATH — e.g. `brew install pandoc` or
+`apt-get install pandoc`; without it, conversion still works, `/health` reports
+`render_ready: false`, and `/render` returns 500. The Docker image includes a pinned pandoc):
 
 ```sh
 pip install -r requirements.txt

@@ -28,9 +28,10 @@ export interface ModelChoice {
   /** Gateway-generated correlation id for the values-free per-request egress proof. */
   egressEventId?: string;
   /**
-   * Jurisdiction codes from the thread's matter (server-resolved, never from browser props). Sent
+   * The chat's detection jurisdictions. The stored thread's value wins; a browser-forwarded value
+   * covers only the first send of a new chat and is validated against the supported code list. Sent
    * as the internal detection-profile header so the proxy additively widens best-effort PII
-   * detection (e.g. UK identifier recognizers for a UK matter). Stripped before upstream.
+   * detection (e.g. UK identifier recognizers). Stripped before upstream.
    */
   detectionProfile?: readonly string[];
 }

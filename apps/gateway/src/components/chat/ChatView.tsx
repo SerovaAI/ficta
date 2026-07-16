@@ -20,6 +20,7 @@ import { useAuthState } from "@/lib/auth/useAuthState";
 import { chatErrorMessage } from "@/lib/chat-error-copy";
 import { hasComposerDraft } from "@/lib/composer-submit";
 import { toggleDetectionJurisdiction as toggleJurisdictionSelection } from "@/lib/detection-jurisdictions";
+import { DOCUMENT_FENCE_INSTRUCTION } from "@/lib/documents/document-blocks";
 import {
   extractDocumentAttachment,
   formatBytes,
@@ -1213,8 +1214,16 @@ function messageWithAttachments(text: string, attachments: TextAttachment[]): st
     )
     .join("\n\n");
 
-  if (!text) return `Please review the attached text file content.\n\n${fileContext}`;
-  return `${fileContext}\n\nUser request:\n${text}`;
+  // An extracted PDF/DOCX is a document the user will want back as a document: ask for revisions in
+  // a ficta:document fence (complete text, no elisions) so the reply renders as a card and can be
+  // downloaded as Word. Riding the user text — not a server-side system prompt — keeps the
+  // instruction inside the protection-review flow, which only prepares protection for user messages.
+  const documentInstruction = attachments.some((attachment) => attachment.origin === "extracted")
+    ? `\n\n${DOCUMENT_FENCE_INSTRUCTION}`
+    : "";
+
+  if (!text) return `Please review the attached text file content.\n\n${fileContext}${documentInstruction}`;
+  return `${fileContext}\n\nUser request:\n${text}${documentInstruction}`;
 }
 
 function isAbortError(error: unknown): boolean {
