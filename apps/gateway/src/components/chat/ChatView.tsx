@@ -73,12 +73,14 @@ import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
 import { resolveThreadModelSettings, toThreadModelSettings } from "@/lib/thread-model-settings";
 import { deriveThreadTitleFromText } from "@/lib/thread-title";
 import { shouldClearThreadTrace } from "@/lib/trace-capture";
+import { useIssueReportingAvailability } from "@/lib/use-issue-reporting";
 import { useProtectionStatus } from "@/lib/use-protection-status";
 import { clearRestoreHighlightDisplay, useRestoreHighlightDisplay } from "@/lib/use-restore-highlight-display";
 import { useSidebar } from "@/lib/use-sidebar";
 import { ChatSidebar } from "./ChatSidebar";
 import { Composer, type ComposerHandle } from "./Composer";
 import { ErrorBanner } from "./ErrorBanner";
+import { IssueReportDialog } from "./IssueReportDialog";
 import { JurisdictionSidebar } from "./JurisdictionSidebar";
 import { MessageList } from "./MessageList";
 import { ProtectionNotice } from "./ProtectionNotice";
@@ -117,6 +119,7 @@ export function ChatView({
   const instance = useInstanceSettings();
   const sidebar = useSidebar();
   const protectionStatus = useProtectionStatus();
+  const issueReporting = useIssueReportingAvailability();
   const composerRef = useRef<ComposerHandle>(null);
   const jurisdictionPanelTriggerRef = useRef<HTMLButtonElement>(null);
   const jurisdictionDrawerTriggerRef = useRef<HTMLButtonElement>(null);
@@ -126,6 +129,7 @@ export function ChatView({
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
   const [confirmSendOpen, setConfirmSendOpen] = useState(false);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [issueReportOpen, setIssueReportOpen] = useState(false);
   const [jurisdictionDesktopOpen, setJurisdictionDesktopOpen] = useState(true);
   const [jurisdictionDrawerOpen, setJurisdictionDrawerOpen] = useState(false);
   // Passthrough (unprotected but working) asks for consent once per chat, not on every send.
@@ -955,6 +959,7 @@ export function ChatView({
               setRestoreDisplayMode((mode) => (mode === "values" ? "surrogates" : "values"))
             }
             onOpenEvidence={() => setEvidenceOpen(true)}
+            onReportIssue={issueReporting.enabled ? () => setIssueReportOpen(true) : undefined}
           />
 
           <MessageList
@@ -1037,6 +1042,12 @@ export function ChatView({
         <AdminSettingsDialog open={adminOpen} onOpenChange={changeAdminOpen} target={adminTarget} />
         <CreateWorkspaceDialog open={createWorkspaceOpen} onOpenChange={setCreateWorkspaceOpen} />
         <ThreadEvidenceDialog open={evidenceOpen} onOpenChange={setEvidenceOpen} threadId={tid} />
+        <IssueReportDialog
+          open={issueReportOpen}
+          onOpenChange={setIssueReportOpen}
+          reporterEmail={auth.user?.email ?? "Unknown reporter"}
+          threadId={tid}
+        />
 
         <Dialog open={confirmSendOpen} onOpenChange={setConfirmSendOpen}>
           <DialogContent showCloseButton={false} className="max-w-md">

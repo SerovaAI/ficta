@@ -1,5 +1,20 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { restorePrivacyToggleLabels, threadTraceToggleLabels } from "@/components/chat/TopBar";
+import { restorePrivacyToggleLabels, TopBar, threadTraceToggleLabels } from "@/components/chat/TopBar";
+import { TooltipProvider } from "@/components/ui/tooltip";
+
+describe("issue reporting trigger", () => {
+  it("renders an accessible top-bar action only when reporting is enabled", () => {
+    const enabled = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(TopBar, { onReportIssue: () => {} })),
+    );
+    const disabled = renderToStaticMarkup(createElement(TooltipProvider, null, createElement(TopBar)));
+
+    expect(enabled).toContain('aria-label="Report an issue"');
+    expect(disabled).not.toContain('aria-label="Report an issue"');
+  });
+});
 
 describe("restore privacy toggle labels", () => {
   it("describes the next action from values mode", () => {

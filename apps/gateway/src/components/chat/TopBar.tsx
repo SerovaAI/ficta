@@ -8,6 +8,7 @@ import {
   Eye,
   EyeOff,
   FileCheck2,
+  Flag,
   Loader2,
   LockKeyhole,
   Moon,
@@ -67,6 +68,7 @@ export function TopBar({
   restoreHighlightsAvailable = false,
   onToggleRestoreDisplay,
   onOpenEvidence,
+  onReportIssue,
 }: {
   /** Sidebar state + toggle. Optional so TopBar still renders without the history sidebar. */
   sidebarOpen?: boolean;
@@ -92,6 +94,7 @@ export function TopBar({
   restoreHighlightsAvailable?: boolean;
   onToggleRestoreDisplay?: () => void;
   onOpenEvidence?: () => void;
+  onReportIssue?: () => void;
 }) {
   const { theme, toggle } = useTheme();
   const restoreToggle = restorePrivacyToggleLabels(restoreDisplayMode);
@@ -278,6 +281,16 @@ export function TopBar({
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Open jurisdiction detection</TooltipContent>
+            </Tooltip>
+          ) : null}
+          {onReportIssue ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={onReportIssue} aria-label="Report an issue">
+                  <Flag className="size-4" aria-hidden />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Report an issue</TooltipContent>
             </Tooltip>
           ) : null}
           <Tooltip>
