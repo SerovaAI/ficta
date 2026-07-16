@@ -4,7 +4,7 @@
 process.env.FICTA_GATEWAY_DATA_DIR = "memory://";
 process.env.DATABASE_URL = "";
 
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { Storage } from "@/lib/storage/storage.server";
 import { getStorage } from "@/lib/storage/storage.server";
 import type {
@@ -566,7 +566,7 @@ describe("threads + messages", () => {
 
   it("isolates threads by user", async () => {
     await store.saveThreadSnapshot("alice", ORG, "secret", [textMessage("s", "user", "mine")]);
-    expect(await store.getThreadOwner("secret")).toEqual({ userId: "alice", orgId: ORG });
+    expect(await store.getThreadOwner("secret")).toEqual({ userId: "alice", orgId: ORG, deleted: false });
     expect(await store.getThread("mallory", ORG, "secret")).toBeNull();
     await expect(
       store.saveThreadSnapshot("mallory", ORG, "secret", [textMessage("s2", "user", "hijack")]),
@@ -668,11 +668,14 @@ describe("threads + messages", () => {
 
   it("renames and deletes", async () => {
     await store.saveThreadSnapshot("owner", ORG, "t3", [textMessage("z", "user", "original")]);
+    await store.addThreadProtectedValues("owner", ORG, "t3", ["Hard Delete Client"]);
     await store.renameThread("owner", ORG, "t3", "Renamed");
     expect((await store.getThread("owner", ORG, "t3"))?.thread.title).toBe("Renamed");
 
     await store.deleteThread("owner", ORG, "t3");
     expect(await store.getThread("owner", ORG, "t3")).toBeNull();
+    expect(await store.getThreadOwner("t3")).toBeNull();
+    expect(await store.listThreadProtectedValues("owner", ORG, "t3")).toEqual([]);
   });
 });
 
@@ -725,5 +728,217 @@ describe("thread detection jurisdictions", () => {
     expect(
       (await store.getThread("juris-owner", "org-race", "race-juris"))?.thread.detectionJurisdictions,
     ).toBeUndefined();
+  });
+});
+
+describe("deleted-thread recovery", () => {
+  it("records values-free policy changes when an administrator actor is supplied", async () => {
+    const orgId = "org-retention-policy-audit";
+    await store.patchInstanceSettings(
+      orgId,
+      { deletedThreadRecoveryDays: 7, recordsAuditRetentionDays: 90 },
+      "admin-user",
+    );
+    expect(await store.listRecordsAuditEvents(orgId)).toEqual([
+      expect.objectContaining({ action: "policy_changed", actorUserId: "admin-user" }),
+    ]);
+    const [event] = await store.listRecordsAuditEvents(orgId);
+    expect(Object.keys(event ?? {})).not.toEqual(
+      expect.arrayContaining(["deletedThreadRecoveryDays", "recordsAuditRetentionDays"]),
+    );
+  });
+
+  it("soft-deletes, seals normal access, audits records access, and restores the same thread", async () => {
+    const orgId = "org-recovery";
+    const userId = "recovery-owner";
+    await store.patchInstanceSettings(orgId, {
+      deletedThreadRecoveryDays: 30,
+      recordsAuditRetentionDays: 365,
+    });
+    const attachmentPart = {
+      type: "file",
+      mediaType: "text/plain",
+      filename: "brief.txt",
+      url: "data:text/plain;base64,cHJpdmlsZWdlZCBhdHRhY2htZW50",
+    };
+    const userMessage = textMessage("recovery-user", "user", "privileged transcript");
+    userMessage.parts.push(attachmentPart);
+    await store.saveThreadSnapshot(userId, orgId, "recoverable", [
+      userMessage,
+      textMessage("recovery-assistant", "assistant", "privileged response"),
+    ]);
+    await store.addThreadProtectedValues(userId, orgId, "recoverable", ["Client Example"]);
+
+    await store.deleteThread(userId, orgId, "recoverable");
+    expect(await store.getThread(userId, orgId, "recoverable")).toBeNull();
+    expect(await store.listThreads(userId, orgId)).toEqual([]);
+    await expect(
+      store.saveThreadSnapshot(userId, orgId, "recoverable", [textMessage("late", "user", "late write")]),
+    ).rejects.toThrow("thread not found");
+    await expect(store.listThreadProtectedValues(userId, orgId, "recoverable")).rejects.toThrow("thread not found");
+    await expect(store.getThreadEgressReceipt(userId, orgId, "recoverable")).rejects.toThrow("thread not found");
+
+    const retained = await store.listRetainedThreads(orgId);
+    // Exact shape, not objectContaining: the records list is a privacy boundary, so an accidental new
+    // field (title, message content, protected values) must fail this test.
+    expect(retained).toEqual([
+      {
+        threadId: "recoverable",
+        ownerUserId: userId,
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
+        deletedAt: expect.any(String),
+        purgeAfter: expect.any(String),
+        messageCount: 2,
+      },
+    ]);
+    expect(new Date(retained[0]?.purgeAfter ?? 0).getTime() - new Date(retained[0]?.deletedAt ?? 0).getTime()).toBe(
+      30 * 24 * 60 * 60 * 1_000,
+    );
+    expect(JSON.stringify(retained)).not.toContain("privileged transcript");
+
+    const detail = await store.getRetainedThread(orgId, "records-user", "recoverable", { reference: "REC-1042" });
+    expect(detail?.thread.id).toBe("recoverable");
+    expect(detail?.messages).toHaveLength(2);
+    expect(detail?.messages[0]?.parts).toContainEqual(attachmentPart);
+    expect(await store.listRecordsAuditEvents(orgId, "recoverable")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ action: "deleted", actorUserId: userId }),
+        expect.objectContaining({ action: "viewed", actorUserId: "records-user", reference: "REC-1042" }),
+      ]),
+    );
+
+    await store.restoreRetainedThread(orgId, "records-user", "recoverable", { reference: "REC-1043" });
+    const restored = await store.getThread(userId, orgId, "recoverable");
+    expect(restored?.messages).toHaveLength(2);
+    expect(restored?.messages[0]?.parts).toContainEqual(attachmentPart);
+    expect(await store.listThreadProtectedValues(userId, orgId, "recoverable")).toEqual(["Client Example"]);
+    expect(await store.listRetainedThreads(orgId)).toEqual([]);
+    expect(await store.listRecordsAuditEvents(orgId, "recoverable")).toEqual(
+      expect.arrayContaining([expect.objectContaining({ action: "restored", actorUserId: "records-user" })]),
+    );
+  });
+
+  it("keeps policy changes prospective and isolates the records list by organization", async () => {
+    const orgId = "org-prospective";
+    await store.patchInstanceSettings(orgId, {
+      deletedThreadRecoveryDays: 10,
+      recordsAuditRetentionDays: 20,
+    });
+    await store.saveThreadSnapshot("owner", orgId, "prospective", [textMessage("p1", "user", "policy")]);
+    await store.deleteThread("owner", orgId, "prospective");
+    const originalPurgeAfter = (await store.listRetainedThreads(orgId))[0]?.purgeAfter;
+
+    await store.patchInstanceSettings(orgId, { deletedThreadRecoveryDays: 1 });
+    expect((await store.listRetainedThreads(orgId))[0]?.purgeAfter).toBe(originalPurgeAfter);
+    expect(await store.listRetainedThreads("other-org")).toEqual([]);
+
+    await store.restoreRetainedThread(orgId, "records", "prospective", {});
+    await store.deleteThread("owner", orgId, "prospective");
+    const nextPurgeAfter = (await store.listRetainedThreads(orgId))[0]?.purgeAfter;
+    expect(new Date(nextPurgeAfter ?? 0).getTime()).toBeLessThan(new Date(originalPurgeAfter ?? 0).getTime());
+    const lifecycle = await store.listRecordsAuditEvents(orgId, "prospective");
+    expect(lifecycle.filter((event) => event.action === "deleted")).toHaveLength(2);
+    expect(lifecycle.filter((event) => event.action === "restored")).toHaveLength(1);
+  });
+
+  it("seals records access when the recovery window lapses, even before the sweep runs", async () => {
+    const orgId = "org-lapsed-access";
+    await store.patchInstanceSettings(orgId, { deletedThreadRecoveryDays: 1, recordsAuditRetentionDays: 30 });
+    await store.saveThreadSnapshot("owner", orgId, "lapsed", [textMessage("l1", "user", "lapsed")]);
+    await store.deleteThread("owner", orgId, "lapsed");
+    expect(await store.listRetainedThreads(orgId)).toHaveLength(1);
+
+    vi.useFakeTimers({ now: Date.now() + 2 * 24 * 60 * 60 * 1_000, toFake: ["Date"] });
+    try {
+      expect(await store.listRetainedThreads(orgId)).toEqual([]);
+      expect(await store.getRetainedThread(orgId, "records", "lapsed", {})).toBeNull();
+      await expect(store.restoreRetainedThread(orgId, "records", "lapsed", {})).rejects.toThrow(
+        "retained thread not found",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("purges due content idempotently while preserving the new purge event", async () => {
+    const orgId = "org-retention-sweep";
+    const userId = "sweep-owner";
+    await store.patchInstanceSettings(orgId, {
+      deletedThreadRecoveryDays: 1,
+      recordsAuditRetentionDays: 30,
+    });
+    await store.saveThreadSnapshot(userId, orgId, "due-thread", [textMessage("due", "user", "due")]);
+    await store.addThreadProtectedValues(userId, orgId, "due-thread", ["Due Client"]);
+    await store.deleteThread(userId, orgId, "due-thread");
+    await store.patchInstanceSettings(orgId, { deletedThreadRecoveryDays: 3 });
+    await store.saveThreadSnapshot(userId, orgId, "not-due-thread", [textMessage("not-due", "user", "not due")]);
+    await store.deleteThread(userId, orgId, "not-due-thread");
+
+    const future = new Date(Date.now() + 2 * 24 * 60 * 60 * 1_000);
+    const concurrent = await Promise.all([store.runRetentionSweep(future, 1), store.runRetentionSweep(future, 1)]);
+    const concurrentCounts = concurrent.map((run) => run.find((result) => result.orgId === orgId)?.purgedThreads ?? 0);
+    expect(concurrentCounts.reduce((total, count) => total + count, 0)).toBe(1);
+    const repeated = (await store.runRetentionSweep(future, 1)).find((result) => result.orgId === orgId);
+    expect(repeated?.purgedThreads).toBe(0);
+    expect(await store.listRetainedThreads(orgId)).toEqual([
+      expect.objectContaining({ threadId: "not-due-thread", ownerUserId: userId }),
+    ]);
+    expect(await store.getThreadOwner("due-thread")).toBeNull();
+    expect(await store.getThreadOwner("not-due-thread")).toEqual({ userId, orgId, deleted: true });
+    expect(await store.listThreadProtectedValues(userId, orgId, "due-thread")).toEqual([]);
+    expect(await store.listRecordsAuditEvents(orgId, "due-thread")).toEqual(
+      expect.arrayContaining([expect.objectContaining({ action: "purged", actorUserId: "system:retention" })]),
+    );
+  });
+
+  it("still purges an existing retained chat if recovery and audit settings are later absent", async () => {
+    const orgId = "org-disabled-retention-sweep";
+    await store.patchInstanceSettings(orgId, {
+      deletedThreadRecoveryDays: 1,
+      recordsAuditRetentionDays: 30,
+    });
+    await store.saveThreadSnapshot("owner", orgId, "disabled-policy-thread", [
+      textMessage("disabled", "user", "retained before disable"),
+    ]);
+    await store.deleteThread("owner", orgId, "disabled-policy-thread");
+    await store.patchInstanceSettings(orgId, {
+      deletedThreadRecoveryDays: undefined,
+      recordsAuditRetentionDays: undefined,
+    });
+    expect(await store.listRetainedThreads(orgId)).toEqual([
+      expect.objectContaining({ threadId: "disabled-policy-thread" }),
+    ]);
+
+    const future = new Date(Date.now() + 2 * 24 * 60 * 60 * 1_000);
+    const result = (await store.runRetentionSweep(future)).find((item) => item.orgId === orgId);
+    expect(result?.purgedThreads).toBe(1);
+    expect(await store.getThreadOwner("disabled-policy-thread")).toBeNull();
+  });
+
+  it("expires lifecycle and egress evidence on the configured audit schedule", async () => {
+    const orgId = "org-audit-expiry";
+    const occurredAt = new Date();
+    await store.patchInstanceSettings(orgId, { recordsAuditRetentionDays: 1 }, "records");
+    expect(await store.listRecordsAuditEvents(orgId)).toEqual([expect.objectContaining({ action: "policy_changed" })]);
+    await store.saveThreadSnapshot("owner", orgId, "expired-evidence", [textMessage("evidence", "user", "audit")]);
+    await store.appendThreadEgressEvent("owner", orgId, "expired-evidence", {
+      eventId: "expired-egress-event",
+      at: occurredAt.toISOString(),
+      outcome: "forwarded",
+      screening: "completed",
+      model: "test-model",
+      redactedValues: 1,
+      survivingValues: 0,
+      ambiguousEntityLinks: 0,
+      labels: [],
+    });
+
+    const result = (await store.runRetentionSweep(new Date(occurredAt.getTime() + 2 * 24 * 60 * 60 * 1_000))).find(
+      (item) => item.orgId === orgId,
+    );
+    expect(result).toEqual(expect.objectContaining({ purgedAuditEvents: 1, purgedEgressEvents: 1 }));
+    expect(await store.listRecordsAuditEvents(orgId)).toEqual([]);
+    expect((await store.getThreadEgressReceipt("owner", orgId, "expired-evidence")).events).toEqual([]);
   });
 });

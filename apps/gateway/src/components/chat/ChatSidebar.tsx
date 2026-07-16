@@ -15,6 +15,7 @@ import {
   showThreadDeletionError,
   subscribeThreadDeletionNotice,
   THREAD_DELETION_UNDO_DELAY_MS,
+  threadDeletionDisclosure,
 } from "@/lib/storage/threadDeletion";
 import { threadKeys, threadsQueryOptions } from "@/lib/storage/threadQueries";
 import { deleteThread } from "@/lib/storage/threads";
@@ -53,7 +54,8 @@ export function ChatSidebar({
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { instanceName } = useInstanceSettings();
+  const instance = useInstanceSettings();
+  const { instanceName } = instance;
   const auth = useAuthState();
   const { user } = auth;
   const hostedAuth = auth.requiresAuth;
@@ -126,7 +128,7 @@ export function ChatSidebar({
       },
       {
         delayMs: THREAD_DELETION_UNDO_DELAY_MS,
-        notice: { title, previous, wasActive },
+        notice: { title, previous, wasActive, recoveryDays: instance.deletedThreadRecoveryDays },
       },
     );
   };
@@ -213,7 +215,7 @@ export function ChatSidebar({
                       </Link>
                       <button
                         type="button"
-                        aria-label="Delete chat"
+                        aria-label={instance.deletedThreadRecoveryDays ? "Remove chat from history" : "Delete chat"}
                         onClick={(event) => remove(event, thread)}
                         className="absolute top-1/2 right-1 flex size-8 shrink-0 -translate-y-1/2 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:size-11"
                       >
@@ -361,12 +363,17 @@ function DeletionNotice({
     );
   }
 
+  const disclosure = threadDeletionDisclosure(notice.recoveryDays);
+
   return (
     <div
       role="status"
       className="mb-2 rounded-xl border border-border bg-secondary px-3 py-2 text-sm text-secondary-foreground"
     >
-      <p className="truncate">Deleted &quot;{notice.title}&quot;</p>
+      <p className="truncate">
+        {disclosure.headline} &quot;{notice.title}&quot;
+      </p>
+      {disclosure.detail ? <p className="mt-1 text-muted-foreground text-xs">{disclosure.detail}</p> : null}
       <Button type="button" variant="outline" size="sm" className="mt-2 h-8 w-full" onClick={onUndo}>
         <RotateCcw className="size-3.5" aria-hidden />
         Undo

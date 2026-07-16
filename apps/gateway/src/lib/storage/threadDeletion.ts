@@ -22,6 +22,7 @@ export type ThreadDeletionNotice =
       previous: ThreadSummary[] | undefined;
       wasActive: boolean;
       expiresAt: number;
+      recoveryDays?: number;
     }
   | {
       kind: "error";
@@ -32,6 +33,7 @@ type ThreadDeletionNoticeInput = {
   title: string;
   previous?: ThreadSummary[];
   wasActive?: boolean;
+  recoveryDays?: number;
 };
 
 type ScheduleThreadDeletionOptions =
@@ -48,6 +50,14 @@ let hiddenThreadDeletionIdsSnapshot: readonly string[] = [];
 const listeners = new Set<() => void>();
 
 export const THREAD_DELETION_UNDO_DELAY_MS = 5000;
+
+/** "Deleted", not "permanently deleted": the live database is only one copy — backups, provider
+ * retention, and raw traces have their own lifecycles, so the UI must not promise more. */
+export function threadDeletionDisclosure(recoveryDays?: number): { headline: string; detail?: string } {
+  return recoveryDays
+    ? { headline: "Removed from history", detail: `Records can recover it for ${recoveryDays} days.` }
+    : { headline: "Deleted" };
+}
 
 export function getThreadDeletionNotice(): ThreadDeletionNotice | null {
   return notice;
@@ -96,6 +106,7 @@ export function scheduleThreadDeletion(
           previous: noticeInput.previous,
           wasActive: noticeInput.wasActive ?? false,
           expiresAt,
+          recoveryDays: noticeInput.recoveryDays,
         }
       : null,
   );

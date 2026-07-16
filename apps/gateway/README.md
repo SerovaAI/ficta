@@ -47,6 +47,7 @@ Current app capabilities:
 - text-file attachments inlined into chat requests so ficta can redact them;
 - PDF/DOCX conversion through a document-converter sidecar before inlining/redaction;
 - optional WorkOS AuthKit organizations/workspaces (`AUTH_PROVIDER=workos`);
+- opt-in deleted-chat recovery with independently permissioned records access and automatic live-database purge;
 - open local self-hosting mode (`AUTH_PROVIDER=none`) for development and isolated POCs.
 
 ## Local POC Setup
@@ -182,6 +183,43 @@ Adaptive or Always is also enforced by the server API, not only by the browser c
 One Gateway + proxy deployment serves one organization: the proxy's permanent registry is
 process-global. With `AUTH_PROVIDER=workos`, set `FICTA_GATEWAY_ORG_ID` to the deployment's WorkOS
 organization ID. Run separate deployments for separate organizations.
+
+### Deleted-chat recovery
+
+Deleted-chat recovery is off by default. With it off, the existing five-second client Undo is the only
+recovery window; after that, deletion removes the chat, its messages, and its chat-specific protected
+values from the live database. An administrator can opt in under **Admin > Retention** by selecting a
+whole-number recovery period and a records-audit period from 1 to 36,500 days. Audit retention must be
+at least as long as recovery retention. The acknowledgement in that screen is required because database
+backups, model-provider copies, and optional raw proxy trace files have separate operator-controlled
+lifecycles.
+
+When recovery is enabled, deleting a chat immediately removes it from the owner's normal history and
+blocks its normal read, write, preview, and chat routes. The transcript, message-part attachment content,
+and chat-specific protected values remain in the live database until the deletion-time purge date. A
+later policy change does not move that date, and disabling recovery affects only future deletions.
+
+Assign WorkOS permissions independently of administrator roles:
+
+- `retained-threads:list` shows retained-chat metadata;
+- `retained-threads:read` permits an audited transcript view; and
+- `retained-threads:restore` permits a separate, audited restore to the original owner and thread ID.
+
+Administrator status does not grant these permissions. `AUTH_PROVIDER=none` grants them only to keep
+local development fully capable. The Records list contains IDs, timestamps, purge date, and message
+count—not titles or message content. Opening content records an audit event and permits only a
+restricted ticket-like reference; restoration is a separate action. The values-free audit stores no
+titles, messages, attachment content, or protected values.
+
+The gateway purges automatically: an in-process sweep runs at startup and hourly after, removing due
+retained threads and their protected values (messages cascade) in bounded batches, recording surviving
+purge evidence, and expiring older lifecycle/egress evidence according to audit retention. No operator
+scheduling is required.
+
+This is a recovery-retention mechanism, not a legal-hold or complete records-management system. It does
+not provide exports, matter linkage, reassignment, early purge, or holds. A successful live-database
+purge does not erase independent database backups, provider-retained data, or raw trace files; operators
+must align those systems and contracts with the firm's chosen policy.
 
 Example production-like env shape:
 

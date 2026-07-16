@@ -1,5 +1,5 @@
 import { getActiveProvider } from "./provider.server";
-import { type AuthState, isAdmin } from "./types";
+import { type AuthState, hasRecordsPermission, isAdmin, type RecordsPermission } from "./types";
 
 /**
  * Server-side identity guards for server functions. Every storage-touching server function re-derives the
@@ -66,4 +66,13 @@ export async function requireAdminScope(): Promise<Scope> {
   const scope = scopeFromAuth(auth);
   if (!scope) throw new Error("unauthorized");
   return scope;
+}
+
+/** Records permissions are deliberately independent from administrator status. */
+export async function requireRecordsScope(permission: RecordsPermission): Promise<Scope & { actorUserId: string }> {
+  const auth = await requireAuthState();
+  if (!hasRecordsPermission(auth, permission)) throw new Error("forbidden");
+  const scope = scopeFromAuth(auth);
+  if (!scope) throw new Error("unauthorized");
+  return { ...scope, actorUserId: scope.userId };
 }
