@@ -1,4 +1,5 @@
 import type { UIMessage } from "@tanstack/ai-react";
+import { DocxDownloadContext, useDocxDownload } from "@/lib/documents/use-docx-download";
 import { assistantResponseClipboardText } from "@/lib/message-copy";
 import {
   protectionAnnotationsFromPart,
@@ -27,6 +28,14 @@ export function MessageBubble({
   const isUser = message.role === "user";
   const copyText = assistantResponseClipboardText(message, restoreDisplayMode);
   const hasVisible = message.parts.some((p) => p.type !== "text" || p.content.length > 0);
+  // Word export of the assistant turn: pre-renders on stream completion when a document fence is
+  // present, so the download (in the actions row and on the document card) saves a ready file.
+  // Always exported with restored values — the display-mode toggle affects the clipboard, never the
+  // client deliverable (the surrogate leak gate would refuse a "surrogates" render anyway).
+  const docx = useDocxDownload({
+    text: isUser ? "" : assistantResponseClipboardText(message, "values"),
+    streaming: !!streaming,
+  });
 
   if (isUser) {
     return (
@@ -44,11 +53,13 @@ export function MessageBubble({
         {streaming && !hasVisible ? (
           <StreamingIndicator />
         ) : (
-          <MessageParts parts={message.parts} restoreDisplayMode={restoreDisplayMode} />
+          <DocxDownloadContext.Provider value={docx}>
+            <MessageParts parts={message.parts} restoreDisplayMode={restoreDisplayMode} />
+          </DocxDownloadContext.Provider>
         )}
       </div>
       {!streaming && copyText.length > 0 ? (
-        <MessageActions text={copyText} onRegenerate={onRegenerate} canRegenerate={canRegenerate} />
+        <MessageActions text={copyText} docx={docx} onRegenerate={onRegenerate} canRegenerate={canRegenerate} />
       ) : null}
     </div>
   );

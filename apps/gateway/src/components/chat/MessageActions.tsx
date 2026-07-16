@@ -1,17 +1,21 @@
-import { Check, Copy, RotateCcw } from "lucide-react";
+import { Check, Copy, FileDown, Loader2, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { DocxDownload } from "@/lib/documents/use-docx-download";
 
 type CopyStatus = "idle" | "copied" | "error";
 
-/** Persistent actions on a completed assistant turn: copy the text, or regenerate the latest response. */
+/** Persistent actions on a completed assistant turn: copy the text, download it as Word, or
+ *  regenerate the latest response. */
 export function MessageActions({
   text,
+  docx,
   onRegenerate,
   canRegenerate,
 }: {
   text: string;
+  docx?: DocxDownload;
   onRegenerate?: () => void;
   canRegenerate?: boolean;
 }) {
@@ -67,6 +71,27 @@ export function MessageActions({
         <span className="text-destructive text-xs" role="alert">
           Copy failed
         </span>
+      ) : null}
+      {docx && docx.status !== "unavailable" ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 text-muted-foreground"
+              onClick={docx.download}
+              disabled={docx.status === "blocked" || docx.status === "rendering"}
+              aria-label={docx.message ?? "Download as Word"}
+            >
+              {docx.status === "rendering" ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden />
+              ) : (
+                <FileDown className="size-3.5" aria-hidden />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{docx.message ?? "Download as Word"}</TooltipContent>
+        </Tooltip>
       ) : null}
       {onRegenerate ? (
         <Tooltip>
