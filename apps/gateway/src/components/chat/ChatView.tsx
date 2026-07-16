@@ -19,6 +19,7 @@ import { isAdmin } from "@/lib/auth/types";
 import { useAuthState } from "@/lib/auth/useAuthState";
 import { chatErrorMessage } from "@/lib/chat-error-copy";
 import { hasComposerDraft } from "@/lib/composer-submit";
+import { toggleDetectionJurisdiction as toggleJurisdictionSelection } from "@/lib/detection-jurisdictions";
 import {
   extractDocumentAttachment,
   formatBytes,
@@ -77,12 +78,15 @@ import { useSidebar } from "@/lib/use-sidebar";
 import { ChatSidebar } from "./ChatSidebar";
 import { Composer, type ComposerHandle } from "./Composer";
 import { ErrorBanner } from "./ErrorBanner";
+import { JurisdictionSidebar } from "./JurisdictionSidebar";
 import { MessageList } from "./MessageList";
 import { ProtectionNotice } from "./ProtectionNotice";
 import { ProtectionReview, ProtectionReviewLoading } from "./ProtectionReview";
 import { draftWithSuggestion } from "./suggestionDraft";
 import { ThreadEvidenceDialog } from "./ThreadEvidenceDialog";
 import { TopBar } from "./TopBar";
+
+const JURISDICTION_SIDEBAR_KEY = "ficta-jurisdiction-sidebar";
 
 /**
  * Owns the conversation: the useChat client, the composer input, and the model choice. A fresh chat on
@@ -113,12 +117,16 @@ export function ChatView({
   const sidebar = useSidebar();
   const protectionStatus = useProtectionStatus();
   const composerRef = useRef<ComposerHandle>(null);
+  const jurisdictionPanelTriggerRef = useRef<HTMLButtonElement>(null);
+  const jurisdictionDrawerTriggerRef = useRef<HTMLButtonElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminTarget, setAdminTarget] = useState<AdminSettingsTarget>();
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
   const [confirmSendOpen, setConfirmSendOpen] = useState(false);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [jurisdictionDesktopOpen, setJurisdictionDesktopOpen] = useState(true);
+  const [jurisdictionDrawerOpen, setJurisdictionDrawerOpen] = useState(false);
   // Passthrough (unprotected but working) asks for consent once per chat, not on every send.
   const [passthroughAck, setPassthroughAck] = useState(false);
   const [input, setInput] = useState("");
@@ -146,6 +154,7 @@ export function ChatView({
   const [threadDetectionJurisdictions, setThreadDetectionJurisdictionsState] = useState<string[]>(
     initialThreadDetectionJurisdictions ?? [],
   );
+  const [detectionJurisdictionsSaveError, setDetectionJurisdictionsSaveError] = useState(false);
   const [reviewMode, setReviewMode] = useState<ProtectionReviewMode>("adaptive");
   const [traceCapture, setTraceCapture] = useState({
     loaded: false,
@@ -282,9 +291,39 @@ export function ChatView({
     setThreadDetectionJurisdictionsState(initialThreadDetectionJurisdictions ?? []);
   }, [initialThreadDetectionJurisdictions]);
 
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(JURISDICTION_SIDEBAR_KEY);
+      if (saved) setJurisdictionDesktopOpen(saved === "open");
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    const wideViewport = window.matchMedia("(min-width: 1280px)");
+    const closeDrawerOnWideViewport = () => {
+      if (wideViewport.matches) setJurisdictionDrawerOpen(false);
+    };
+    closeDrawerOnWideViewport();
+    wideViewport.addEventListener("change", closeDrawerOnWideViewport);
+    return () => wideViewport.removeEventListener("change", closeDrawerOnWideViewport);
+  }, []);
+
+  const setJurisdictionDesktopPanel = (open: boolean) => {
+    setJurisdictionDesktopOpen(open);
+    try {
+      localStorage.setItem(JURISDICTION_SIDEBAR_KEY, open ? "open" : "closed");
+    } catch {}
+  };
+
+  const closeJurisdictionDesktopPanel = () => {
+    setJurisdictionDesktopPanel(false);
+    requestAnimationFrame(() => jurisdictionPanelTriggerRef.current?.focus());
+  };
+
   const toggleDetectionJurisdiction = (code: string) => {
     const previous = threadDetectionJurisdictions;
-    const next = previous.includes(code) ? previous.filter((existing) => existing !== code) : [...previous, code];
+    const next = toggleJurisdictionSelection(previous, code);
+    setDetectionJurisdictionsSaveError(false);
     setThreadDetectionJurisdictionsState(next);
     const persistedThreadId = activeThreadId;
     // An unsaved chat keeps the choice local; startThreadNow persists it with the first message.
@@ -308,11 +347,15 @@ export function ChatView({
     detectionJurisdictionsSaveQueue.current = queued;
     void queued.then(
       () => {
-        if (detectionJurisdictionsSaveSequence.current === sequence) void invalidateThreads(queryClient);
+        if (detectionJurisdictionsSaveSequence.current === sequence) {
+          setDetectionJurisdictionsSaveError(false);
+          void invalidateThreads(queryClient);
+        }
       },
       (err) => {
         console.warn("Failed to update the chat's detection jurisdictions", err);
         if (detectionJurisdictionsSaveSequence.current !== sequence) return;
+        setDetectionJurisdictionsSaveError(true);
         setThreadDetectionJurisdictionsState(previous);
         queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) =>
           current?.map((thread) =>
@@ -899,8 +942,12 @@ export function ChatView({
             reviewMode={reviewMode}
             reviewMinimum={reviewMinimum}
             onReviewModeChange={setReviewMode}
-            threadDetectionJurisdictions={threadDetectionJurisdictions}
-            onToggleDetectionJurisdiction={toggleDetectionJurisdiction}
+            jurisdictionCount={threadDetectionJurisdictions.length}
+            jurisdictionPanelOpen={jurisdictionDesktopOpen}
+            onToggleJurisdictionPanel={() => setJurisdictionDesktopPanel(!jurisdictionDesktopOpen)}
+            onOpenJurisdictionDrawer={() => setJurisdictionDrawerOpen(true)}
+            jurisdictionPanelTriggerRef={jurisdictionPanelTriggerRef}
+            jurisdictionDrawerTriggerRef={jurisdictionDrawerTriggerRef}
             restoreDisplayMode={restoreDisplayMode}
             restoreHighlightsAvailable={restoreHighlightsAvailable}
             onToggleRestoreDisplay={() =>
@@ -971,6 +1018,19 @@ export function ChatView({
             review={reviewContent}
           />
         </div>
+
+        <JurisdictionSidebar
+          desktopOpen={jurisdictionDesktopOpen}
+          drawerOpen={jurisdictionDrawerOpen}
+          onCloseDesktop={closeJurisdictionDesktopPanel}
+          onDrawerOpenChange={setJurisdictionDrawerOpen}
+          jurisdictions={threadDetectionJurisdictions}
+          onToggleJurisdiction={toggleDetectionJurisdiction}
+          saveError={detectionJurisdictionsSaveError}
+          onDismissSaveError={() => setDetectionJurisdictionsSaveError(false)}
+          desktopTriggerRef={jurisdictionPanelTriggerRef}
+          drawerTriggerRef={jurisdictionDrawerTriggerRef}
+        />
 
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} userSettings={userSettings} />
         <AdminSettingsDialog open={adminOpen} onOpenChange={changeAdminOpen} target={adminTarget} />

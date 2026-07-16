@@ -1,4 +1,3 @@
-import { SUPPORTED_DETECTION_JURISDICTIONS } from "@serovaai/ficta-protocol";
 import {
   AlertTriangle,
   ChevronDown,
@@ -13,9 +12,11 @@ import {
   LockKeyhole,
   Moon,
   PanelLeft,
+  PanelRight,
   ShieldCheck,
   Sun,
 } from "lucide-react";
+import type { Ref } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -28,7 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { jurisdictionLabel } from "@/lib/detection-jurisdictions";
+import { detectionJurisdictionToggleLabel } from "@/lib/detection-jurisdictions";
 import { type ProtectionTone, protectionPresentation } from "@/lib/protection-copy";
 import {
   effectiveProtectionReviewMode,
@@ -56,8 +57,12 @@ export function TopBar({
   reviewMode = "adaptive",
   reviewMinimum = "off",
   onReviewModeChange,
-  threadDetectionJurisdictions = [],
-  onToggleDetectionJurisdiction,
+  jurisdictionCount = 0,
+  jurisdictionPanelOpen = false,
+  onToggleJurisdictionPanel,
+  onOpenJurisdictionDrawer,
+  jurisdictionPanelTriggerRef,
+  jurisdictionDrawerTriggerRef,
   restoreDisplayMode = "values",
   restoreHighlightsAvailable = false,
   onToggleRestoreDisplay,
@@ -77,9 +82,12 @@ export function TopBar({
   reviewMode?: ProtectionReviewMode;
   reviewMinimum?: ProtectionReviewMode;
   onReviewModeChange?: (mode: ProtectionReviewMode) => void;
-  /** Per-chat additive detection widening (jurisdiction codes); the picker hides without the callback. */
-  threadDetectionJurisdictions?: string[];
-  onToggleDetectionJurisdiction?: (code: string) => void;
+  jurisdictionCount?: number;
+  jurisdictionPanelOpen?: boolean;
+  onToggleJurisdictionPanel?: () => void;
+  onOpenJurisdictionDrawer?: () => void;
+  jurisdictionPanelTriggerRef?: Ref<HTMLButtonElement>;
+  jurisdictionDrawerTriggerRef?: Ref<HTMLButtonElement>;
   restoreDisplayMode?: RestoreHighlightDisplayMode;
   restoreHighlightsAvailable?: boolean;
   onToggleRestoreDisplay?: () => void;
@@ -173,42 +181,7 @@ export function TopBar({
                   </DropdownMenuRadioGroup>
                 </>
               ) : null}
-              {onToggleDetectionJurisdiction ? (
-                <>
-                  {onReviewModeChange ? <DropdownMenuSeparator /> : null}
-                  <DropdownMenuLabel className="px-2 py-2 font-normal">
-                    <span className="flex items-center justify-between gap-3">
-                      <span className="font-medium">Detection jurisdictions</span>
-                      <span className="max-w-36 truncate text-xs text-muted-foreground">
-                        {threadDetectionJurisdictions.length > 0
-                          ? threadDetectionJurisdictions.map((code) => code.toUpperCase()).join(", ")
-                          : "Baseline"}
-                      </span>
-                    </span>
-                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                      Adds country-specific best-effort detectors for this chat (e.g. UK NHS numbers). Never reduces
-                      baseline detection or registered-value protection.
-                    </span>
-                  </DropdownMenuLabel>
-                  {SUPPORTED_DETECTION_JURISDICTIONS.map((code) => {
-                    const enabled = threadDetectionJurisdictions.includes(code);
-                    return (
-                      <DropdownMenuItem key={code} onSelect={() => onToggleDetectionJurisdiction(code)}>
-                        {enabled ? (
-                          <CircleDot className="size-4" aria-hidden />
-                        ) : (
-                          <Circle className="size-4" aria-hidden />
-                        )}
-                        <span className="min-w-0 flex-1">{jurisdictionLabel(code)}</span>
-                        <span className="text-xs text-muted-foreground">{enabled ? "On" : "Off"}</span>
-                      </DropdownMenuItem>
-                    );
-                  })}
-                </>
-              ) : null}
-              {(onReviewModeChange || onToggleDetectionJurisdiction) &&
-              threadTraceControlVisible &&
-              onToggleThreadTrace ? (
+              {onReviewModeChange && threadTraceControlVisible && onToggleThreadTrace ? (
                 <DropdownMenuSeparator />
               ) : null}
               {threadTraceControlVisible && onToggleThreadTrace ? (
@@ -264,6 +237,49 @@ export function TopBar({
           </DropdownMenu>
         </div>
         <div className="flex items-center">
+          {onToggleJurisdictionPanel ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  ref={jurisdictionPanelTriggerRef}
+                  variant="ghost"
+                  size="icon"
+                  onClick={onToggleJurisdictionPanel}
+                  aria-label={detectionJurisdictionToggleLabel(
+                    jurisdictionCount,
+                    jurisdictionPanelOpen ? "close" : "open",
+                  )}
+                  aria-expanded={jurisdictionPanelOpen}
+                  className="relative hidden xl:inline-flex"
+                >
+                  <PanelRight className="size-4" aria-hidden />
+                  <JurisdictionCount count={jurisdictionCount} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {jurisdictionPanelOpen ? "Hide jurisdiction detection" : "Show jurisdiction detection"}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+          {onOpenJurisdictionDrawer ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  ref={jurisdictionDrawerTriggerRef}
+                  variant="ghost"
+                  size="icon"
+                  onClick={onOpenJurisdictionDrawer}
+                  aria-label={detectionJurisdictionToggleLabel(jurisdictionCount, "open")}
+                  aria-haspopup="dialog"
+                  className="relative xl:hidden"
+                >
+                  <PanelRight className="size-4" aria-hidden />
+                  <JurisdictionCount count={jurisdictionCount} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Open jurisdiction detection</TooltipContent>
+            </Tooltip>
+          ) : null}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" onClick={toggle} aria-label="Toggle theme">
@@ -275,6 +291,18 @@ export function TopBar({
         </div>
       </div>
     </header>
+  );
+}
+
+function JurisdictionCount({ count }: { count: number }) {
+  if (count === 0) return null;
+  return (
+    <span
+      aria-hidden
+      className="absolute top-0.5 right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground"
+    >
+      {count}
+    </span>
   );
 }
 
