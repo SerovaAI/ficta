@@ -23,11 +23,17 @@ export function RetentionSettingsSection({ settings }: { settings: InstanceSetti
   }, [settings.deletedThreadRecoveryDays, settings.recordsAuditRetentionDays]);
 
   const save = async (nextEnabled: boolean) => {
-    setSaving(true);
     setError("");
+    // Number("") is 0, which the server reads as "clear" — so a blank input on an enabled save would
+    // silently disable recovery instead of failing. Refuse to submit anything but in-range whole days.
+    const recovery = parseDays(recoveryDays);
+    const audit = parseDays(auditDays);
+    if (nextEnabled && (recovery === undefined || audit === undefined)) {
+      setError(`Both periods must be whole numbers from 1 to ${RETENTION_DAYS_MAX} days.`);
+      return;
+    }
+    setSaving(true);
     try {
-      const recovery = Number(recoveryDays);
-      const audit = Number(auditDays);
       await updateInstanceSettings({
         data: nextEnabled
           ? { deletedThreadRecoveryDays: recovery, recordsAuditRetentionDays: audit }
@@ -108,6 +114,11 @@ export function RetentionSettingsSection({ settings }: { settings: InstanceSetti
       </div>
     </section>
   );
+}
+
+function parseDays(value: string): number | undefined {
+  const days = Number(value.trim() || Number.NaN);
+  return Number.isInteger(days) && days >= 1 && days <= RETENTION_DAYS_MAX ? days : undefined;
 }
 
 function DayInput({

@@ -61,7 +61,12 @@ function RecordsPage() {
       await restoreRetainedThread({ data: { threadId: detail.thread.id, reason: reason() } });
       setDetail(undefined);
       setSelectedId("");
-      await router.invalidate();
+      // The restore is committed at this point; a refresh failure must not read as a failed restore.
+      try {
+        await router.invalidate();
+      } catch {
+        setError("Chat restored, but the records list could not be refreshed.");
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not restore the chat.");
     } finally {

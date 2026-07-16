@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, count, desc, eq, gte, inArray, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, inArray, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import type { Provider } from "@/lib/models";
 import { deriveThreadTitleFromText, THREAD_TITLE_MAX } from "@/lib/thread-title";
 import { type Storage, ThreadProtectionLimitError } from "../storage.server";
@@ -547,6 +547,8 @@ export function createStorage(): Storage {
 
     async listRetainedThreads(orgId) {
       const db = await getDb();
+      // `purgeAfter > now` everywhere records reads a retained thread: the configured deadline holds at
+      // access time, not just when the hourly sweep gets around to the row.
       const rows = await db
         .select({
           threadId: threads.id,
@@ -559,7 +561,7 @@ export function createStorage(): Storage {
         })
         .from(threads)
         .leftJoin(messages, eq(messages.threadId, threads.id))
-        .where(and(eq(threads.orgId, orgId), sql`${threads.deletedAt} is not null`))
+        .where(and(eq(threads.orgId, orgId), sql`${threads.deletedAt} is not null`, gt(threads.purgeAfter, new Date())))
         .groupBy(threads.id)
         .orderBy(desc(threads.deletedAt));
       return rows.flatMap((row): RetainedThreadSummary[] =>
@@ -585,7 +587,14 @@ export function createStorage(): Storage {
         const [thread] = await tx
           .select()
           .from(threads)
-          .where(and(eq(threads.id, threadId), eq(threads.orgId, orgId), sql`${threads.deletedAt} is not null`));
+          .where(
+            and(
+              eq(threads.id, threadId),
+              eq(threads.orgId, orgId),
+              sql`${threads.deletedAt} is not null`,
+              gt(threads.purgeAfter, new Date()),
+            ),
+          );
         if (!thread?.deletedAt || !thread.purgeAfter) return null;
 
         await appendRecordsAuditEventTx(tx, {
@@ -617,7 +626,14 @@ export function createStorage(): Storage {
         const [thread] = await tx
           .update(threads)
           .set({ deletedAt: null, purgeAfter: null, updatedAt: new Date() })
-          .where(and(eq(threads.id, threadId), eq(threads.orgId, orgId), sql`${threads.deletedAt} is not null`))
+          .where(
+            and(
+              eq(threads.id, threadId),
+              eq(threads.orgId, orgId),
+              sql`${threads.deletedAt} is not null`,
+              gt(threads.purgeAfter, new Date()),
+            ),
+          )
           .returning();
         if (!thread) throw new Error("retained thread not found");
         await appendRecordsAuditEventTx(tx, {
@@ -756,14 +772,17 @@ export function createStorage(): Storage {
         if (existing) {
           // A thread id is client-generated; refuse to write into someone else's thread or workspace.
           if (existing.userId !== userId || existing.orgId !== orgId) throw new Error("thread not found");
-          if (existing.deletedAt) throw new Error("thread not found");
-          await tx
+          // The deleted check rides on the update itself so a deletion committed after the read above
+          // cannot slip message writes into a retained transcript.
+          const touched = await tx
             .update(threads)
             .set({
               updatedAt: new Date(),
               ...(traceEnabled ? { traceEnabled: true } : {}),
             })
-            .where(eq(threads.id, threadId));
+            .where(and(eq(threads.id, threadId), isNull(threads.deletedAt)))
+            .returning();
+          if (touched.length === 0) throw new Error("thread not found");
           // A snapshot may have won the create race without model settings. Fill that gap only while it is
           // still null, so this delayed starter can never replace a newer picker mutation.
           if (modelSettings) {
@@ -809,10 +828,15 @@ export function createStorage(): Storage {
         if (existing) {
           // A thread id is client-generated; refuse to write into someone else's thread or workspace.
           if (existing.userId !== userId || existing.orgId !== orgId) throw new Error("thread not found");
-          if (existing.deletedAt) throw new Error("thread not found");
           // Model settings are creation-only here. Picker changes use setThreadModelSettings, so a lagging
-          // transcript snapshot cannot overwrite a newer selection.
-          await tx.update(threads).set({ updatedAt: new Date() }).where(eq(threads.id, threadId));
+          // transcript snapshot cannot overwrite a newer selection. The deleted check rides on the update
+          // itself so a deletion committed after the read above cannot slip writes into a retained transcript.
+          const touched = await tx
+            .update(threads)
+            .set({ updatedAt: new Date() })
+            .where(and(eq(threads.id, threadId), isNull(threads.deletedAt)))
+            .returning();
+          if (touched.length === 0) throw new Error("thread not found");
         } else {
           await tx.insert(threads).values({ id: threadId, userId, orgId, title: deriveTitle(snapshot), modelSettings });
         }

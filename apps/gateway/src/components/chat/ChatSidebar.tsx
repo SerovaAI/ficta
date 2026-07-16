@@ -215,9 +215,7 @@ export function ChatSidebar({
                       </Link>
                       <button
                         type="button"
-                        aria-label={
-                          instance.deletedThreadRecoveryDays ? "Remove chat from history" : "Permanently delete chat"
-                        }
+                        aria-label={instance.deletedThreadRecoveryDays ? "Remove chat from history" : "Delete chat"}
                         onClick={(event) => remove(event, thread)}
                         className="absolute top-1/2 right-1 flex size-8 shrink-0 -translate-y-1/2 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:size-11"
                       >

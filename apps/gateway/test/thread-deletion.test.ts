@@ -53,8 +53,8 @@ describe("thread deletion scheduler", () => {
     expect(getHiddenThreadDeletionIds()).toEqual(["thread-1"]);
   });
 
-  it("discloses permanent deletion when recovery is disabled", () => {
-    expect(threadDeletionDisclosure()).toEqual({ headline: "Permanently deleted" });
+  it("does not promise permanent deletion when recovery is disabled — other copies may persist", () => {
+    expect(threadDeletionDisclosure()).toEqual({ headline: "Deleted" });
   });
 
   it("discloses history removal and the recovery window when enabled", () => {

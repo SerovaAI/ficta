@@ -51,10 +51,12 @@ const listeners = new Set<() => void>();
 
 export const THREAD_DELETION_UNDO_DELAY_MS = 5000;
 
+/** "Deleted", not "permanently deleted": the live database is only one copy — backups, provider
+ * retention, and raw traces have their own lifecycles, so the UI must not promise more. */
 export function threadDeletionDisclosure(recoveryDays?: number): { headline: string; detail?: string } {
   return recoveryDays
     ? { headline: "Removed from history", detail: `Records can recover it for ${recoveryDays} days.` }
-    : { headline: "Permanently deleted" };
+    : { headline: "Deleted" };
 }
 
 export function getThreadDeletionNotice(): ThreadDeletionNotice | null {

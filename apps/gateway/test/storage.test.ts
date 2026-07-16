@@ -4,7 +4,7 @@
 process.env.FICTA_GATEWAY_DATA_DIR = "memory://";
 process.env.DATABASE_URL = "";
 
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { Storage } from "@/lib/storage/storage.server";
 import { getStorage } from "@/lib/storage/storage.server";
 import type {
@@ -779,8 +779,18 @@ describe("deleted-thread recovery", () => {
     await expect(store.getThreadEgressReceipt(userId, orgId, "recoverable")).rejects.toThrow("thread not found");
 
     const retained = await store.listRetainedThreads(orgId);
+    // Exact shape, not objectContaining: the records list is a privacy boundary, so an accidental new
+    // field (title, message content, protected values) must fail this test.
     expect(retained).toEqual([
-      expect.objectContaining({ threadId: "recoverable", ownerUserId: userId, messageCount: 2 }),
+      {
+        threadId: "recoverable",
+        ownerUserId: userId,
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
+        deletedAt: expect.any(String),
+        purgeAfter: expect.any(String),
+        messageCount: 2,
+      },
     ]);
     expect(new Date(retained[0]?.purgeAfter ?? 0).getTime() - new Date(retained[0]?.deletedAt ?? 0).getTime()).toBe(
       30 * 24 * 60 * 60 * 1_000,
@@ -830,6 +840,25 @@ describe("deleted-thread recovery", () => {
     const lifecycle = await store.listRecordsAuditEvents(orgId, "prospective");
     expect(lifecycle.filter((event) => event.action === "deleted")).toHaveLength(2);
     expect(lifecycle.filter((event) => event.action === "restored")).toHaveLength(1);
+  });
+
+  it("seals records access when the recovery window lapses, even before the sweep runs", async () => {
+    const orgId = "org-lapsed-access";
+    await store.patchInstanceSettings(orgId, { deletedThreadRecoveryDays: 1, recordsAuditRetentionDays: 30 });
+    await store.saveThreadSnapshot("owner", orgId, "lapsed", [textMessage("l1", "user", "lapsed")]);
+    await store.deleteThread("owner", orgId, "lapsed");
+    expect(await store.listRetainedThreads(orgId)).toHaveLength(1);
+
+    vi.useFakeTimers({ now: Date.now() + 2 * 24 * 60 * 60 * 1_000, toFake: ["Date"] });
+    try {
+      expect(await store.listRetainedThreads(orgId)).toEqual([]);
+      expect(await store.getRetainedThread(orgId, "records", "lapsed", {})).toBeNull();
+      await expect(store.restoreRetainedThread(orgId, "records", "lapsed", {})).rejects.toThrow(
+        "retained thread not found",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("purges due content idempotently while preserving the new purge event", async () => {
