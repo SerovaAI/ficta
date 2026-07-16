@@ -252,7 +252,7 @@ export abstract class VaultView {
    * callers pass complete text and use the default (accept everything).
    */
   private noteResiduals(text: string, acceptEnd: number = text.length): void {
-    if (!text || !text.includes("FICTA_")) return;
+    if (!text?.includes("FICTA_")) return;
     for (const match of text.matchAll(residualSurrogatePattern())) {
       const token = match[0];
       if (match.index + token.length > acceptEnd) continue;

@@ -1,3 +1,4 @@
+import { SUPPORTED_DETECTION_JURISDICTIONS } from "@serovaai/ficta-protocol";
 import {
   AlertTriangle,
   ChevronDown,
@@ -40,6 +41,12 @@ import type { ProtectionStatus } from "@/lib/protection-status";
 import type { RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
 import { useTheme } from "@/lib/use-theme";
 
+const JURISDICTION_LABELS: Record<string, string> = {
+  za: "South Africa",
+  uk: "United Kingdom",
+  us: "United States",
+};
+
 export function TopBar({
   sidebarOpen,
   onToggleSidebar,
@@ -54,6 +61,8 @@ export function TopBar({
   reviewMode = "adaptive",
   reviewMinimum = "off",
   onReviewModeChange,
+  threadDetectionJurisdictions = [],
+  onToggleDetectionJurisdiction,
   restoreDisplayMode = "values",
   restoreHighlightsAvailable = false,
   onToggleRestoreDisplay,
@@ -73,6 +82,9 @@ export function TopBar({
   reviewMode?: ProtectionReviewMode;
   reviewMinimum?: ProtectionReviewMode;
   onReviewModeChange?: (mode: ProtectionReviewMode) => void;
+  /** Per-chat additive detection widening (jurisdiction codes); the picker hides without the callback. */
+  threadDetectionJurisdictions?: string[];
+  onToggleDetectionJurisdiction?: (code: string) => void;
   restoreDisplayMode?: RestoreHighlightDisplayMode;
   restoreHighlightsAvailable?: boolean;
   onToggleRestoreDisplay?: () => void;
@@ -166,7 +178,42 @@ export function TopBar({
                   </DropdownMenuRadioGroup>
                 </>
               ) : null}
-              {onReviewModeChange && threadTraceControlVisible && onToggleThreadTrace ? (
+              {onToggleDetectionJurisdiction ? (
+                <>
+                  {onReviewModeChange ? <DropdownMenuSeparator /> : null}
+                  <DropdownMenuLabel className="px-2 py-2 font-normal">
+                    <span className="flex items-center justify-between gap-3">
+                      <span className="font-medium">Detection jurisdictions</span>
+                      <span className="max-w-36 truncate text-xs text-muted-foreground">
+                        {threadDetectionJurisdictions.length > 0
+                          ? threadDetectionJurisdictions.map((code) => code.toUpperCase()).join(", ")
+                          : "Baseline"}
+                      </span>
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                      Adds country-specific best-effort detectors for this chat (e.g. UK NHS numbers). Never reduces
+                      baseline detection or registered-value protection.
+                    </span>
+                  </DropdownMenuLabel>
+                  {SUPPORTED_DETECTION_JURISDICTIONS.map((code) => {
+                    const enabled = threadDetectionJurisdictions.includes(code);
+                    return (
+                      <DropdownMenuItem key={code} onSelect={() => onToggleDetectionJurisdiction(code)}>
+                        {enabled ? (
+                          <CircleDot className="size-4" aria-hidden />
+                        ) : (
+                          <Circle className="size-4" aria-hidden />
+                        )}
+                        <span className="min-w-0 flex-1">{JURISDICTION_LABELS[code] ?? code.toUpperCase()}</span>
+                        <span className="text-xs text-muted-foreground">{enabled ? "On" : "Off"}</span>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </>
+              ) : null}
+              {(onReviewModeChange || onToggleDetectionJurisdiction) &&
+              threadTraceControlVisible &&
+              onToggleThreadTrace ? (
                 <DropdownMenuSeparator />
               ) : null}
               {threadTraceControlVisible && onToggleThreadTrace ? (

@@ -5,6 +5,7 @@ import { type HttpBindings, serve } from "@hono/node-server";
 import {
   type EgressProof,
   FICTA_CONFIG_PATH,
+  FICTA_DETECTION_PROFILE_HEADER,
   FICTA_EGRESS_EVENT_HEADER,
   FICTA_EGRESS_PROOF_PATH,
   FICTA_HEALTH_PATH,
@@ -41,7 +42,8 @@ import { configPosture } from "./config-posture.js";
 import { detectorFailClosed } from "./engine/detection-policy.js";
 import { setEngineWarnSink } from "./engine/diagnostics.js";
 import { ProtectionEngine } from "./engine/engine.js";
-import type { ProtectedValue } from "./engine/plugins/types.js";
+import { detectionProfileFromCodes } from "./engine/plugins/pii/jurisdictions.js";
+import type { DetectionProfile, ProtectedValue } from "./engine/plugins/types.js";
 import { withPreservationInstruction } from "./engine/preserve-literals.js";
 import {
   type AmbiguousEntityLinkDiagnostic,
@@ -236,7 +238,7 @@ export async function startProxy(
         );
       }
 
-      const scope = engine.beginRequest(scopeKey);
+      const scope = engine.beginRequest(scopeKey, { detectionProfile: detectionProfileFrom(c) });
       const selected = preview.protectedValues ?? [];
       scope.registerProtectedValues(selected.map(userProtectedValue));
       try {
@@ -453,7 +455,7 @@ export async function startProxy(
     // another request's response. A trusted caller may pin a persistent per-thread detected vault
     // via the internal scope header (see scopeKeyFrom); isolation then holds across keys instead.
     const scopeKey = scopeKeyFrom(c);
-    const scope = engine.beginRequest(scopeKey);
+    const scope = engine.beginRequest(scopeKey, { detectionProfile: detectionProfileFrom(c) });
     const egressEvidence = createEgressEvidence({
       scopeKey,
       eventId: egressEventIdFrom(c),
@@ -581,6 +583,7 @@ export async function startProxy(
     headers.delete("content-length");
     headers.delete("accept-encoding");
     headers.delete(FICTA_SCOPE_HEADER); // internal routing metadata — must never reach the upstream vendor
+    headers.delete(FICTA_DETECTION_PROFILE_HEADER); // internal detection selector — must never reach upstream
     headers.delete(FICTA_EGRESS_EVENT_HEADER); // internal audit metadata — must never reach the upstream vendor
     headers.delete(FICTA_TRACE_CAPTURE_HEADER); // internal trace/audit selector — must never reach upstream
     headers.delete(FICTA_RESTORE_HIGHLIGHT_HEADER); // client display capability — must never reach upstream
@@ -1030,6 +1033,19 @@ function scopeKeyFrom(c: Context): string | undefined {
 }
 
 const MAX_SCOPE_KEY_LENGTH = 256;
+const MAX_DETECTION_PROFILE_CODES = 8;
+
+/**
+ * The detection-profile seam: a trusted caller (e.g. the Gateway resolving a thread's matter)
+ * widens best-effort PII detection with jurisdiction codes. Additive-only by construction —
+ * unknown codes are dropped and bundles only ever union onto the detection baseline — so a spoofed
+ * header can at worst over-redact. The header is stripped before the request is forwarded upstream.
+ */
+function detectionProfileFrom(c: Context): DetectionProfile | undefined {
+  const raw = c.req.header(FICTA_DETECTION_PROFILE_HEADER)?.trim();
+  if (!raw) return undefined;
+  return detectionProfileFromCodes(raw.split(",").slice(0, MAX_DETECTION_PROFILE_CODES));
+}
 
 function traceCaptureDecisionFrom(
   c: Context,

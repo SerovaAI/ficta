@@ -101,6 +101,7 @@ export interface Storage {
     message: StoredMessage,
     traceEnabled?: boolean,
     modelSettings?: ThreadModelSettings,
+    detectionJurisdictions?: string[],
   ): Promise<void>;
   /** Creates the thread if missing (including initial model settings), then snapshot-upserts messages. */
   saveThreadSnapshot(
@@ -119,6 +120,13 @@ export interface Storage {
   ): Promise<void>;
   /** Admin-only server functions call this to mark future requests in a thread for raw trace/audit capture. */
   setThreadTraceEnabled(userId: string, orgId: string, threadId: string, traceEnabled: boolean): Promise<void>;
+  /** Persists the chat's detection-widening jurisdictions (empty clears). Owner-scoped like the other setters. */
+  setThreadDetectionJurisdictions(
+    userId: string,
+    orgId: string,
+    threadId: string,
+    jurisdictions: string[],
+  ): Promise<void>;
   renameThread(userId: string, orgId: string, threadId: string, title: string): Promise<void>;
   deleteThread(userId: string, orgId: string, threadId: string): Promise<void>;
 }

@@ -81,52 +81,45 @@ recognizers:
     enabled: false
     country_code: us
 
+  # UK recognizers are LOADED but reachable only through a `uk` detection profile: every ficta
+  # /analyze request sends an explicit entity allowlist (see src/engine/plugins/pii/jurisdictions.ts)
+  # and the default baseline excludes UK types. NhsRecognizer in particular must never run on
+  # default traffic — its mod-11 checksum matches ZA bank account numbers by coincidence (the
+  # FictaAccountNumberRecognizer below covers those deliberately).
   - name: NhsRecognizer
-    supported_languages: 
+    supported_languages:
     - en
     type: predefined
     country_code: uk
-    
+
   - name: UkDrivingLicenceRecognizer
-    supported_languages: 
+    supported_languages:
     - en
     type: predefined
-    enabled: false
     country_code: uk
 
   - name: UkNinoRecognizer
     supported_languages:
     - en
     type: predefined
-    enabled: false
     country_code: uk
 
   - name: UkPassportRecognizer
     supported_languages:
     - en
     type: predefined
-    enabled: false
     country_code: uk
 
   - name: UkPostcodeRecognizer
     supported_languages:
     - en
     type: predefined
-    enabled: false
-    country_code: uk
-    
-  - name: UkPostcodeRecognizer
-    supported_languages:
-    - en
-    type: predefined
-    enabled: false
     country_code: uk
 
   - name: UkVehicleRegistrationRecognizer
     supported_languages:
     - en
     type: predefined
-    enabled: false
     country_code: uk
 
   - name: SgFinRecognizer
@@ -257,6 +250,31 @@ recognizers:
     - name: Mauritius international telephone number
       regex: "(?<!\\d)\\+230(?:[ .-]?\\d){8}\\b"
       score: 0.85
+
+  # Municipal/utility account numbers (e.g. City of Johannesburg tax invoices) are bare 9-11 digit
+  # runs with no checksum, so the base score stays below ficta's 0.5 threshold and only the context
+  # enhancer (nearby "account"/"rekening" wording) can promote a match. Replaces, for default
+  # traffic, the coverage the UK NhsRecognizer once provided by checksum coincidence (that
+  # recognizer is now loaded but reachable only via a `uk` detection profile — see above).
+  - name: FictaAccountNumberRecognizer
+    supported_languages:
+    - language: en
+      context:
+      - account
+      - account number
+      - account no
+      - acc no
+      - rekening
+      - rekeningnommer
+      - meter
+      - invoice
+    type: custom
+    enabled: true
+    supported_entity: ACCOUNT_NUMBER
+    patterns:
+    - name: Bare 9-11 digit account number
+      regex: "(?<!\\d)\\d{9,11}(?!\\d)"
+      score: 0.3
 
   - name: HuggingFaceNerRecognizer
     supported_languages:

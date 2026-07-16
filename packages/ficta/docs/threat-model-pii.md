@@ -90,6 +90,12 @@ This is the load-bearing caveat and must not be blurred:
 ## Intentionally not covered
 
 - **Undetected PII.** Anything the configured backend misses is forwarded verbatim.
+- **PII outside the active detection profile.** Jurisdiction-specific recognizers (e.g. UK NHS/NINO)
+  run only for requests whose trusted `x-ficta-detection-profile` header enables them; a UK
+  identifier in default traffic is undetected-by-design (its recognizer false-positives outside its
+  home jurisdiction). Profiles are strictly additive — a spoofed or wrong profile can widen
+  detection (over-redaction) but never narrow the baseline or affect exact-match registered values —
+  and the header never reaches the provider.
 - **Numeric PII inside JSON.** Detection runs over the redactable string surface; a bare JSON number
   leaf (e.g. an un-quoted card number) is not a rewritable span and is neither tokenized nor treated
   as a leak. Register such values or ensure they arrive as strings.

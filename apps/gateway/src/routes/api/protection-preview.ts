@@ -1,4 +1,5 @@
 import {
+  FICTA_DETECTION_PROFILE_HEADER,
   FICTA_PROTECTION_PREVIEW_PATH,
   FICTA_SCOPE_HEADER,
   isProtectionPreviewOk,
@@ -55,6 +56,16 @@ export const Route = createFileRoute("/api/protection-preview")({
           return errorResponse(500, "Chat protection values could not be updated. Try again.");
         }
 
+        // The thread's stored jurisdictions (server-stored, never client input) widen detection for
+        // the preview exactly as they will for the send — same profile, same swept-leaf cache.
+        let detectionProfile: readonly string[] | undefined;
+        try {
+          const thread = await storage.getThread(userId, orgId, input.threadId);
+          detectionProfile = thread?.thread.detectionJurisdictions;
+        } catch (err) {
+          console.warn("Failed to resolve the chat's detection jurisdictions.", err);
+        }
+
         try {
           const response = await fetch(`${proxyBaseUrl()}${FICTA_PROTECTION_PREVIEW_PATH}`, {
             method: "POST",
@@ -62,6 +73,7 @@ export const Route = createFileRoute("/api/protection-preview")({
               accept: "application/json",
               "content-type": "application/json",
               [FICTA_SCOPE_HEADER]: fictaScopeFor(orgId, userId, input.threadId),
+              ...(detectionProfile?.length ? { [FICTA_DETECTION_PROFILE_HEADER]: detectionProfile.join(",") } : {}),
             },
             body: JSON.stringify({ text: input.text, protectedValues }),
           });

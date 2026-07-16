@@ -675,3 +675,34 @@ describe("threads + messages", () => {
     expect(await store.getThread("owner", ORG, "t3")).toBeNull();
   });
 });
+
+describe("thread detection jurisdictions", () => {
+  it("sets, hydrates, and clears a chat's jurisdictions", async () => {
+    await store.saveThreadSnapshot("owner", ORG, "t-juris", [textMessage("m1", "user", "hello")]);
+
+    await store.setThreadDetectionJurisdictions("owner", ORG, "t-juris", ["uk", "za"]);
+    expect((await store.getThread("owner", ORG, "t-juris"))?.thread.detectionJurisdictions).toEqual(["uk", "za"]);
+
+    await store.setThreadDetectionJurisdictions("owner", ORG, "t-juris", []);
+    expect((await store.getThread("owner", ORG, "t-juris"))?.thread.detectionJurisdictions).toBeUndefined();
+
+    await expect(store.setThreadDetectionJurisdictions("someone-else", ORG, "t-juris", ["uk"])).rejects.toThrow(
+      "thread not found",
+    );
+  });
+
+  it("can create a new thread with jurisdictions already set (first-send race)", async () => {
+    await store.startThread(
+      "juris-owner",
+      "org-first",
+      "first-juris",
+      textMessage("m", "user", "start"),
+      false,
+      undefined,
+      ["uk"],
+    );
+    expect((await store.getThread("juris-owner", "org-first", "first-juris"))?.thread.detectionJurisdictions).toEqual([
+      "uk",
+    ]);
+  });
+});

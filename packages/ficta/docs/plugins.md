@@ -331,7 +331,7 @@ Config (`[pii.presidio]` ↔ `FICTA_PII_PRESIDIO_*`):
 | `url` | `FICTA_PII_PRESIDIO_URL` | `http://127.0.0.1:5002` | analyzer base URL |
 | `language` | `FICTA_PII_PRESIDIO_LANGUAGE` | `en` | analyzer language |
 | `score_threshold` | `FICTA_PII_PRESIDIO_SCORE_THRESHOLD` | `0.5` | drop spans below this score |
-| `entities` | `FICTA_PII_PRESIDIO_ENTITIES` | *(all)* | entity allowlist |
+| `entities` | `FICTA_PII_PRESIDIO_ENTITIES` | *(default baseline)* | entity allowlist (replaces the baseline) |
 | `timeout_ms` | `FICTA_PII_PRESIDIO_TIMEOUT_MS` | `1500` | total detection budget per request |
 
 (The fail-open/fail-closed behavior when Presidio is unreachable is `[pii] fail_closed`, covered in
@@ -341,9 +341,19 @@ A detected value replaces **every** eligible occurrence of that string in the bo
 entity allowlist remains the final category gate. For coding-agent traffic, use an allowlist tuned to
 the workload rather than every available structured recognizer — e.g.
 `entities = ["PERSON", "PHONE_NUMBER", "LOCATION", "EMAIL_ADDRESS"]`. Legal-document deployments
-should also include `DOCUMENT_ID`, `COMPANY_REGISTRATION`, and `DATE_TIME`; leaving `entities = []`
-enables every configured recognizer. Values shorter than 4 chars are dropped regardless, to avoid
-shredding normal prose.
+should also include `DOCUMENT_ID`, `COMPANY_REGISTRATION`, and `DATE_TIME`. Leaving `entities = []`
+selects the built-in **default baseline** (see `engine/plugins/pii/jurisdictions.ts`) — never "every
+loaded recognizer": jurisdiction-specific recognizers (e.g. the UK set) stay loaded in the sidecar
+registry but are reachable only when a request carries a matching detection profile. Values shorter
+than 4 chars are dropped regardless, to avoid shredding normal prose.
+
+**Detection profiles (jurisdiction widening).** A trusted caller may send the internal
+`x-ficta-detection-profile` header (comma-separated codes, e.g. `uk`) to additively widen the
+Presidio allowlist with that jurisdiction's entity bundle for the request's scope. Profiles are
+strictly additive — they can enable extra detectors but never remove baseline coverage, so a spoofed
+header can at worst over-redact — and the header is stripped before the request is forwarded
+upstream. Unknown codes are dropped. This is how the Gateway maps a matter's jurisdictions (e.g. a
+UK contract matter enabling `UK_NHS`/`UK_NINO` detection) onto proxy traffic without a restart.
 
 GLiNER is an evaluation option inside the same Presidio image, not a Ficta backend or default. In a
 source checkout, build with `--build-arg INSTALL_GLINER=1`, run it with

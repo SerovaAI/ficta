@@ -1,0 +1,1 @@
+ALTER TABLE "threads" ADD COLUMN "detection_jurisdictions" jsonb;

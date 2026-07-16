@@ -529,7 +529,7 @@ export function createStorage(): Storage {
       return thread ?? null;
     },
 
-    async startThread(userId, orgId, threadId, message, traceEnabled = false, modelSettings) {
+    async startThread(userId, orgId, threadId, message, traceEnabled = false, modelSettings, detectionJurisdictions) {
       const db = await getDb();
       await db.transaction(async (tx) => {
         const [existing] = await tx.select().from(threads).where(eq(threads.id, threadId));
@@ -551,10 +551,24 @@ export function createStorage(): Storage {
               .set({ modelSettings })
               .where(and(eq(threads.id, threadId), isNull(threads.modelSettings)));
           }
+          // Same race for jurisdictions chosen before the first send: fill only while still unset,
+          // so a delayed starter never replaces a newer picker mutation.
+          if (detectionJurisdictions && detectionJurisdictions.length > 0) {
+            await tx
+              .update(threads)
+              .set({ detectionJurisdictions })
+              .where(and(eq(threads.id, threadId), isNull(threads.detectionJurisdictions)));
+          }
         } else {
-          await tx
-            .insert(threads)
-            .values({ id: threadId, userId, orgId, title: deriveTitle([message]), traceEnabled, modelSettings });
+          await tx.insert(threads).values({
+            id: threadId,
+            userId,
+            orgId,
+            title: deriveTitle([message]),
+            traceEnabled,
+            modelSettings,
+            detectionJurisdictions: detectionJurisdictions?.length ? detectionJurisdictions : null,
+          });
         }
 
         await tx
@@ -627,6 +641,17 @@ export function createStorage(): Storage {
       const updated = await db
         .update(threads)
         .set({ traceEnabled, updatedAt: new Date() })
+        .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)))
+        .returning();
+      if (updated.length === 0) throw new Error("thread not found");
+    },
+
+    async setThreadDetectionJurisdictions(userId, orgId, threadId, jurisdictions) {
+      const db = await getDb();
+      // No updatedAt bump: like setThreadModelSettings, a posture change must not reorder history.
+      const updated = await db
+        .update(threads)
+        .set({ detectionJurisdictions: jurisdictions.length > 0 ? jurisdictions : null })
         .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)))
         .returning();
       if (updated.length === 0) throw new Error("thread not found");
@@ -811,6 +836,7 @@ function toProtectedRegistryEntry(row: {
 function toThreadSummary(row: {
   id: string;
   title: string;
+  detectionJurisdictions: string[] | null;
   modelSettings: ThreadModelSettings | null;
   traceEnabled: boolean;
   createdAt: Date;
@@ -819,6 +845,7 @@ function toThreadSummary(row: {
   return {
     id: row.id,
     title: row.title,
+    ...(row.detectionJurisdictions?.length ? { detectionJurisdictions: row.detectionJurisdictions } : {}),
     ...(row.modelSettings ? { modelSettings: row.modelSettings } : {}),
     traceEnabled: row.traceEnabled,
     createdAt: row.createdAt.toISOString(),

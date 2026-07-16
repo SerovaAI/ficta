@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { DEFAULT_BASELINE_ENTITIES, JURISDICTION_ENTITY_BUNDLES } from "../src/engine/plugins/pii/jurisdictions.js";
 import {
   checkPresidioHealth,
   chunkText,
@@ -97,15 +98,49 @@ describe("presidio recognizer", () => {
     });
   });
 
-  it("sends {text, language, score_threshold} and omits entities unless configured", async () => {
+  it("always sends an explicit entities allowlist — the default baseline when none is configured", async () => {
+    // Jurisdiction-gated recognizers (e.g. UK NHS) stay loaded in the sidecar registry; an /analyze
+    // payload without `entities` would run all of them for default traffic and re-open the
+    // NHS-matches-ZA-account-numbers false positive. The baseline must therefore be explicit.
     const text = "contact John Smith";
     const { requests } = await withStub({ analyze: () => [] }, () => presidioRecognizer.detect(text, BODY));
     expect(requests[0]).toMatchObject({ text, language: "en", score_threshold: 0.5 });
-    expect(requests[0]).not.toHaveProperty("entities");
+    expect([...(requests[0]?.entities ?? [])].sort()).toEqual([...DEFAULT_BASELINE_ENTITIES].sort());
+    expect(requests[0]?.entities).not.toContain("UK_NHS");
 
     process.env.FICTA_PII_PRESIDIO_ENTITIES = "PERSON, PHONE_NUMBER";
     const withEntities = await withStub({ analyze: () => [] }, () => presidioRecognizer.detect(text, BODY));
     expect(withEntities.requests[0]?.entities).toEqual(["PERSON", "PHONE_NUMBER"]);
+  });
+
+  it("unions a detection profile's jurisdiction bundle onto the baseline (additive-only)", async () => {
+    const text = "NHS Number: 943 476 5919";
+    const uk = { ...BODY, detectionProfile: { jurisdictions: ["uk"] } };
+    const { requests } = await withStub({ analyze: () => [] }, () => presidioRecognizer.detect(text, uk));
+    const entities = requests[0]?.entities ?? [];
+    for (const baseline of DEFAULT_BASELINE_ENTITIES) expect(entities).toContain(baseline);
+    for (const bundled of JURISDICTION_ENTITY_BUNDLES.uk ?? []) expect(entities).toContain(bundled);
+
+    // A configured allowlist is replaced-baseline, but the profile still unions on top.
+    process.env.FICTA_PII_PRESIDIO_ENTITIES = "PERSON";
+    const configured = await withStub({ analyze: () => [] }, () => presidioRecognizer.detect(text, uk));
+    expect([...(configured.requests[0]?.entities ?? [])].sort()).toEqual(
+      ["PERSON", ...(JURISDICTION_ENTITY_BUNDLES.uk ?? [])].sort(),
+    );
+  });
+
+  it("admits UK spans client-side only under a uk profile", async () => {
+    const text = "NHS Number: 943 476 5919 for John Smith";
+    const spans = () => [span(text, "943 476 5919", "UK_NHS", 0.9)];
+
+    const withoutProfile = await withStub({ analyze: spans }, () => presidioRecognizer.detect(text, BODY));
+    expect(withoutProfile.result).toHaveLength(0);
+
+    const withProfile = await withStub({ analyze: spans }, () =>
+      presidioRecognizer.detect(text, { ...BODY, detectionProfile: { jurisdictions: ["uk"] } }),
+    );
+    expect(withProfile.result).toHaveLength(1);
+    expect(withProfile.result[0]).toMatchObject({ name: "uk-nhs", value: "943 476 5919", kind: "pii" });
   });
 
   it("drops below-threshold/short spans and merges coordinates for duplicate values", async () => {

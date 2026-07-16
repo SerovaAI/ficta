@@ -13,6 +13,7 @@ import {
 import { protectedValueExcludedBy } from "./plugins/policy.js";
 import { defaultDetectors, loadPluginRegistry, type PluginRegistrySnapshot } from "./plugins/registry.js";
 import type {
+  DetectionProfile,
   DetectTextContext,
   FictaPluginBase,
   ProtectedValue,
@@ -37,6 +38,7 @@ import {
   type RedactionEngine,
   RedactionInvariantError,
   type RequestScope,
+  type RequestScopeOptions,
   type RestoreOptions,
   type RestoreTraceDetails,
   type TextRedactionContext,
@@ -78,7 +80,20 @@ interface KeyedScopeState {
   metadata: Map<string, ProtectedValue[]>;
   tokenOnly: Set<string>;
   seenLeaves: Set<string>;
+  /**
+   * Canonical fingerprint of the detection profile the swept-leaf cache was built under. A scope
+   * key outlives a thread's settings, so when the profile changes (e.g. a jurisdiction added
+   * mid-thread) the cache must be dropped: leaves swept under the old profile were never offered
+   * to the newly enabled detectors. Detected values/metadata survive — re-sweeping only costs
+   * re-detection, and surrogates re-mint deterministically.
+   */
+  profileFingerprint: string;
   lastUsedAt: number;
+}
+
+/** Order-insensitive fingerprint for swept-leaf cache invalidation on profile change. */
+function detectionProfileFingerprint(profile: DetectionProfile | undefined): string {
+  return profile ? [...profile.jurisdictions].sort().join(",") : "";
 }
 
 interface BodyDocument {
@@ -245,7 +260,7 @@ export class ProtectionEngine implements RedactionEngine {
    * costs re-detection (deterministic surrogates re-mint identically), never a broken restore of a
    * future request.
    */
-  beginRequest(scopeKey?: string): RequestScope {
+  beginRequest(scopeKey?: string, opts?: RequestScopeOptions): RequestScope {
     if (!scopeKey) {
       return new ProtectionRequestScope(
         this.plugins,
@@ -253,9 +268,16 @@ export class ProtectionEngine implements RedactionEngine {
         this.metadataByValue,
         this.permanentClaims,
         this.vault.beginScope(),
+        undefined,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        undefined,
+        opts?.detectionProfile,
       );
     }
-    const state = this.keyedScopeState(scopeKey);
+    const state = this.keyedScopeState(scopeKey, detectionProfileFingerprint(opts?.detectionProfile));
     return new ProtectionRequestScope(
       this.plugins,
       this.policy,
@@ -267,10 +289,12 @@ export class ProtectionEngine implements RedactionEngine {
       state.tokenOnly,
       true,
       identifierHash(scopeKey),
+      undefined,
+      opts?.detectionProfile,
     );
   }
 
-  private keyedScopeState(key: string): KeyedScopeState {
+  private keyedScopeState(key: string, profileFingerprint: string): KeyedScopeState {
     const now = Date.now();
     const existing = this.keyedScopes.get(key);
     if (existing) this.keyedScopes.delete(key); // re-insert below so map order stays least-recently-used-first
@@ -280,8 +304,13 @@ export class ProtectionEngine implements RedactionEngine {
       metadata: new Map<string, ProtectedValue[]>(),
       tokenOnly: new Set<string>(),
       seenLeaves: new Set<string>(),
+      profileFingerprint,
       lastUsedAt: now,
     };
+    if (state.profileFingerprint !== profileFingerprint) {
+      state.seenLeaves.clear();
+      state.profileFingerprint = profileFingerprint;
+    }
     state.lastUsedAt = now;
     this.keyedScopes.set(key, state);
     this.evictKeyedScopes(now);
@@ -374,6 +403,8 @@ class ProtectionRequestScope implements RequestScope {
     private readonly protectionContextHash?: string,
     /** Explicit caller selections are re-seeded per request, never retained by a keyed scope. */
     private readonly userProtectedMetadata: Map<string, ProtectedValue[]> = new Map(),
+    /** Additive-only jurisdiction widening injected into every detector ctx this scope builds. */
+    private readonly detectionProfile?: DetectionProfile,
   ) {}
 
   registerProtectedValues(values: readonly ProtectedValue[]): void {
@@ -410,6 +441,7 @@ class ProtectionRequestScope implements RequestScope {
     const detection = await this.detectBodyValues(freshContentLeaves, freshLeaves, {
       ...detectCtx,
       surface: "body",
+      detectionProfile: detectCtx.detectionProfile ?? this.detectionProfile,
     });
     if (seen && detection.complete) for (const hash of hashes) seen.add(hash);
 
@@ -611,7 +643,11 @@ class ProtectionRequestScope implements RequestScope {
     // preservePaths defaults true (the query surface keeps real paths like redirect_uri intact); the
     // proxy passes false for headers so a secret inside a slash-path is redacted, not preserved.
     const { surface = "header", preservePaths = true, traceValues, ...rest } = ctx;
-    await this.registerDetectedValues(text, { ...rest, surface });
+    await this.registerDetectedValues(text, {
+      ...rest,
+      surface,
+      detectionProfile: rest.detectionProfile ?? this.detectionProfile,
+    });
     const redacted = this.vault.redactTextDetailed(text, preservePaths);
     const leakValues = this.vault.leakValues(redacted.text, preservePaths);
     const details: TextRedactionDetails = {
