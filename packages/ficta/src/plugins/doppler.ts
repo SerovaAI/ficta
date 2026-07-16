@@ -16,7 +16,7 @@ type DopplerSetupConfigMode = "current" | "all";
 interface DopplerConfigStat {
   label: string;
   loaded: number;
-  status: "loaded" | "empty" | "error";
+  status: "loaded" | "empty" | "error" | "skipped";
 }
 
 interface DopplerStats {
@@ -38,6 +38,8 @@ interface DopplerStats {
   error?:
     | "missing_cli"
     | "unsafe_command"
+    | "no_scope"
+    | "scope_probe_failed"
     | "download_failed"
     | "config_list_failed"
     | "no_configs"
@@ -56,10 +58,16 @@ interface DopplerTarget {
 interface DopplerCommandResult {
   ok: boolean;
   stdout: string;
+  stderr: string;
   exitCode?: number | null;
   timedOut: boolean;
-  error?: "missing_cli" | "unsafe_command" | "command_failed";
+  error?: "missing_cli" | "unsafe_command" | "no_scope" | "command_failed";
   message?: string;
+}
+
+interface DopplerScope {
+  project?: string;
+  config?: string;
 }
 
 const PLUGIN_NAME = "doppler-cli";
@@ -136,14 +144,18 @@ function loadDopplerValues(): ProtectedValue[] {
     const result = runDoppler(stats, secretsDownloadArgs(stats, target));
     updateCommandStats(stats, result);
     if (!result.ok) {
-      stats.error ??= commandError(result.error, "download_failed");
-      stats.configDetails.push({ label: target.label, loaded: 0, status: "error" });
+      recordDopplerError(stats, commandError(result.error, "download_failed"));
+      stats.configDetails.push({
+        label: target.label,
+        loaded: 0,
+        status: result.error === "no_scope" ? "skipped" : "error",
+      });
       continue;
     }
 
     const parsed = parseDopplerSecretsJson(result.stdout);
     if (!parsed.ok) {
-      stats.error ??= parsed.reason;
+      recordDopplerError(stats, parsed.reason);
       stats.configDetails.push({ label: target.label, loaded: 0, status: "error" });
       continue;
     }
@@ -239,10 +251,24 @@ function resolveDopplerTargets(
 ): { ok: true; targets: DopplerTarget[] } | { ok: false; error: NonNullable<DopplerStats["error"]> } {
   const setting = stats.configSetting.trim();
   if (!setting || setting === "current" || setting === "active") {
-    return { ok: true, targets: [{ project: stats.project, label: targetLabel(stats.project, undefined) }] };
+    const scope = resolveDopplerScope(stats, { project: true, config: true });
+    if (!scope.ok) return scope;
+    return {
+      ok: true,
+      targets: [
+        {
+          project: scope.scope.project,
+          config: scope.scope.config,
+          label: targetLabel(scope.scope.project, scope.scope.config),
+        },
+      ],
+    };
   }
 
   if (setting === "all") {
+    const scope = resolveDopplerScope(stats, { project: true, config: false });
+    if (!scope.ok) return scope;
+
     stats.attempted = true;
     const result = runDoppler(stats, configsListArgs(stats));
     updateCommandStats(stats, result);
@@ -264,7 +290,7 @@ function resolveDopplerTargets(
     };
   }
 
-  const targets = setting
+  const configuredTargets = setting
     .split(",")
     .map((raw) => raw.trim())
     .filter(Boolean)
@@ -278,7 +304,73 @@ function resolveDopplerTargets(
       return { project: stats.project, config: token, label: targetLabel(stats.project, token) };
     });
 
-  return targets.length > 0 ? { ok: true, targets } : { ok: false, error: "no_configs" };
+  if (configuredTargets.length === 0) return { ok: false, error: "no_configs" };
+
+  const needsProject = configuredTargets.some((target) => !target.project);
+  if (!needsProject) return { ok: true, targets: configuredTargets };
+
+  const scope = resolveDopplerScope(stats, { project: true, config: false });
+  if (scope.ok) {
+    return {
+      ok: true,
+      targets: configuredTargets.map((target) => {
+        if (target.project) return target;
+        return {
+          ...target,
+          project: scope.scope.project,
+          label: targetLabel(scope.scope.project, target.config),
+        };
+      }),
+    };
+  }
+
+  const qualifiedTargets = configuredTargets.filter((target) => target.project);
+  for (const target of configuredTargets) {
+    if (!target.project) stats.configDetails.push({ label: target.label, loaded: 0, status: "skipped" });
+  }
+  if (qualifiedTargets.length === 0) return scope;
+  if (scope.error !== "no_scope") stats.error ??= scope.error;
+  return { ok: true, targets: qualifiedTargets };
+}
+
+function resolveDopplerScope(
+  stats: DopplerStats,
+  required: { project: boolean; config: boolean },
+): { ok: true; scope: DopplerScope } | { ok: false; error: NonNullable<DopplerStats["error"]> } {
+  const scope: DopplerScope = {
+    project: stats.project || process.env.DOPPLER_PROJECT || undefined,
+    config: process.env.DOPPLER_CONFIG || undefined,
+  };
+
+  if (process.env.DOPPLER_TOKEN || scopeSatisfies(scope, required)) {
+    stats.project = scope.project;
+    return { ok: true, scope };
+  }
+
+  stats.attempted = true;
+  const result = runDoppler(stats, scopeProbeArgs());
+  updateCommandStats(stats, result);
+  if (!result.ok) {
+    return { ok: false, error: commandError(result.error, "scope_probe_failed") };
+  }
+
+  const local = parseDopplerScope(result.stdout);
+  scope.project ??= local.project;
+  scope.config ??= local.config;
+  stats.project = scope.project;
+  return scopeSatisfies(scope, required) ? { ok: true, scope } : { ok: false, error: "no_scope" };
+}
+
+function scopeSatisfies(scope: DopplerScope, required: { project: boolean; config: boolean }): boolean {
+  return (!required.project || Boolean(scope.project)) && (!required.config || Boolean(scope.config));
+}
+
+function parseDopplerScope(stdout: string): DopplerScope {
+  const lines = stdout.replace(/\r/g, "").split("\n");
+  return {
+    project: lines[0]?.trim() || undefined,
+    config: lines[1]?.trim() || undefined,
+  };
 }
 
 function dopplerDiscovery(stats: DopplerStats): PluginDiscovery {
@@ -293,12 +385,15 @@ function dopplerDiscovery(stats: DopplerStats): PluginDiscovery {
     };
   }
 
-  const details = stats.configDetails.map(
-    (d) => `${d.label}: ${d.status === "error" ? "error" : `${d.loaded} loaded`}`,
-  );
+  const details = stats.configDetails.map((d) => {
+    if (d.status === "error") return `${d.label}: error`;
+    if (d.status === "skipped") return `${d.label}: skipped (no Doppler scope)`;
+    return `${d.label}: ${d.loaded} loaded`;
+  });
   const skipped = skippedMessage(stats);
 
   if (stats.loaded > 0) {
+    const hasError = Boolean(stats.error && stats.error !== "no_scope");
     const scope =
       stats.configSetting === "current"
         ? "current config"
@@ -307,9 +402,9 @@ function dopplerDiscovery(stats: DopplerStats): PluginDiscovery {
       id: `${PLUGIN_NAME}/secrets-download`,
       plugin: PLUGIN_NAME,
       label: "Doppler CLI",
-      status: stats.error ? "error" : "loaded",
+      status: hasError ? "error" : "loaded",
       valueCount: stats.loaded,
-      message: `loaded ${scope} via \`doppler secrets download --no-file --format json\`${stats.error ? "; some config(s) failed" : ""}${skipped}`,
+      message: `loaded ${scope} via \`doppler secrets download --no-file --format json\`${hasError ? "; some config(s) failed" : ""}${skipped}`,
       details,
     };
   }
@@ -347,6 +442,30 @@ function dopplerDiscovery(stats: DopplerStats): PluginDiscovery {
     };
   }
 
+  if (stats.error === "no_scope") {
+    return {
+      id: `${PLUGIN_NAME}/secrets-download`,
+      plugin: PLUGIN_NAME,
+      label: "Doppler CLI",
+      status: "not_found",
+      valueCount: 0,
+      message:
+        "no Doppler project/config scope resolved for this directory; run `doppler setup` here or provide explicit registry.doppler settings",
+      details,
+    };
+  }
+
+  if (stats.error === "scope_probe_failed") {
+    return {
+      id: `${PLUGIN_NAME}/secrets-download`,
+      plugin: PLUGIN_NAME,
+      label: "Doppler CLI",
+      status: "error",
+      valueCount: 0,
+      message: "could not inspect the Doppler project/config scope for this directory",
+    };
+  }
+
   if (stats.error === "invalid_json" || stats.error === "unsupported_json") {
     return {
       id: `${PLUGIN_NAME}/secrets-download`,
@@ -367,6 +486,18 @@ function dopplerDiscovery(stats: DopplerStats): PluginDiscovery {
       status: "error",
       valueCount: 0,
       message: 'could not list Doppler configs for registry.doppler.configs="all"',
+    };
+  }
+
+  if (stats.error === "download_failed") {
+    return {
+      id: `${PLUGIN_NAME}/secrets-download`,
+      plugin: PLUGIN_NAME,
+      label: "Doppler CLI",
+      status: "error",
+      valueCount: 0,
+      message: "could not download Doppler secrets for the resolved project/config scope",
+      details,
     };
   }
 
@@ -432,10 +563,14 @@ function configModeDefault(value: string | undefined): DopplerSetupConfigMode {
 
 function commandError(
   error: DopplerCommandResult["error"],
-  fallback: "download_failed" | "config_list_failed",
+  fallback: "scope_probe_failed" | "download_failed" | "config_list_failed",
 ): NonNullable<DopplerStats["error"]> {
-  if (error === "missing_cli" || error === "unsafe_command") return error;
+  if (error === "missing_cli" || error === "unsafe_command" || error === "no_scope") return error;
   return fallback;
+}
+
+function recordDopplerError(stats: DopplerStats, error: NonNullable<DopplerStats["error"]>): void {
+  if (!stats.error || (stats.error === "no_scope" && error !== "no_scope")) stats.error = error;
 }
 
 function registryDopplerMode(): DopplerRegistryMode {
@@ -485,6 +620,7 @@ function runDoppler(stats: DopplerStats, args: string[]): DopplerCommandResult {
     return {
       ok: false,
       stdout: "",
+      stderr: "",
       timedOut: false,
       error: resolved.error,
       message: resolved.message,
@@ -505,19 +641,27 @@ function runDoppler(stats: DopplerStats, args: string[]): DopplerCommandResult {
     return {
       ok: false,
       stdout: "",
+      stderr: result.stderr,
       exitCode: result.status,
       timedOut: result.error.message.includes("ETIMEDOUT") || result.signal === "SIGTERM",
       error: missing ? "missing_cli" : "command_failed",
     };
   }
 
+  const error = result.status === 0 ? undefined : missingDopplerScope(result.stderr) ? "no_scope" : "command_failed";
+
   return {
     ok: result.status === 0,
     stdout: result.stdout,
+    stderr: result.stderr,
     exitCode: result.status,
     timedOut: result.signal === "SIGTERM",
-    error: result.status === 0 ? undefined : "command_failed",
+    error,
   };
+}
+
+function missingDopplerScope(stderr: string): boolean {
+  return /must specify (?:a )?(?:project|config)\b/i.test(stderr);
 }
 
 function updateCommandStats(stats: DopplerStats, result: DopplerCommandResult): void {
@@ -607,6 +751,10 @@ function secretsDownloadArgs(stats: DopplerStats, target: DopplerTarget): string
   if (target.project) args.push("--project", target.project);
   if (target.config) args.push("--config", target.config);
   return args;
+}
+
+function scopeProbeArgs(): string[] {
+  return ["configure", "get", "enclave.project", "enclave.config", "--plain", "--no-check-version", "--silent"];
 }
 
 function configsListArgs(stats: DopplerStats): string[] {

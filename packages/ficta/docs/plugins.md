@@ -494,6 +494,13 @@ configs = ["dev", "staging", "prod"]
 project = "my-project" # optional explicit project
 ```
 
+Enabling this source makes Doppler available opportunistically; it does not require every launch
+directory to belong to a Doppler project. Before listing configs or downloading secrets, ficta asks
+the CLI for the directory's locally resolved project/config metadata. If the required scope is
+absent, the source reports `not_found` and makes no Doppler API or secrets request. To opt in, run
+`doppler setup` in that directory, provide explicit `registry.doppler` settings, or use Doppler's
+`DOPPLER_PROJECT` / `DOPPLER_CONFIG` / scoped `DOPPLER_TOKEN` environment routing.
+
 The command output is parsed in memory, filtered by `registry.min_len`, and never printed.
 Discovery output contains only counts/status/config names. The startup timeout defaults to 5 seconds
 and can be changed with `registry.doppler.timeout_ms`.
