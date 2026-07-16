@@ -1046,10 +1046,11 @@ const MAX_SCOPE_KEY_LENGTH = 256;
 const MAX_DETECTION_PROFILE_CODES = 8;
 
 /**
- * The detection-profile seam: a trusted caller (e.g. the Gateway resolving a thread's matter)
- * widens best-effort PII detection with jurisdiction codes. Additive-only by construction —
- * unknown codes are dropped and bundles only ever union onto the detection baseline — so a spoofed
- * header can at worst over-redact. The header is stripped before the request is forwarded upstream.
+ * The detection-profile seam: a trusted caller (e.g. the Gateway forwarding a chat's configured
+ * detection jurisdictions) widens best-effort PII detection with jurisdiction codes. Additive-only
+ * by construction — unknown codes are dropped and bundles only ever union onto the detection
+ * baseline — so a spoofed header can at worst over-redact. The header is stripped before the
+ * request is forwarded upstream.
  */
 function detectionProfileFrom(c: Context): DetectionProfile | undefined {
   const raw = c.req.header(FICTA_DETECTION_PROFILE_HEADER)?.trim();
