@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { deploymentOrganizationId } from "@/lib/auth/deployment-organization.server";
 import { scopeFromAuth } from "@/lib/auth/guards.server";
-import { type AuthState, isAdmin, LOCAL_AUTH_STATE } from "@/lib/auth/types";
+import { type AuthState, hasRecordsPermission, isAdmin, LOCAL_AUTH_STATE, RECORDS_PERMISSIONS } from "@/lib/auth/types";
 
 describe("auth state", () => {
   it("represents none mode as a local admin user without changing local storage scope", () => {
@@ -25,6 +25,31 @@ describe("auth state", () => {
     expect(isAdmin(member)).toBe(false);
     expect(isAdmin(admin)).toBe(true);
     expect(scopeFromAuth(member)).toEqual({ userId: "user_1", orgId: "org_1" });
+  });
+
+  it("keeps records permissions independent from administrator status", () => {
+    const records: AuthState = {
+      provider: "workos",
+      requiresAuth: true,
+      user: {
+        id: "records_1",
+        email: "records@example.com",
+        organizationId: "org_1",
+        role: "member",
+        permissions: [RECORDS_PERMISSIONS.list, RECORDS_PERMISSIONS.read],
+      },
+    };
+    const admin: AuthState = {
+      provider: "workos",
+      requiresAuth: true,
+      user: { id: "admin_1", email: "admin@example.com", organizationId: "org_1", role: "admin" },
+    };
+    expect(isAdmin(records)).toBe(false);
+    expect(hasRecordsPermission(records, RECORDS_PERMISSIONS.list)).toBe(true);
+    expect(hasRecordsPermission(records, RECORDS_PERMISSIONS.restore)).toBe(false);
+    expect(isAdmin(admin)).toBe(true);
+    expect(hasRecordsPermission(admin, RECORDS_PERMISSIONS.list)).toBe(false);
+    expect(hasRecordsPermission(LOCAL_AUTH_STATE, RECORDS_PERMISSIONS.restore)).toBe(true);
   });
 
   it("rejects a session active in a different organization from the deployment", () => {

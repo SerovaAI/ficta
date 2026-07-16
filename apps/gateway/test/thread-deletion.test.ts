@@ -7,6 +7,7 @@ import {
   getThreadDeletionNotice,
   scheduleThreadDeletion,
   THREAD_DELETION_UNDO_DELAY_MS,
+  threadDeletionDisclosure,
 } from "../src/lib/storage/threadDeletion";
 import type { ThreadSummary } from "../src/lib/storage/types";
 
@@ -36,7 +37,7 @@ describe("thread deletion scheduler", () => {
     const commit = vi.fn();
 
     scheduleThreadDeletion("thread-1", commit, {
-      notice: { title: "Deleted chat", previous: previousThreads, wasActive: true },
+      notice: { title: "Deleted chat", previous: previousThreads, wasActive: true, recoveryDays: 30 },
     });
 
     const notice = getThreadDeletionNotice();
@@ -46,9 +47,21 @@ describe("thread deletion scheduler", () => {
       title: "Deleted chat",
       previous: previousThreads,
       wasActive: true,
+      recoveryDays: 30,
     });
     expect(notice?.kind === "pending" ? notice.expiresAt : 0).toBeGreaterThan(Date.now());
     expect(getHiddenThreadDeletionIds()).toEqual(["thread-1"]);
+  });
+
+  it("does not promise permanent deletion when recovery is disabled — other copies may persist", () => {
+    expect(threadDeletionDisclosure()).toEqual({ headline: "Deleted" });
+  });
+
+  it("discloses history removal and the recovery window when enabled", () => {
+    expect(threadDeletionDisclosure(30)).toEqual({
+      headline: "Removed from history",
+      detail: "Records can recover it for 30 days.",
+    });
   });
 
   it("commits a scheduled deletion after the undo window", async () => {

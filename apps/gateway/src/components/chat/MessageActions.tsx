@@ -45,7 +45,11 @@ export function MessageActions({
   const copyTooltip = copyStatus === "copied" ? "Copied" : copyStatus === "error" ? "Copy failed" : "Copy response";
 
   return (
-    <fieldset className="m-0 flex min-w-0 items-center gap-0.5 border-0 p-0" aria-label="Response actions">
+    // `relative` is load-bearing: the sr-only status span is position:absolute, and without a
+    // positioned ancestor its containing block is the document — on long threads every actions row
+    // then extends the page's scrollable height to its transcript position, escaping the message
+    // scroller's overflow clip and giving the whole page a phantom scrollbar.
+    <fieldset className="relative m-0 flex min-w-0 items-center gap-0.5 border-0 p-0" aria-label="Response actions">
       <span className="sr-only" role="status" aria-live="polite">
         {copyStatus === "copied" ? "Response copied to clipboard." : ""}
       </span>

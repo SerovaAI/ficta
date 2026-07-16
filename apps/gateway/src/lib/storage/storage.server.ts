@@ -7,6 +7,11 @@ import type {
   ProtectionStatsDailySummary,
   ProtectionStatsSnapshot,
   ProviderKeySummary,
+  RecordsAccessReason,
+  RecordsAuditEvent,
+  RetainedThreadDetail,
+  RetainedThreadSummary,
+  RetentionSweepResult,
   StoredMessage,
   ThreadEgressEvent,
   ThreadEgressReceipt,
@@ -44,7 +49,11 @@ export interface Storage {
   patchUserSettings(userId: string, patch: Partial<UserSettings>): Promise<UserSettings>;
 
   getInstanceSettings(orgId: string): Promise<InstanceSettings>;
-  patchInstanceSettings(orgId: string, patch: Partial<InstanceSettings>): Promise<InstanceSettings>;
+  patchInstanceSettings(
+    orgId: string,
+    patch: Partial<InstanceSettings>,
+    actorUserId?: string,
+  ): Promise<InstanceSettings>;
 
   listProviderKeySummaries(orgId: string): Promise<ProviderKeySummary[]>;
   getProviderKey(orgId: string, provider: Provider): Promise<EncryptedProviderKey | null>;
@@ -60,6 +69,7 @@ export interface Storage {
     proof: Omit<ThreadEgressEvent, "threadId" | "previousHash" | "eventHash">,
   ): Promise<void>;
   getThreadEgressReceipt(userId: string, orgId: string, threadId: string): Promise<ThreadEgressReceipt>;
+  listRecordsAuditEvents(orgId: string, threadId?: string): Promise<RecordsAuditEvent[]>;
 
   listProtectedRegistryEntries(orgId: string): Promise<ProtectedRegistryEntry[]>;
   upsertProtectedRegistryEntry(
@@ -86,13 +96,28 @@ export interface Storage {
   pruneAbandonedThreadProtectedValues(userId: string, orgId: string): Promise<void>;
 
   listThreads(userId: string, orgId: string): Promise<ThreadSummary[]>;
+  listRetainedThreads(orgId: string): Promise<RetainedThreadSummary[]>;
+  getRetainedThread(
+    orgId: string,
+    actorUserId: string,
+    threadId: string,
+    reason: RecordsAccessReason,
+  ): Promise<RetainedThreadDetail | null>;
+  restoreRetainedThread(
+    orgId: string,
+    actorUserId: string,
+    threadId: string,
+    reason: RecordsAccessReason,
+  ): Promise<void>;
+  runRetentionSweep(now?: Date, batchSize?: number): Promise<RetentionSweepResult[]>;
   getThread(
     userId: string,
     orgId: string,
     threadId: string,
   ): Promise<{ thread: ThreadSummary; messages: StoredMessage[] } | null>;
-  /** Ownership probe used only by authenticated API boundaries; missing means a new draft id is available. */
-  getThreadOwner(threadId: string): Promise<{ userId: string; orgId: string } | null>;
+  /** Ownership probe used only by authenticated API boundaries; missing means a new draft id is available.
+   * `deleted` marks a retained (soft-deleted) thread, whose id must stay reserved but unusable. */
+  getThreadOwner(threadId: string): Promise<{ userId: string; orgId: string; deleted: boolean } | null>;
   /** Creates the thread if missing and upserts the initial user message without deleting later messages. */
   startThread(
     userId: string,
@@ -140,6 +165,35 @@ let cached: Promise<Storage> | null = null;
  * and code path that doesn't touch storage.
  */
 export function getStorage(): Promise<Storage> {
-  if (!cached) cached = import("./drizzle/store.server").then((m) => m.createStorage());
+  if (!cached) {
+    cached = import("./drizzle/store.server").then((m) => m.createStorage());
+    cached.then(startRetentionSweeps, () => {});
+  }
   return cached;
+}
+
+const RETENTION_SWEEP_INTERVAL_MS = 60 * 60 * 1_000;
+
+/**
+ * In-process purge scheduler: runs once when storage first resolves and hourly after. Deliberately not an
+ * operator cron — one long-lived gateway process per deployment makes this the simplest reliable home, and
+ * a sweep failure must never take storage down with it, so errors are logged and retried next interval.
+ */
+function startRetentionSweeps(storage: Storage): void {
+  const sweep = async () => {
+    try {
+      for (const run of await storage.runRetentionSweep()) {
+        if (run.purgedThreads || run.purgedAuditEvents || run.purgedEgressEvents) {
+          console.log(
+            `retention sweep (${run.orgId}): purged ${run.purgedThreads} chats, ` +
+              `${run.purgedAuditEvents} audit events, ${run.purgedEgressEvents} egress events`,
+          );
+        }
+      }
+    } catch (error) {
+      console.error("deleted-chat retention sweep failed", error);
+    }
+  };
+  void sweep();
+  setInterval(sweep, RETENTION_SWEEP_INTERVAL_MS).unref();
 }

@@ -11,12 +11,14 @@ import { ProtectedRegistrySection } from "./ProtectedRegistrySection";
 import { ProviderKeysSection } from "./ProviderKeysSection";
 import { ProxyConfigSection } from "./ProxyConfigSection";
 import { RedactionProofSection } from "./RedactionProofSection";
+import { RetentionSettingsSection } from "./RetentionSettingsSection";
 
-type AdminSection = "general" | "keys" | "registry" | "proxy" | "proof";
+type AdminSection = "general" | "retention" | "keys" | "registry" | "proxy" | "proof";
 export type AdminSettingsTarget = "runtime-trace-capture";
 
 const SECTION_LABELS: Record<AdminSection, string> = {
   general: "General",
+  retention: "Retention",
   keys: "Provider keys",
   registry: "Protected Registry",
   proxy: "Proxy configuration",
@@ -66,7 +68,7 @@ export function AdminSettingsDialog({
             <span className="sr-only">Close admin settings</span>
           </DialogClose>
           <nav className="space-y-1" aria-label="Admin sections">
-            {(["general", "keys", "registry", "proxy", "proof"] as const).map((key) => (
+            {(["general", "retention", "keys", "registry", "proxy", "proof"] as const).map((key) => (
               <AdminSectionButton key={key} active={section === key} onClick={() => setSection(key)}>
                 {SECTION_LABELS[key]}
               </AdminSectionButton>
@@ -84,6 +86,7 @@ export function AdminSettingsDialog({
 
           <div className="min-h-0 overflow-y-auto px-6 py-1">
             {section === "general" ? <AdminSettingsForm settings={instanceSettings} /> : null}
+            {section === "retention" ? <RetentionSettingsSection settings={instanceSettings} /> : null}
             {section === "keys" ? <ProviderKeysSection /> : null}
             {section === "registry" ? <ProtectedRegistrySection /> : null}
             {section === "proxy" ? (

@@ -1,8 +1,16 @@
 # Gateway/document and PII detection sidecars ficta's networked backends talk to. This file is the way
 # to run them outside `pnpm dev` (which can manage them itself and reuses anything already healthy here):
 #
-#   pnpm sidecars        # docker compose -f docker-compose.sidecars.yml up -d --wait --build
-#   pnpm sidecars:down
+#   pnpm sidecars           # gateway + engine profiles (document converter, presidio)
+#   pnpm sidecars:openmed   # additionally start the opt-in OpenMed backend
+#   pnpm sidecars:down      # stop all profiles
+#
+# Services are grouped by owner with compose profiles, mirroring which product depends on them:
+#   gateway — document-converter (the gateway's /api/extract and /api/render sidecar)
+#   engine  — presidio-analyzer (a proxy PII detection backend)
+#   openmed — the opt-in learned-PII backend; only useful when `FICTA_PII_BACKENDS` (or the
+#             config.toml `[pii] backends`) selects "openmed", so it is not started by default —
+#             it is the heaviest sidecar here (image pull + model download on first start).
 #
 # The document converter and Presidio analyzer are built from the source checkout. OpenMed is pulled
 # from its upstream registry. Set OPENMED_IMAGE to pin a tag or use a locally built image instead.
@@ -14,6 +22,7 @@
 
 services:
   document-converter:
+    profiles: ["gateway"]
     image: ficta-doc-converter:dev
     build:
       context: ./apps/gateway/sidecars/document-converter
@@ -36,6 +45,7 @@ services:
     restart: unless-stopped
 
   presidio-analyzer:
+    profiles: ["engine"]
     image: ficta-presidio:dev
     build:
       context: ./packages/ficta/presidio
@@ -65,6 +75,7 @@ services:
     restart: unless-stopped
 
   openmed:
+    profiles: ["openmed"]
     image: ${OPENMED_IMAGE:-ghcr.io/maziyarpanahi/openmed:latest}
     ports:
       - "127.0.0.1:5004:8080"

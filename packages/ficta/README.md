@@ -127,7 +127,8 @@ With the sidecar running, validate the complete detector→resolver→typed-surr
 
 For medical workspaces that need both general PII and medical/PHI-style identifiers, run the
 upstream OpenMed REST service alongside Presidio (published image
-`ghcr.io/maziyarpanahi/openmed`, started by `pnpm sidecars` or `pnpm dev`), and set
+`ghcr.io/maziyarpanahi/openmed`, started by `pnpm sidecars:openmed`, or by `pnpm dev` when the
+backend set selects it), and set
 `FICTA_PII_BACKENDS=presidio,openmed`. Ficta coordinates both external
 analyzers natively, merges
 detected values, and applies the same fail-open/fail-closed detector policy. Treat this as
