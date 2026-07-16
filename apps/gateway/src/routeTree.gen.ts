@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChatThreadIdRouteImport } from './routes/chat.$threadId'
+import { Route as ApiRenderRouteImport } from './routes/api/render'
 import { Route as ApiProtectionPreviewRouteImport } from './routes/api/protection-preview'
 import { Route as ApiExtractRouteImport } from './routes/api/extract'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
@@ -32,6 +33,11 @@ const IndexRoute = IndexRouteImport.update({
 const ChatThreadIdRoute = ChatThreadIdRouteImport.update({
   id: '/chat/$threadId',
   path: '/chat/$threadId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRenderRoute = ApiRenderRouteImport.update({
+  id: '/api/render',
+  path: '/api/render',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiProtectionPreviewRoute = ApiProtectionPreviewRouteImport.update({
@@ -71,6 +77,7 @@ export interface FileRoutesByFullPath {
   '/api/chat': typeof ApiChatRoute
   '/api/extract': typeof ApiExtractRoute
   '/api/protection-preview': typeof ApiProtectionPreviewRoute
+  '/api/render': typeof ApiRenderRoute
   '/chat/$threadId': typeof ChatThreadIdRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/sign-in': typeof ApiAuthSignInRoute
@@ -82,6 +89,7 @@ export interface FileRoutesByTo {
   '/api/chat': typeof ApiChatRoute
   '/api/extract': typeof ApiExtractRoute
   '/api/protection-preview': typeof ApiProtectionPreviewRoute
+  '/api/render': typeof ApiRenderRoute
   '/chat/$threadId': typeof ChatThreadIdRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/sign-in': typeof ApiAuthSignInRoute
@@ -94,6 +102,7 @@ export interface FileRoutesById {
   '/api/chat': typeof ApiChatRoute
   '/api/extract': typeof ApiExtractRoute
   '/api/protection-preview': typeof ApiProtectionPreviewRoute
+  '/api/render': typeof ApiRenderRoute
   '/chat/$threadId': typeof ChatThreadIdRoute
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/sign-in': typeof ApiAuthSignInRoute
@@ -107,6 +116,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/api/extract'
     | '/api/protection-preview'
+    | '/api/render'
     | '/chat/$threadId'
     | '/api/auth/callback'
     | '/api/auth/sign-in'
@@ -118,6 +128,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/api/extract'
     | '/api/protection-preview'
+    | '/api/render'
     | '/chat/$threadId'
     | '/api/auth/callback'
     | '/api/auth/sign-in'
@@ -129,6 +140,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/api/extract'
     | '/api/protection-preview'
+    | '/api/render'
     | '/chat/$threadId'
     | '/api/auth/callback'
     | '/api/auth/sign-in'
@@ -141,6 +153,7 @@ export interface RootRouteChildren {
   ApiChatRoute: typeof ApiChatRoute
   ApiExtractRoute: typeof ApiExtractRoute
   ApiProtectionPreviewRoute: typeof ApiProtectionPreviewRoute
+  ApiRenderRoute: typeof ApiRenderRoute
   ChatThreadIdRoute: typeof ChatThreadIdRoute
   ApiAuthCallbackRoute: typeof ApiAuthCallbackRoute
   ApiAuthSignInRoute: typeof ApiAuthSignInRoute
@@ -168,6 +181,13 @@ declare module '@tanstack/react-router' {
       path: '/chat/$threadId'
       fullPath: '/chat/$threadId'
       preLoaderRoute: typeof ChatThreadIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/render': {
+      id: '/api/render'
+      path: '/api/render'
+      fullPath: '/api/render'
+      preLoaderRoute: typeof ApiRenderRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/protection-preview': {
@@ -221,6 +241,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiChatRoute: ApiChatRoute,
   ApiExtractRoute: ApiExtractRoute,
   ApiProtectionPreviewRoute: ApiProtectionPreviewRoute,
+  ApiRenderRoute: ApiRenderRoute,
   ChatThreadIdRoute: ChatThreadIdRoute,
   ApiAuthCallbackRoute: ApiAuthCallbackRoute,
   ApiAuthSignInRoute: ApiAuthSignInRoute,
