@@ -196,7 +196,7 @@ export class SurrogateTable {
  * precedence order (first match wins). A permanent {@link Vault} is a view over a single table; a
  * per-request {@link ScopedVault} is a view over `[detected, permanent]`. All the security-critical
  * mechanics (exact replacement, fail-closed leak scanning, streaming restore) live here exactly
- * once, so the CLI single-vault path and the request-scoped gateway path share the same tested code.
+ * once, so the CLI single-vault path and the request-scoped proxy path share the same tested code.
  */
 export abstract class VaultView {
   /**
@@ -748,7 +748,7 @@ export abstract class VaultView {
     // extends the same policy to full-payload replay events (deltas already withheld must not be
     // restored when the provider re-sends the completed tool call).
     const policy = restoreIntoToolsPolicy(process.env.FICTA_RESTORE_INTO_TOOLS);
-    // Highlight markers (the trace-demo UI hint that drives the gateway's show/hide toggle) belong on
+    // Highlight markers (the trace-demo hint that drives a caller UI's show/hide toggle) belong on
     // human-facing assistant output — the `kind: "text"` streamed fragments the UI renders and their
     // sibling fields (e.g. `reasoning_content`) in the SAME event. They must NOT land on events that
     // merely echo the request back: `response.created` / `response.in_progress` carry the request
@@ -874,8 +874,8 @@ export class ScopedVault extends VaultView {
   }
 
   /**
-   * Register an explicit caller-selected value in a request-local permanent-provenance layer. Gateway
-   * re-seeds this layer from its durable thread state on every send, so removing a chat protection takes
+   * Register an explicit caller-selected value in a request-local permanent-provenance layer. A caller
+   * re-seeds this layer from its own durable state on every request, so removing a selection takes
    * effect immediately without mutating the process registry or a persistent keyed detector layer.
    */
   registerUserProtectedSurface(value: VaultValue, addMatchForm: boolean): string {
@@ -1002,7 +1002,7 @@ export const NOOP_BUFFERED_RESTORE_ADAPTER: BufferedRestoreAdapter = { toolArgum
  * text, so a surrogate split across several `input_json_delta` chunks is stitched back to a whole
  * token before the per-token decision — the split-token bug that let placeholder pieces pass through
  * verbatim (and never counted) onto disk. Each token it withholds is added to `withheldSink` so the
- * per-event deep sweep (`restoreExcept`) cannot re-restore it, and counted for the Gateway view.
+ * per-event deep sweep (`restoreExcept`) cannot re-restore it, and counted for caller-facing stats.
  */
 interface ToolRestorePolicy {
   withhold: boolean;

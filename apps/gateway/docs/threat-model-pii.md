@@ -1,6 +1,6 @@
 # Threat model — Ficta Gateway PII handling
 
-> Addendum to [`threat-model.md`](./threat-model.md), scoped to the sensitive-data chat gateway
+> Addendum to [`threat-model.md`](../../../packages/ficta/docs/threat-model.md), scoped to the sensitive-data chat gateway
 > (`apps/gateway`). The base threat model still governs; this states **the gateway's promise in its own
 > words** so its best-effort boundary is never borrowed from the CLI's stronger exact-match promise.
 
@@ -110,7 +110,7 @@ This is the load-bearing caveat and must not be blurred:
 - **Document ingestion gaps.** PDF/DOC/DOCX are converted to text before detection; anything the
   converter drops or garbles (scanned images without OCR, complex tables) is detected imperfectly or
   not at all.
-- Everything already out of scope in [`threat-model.md`](./threat-model.md) (auth headers,
+- Everything already out of scope in [`threat-model.md`](../../../packages/ficta/docs/threat-model.md) (auth headers,
   tool-channel egress, binary responses, IDE clients).
 
 ## Compliance framing
@@ -129,4 +129,4 @@ remains the responsible party for its obligations.
 
 ## See also
 
-- [`threat-model.md`](./threat-model.md) — the base promise and non-goals this addendum extends.
+- [`threat-model.md`](../../../packages/ficta/docs/threat-model.md) — the base promise and non-goals this addendum extends.

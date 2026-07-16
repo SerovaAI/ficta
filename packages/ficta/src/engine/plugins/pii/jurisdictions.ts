@@ -2,15 +2,13 @@ import type { DetectionProfile } from "../types.js";
 
 /**
  * Jurisdiction-scoped Presidio entity selection. Some recognizers are only sound inside their home
- * jurisdiction — the UK NHS checksum matches ZA bank account numbers by mod-11 coincidence (the
- * reason NhsRecognizer was globally disabled before this seam existed) — so jurisdiction-specific
- * recognizers stay enabled in the sidecar registry but are reachable only when a request's
- * detection profile asks for them.
+ * jurisdiction, so jurisdiction-specific recognizers stay enabled in the sidecar registry but are
+ * reachable only when a request's detection profile asks for them.
  *
  * Additive-only contract: a profile UNIONS its bundles onto the baseline; it can never remove
  * baseline coverage. The effective list is therefore never empty — critical because an /analyze
- * payload without an `entities` field runs EVERY loaded recognizer, which would silently re-enable
- * the cross-jurisdiction false positives for default traffic.
+ * payload without an `entities` field runs EVERY loaded recognizer, which would silently bypass
+ * jurisdiction gating for default traffic.
  *
  * `DEFAULT_BASELINE_ENTITIES` must mirror the enabled recognizers in
  * `packages/ficta/presidio/default_recognizers.za.yaml` plus the identity recognizer baked into the
@@ -73,6 +71,8 @@ export function effectivePresidioEntities(
   const base = configured.length > 0 ? configured : DEFAULT_BASELINE_ENTITIES;
   const out = new Set(base);
   for (const code of profile?.jurisdictions ?? []) {
+    // Own-key check: an inherited name like "constructor" must contribute nothing, not a function.
+    if (!Object.hasOwn(JURISDICTION_ENTITY_BUNDLES, code)) continue;
     for (const entity of JURISDICTION_ENTITY_BUNDLES[code] ?? []) out.add(entity);
   }
   if (out.size === 0) throw new Error("effective presidio entity allowlist must never be empty");
@@ -88,7 +88,12 @@ export function effectivePresidioEntities(
  */
 export function detectionProfileFromCodes(codes: readonly string[]): DetectionProfile | undefined {
   const jurisdictions = [
-    ...new Set(codes.map((code) => code.trim().toLowerCase()).filter((code) => code in JURISDICTION_ENTITY_BUNDLES)),
+    ...new Set(
+      codes
+        .map((code) => code.trim().toLowerCase())
+        // Own keys only: `in` would also admit inherited names like "constructor" or "__proto__".
+        .filter((code) => Object.hasOwn(JURISDICTION_ENTITY_BUNDLES, code)),
+    ),
   ];
   return jurisdictions.length > 0 ? { jurisdictions } : undefined;
 }

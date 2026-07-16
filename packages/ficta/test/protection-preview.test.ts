@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
+  FICTA_DETECTION_PROFILE_HEADER,
   FICTA_PROTECTION_PREVIEW_PATH,
   FICTA_PROTECTION_TICKET_HEADER,
   FICTA_SCOPE_HEADER,
@@ -120,7 +121,7 @@ describe("pre-send protection preview", () => {
       if (!isProtectionPreviewOk(preview)) throw new Error("preview guard failed");
       expect(preview.redactedText).not.toContain(sensitive);
       expect(preview.findings).toEqual([
-        expect.objectContaining({ start: 14, end: 33, origin: "user", source: "gateway-user" }),
+        expect.objectContaining({ start: 14, end: 33, origin: "user", source: "user-selected" }),
       ]);
 
       const modelResponse = await fetch(`${base}/v1/chat/completions`, {
@@ -243,6 +244,74 @@ describe("pre-send protection preview", () => {
       });
       expect(wrongScope.status).toBe(409);
       expect(upstreamRequests).toBe(3);
+    } finally {
+      proxy?.close();
+      await close(upstream);
+    }
+  });
+
+  it("binds a ticket to the preview's detection profile", async () => {
+    const upstream = createServer((req, res) => {
+      let body = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(body);
+      });
+    });
+    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    try {
+      const upstreamPort = await listen(upstream);
+      process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0, plugins: [] });
+      const base = `http://127.0.0.1:${proxy.port}`;
+      const scope = "org-1:thread-profile";
+      const text = "Summarize the Project Copper Kite plan.";
+
+      const preview = async (profile?: string) => {
+        const response = await fetch(`${base}${FICTA_PROTECTION_PREVIEW_PATH}`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            [FICTA_SCOPE_HEADER]: scope,
+            ...(profile ? { [FICTA_DETECTION_PROFILE_HEADER]: profile } : {}),
+          },
+          body: JSON.stringify({ text, protectedValues: ["Project Copper Kite"] }),
+        });
+        const json = (await response.json()) as unknown;
+        if (!isProtectionPreviewOk(json)) throw new Error("profile preview guard failed");
+        return json.ticket;
+      };
+      const send = (ticket: string, profile?: string) =>
+        fetch(`${base}/v1/chat/completions`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            [FICTA_SCOPE_HEADER]: scope,
+            [FICTA_PROTECTION_TICKET_HEADER]: ticket,
+            ...(profile ? { [FICTA_DETECTION_PROFILE_HEADER]: profile } : {}),
+          },
+          body: JSON.stringify({ model: "test", messages: [{ role: "user", content: text }] }),
+        });
+
+      // A ticket previewed under one profile must not authorize a send under another.
+      const ukTicket = await preview("uk");
+      const unprofiledSend = await send(ukTicket);
+      expect(unprofiledSend.status).toBe(409);
+
+      const baselineTicket = await preview();
+      const widenedSend = await send(baselineTicket, "uk");
+      expect(widenedSend.status).toBe(409);
+
+      // Same profile — including a different code order — still matches (canonical fingerprint).
+      const orderedTicket = await preview("uk,za");
+      const reordered = await send(orderedTicket, "za,uk");
+      expect(reordered.status).toBe(200);
+      await reordered.text();
     } finally {
       proxy?.close();
       await close(upstream);

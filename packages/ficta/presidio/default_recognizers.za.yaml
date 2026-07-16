@@ -83,9 +83,7 @@ recognizers:
 
   # UK recognizers are LOADED but reachable only through a `uk` detection profile: every ficta
   # /analyze request sends an explicit entity allowlist (see src/engine/plugins/pii/jurisdictions.ts)
-  # and the default baseline excludes UK types. NhsRecognizer in particular must never run on
-  # default traffic — its mod-11 checksum matches ZA bank account numbers by coincidence (the
-  # FictaAccountNumberRecognizer below covers those deliberately).
+  # and the default baseline excludes UK types, so these recognizers never run on default traffic.
   - name: NhsRecognizer
     supported_languages:
     - en
@@ -253,9 +251,7 @@ recognizers:
 
   # Municipal/utility account numbers (e.g. City of Johannesburg tax invoices) are bare 9-11 digit
   # runs with no checksum, so the base score stays below ficta's 0.5 threshold and only the context
-  # enhancer (nearby "account"/"rekening" wording) can promote a match. Replaces, for default
-  # traffic, the coverage the UK NhsRecognizer once provided by checksum coincidence (that
-  # recognizer is now loaded but reachable only via a `uk` detection profile — see above).
+  # enhancer (nearby "account"/"rekening" wording) can promote a match.
   - name: FictaAccountNumberRecognizer
     supported_languages:
     - language: en

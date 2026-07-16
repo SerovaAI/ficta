@@ -101,7 +101,7 @@ Gateway is a separate product path from the coding-agent CLI. Its operator guide
 auth/storage guidance, sidecar notes, and production-like deployment cautions live in
 **[`apps/gateway/README.md`](apps/gateway/README.md)**.
 The minimal operator-installed policy and environment contract is
-**[`packages/ficta/docs/poc-configuration.md`](packages/ficta/docs/poc-configuration.md)**.
+**[`apps/gateway/docs/poc-configuration.md`](apps/gateway/docs/poc-configuration.md)**.
 
 ## What's In This Repo
 
@@ -122,7 +122,7 @@ private chat surface built on the same redaction engine.
 
 - [`packages/ficta/README.md`](packages/ficta/README.md) - full CLI/proxy install, usage, and commands
 - [`apps/gateway/README.md`](apps/gateway/README.md) - Ficta Gateway setup, POC defaults, and deployment cautions
-- [`docs/poc-configuration.md`](packages/ficta/docs/poc-configuration.md) - canonical minimal POC environment and proxy policy
+- [`apps/gateway/docs/poc-configuration.md`](apps/gateway/docs/poc-configuration.md) - canonical minimal Gateway POC environment and proxy policy
 - [`docs/install.md`](packages/ficta/docs/install.md) - Ficta shim installation and runtime behavior
 - [`docs/threat-model.md`](packages/ficta/docs/threat-model.md) - exact promise, covered surfaces, and non-goals
 - [`docs/plugins.md`](packages/ficta/docs/plugins.md) - registry-source, detector, and agent-integration plugins

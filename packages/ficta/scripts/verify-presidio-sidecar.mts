@@ -10,13 +10,26 @@ process.env.FICTA_PII_BACKENDS = "presidio";
 process.env.FICTA_PII_PRESIDIO_URL = url;
 process.env.FICTA_PII_PRESIDIO_TIMEOUT_MS ??= "5000";
 process.env.FICTA_SURROGATE_STYLE = "typed";
+const timeoutMs = Number(process.env.FICTA_PII_PRESIDIO_TIMEOUT_MS);
 
-const health = await fetch(`${url}/health`);
+// Same deadline discipline as the engine's sidecar client: every direct call aborts at the
+// configured timeout instead of hanging the verification run.
+async function fetchWithDeadline(input: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const health = await fetchWithDeadline(`${url}/health`);
 assert.equal(health.ok, true, `Presidio sidecar is not healthy at ${url}`);
 
 const negativeText =
   "lowercase a12345678; short A1234567; long A123456789; embedded XA12345678Z; short phone +230 1234";
-const negativeResponse = await fetch(`${url}/analyze`, {
+const negativeResponse = await fetchWithDeadline(`${url}/analyze`, {
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify({
@@ -34,7 +47,7 @@ assert.deepEqual(await negativeResponse.json(), [], "a near-miss document ID or 
 // Drift gate: the TS baseline + bundles and the sidecar's loaded recognizers must agree in BOTH
 // directions. A recognizer the TS side doesn't know about would run unfiltered nowhere (fine) but
 // signals YAML/TS divergence; a TS entity the sidecar doesn't load silently disables coverage.
-const supportedResponse = await fetch(`${url}/supportedentities?language=en`);
+const supportedResponse = await fetchWithDeadline(`${url}/supportedentities?language=en`);
 assert.equal(supportedResponse.ok, true, "Presidio rejected /supportedentities");
 const supported = new Set((await supportedResponse.json()) as string[]);
 const declared = new Set([...DEFAULT_BASELINE_ENTITIES, ...Object.values(JURISDICTION_ENTITY_BUNDLES).flat()]);
@@ -43,9 +56,7 @@ const unknownToTs = [...supported].filter((entity) => !declared.has(entity));
 assert.deepEqual(missingOnSidecar, [], `TS declares entities the sidecar does not load: ${missingOnSidecar}`);
 assert.deepEqual(unknownToTs, [], `sidecar loads entities the TS baseline/bundles do not declare: ${unknownToTs}`);
 
-// The historical false positive: a bare ZA account number passes the NHS mod-11 checksum. With the
-// UK recognizer now LOADED, the baseline allowlist is the only thing keeping it out of default
-// traffic — so prove a baseline request returns no UK_NHS span for an account-context number.
+// Regression: an account-context number must not produce a UK_NHS span in the baseline request.
 const zaAccountText = "Rekeningnommer: 9434765919";
 const baselineSpans = (await analyze(zaAccountText, [...DEFAULT_BASELINE_ENTITIES])) as Array<{
   entity_type: string;
@@ -69,7 +80,7 @@ assert.equal(
 );
 
 async function analyze(text: string, entities: string[]): Promise<unknown> {
-  const response = await fetch(`${url}/analyze`, {
+  const response = await fetchWithDeadline(`${url}/analyze`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ text, language: "en", score_threshold: 0.5, entities }),

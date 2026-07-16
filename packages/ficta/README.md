@@ -53,9 +53,9 @@ reserve environment variables for secrets, deployment wiring, and deliberate one
 Every TOML option still has a `FICTA_*` override for compatibility, and env vars win over the file.
 Point at a different file with `FICTA_CONFIG_FILE`.
 
-For an operator-installed Gateway evaluation, start with the
-[`docs/poc-configuration.md`](./docs/poc-configuration.md) contract instead of copying the full
-reference into an environment file.
+For an operator-installed Gateway evaluation, start with the POC contract in the Gateway's own
+documentation (`apps/gateway/docs/poc-configuration.md` in the repository) instead of copying the
+full reference into an environment file.
 
 [`config.toml.example`](./config.toml.example) is the authoritative, fully annotated reference for
 every advanced option. The normal POC policy surface is intentionally smaller:
@@ -112,6 +112,10 @@ FICTA_PII_BACKENDS=presidio \
 FICTA_PII_PRESIDIO_URL=http://127.0.0.1:5002 \
 ficta claude
 ```
+
+The bundled recognizer config and default entity baseline are a **reference profile** tuned for
+Southern-Africa legal-document workloads; other locales/domains should supply their own entity
+allowlist or recognizer YAML (see [`docs/plugins.md`](./docs/plugins.md)).
 
 The derived sidecar keeps Presidio's structured recognizers and replaces raw generic NER output with
 a legal-identity recognizer. It admits contextual people and organizations, document-local aliases,
@@ -186,7 +190,6 @@ Cursor are not — their agentic features bypass a custom base URL. See the
 
 ## Documentation
 
-- [`docs/poc-configuration.md`](./docs/poc-configuration.md) — minimal operator-installed Gateway POC contract
 - [`docs/install.md`](./docs/install.md) — ficta shim installation and runtime behavior
 - [`docs/threat-model.md`](./docs/threat-model.md) — exact promise, covered surfaces, and non-goals
 - [`docs/plugins.md`](./docs/plugins.md) — registry-source, detector, and agent-integration plugins

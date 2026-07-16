@@ -2,6 +2,7 @@ import {
   FICTA_DETECTION_PROFILE_HEADER,
   FICTA_PROTECTION_PREVIEW_PATH,
   FICTA_SCOPE_HEADER,
+  isDetectionJurisdiction,
   isProtectionPreviewOk,
   type ProtectionPreviewOk,
 } from "@serovaai/ficta-protocol";
@@ -56,14 +57,19 @@ export const Route = createFileRoute("/api/protection-preview")({
           return errorResponse(500, "Chat protection values could not be updated. Try again.");
         }
 
-        // The thread's stored jurisdictions (server-stored, never client input) widen detection for
-        // the preview exactly as they will for the send — same profile, same swept-leaf cache.
-        let detectionProfile: readonly string[] | undefined;
+        // The thread's jurisdictions widen detection for the preview exactly as they will for the
+        // send — same profile, same swept-leaf cache. Like /api/chat, the request's value (validated
+        // against the supported list, additive-only) covers only the first send of a new chat, whose
+        // row may not be persisted yet; once the thread exists its stored value wins. A resolution
+        // failure refuses the preview: an unprofiled preview would mint a ticket for a redaction the
+        // send will not reproduce.
+        let detectionProfile: readonly string[] | undefined = input.detectionJurisdictions;
         try {
           const thread = await storage.getThread(userId, orgId, input.threadId);
-          detectionProfile = thread?.thread.detectionJurisdictions;
+          if (thread) detectionProfile = thread.thread.detectionJurisdictions;
         } catch (err) {
           console.warn("Failed to resolve the chat's detection jurisdictions.", err);
+          return errorResponse(500, "Chat protection settings could not be resolved. Try again.");
         }
 
         try {
@@ -96,6 +102,7 @@ interface PreviewInput {
   text: string;
   addValues: string[];
   removeValues: string[];
+  detectionJurisdictions?: string[];
 }
 
 export interface GatewayProtectionPreview extends ProtectionPreviewOk {
@@ -112,7 +119,24 @@ function validateInput(value: unknown): PreviewInput {
     throw new Error("This message is too large to preview.");
   const addValues = validateValues(record.addValues, "added");
   const removeValues = validateValues(record.removeValues, "removed");
-  return { threadId: record.threadId.trim().slice(0, 128), text: record.text, addValues, removeValues };
+  return {
+    threadId: record.threadId.trim().slice(0, 128),
+    text: record.text,
+    addValues,
+    removeValues,
+    detectionJurisdictions: validateJurisdictions(record.detectionJurisdictions),
+  };
+}
+
+/** Same cleaning as /api/chat: unknown codes are dropped (profiles are additive-only). */
+function validateJurisdictions(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const codes = [
+    ...new Set(value.filter((code): code is string => typeof code === "string").map((code) => code.toLowerCase())),
+  ]
+    .filter(isDetectionJurisdiction)
+    .slice(0, 8);
+  return codes.length > 0 ? codes : undefined;
 }
 
 function validateValues(value: unknown, action: "added" | "removed"): string[] {

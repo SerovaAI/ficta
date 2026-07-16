@@ -705,4 +705,25 @@ describe("thread detection jurisdictions", () => {
       "uk",
     ]);
   });
+
+  it("does not let a delayed first-send restore jurisdictions cleared by the picker", async () => {
+    // A transcript snapshot wins the create race, leaving the column uninitialized (NULL)...
+    await store.saveThreadSnapshot("juris-owner", "org-race", "race-juris", [textMessage("m", "user", "start")]);
+    // ...the picker selects and then explicitly clears (which must persist [], not NULL)...
+    await store.setThreadDetectionJurisdictions("juris-owner", "org-race", "race-juris", ["uk"]);
+    await store.setThreadDetectionJurisdictions("juris-owner", "org-race", "race-juris", []);
+    // ...and the fire-and-forget start request arrives last, still carrying the stale selection.
+    await store.startThread(
+      "juris-owner",
+      "org-race",
+      "race-juris",
+      textMessage("m", "user", "start"),
+      false,
+      undefined,
+      ["uk"],
+    );
+    expect(
+      (await store.getThread("juris-owner", "org-race", "race-juris"))?.thread.detectionJurisdictions,
+    ).toBeUndefined();
+  });
 });

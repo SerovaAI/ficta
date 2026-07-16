@@ -13,6 +13,8 @@ export async function previewProtection(input: {
   text: string;
   addValues?: string[];
   removeValues?: string[];
+  /** Covers a not-yet-persisted chat; the server prefers the stored thread's value. */
+  detectionJurisdictions?: string[];
   signal?: AbortSignal;
 }): Promise<GatewayProtectionPreview> {
   const { signal, ...body } = input;

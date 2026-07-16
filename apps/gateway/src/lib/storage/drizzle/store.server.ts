@@ -649,9 +649,11 @@ export function createStorage(): Storage {
     async setThreadDetectionJurisdictions(userId, orgId, threadId, jurisdictions) {
       const db = await getDb();
       // No updatedAt bump: like setThreadModelSettings, a posture change must not reorder history.
+      // An explicit clear persists [] rather than NULL — NULL means "never initialized" and would
+      // let startThread's delayed-starter backfill restore a selection the user just cleared.
       const updated = await db
         .update(threads)
-        .set({ detectionJurisdictions: jurisdictions.length > 0 ? jurisdictions : null })
+        .set({ detectionJurisdictions: jurisdictions })
         .where(and(eq(threads.id, threadId), eq(threads.userId, userId), eq(threads.orgId, orgId)))
         .returning();
       if (updated.length === 0) throw new Error("thread not found");

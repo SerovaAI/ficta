@@ -91,8 +91,12 @@ interface KeyedScopeState {
   lastUsedAt: number;
 }
 
-/** Order-insensitive fingerprint for swept-leaf cache invalidation on profile change. */
-function detectionProfileFingerprint(profile: DetectionProfile | undefined): string {
+/**
+ * Order-insensitive canonical fingerprint of a detection profile. Used for swept-leaf cache
+ * invalidation on profile change, and by the proxy layer to bind protection tickets to the
+ * profile the previewed redaction ran under — one implementation so the two can never drift.
+ */
+export function detectionProfileFingerprint(profile: DetectionProfile | undefined): string {
   return profile ? [...profile.jurisdictions].sort().join(",") : "";
 }
 
@@ -186,7 +190,7 @@ export class ProtectionEngine implements RedactionEngine {
 
   /**
    * Re-run the registry-source plugins and register any NEW values into the shared permanent vault —
-   * the live-registry path (gateway "Publish to proxy" → managed registry file → reload endpoint).
+   * the live-registry path (a caller publishes → managed registry file → reload endpoint).
    * Values arrive already policy-filtered by {@link loadPluginRegistry} (the same enforced-exclusion
    * seam as launch, under the same trusted set). New values are immediately protected: `size` /
    * `protecting` are live, every subsequent `beginRequest` scope (keyed scopes included) stacks over
@@ -415,7 +419,7 @@ class ProtectionRequestScope implements RequestScope {
       const protectedValue: ProtectedValue = {
         name: candidate.name || "USER_SELECTED",
         value,
-        source: candidate.source || "gateway-user",
+        source: candidate.source || "user-selected",
         plugin: candidate.plugin,
         kind: candidate.kind ?? "custom",
         confidence: candidate.confidence ?? "exact",

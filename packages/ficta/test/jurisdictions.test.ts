@@ -12,7 +12,7 @@ import { typedSurrogateStrategy } from "../src/engine/surrogate.js";
 /**
  * Sync gates for the jurisdiction seam: the bundle map, the protocol vocabulary, the default
  * baseline, and the surrogate type table must agree, or a profile toggle silently does nothing (or
- * regresses the NHS-on-ZA-account false positive). The live-sidecar half of this contract (baseline
+ * quietly widens default-traffic detection). The live-sidecar half of this contract (baseline
  * matches /supportedentities) is enforced by scripts/verify-presidio-sidecar.mts.
  */
 describe("jurisdiction bundles", () => {
@@ -20,7 +20,7 @@ describe("jurisdiction bundles", () => {
     expect(Object.keys(JURISDICTION_ENTITY_BUNDLES).sort()).toEqual([...SUPPORTED_DETECTION_JURISDICTIONS].sort());
   });
 
-  it("keeps every UK entity out of the default baseline (the NHS false-positive fence)", () => {
+  it("keeps every UK entity out of the default baseline (profile isolation)", () => {
     for (const entity of JURISDICTION_ENTITY_BUNDLES.uk ?? []) {
       expect(DEFAULT_BASELINE_ENTITIES).not.toContain(entity);
     }
@@ -54,6 +54,12 @@ describe("effectivePresidioEntities", () => {
   it("ignores unknown jurisdiction codes", () => {
     expect(effectivePresidioEntities([], { jurisdictions: ["atlantis"] })).toEqual(DEFAULT_BASELINE_ENTITIES);
   });
+
+  it("ignores inherited object keys without widening or crashing", () => {
+    expect(effectivePresidioEntities([], { jurisdictions: ["constructor", "__proto__", "toString"] })).toEqual(
+      DEFAULT_BASELINE_ENTITIES,
+    );
+  });
 });
 
 describe("detectionProfileFromCodes", () => {
@@ -61,5 +67,9 @@ describe("detectionProfileFromCodes", () => {
     expect(detectionProfileFromCodes([" UK ", "uk", "za", "xx"])).toEqual({ jurisdictions: ["uk", "za"] });
     expect(detectionProfileFromCodes(["xx", ""])).toBeUndefined();
     expect(detectionProfileFromCodes([])).toBeUndefined();
+  });
+
+  it("rejects inherited object keys (prototype members are not jurisdictions)", () => {
+    expect(detectionProfileFromCodes(["constructor", "__proto__", "toString", "hasOwnProperty"])).toBeUndefined();
   });
 });

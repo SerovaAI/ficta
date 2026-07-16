@@ -76,7 +76,7 @@ FICTA_GATEWAY_KEY_ENCRYPTION_SECRET="$(openssl rand -base64 32)"
 ```
 
 For a realistic sensitive-data demo, apply the canonical
-[`packages/ficta/docs/poc-configuration.md`](../../packages/ficta/docs/poc-configuration.md) proxy
+[`docs/poc-configuration.md`](./docs/poc-configuration.md) proxy
 policy. Keep that policy in `~/.ficta/config.toml`; the Gateway `.env` should contain only secrets
 and deployment wiring.
 
@@ -202,7 +202,7 @@ FICTA_PROXY_URL=http://127.0.0.1:8787
 ```
 
 Keep the proxy's protection policy in `~/.ficta/config.toml` using the same
-[canonical POC policy](../../packages/ficta/docs/poc-configuration.md#proxy-policy); do not duplicate
+[canonical POC policy](./docs/poc-configuration.md#proxy-policy); do not duplicate
 it into the Gateway environment.
 
 Run the Presidio sidecar explicitly, for example:
@@ -255,7 +255,7 @@ Web app env:
 | `FICTA_DOC_CONVERTER_URL` | Document-converter sidecar URL for PDF/DOCX extraction | `http://127.0.0.1:5003` |
 
 Proxy policy and backend tuning belong in the proxy TOML file. See the
-[minimal POC contract](../../packages/ficta/docs/poc-configuration.md) first and the fully annotated
+[minimal POC contract](./docs/poc-configuration.md) first and the fully annotated
 [`config.toml.example`](../../packages/ficta/config.toml.example) only when an advanced override is
 actually needed. Source-checkout-only sidecar lifecycle flags remain documented with the development
 workflow rather than the deployment environment.

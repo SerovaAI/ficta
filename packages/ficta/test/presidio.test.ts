@@ -99,9 +99,9 @@ describe("presidio recognizer", () => {
   });
 
   it("always sends an explicit entities allowlist — the default baseline when none is configured", async () => {
-    // Jurisdiction-gated recognizers (e.g. UK NHS) stay loaded in the sidecar registry; an /analyze
-    // payload without `entities` would run all of them for default traffic and re-open the
-    // NHS-matches-ZA-account-numbers false positive. The baseline must therefore be explicit.
+    // Jurisdiction-gated recognizers stay loaded in the sidecar registry; an /analyze payload
+    // without `entities` would run all of them for default traffic, bypassing jurisdiction
+    // gating. The allowlist must therefore always be explicit.
     const text = "contact John Smith";
     const { requests } = await withStub({ analyze: () => [] }, () => presidioRecognizer.detect(text, BODY));
     expect(requests[0]).toMatchObject({ text, language: "en", score_threshold: 0.5 });

@@ -28,6 +28,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { jurisdictionLabel } from "@/lib/detection-jurisdictions";
 import { type ProtectionTone, protectionPresentation } from "@/lib/protection-copy";
 import {
   effectiveProtectionReviewMode,
@@ -40,12 +41,6 @@ import {
 import type { ProtectionStatus } from "@/lib/protection-status";
 import type { RestoreHighlightDisplayMode } from "@/lib/restore-highlights";
 import { useTheme } from "@/lib/use-theme";
-
-const JURISDICTION_LABELS: Record<string, string> = {
-  za: "South Africa",
-  uk: "United Kingdom",
-  us: "United States",
-};
 
 export function TopBar({
   sidebarOpen,
@@ -204,7 +199,7 @@ export function TopBar({
                         ) : (
                           <Circle className="size-4" aria-hidden />
                         )}
-                        <span className="min-w-0 flex-1">{JURISDICTION_LABELS[code] ?? code.toUpperCase()}</span>
+                        <span className="min-w-0 flex-1">{jurisdictionLabel(code)}</span>
                         <span className="text-xs text-muted-foreground">{enabled ? "On" : "Off"}</span>
                       </DropdownMenuItem>
                     );

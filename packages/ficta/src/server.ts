@@ -41,7 +41,7 @@ import { loadConfig, resolveTarget, upstreamPolicyIssue } from "./config.js";
 import { configPosture } from "./config-posture.js";
 import { detectorFailClosed } from "./engine/detection-policy.js";
 import { setEngineWarnSink } from "./engine/diagnostics.js";
-import { ProtectionEngine } from "./engine/engine.js";
+import { detectionProfileFingerprint, ProtectionEngine } from "./engine/engine.js";
 import { detectionProfileFromCodes } from "./engine/plugins/pii/jurisdictions.js";
 import type { DetectionProfile, ProtectedValue } from "./engine/plugins/types.js";
 import { withPreservationInstruction } from "./engine/preserve-literals.js";
@@ -238,7 +238,8 @@ export async function startProxy(
         );
       }
 
-      const scope = engine.beginRequest(scopeKey, { detectionProfile: detectionProfileFrom(c) });
+      const previewDetectionProfile = detectionProfileFrom(c);
+      const scope = engine.beginRequest(scopeKey, { detectionProfile: previewDetectionProfile });
       const selected = preview.protectedValues ?? [];
       scope.registerProtectedValues(selected.map(userProtectedValue));
       try {
@@ -256,6 +257,7 @@ export async function startProxy(
         const textSha256 = sha256(preview.text);
         protectionTickets.set(ticket, {
           scopeKey,
+          profileFingerprint: detectionProfileFingerprint(previewDetectionProfile),
           protectedValues: selected,
           textSha256,
           expiresAt: now + PROTECTION_TICKET_TTL_MS,
@@ -455,7 +457,8 @@ export async function startProxy(
     // another request's response. A trusted caller may pin a persistent per-thread detected vault
     // via the internal scope header (see scopeKeyFrom); isolation then holds across keys instead.
     const scopeKey = scopeKeyFrom(c);
-    const scope = engine.beginRequest(scopeKey, { detectionProfile: detectionProfileFrom(c) });
+    const detectionProfile = detectionProfileFrom(c);
+    const scope = engine.beginRequest(scopeKey, { detectionProfile });
     const egressEvidence = createEgressEvidence({
       scopeKey,
       eventId: egressEventIdFrom(c),
@@ -465,7 +468,14 @@ export async function startProxy(
     let preparedProtectionTicket: ProtectionTicket | undefined;
     if (requestedProtectionTicket) {
       const prepared = protectionTickets.get(requestedProtectionTicket);
-      if (!prepared || prepared.expiresAt <= Date.now() || prepared.scopeKey !== scopeKey) {
+      if (
+        !prepared ||
+        prepared.expiresAt <= Date.now() ||
+        prepared.scopeKey !== scopeKey ||
+        // A ticket approves the preview's redaction; a different detection profile at send time
+        // would redact differently than what the user reviewed.
+        prepared.profileFingerprint !== detectionProfileFingerprint(detectionProfile)
+      ) {
         if (prepared?.expiresAt !== undefined && prepared.expiresAt <= Date.now()) {
           protectionTickets.delete(requestedProtectionTicket);
         }
@@ -1255,6 +1265,8 @@ interface ProtectionTraceAudit {
 
 interface ProtectionTicket {
   scopeKey: string;
+  /** Canonical detection-profile fingerprint the previewed redaction ran under. */
+  profileFingerprint: string;
   protectedValues: string[];
   textSha256: string;
   expiresAt: number;
@@ -1378,8 +1390,8 @@ function userProtectedValue(value: string): ProtectedValue {
   return {
     name: "USER_SELECTED",
     value,
-    source: "gateway-user",
-    plugin: "gateway-preview",
+    source: "user-selected",
+    plugin: "protection-preview",
     kind: "custom",
     confidence: "exact",
   };
