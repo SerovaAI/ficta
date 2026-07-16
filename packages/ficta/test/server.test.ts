@@ -894,9 +894,17 @@ describe("proxy hardening", () => {
 
     const fakeBin = mkdtempSync(join(tmpdir(), "ficta-fake-doppler-"));
     const fakeDoppler = join(fakeBin, "doppler");
-    writeFileSync(fakeDoppler, `#!/bin/sh\nprintf '%s\\n' '{"FICTA_CANARY_SECRET":"${canary}"}'\n`, {
-      mode: 0o700,
-    });
+    writeFileSync(
+      fakeDoppler,
+      `#!/bin/sh
+if [ "$1" = "configure" ]; then
+  printf '%s\n' 'fixture-project' 'fixture-config'
+  exit 0
+fi
+printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
+`,
+      { mode: 0o700 },
+    );
     chmodSync(fakeDoppler, 0o700);
 
     let received = "";

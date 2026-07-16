@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FICTA_MANAGED_REGISTRY_SCHEMA } from "@serovaai/ficta-protocol";
@@ -20,6 +20,7 @@ import {
   USER_EXCLUSION_RULE_ID,
   validatePluginBoundaries,
 } from "../src/plugins/index.js";
+import { renderStartupBanner } from "../src/startup-banner.js";
 
 const ENV_KEYS = [
   "FICTA_CONFIG_FILE",
@@ -442,6 +443,10 @@ describe("registry plugin discovery", () => {
     writeFileSync(
       command,
       `#!/bin/sh
+if [ "$1" = "configure" ]; then
+  printf '%s\n' 'fixture-project' 'fixture-config'
+  exit 0
+fi
 if [ -n "$ANTHROPIC_API_KEY" ]; then
   printf '%s\n' '{"LEAK":"provider-key-was-forwarded"}'
 else
@@ -467,9 +472,15 @@ fi
     const secret = "doppler-provider-fixture-secret-value";
     const bin = mkdtempSync(join(tmpdir(), "ficta-doppler-test-"));
     const command = join(bin, "doppler");
+    const calls = join(bin, "calls.log");
     writeFileSync(
       command,
       `#!/bin/sh
+printf '%s\n' "$*" >> '${calls}'
+if [ "$1" = "configure" ]; then
+  printf '%s\n' 'fixture-project' 'fixture-config'
+  exit 0
+fi
 if [ "$1" != "secrets" ] || [ "$2" != "download" ]; then exit 64; fi
 printf '%s\n' '{"DOPPLER_SECRET":"${secret}","SHORT":"tiny"}'
 `,
@@ -489,6 +500,10 @@ printf '%s\n' '{"DOPPLER_SECRET":"${secret}","SHORT":"tiny"}'
     expect(snapshot.values.some((v) => v.name === "SHORT")).toBe(false);
     expect(doppler?.status).toBe("loaded");
     expect(doppler?.valueCount).toBe(1);
+    expect(readFileSync(calls, "utf8").trim().split("\n")).toEqual([
+      "configure get enclave.project enclave.config --plain --no-check-version --silent",
+      expect.stringMatching(/^secrets download .*--project fixture-project --config fixture-config$/),
+    ]);
     expect(JSON.stringify(snapshot.discoveries)).not.toContain(secret);
   });
 
@@ -497,9 +512,11 @@ printf '%s\n' '{"DOPPLER_SECRET":"${secret}","SHORT":"tiny"}'
     const prodSecret = "doppler-prod-fixture-secret-value";
     const bin = mkdtempSync(join(tmpdir(), "ficta-doppler-test-"));
     const command = join(bin, "doppler");
+    const calls = join(bin, "calls.log");
     writeFileSync(
       command,
       `#!/bin/sh
+printf '%s\n' "$*" >> '${calls}'
 if [ "$1" = "configs" ]; then
   printf '%s\n' '[{"name":"dev"},{"name":"prod"}]'
   exit 0
@@ -539,8 +556,256 @@ exit 64
     expect(doppler?.valueCount).toBe(2);
     expect(doppler?.message).toContain("2/2 config");
     expect(doppler?.details).toEqual(["fixture-project/dev: 1 loaded", "fixture-project/prod: 1 loaded"]);
+    expect(readFileSync(calls, "utf8").trim().split("\n")[0]).toMatch(/^configs /);
+    expect(readFileSync(calls, "utf8")).not.toContain("configure get");
     expect(JSON.stringify(snapshot.discoveries)).not.toContain(devSecret);
     expect(JSON.stringify(snapshot.discoveries)).not.toContain(prodSecret);
+  });
+
+  it.each(["current", "all"])("skips Doppler API operations outside a scoped directory in %s mode", (mode) => {
+    const bin = mkdtempSync(join(tmpdir(), "ficta-doppler-unscoped-test-"));
+    const command = join(bin, "doppler");
+    const calls = join(bin, "calls.log");
+    writeFileSync(
+      command,
+      `#!/bin/sh
+printf '%s\n' "$*" >> '${calls}'
+if [ "$1" = "configure" ]; then
+  printf '\n\n'
+  exit 0
+fi
+printf '%s\n' 'unexpected Doppler API operation' >&2
+exit 70
+`,
+      { mode: 0o700 },
+    );
+    chmodSync(command, 0o700);
+
+    process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+    process.env.FICTA_REGISTRY_DOPPLER_ENABLED = "1";
+    process.env.FICTA_REGISTRY_DOPPLER_COMMAND = command;
+    process.env.FICTA_REGISTRY_DOPPLER_CONFIGS = mode;
+
+    const snapshot = loadPluginRegistry();
+    const doppler = snapshot.discoveries.find((d) => d.id === "doppler-cli/secrets-download");
+    const banner = renderStartupBanner({
+      protectedValues: snapshot.values.length,
+      agentCommand: "codex",
+      baseUrl: "http://127.0.0.1:12345",
+      discoveries: snapshot.discoveries,
+    });
+
+    expect(snapshot.values).toHaveLength(0);
+    expect(doppler?.status).toBe("not_found");
+    expect(doppler?.message).toContain("no Doppler project/config scope resolved");
+    expect(readFileSync(calls, "utf8").trim()).toBe(
+      "configure get enclave.project enclave.config --plain --no-check-version --silent",
+    );
+    expect(banner).not.toContain("attention:");
+  });
+
+  it("uses Doppler routing environment variables without probing local scope", () => {
+    const secret = "doppler-env-routed-fixture-secret";
+    const bin = mkdtempSync(join(tmpdir(), "ficta-doppler-env-routing-test-"));
+    const command = join(bin, "doppler");
+    const calls = join(bin, "calls.log");
+    writeFileSync(
+      command,
+      `#!/bin/sh
+printf '%s\n' "$*" >> '${calls}'
+if [ "$1" != "secrets" ]; then exit 70; fi
+printf '%s\n' '{"DOPPLER_SECRET":"${secret}"}'
+`,
+      { mode: 0o700 },
+    );
+    chmodSync(command, 0o700);
+
+    process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+    process.env.FICTA_REGISTRY_DOPPLER_ENABLED = "1";
+    process.env.FICTA_REGISTRY_DOPPLER_COMMAND = command;
+    process.env.DOPPLER_PROJECT = "env-project";
+    process.env.DOPPLER_CONFIG = "env-config";
+
+    const snapshot = loadPluginRegistry();
+
+    expect(snapshot.values.some((value) => value.value === secret)).toBe(true);
+    expect(readFileSync(calls, "utf8").trim()).toMatch(
+      /^secrets download .*--project env-project --config env-config$/,
+    );
+  });
+
+  it("loads qualified targets and skips unqualified targets when local scope is absent", () => {
+    const secret = "doppler-qualified-fixture-secret";
+    const bin = mkdtempSync(join(tmpdir(), "ficta-doppler-mixed-target-test-"));
+    const command = join(bin, "doppler");
+    const calls = join(bin, "calls.log");
+    writeFileSync(
+      command,
+      `#!/bin/sh
+printf '%s\n' "$*" >> '${calls}'
+if [ "$1" = "configure" ]; then
+  printf '\n\n'
+  exit 0
+fi
+printf '%s\n' '{"QUALIFIED_SECRET":"${secret}"}'
+`,
+      { mode: 0o700 },
+    );
+    chmodSync(command, 0o700);
+
+    process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+    process.env.FICTA_REGISTRY_DOPPLER_ENABLED = "1";
+    process.env.FICTA_REGISTRY_DOPPLER_COMMAND = command;
+    process.env.FICTA_REGISTRY_DOPPLER_CONFIGS = "dev,fixture-project/prod";
+
+    const snapshot = loadPluginRegistry();
+    const doppler = snapshot.discoveries.find((d) => d.id === "doppler-cli/secrets-download");
+    const invocationLines = readFileSync(calls, "utf8").trim().split("\n");
+
+    expect(snapshot.values.some((value) => value.value === secret)).toBe(true);
+    expect(doppler?.status).toBe("loaded");
+    expect(doppler?.details).toContain("dev: skipped (no Doppler scope)");
+    expect(invocationLines).toHaveLength(2);
+    expect(invocationLines[1]).toMatch(/--project fixture-project --config prod$/);
+  });
+
+  it("loads a fully qualified target without probing local scope", () => {
+    const secret = "doppler-qualified-only-fixture-secret";
+    const bin = mkdtempSync(join(tmpdir(), "ficta-doppler-qualified-target-test-"));
+    const command = join(bin, "doppler");
+    const calls = join(bin, "calls.log");
+    writeFileSync(
+      command,
+      `#!/bin/sh
+printf '%s\n' "$*" >> '${calls}'
+if [ "$1" != "secrets" ]; then exit 70; fi
+printf '%s\n' '{"QUALIFIED_SECRET":"${secret}"}'
+`,
+      { mode: 0o700 },
+    );
+    chmodSync(command, 0o700);
+
+    process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+    process.env.FICTA_REGISTRY_DOPPLER_ENABLED = "1";
+    process.env.FICTA_REGISTRY_DOPPLER_COMMAND = command;
+    process.env.FICTA_REGISTRY_DOPPLER_CONFIGS = "fixture-project/prod";
+
+    const snapshot = loadPluginRegistry();
+
+    expect(snapshot.values.some((value) => value.value === secret)).toBe(true);
+    expect(readFileSync(calls, "utf8").trim()).toMatch(/^secrets download .*--project fixture-project --config prod$/);
+  });
+
+  it("lets a Doppler token supply scope without a local probe", () => {
+    const secret = "doppler-token-scoped-fixture-secret";
+    const bin = mkdtempSync(join(tmpdir(), "ficta-doppler-token-scope-test-"));
+    const command = join(bin, "doppler");
+    const calls = join(bin, "calls.log");
+    writeFileSync(
+      command,
+      `#!/bin/sh
+printf '%s\n' "$*" >> '${calls}'
+if [ "$1" != "secrets" ]; then exit 70; fi
+printf '%s\n' '{"TOKEN_SECRET":"${secret}"}'
+`,
+      { mode: 0o700 },
+    );
+    chmodSync(command, 0o700);
+
+    process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+    process.env.FICTA_REGISTRY_DOPPLER_ENABLED = "1";
+    process.env.FICTA_REGISTRY_DOPPLER_COMMAND = command;
+    process.env.DOPPLER_TOKEN = "dp.st.fixture-token";
+
+    const snapshot = loadPluginRegistry();
+
+    expect(snapshot.values.some((value) => value.value === secret)).toBe(true);
+    expect(readFileSync(calls, "utf8").trim()).toMatch(/^secrets download /);
+    expect(readFileSync(calls, "utf8")).not.toContain("configure get");
+  });
+
+  it("treats Doppler's missing-scope fallback as not found without exposing stderr", () => {
+    const stderrCanary = "doppler-stderr-sensitive-fixture";
+    const bin = mkdtempSync(join(tmpdir(), "ficta-doppler-scope-fallback-test-"));
+    const command = join(bin, "doppler");
+    writeFileSync(
+      command,
+      `#!/bin/sh
+printf '%s\n' '${stderrCanary}' 'Doppler Error: You must specify a project' >&2
+exit 1
+`,
+      { mode: 0o700 },
+    );
+    chmodSync(command, 0o700);
+
+    process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+    process.env.FICTA_REGISTRY_DOPPLER_ENABLED = "1";
+    process.env.FICTA_REGISTRY_DOPPLER_COMMAND = command;
+    process.env.DOPPLER_TOKEN = "dp.st.fixture-token";
+
+    const snapshot = loadPluginRegistry();
+    const doppler = snapshot.discoveries.find((d) => d.id === "doppler-cli/secrets-download");
+
+    expect(doppler?.status).toBe("not_found");
+    expect(JSON.stringify(snapshot.discoveries)).not.toContain(stderrCanary);
+  });
+
+  it("keeps genuine Doppler download failures and timeouts as errors", () => {
+    for (const failure of ["command", "timeout"] as const) {
+      const bin = mkdtempSync(join(tmpdir(), "ficta-doppler-failure-test-"));
+      const command = join(bin, "doppler");
+      writeFileSync(
+        command,
+        failure === "timeout"
+          ? "#!/bin/sh\nsleep 1\n"
+          : "#!/bin/sh\nprintf '%s\\n' 'authentication failed' >&2\nexit 1\n",
+        { mode: 0o700 },
+      );
+      chmodSync(command, 0o700);
+
+      process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+      process.env.FICTA_REGISTRY_DOPPLER_ENABLED = "1";
+      process.env.FICTA_REGISTRY_DOPPLER_COMMAND = command;
+      process.env.FICTA_REGISTRY_DOPPLER_TIMEOUT_MS = "250";
+      process.env.DOPPLER_TOKEN = "dp.st.fixture-token";
+      resetPluginCachesForTests();
+
+      const snapshot = loadPluginRegistry();
+      const doppler = snapshot.discoveries.find((d) => d.id === "doppler-cli/secrets-download");
+
+      expect(doppler?.status).toBe("error");
+      expect(doppler?.message).toContain("could not download Doppler secrets");
+    }
+  });
+
+  it.each(["scope-probe", "config-list"])("keeps a genuine Doppler %s failure as an error", (failure) => {
+    const stderrCanary = `doppler-${failure}-stderr-fixture`;
+    const bin = mkdtempSync(join(tmpdir(), "ficta-doppler-command-failure-test-"));
+    const command = join(bin, "doppler");
+    writeFileSync(
+      command,
+      `#!/bin/sh
+printf '%s\n' '${stderrCanary}' >&2
+exit 1
+`,
+      { mode: 0o700 },
+    );
+    chmodSync(command, 0o700);
+
+    process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+    process.env.FICTA_REGISTRY_DOPPLER_ENABLED = "1";
+    process.env.FICTA_REGISTRY_DOPPLER_COMMAND = command;
+    if (failure === "config-list") {
+      process.env.FICTA_REGISTRY_DOPPLER_CONFIGS = "all";
+      process.env.FICTA_REGISTRY_DOPPLER_PROJECT = "fixture-project";
+    }
+
+    const snapshot = loadPluginRegistry();
+    const doppler = snapshot.discoveries.find((d) => d.id === "doppler-cli/secrets-download");
+
+    expect(doppler?.status).toBe("error");
+    expect(doppler?.message).toContain(failure === "config-list" ? "could not list" : "could not inspect");
+    expect(JSON.stringify(snapshot.discoveries)).not.toContain(stderrCanary);
   });
 
   it("loads secret-ish process env only when that source is enabled", () => {
