@@ -49,7 +49,9 @@ docker build -t ficta-doc-converter apps/gateway/sidecars/document-converter
 docker run --rm -p 5003:5003 ficta-doc-converter
 ```
 
-Local:
+Local (`/render` additionally needs the `pandoc` binary on PATH — e.g. `brew install pandoc` or
+`apt-get install pandoc`; without it, conversion still works, `/health` reports
+`render_ready: false`, and `/render` returns 500. The Docker image includes a pinned pandoc):
 
 ```sh
 pip install -r requirements.txt

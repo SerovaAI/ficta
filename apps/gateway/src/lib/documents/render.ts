@@ -9,13 +9,18 @@
 export const MAX_RENDER_MARKDOWN_BYTES = 2 * 1024 * 1024;
 
 /**
- * Reduce an untrusted filename (model-suggested titles reach this) to a header-safe basename with a
- * forced `.docx` extension. Mirrors `_safe_docx_filename` in the sidecar — the route's value is the
- * one that reaches the browser's Content-Disposition, so it sanitizes independently.
+ * Reduce an untrusted filename (model-suggested titles reach this) to a bounded, header-safe
+ * basename with a forced `.docx` extension. Mirrors `_safe_docx_filename` in the sidecar — the
+ * route's value is the one that reaches the browser's Content-Disposition, so it sanitizes
+ * independently.
  */
 export function safeDocxFilename(name: string | null | undefined): string {
   const base = (name ?? "").trim().replace(/\\/g, "/").split("/").pop() ?? "";
   let stem = base.replace(/\.docx$/i, "");
-  stem = stem.replace(/[^\w. ()-]+/g, "_").replace(/^[. ]+|[. ]+$/g, "") || "document";
+  stem =
+    stem
+      .replace(/[^\w. ()-]+/g, "_")
+      .slice(0, 120)
+      .replace(/^[. ]+|[. ]+$/g, "") || "document";
   return `${stem}.docx`;
 }

@@ -29,6 +29,14 @@ export const Route = createFileRoute("/api/render")({
         const scope = scopeFromAuth(auth);
         if (auth.requiresAuth && !scope) return json(401, { error: "Sign in to download documents." });
 
+        // Refuse an oversized declared body before buffering it. The post-parse markdown check
+        // below stays authoritative (chunked requests carry no content-length); the slack covers
+        // the JSON envelope and escaping overhead.
+        const declaredBytes = Number(request.headers.get("content-length"));
+        if (Number.isFinite(declaredBytes) && declaredBytes > MAX_RENDER_MARKDOWN_BYTES * 2) {
+          return json(413, { error: "That document is too large to render as Word." });
+        }
+
         let markdown: string;
         let filename: string | undefined;
         try {

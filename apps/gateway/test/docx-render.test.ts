@@ -31,6 +31,11 @@ describe("safeDocxFilename", () => {
   it("keeps reasonable titles intact", () => {
     expect(safeDocxFilename("Consulting Agreement (v2).docx")).toBe("Consulting Agreement (v2).docx");
   });
+
+  it("bounds an unreasonably long name", () => {
+    const name = safeDocxFilename(`${"A".repeat(500)}.docx`);
+    expect(name).toBe(`${"A".repeat(120)}.docx`);
+  });
 });
 
 describe("MAX_RENDER_MARKDOWN_BYTES", () => {

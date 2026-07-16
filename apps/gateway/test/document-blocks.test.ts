@@ -86,6 +86,15 @@ describe("documentDownloadSource", () => {
     expect(documentDownloadSource(text)).toEqual({ markdown: text, fromFence: false });
   });
 
+  it("uses the last closed fence when a later fence was left unterminated (truncated generation)", () => {
+    const text = `${fenced(CONTRACT)}\n\n\`\`\`ficta:document title="Cut off"\n# Partial`;
+    expect(documentDownloadSource(text)).toEqual({
+      markdown: CONTRACT,
+      title: "Consulting Agreement",
+      fromFence: true,
+    });
+  });
+
   it("returns nothing for blank text", () => {
     expect(documentDownloadSource("   \n")).toBeUndefined();
   });

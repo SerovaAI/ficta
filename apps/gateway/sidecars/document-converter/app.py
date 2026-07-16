@@ -24,6 +24,7 @@ Run:  CONVERTER_BACKEND=markitdown uvicorn app:app --host 0.0.0.0 --port 5003
 import io
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 
@@ -42,7 +43,21 @@ app = FastAPI(title="ficta document-converter", version="1.0")
 
 @app.get("/health")
 def health() -> JSONResponse:
-    return JSONResponse({"status": "ok", "backend": BACKEND, "render_backend": RENDER_BACKEND})
+    # `status` stays liveness (conversion works without pandoc); `render_ready` is the /render
+    # readiness signal: known backend, pandoc on PATH, and a readable reference doc if configured.
+    return JSONResponse(
+        {"status": "ok", "backend": BACKEND, "render_backend": RENDER_BACKEND, "render_ready": _render_ready()}
+    )
+
+
+def _render_ready() -> bool:
+    if RENDER_BACKEND != "pandoc":
+        return False
+    if shutil.which("pandoc") is None:
+        return False
+    if RENDER_REFERENCE_DOCX and not os.access(RENDER_REFERENCE_DOCX, os.R_OK):
+        return False
+    return True
 
 
 @app.post("/convert")
@@ -111,10 +126,10 @@ def _pandoc_docx(markdown: str) -> bytes:
 
 
 def _safe_docx_filename(name: str | None) -> str:
-    """Reduce an untrusted (model-suggested) filename to a header-safe .docx basename."""
+    """Reduce an untrusted (model-suggested) filename to a bounded, header-safe .docx basename."""
     base = os.path.basename((name or "").strip().replace("\\", "/"))
     stem = re.sub(r"\.docx$", "", base, flags=re.IGNORECASE)
-    stem = re.sub(r"[^\w. ()-]+", "_", stem).strip(". ") or "document"
+    stem = re.sub(r"[^\w. ()-]+", "_", stem)[:120].strip(". ") or "document"
     return f"{stem}.docx"
 
 

@@ -6,10 +6,9 @@ import { type DocxDownload, DocxDownloadContext } from "@/lib/documents/use-docx
 
 /**
  * A `ficta:document` fence rendered as a document instead of a code block. While the fence streams,
- * the header is a progress line (title + the clause the model is currently drafting); once closed it
- * becomes the file: Download as Word is the primary action, pre-rendered by the bubble's download
- * hook so the click saves instantly. The children are the fence's markdown, typeset like the rest of
- * the chat — the lawyer reviews the contract here; the panel view is v2.
+ * the header is a progress line (title + the heading the model is currently drafting); once closed
+ * it offers Download as Word, pre-rendered by the bubble's download hook so the click saves
+ * instantly. The children are the fence's markdown, typeset like the rest of the chat.
  */
 export function DocumentCard({
   title,
@@ -56,19 +55,20 @@ export function DocumentCard({
 function DownloadButton({ docx }: { docx: DocxDownload }) {
   const rendering = docx.status === "rendering";
   const blocked = docx.status === "blocked";
-  const label =
-    docx.status === "blocked" || docx.status === "error" ? (docx.message ?? "Download as Word") : "Download as Word";
+  const label = docx.message ?? "Download as Word";
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
+        {/* aria-disabled instead of disabled so the blocked explanation stays reachable by hover
+            and focus (a disabled button receives neither); the click is a no-op while blocked. */}
         <Button
           variant="outline"
           size="sm"
-          className="h-7 gap-1.5 px-2 text-xs"
-          onClick={docx.download}
-          disabled={blocked || rendering}
-          aria-label="Download as Word"
+          className="h-7 gap-1.5 px-2 text-xs aria-disabled:opacity-50"
+          onClick={blocked ? undefined : docx.download}
+          aria-disabled={blocked || rendering}
+          aria-label={label}
         >
           {rendering ? (
             <Loader2 className="size-3.5 animate-spin" aria-hidden />

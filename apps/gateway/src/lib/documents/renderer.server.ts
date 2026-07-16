@@ -74,7 +74,14 @@ const restDocumentRenderer: DocumentRenderer = {
         throw new DocumentRendererUnavailableError("bad_response", "not a docx response");
       }
 
-      const bytes = new Uint8Array(await res.arrayBuffer());
+      // The body read shares the abort signal and can fail independently of the headers arriving.
+      let bytes: Uint8Array<ArrayBuffer>;
+      try {
+        bytes = new Uint8Array(await res.arrayBuffer());
+      } catch (err) {
+        if (isAbortError(err)) throw new DocumentRendererUnavailableError("timeout", `${config.timeoutMs}ms`);
+        throw new DocumentRendererUnavailableError("bad_response", "body read failed");
+      }
       if (bytes.length === 0) throw new DocumentRendererUnavailableError("bad_response", "empty body");
       return { bytes };
     } finally {

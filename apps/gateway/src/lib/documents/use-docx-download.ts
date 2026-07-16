@@ -40,9 +40,10 @@ export function useDocxDownload({ text, streaming }: { text: string; streaming: 
   const markdown = useMemo(() => (source ? stripRestoreHighlightMarkers(source.markdown) : undefined), [source]);
   const blocked = useMemo(() => (markdown ? validateRestoredText(markdown).total > 0 : false), [markdown]);
 
-  // One prepared file per markdown value; a regenerated message simply misses the cache.
+  // One prepared file per markdown value; a regenerated message simply misses the cache. The
+  // in-flight request is keyed the same way so a stale render is never handed out for new text.
   const prepared = useRef<{ markdown: string; blob: Blob; filename: string }>(null);
-  const inflight = useRef<Promise<Blob> | null>(null);
+  const inflight = useRef<{ markdown: string; promise: Promise<Blob> } | null>(null);
   const [state, setState] = useState<{ markdown: string; status: "rendering" | "ready" | "error"; message?: string }>();
 
   const filename = safeDocxFilename(source?.title);
@@ -50,7 +51,7 @@ export function useDocxDownload({ text, streaming }: { text: string; streaming: 
   const ensureRendered = useCallback(async (): Promise<Blob> => {
     if (!markdown) throw new Error("nothing to render");
     if (prepared.current?.markdown === markdown) return prepared.current.blob;
-    if (inflight.current) return inflight.current;
+    if (inflight.current?.markdown === markdown) return inflight.current.promise;
 
     setState({ markdown, status: "rendering" });
     const request = (async () => {
@@ -65,7 +66,7 @@ export function useDocxDownload({ text, streaming }: { text: string; streaming: 
       }
       return res.blob();
     })();
-    inflight.current = request;
+    inflight.current = { markdown, promise: request };
 
     try {
       const blob = await request;
@@ -76,7 +77,7 @@ export function useDocxDownload({ text, streaming }: { text: string; streaming: 
       setState({ markdown, status: "error", message: err instanceof Error ? err.message : FAILED_MESSAGE });
       throw err;
     } finally {
-      inflight.current = null;
+      if (inflight.current?.markdown === markdown) inflight.current = null;
     }
   }, [filename, markdown]);
 

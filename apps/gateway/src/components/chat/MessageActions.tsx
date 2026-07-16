@@ -75,12 +75,15 @@ export function MessageActions({
       {docx && docx.status !== "unavailable" ? (
         <Tooltip>
           <TooltipTrigger asChild>
+            {/* aria-disabled instead of disabled so the blocked explanation stays reachable by
+                hover and focus (a disabled button receives neither); the click is a no-op while
+                blocked. */}
             <Button
               variant="ghost"
               size="icon"
-              className="size-7 text-muted-foreground"
-              onClick={docx.download}
-              disabled={docx.status === "blocked" || docx.status === "rendering"}
+              className="size-7 text-muted-foreground aria-disabled:opacity-50"
+              onClick={docx.status === "blocked" ? undefined : docx.download}
+              aria-disabled={docx.status === "blocked" || docx.status === "rendering"}
               aria-label={docx.message ?? "Download as Word"}
             >
               {docx.status === "rendering" ? (

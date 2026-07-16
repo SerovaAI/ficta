@@ -9,8 +9,8 @@
  * Fenced *text* (not tool-use) is deliberate: the proxy fully restores surrogates in assistant
  * text, while `restoreIntoTools=detected` (the default) withholds registry-layer secrets from
  * tool-call arguments — and registry secrets are exactly the party/matter names contracts are full
- * of. The parser dispatches on the fence info-string (`ficta:<type>`) so v2's `ficta:patch` slots
- * in without touching this file's callers.
+ * of. The parser dispatches on the fence info-string (`ficta:<type>`) so future fence types (e.g.
+ * a `ficta:patch`) slot in without touching this file's callers.
  *
  * Pure string parsing, shared by the download hook, the document-card renderer, and the outbound
  * prompt instruction. No transport, no DOM.
@@ -32,7 +32,7 @@ export const DOCUMENT_FENCE_INSTRUCTION = [
 /** One parsed `ficta:` fence. Offsets are UTF-16 indices into the source text, so callers can slice
  *  around the block and remap span annotations into it. */
 export interface FictaBlock {
-  /** The fence type after the `ficta:` prefix — "document" today, "patch" in v2. */
+  /** The fence type after the `ficta:` prefix — "document" is the only type emitted today. */
   type: string;
   /** `key="value"` pairs from the fence info string (e.g. title). Untrusted model output. */
   attrs: Record<string, string>;
@@ -126,11 +126,16 @@ export interface DocumentDownloadSource {
   fromFence: boolean;
 }
 
-/** What a "Download as Word" click renders. Last *closed* document fence; falls back to the whole
- *  message text so the button still works when the model ignored the fence convention. */
+/** What a "Download as Word" click renders. Last *closed, non-empty* document fence — a trailing
+ *  fence left unterminated (e.g. a truncated generation) never hides an earlier complete one.
+ *  Falls back to the whole message text so the button still works when the model ignored the fence
+ *  convention. */
 export function documentDownloadSource(text: string): DocumentDownloadSource | undefined {
-  const block = lastDocumentBlock(text);
-  if (block?.closed && block.content.trim()) {
+  const closed = parseFictaBlocks(text).filter(
+    (block) => block.type === DOCUMENT_FENCE_TYPE && block.closed && block.content.trim(),
+  );
+  const block = closed[closed.length - 1];
+  if (block) {
     return { markdown: block.content, title: block.attrs.title?.trim() || undefined, fromFence: true };
   }
   if (!text.trim()) return undefined;

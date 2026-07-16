@@ -53,6 +53,9 @@ class SafeDocxFilename(unittest.TestCase):
             "Consulting Agreement (v2).docx",
         )
 
+    def test_bounds_unreasonably_long_names(self):
+        self.assertEqual(_safe_docx_filename("A" * 500 + ".docx"), "A" * 120 + ".docx")
+
 
 @unittest.skipUnless(shutil.which("pandoc"), "pandoc not installed")
 class PandocRender(unittest.TestCase):
