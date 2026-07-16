@@ -144,7 +144,7 @@ function loadDopplerValues(): ProtectedValue[] {
     const result = runDoppler(stats, secretsDownloadArgs(stats, target));
     updateCommandStats(stats, result);
     if (!result.ok) {
-      stats.error ??= commandError(result.error, "download_failed");
+      recordDopplerError(stats, commandError(result.error, "download_failed"));
       stats.configDetails.push({
         label: target.label,
         loaded: 0,
@@ -155,7 +155,7 @@ function loadDopplerValues(): ProtectedValue[] {
 
     const parsed = parseDopplerSecretsJson(result.stdout);
     if (!parsed.ok) {
-      stats.error ??= parsed.reason;
+      recordDopplerError(stats, parsed.reason);
       stats.configDetails.push({ label: target.label, loaded: 0, status: "error" });
       continue;
     }
@@ -567,6 +567,10 @@ function commandError(
 ): NonNullable<DopplerStats["error"]> {
   if (error === "missing_cli" || error === "unsafe_command" || error === "no_scope") return error;
   return fallback;
+}
+
+function recordDopplerError(stats: DopplerStats, error: NonNullable<DopplerStats["error"]>): void {
+  if (!stats.error || (stats.error === "no_scope" && error !== "no_scope")) stats.error = error;
 }
 
 function registryDopplerMode(): DopplerRegistryMode {

@@ -778,6 +778,49 @@ exit 1
     }
   });
 
+  it("reports a genuine later-target failure after an earlier missing-scope target", () => {
+    for (const { failure, body, timeoutMs } of [
+      {
+        failure: "authentication",
+        body: "printf '%s\\n' 'authentication failed' >&2\nexit 1\n",
+        timeoutMs: 5000,
+      },
+      { failure: "timeout", body: "sleep 2\nexit 0\n", timeoutMs: 1000 },
+      { failure: "invalid JSON", body: "printf '%s\\n' 'not-json'\nexit 0\n", timeoutMs: 5000 },
+    ]) {
+      const bin = mkdtempSync(join(tmpdir(), "ficta-doppler-error-precedence-test-"));
+      const command = join(bin, "doppler");
+      const firstCallMarker = join(bin, "first-call-complete");
+      writeFileSync(
+        command,
+        `#!/bin/sh
+if [ ! -f '${firstCallMarker}' ]; then
+  touch '${firstCallMarker}'
+  printf '%s\\n' 'Doppler Error: You must specify a project' >&2
+  exit 1
+fi
+${body}`,
+        { mode: 0o700 },
+      );
+      chmodSync(command, 0o700);
+
+      process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+      process.env.FICTA_REGISTRY_DOPPLER_ENABLED = "1";
+      process.env.FICTA_REGISTRY_DOPPLER_COMMAND = command;
+      process.env.FICTA_REGISTRY_DOPPLER_CONFIGS = "dev,prod";
+      process.env.FICTA_REGISTRY_DOPPLER_TIMEOUT_MS = String(timeoutMs);
+      process.env.DOPPLER_TOKEN = "dp.st.fixture-token";
+      resetPluginCachesForTests();
+
+      const snapshot = loadPluginRegistry();
+      const doppler = snapshot.discoveries.find((d) => d.id === "doppler-cli/secrets-download");
+
+      expect(doppler?.status, failure).toBe("error");
+      expect(doppler?.message, failure).toContain(failure === "invalid JSON" ? "non-JSON" : "could not download");
+      expect(doppler?.details, failure).toEqual(["dev: skipped (no Doppler scope)", "prod: error"]);
+    }
+  });
+
   it.each(["scope-probe", "config-list"])("keeps a genuine Doppler %s failure as an error", (failure) => {
     const stderrCanary = `doppler-${failure}-stderr-fixture`;
     const bin = mkdtempSync(join(tmpdir(), "ficta-doppler-command-failure-test-"));
