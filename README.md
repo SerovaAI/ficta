@@ -150,7 +150,8 @@ pnpm install
 pnpm dev             # proxy + Gateway; auto-uses Doppler when configured, otherwise local .env
 pnpm dev:proxy       # proxy only
 pnpm gateway:dev     # Gateway only
-pnpm sidecars        # Gateway document + PII sidecars via docker-compose.sidecars.yml
+pnpm sidecars        # document converter + Presidio via docker-compose.sidecars.yml
+pnpm sidecars:openmed # additionally start the opt-in OpenMed PII backend
 pnpm sidecars:down
 pnpm check           # static checks, type checks, and tests
 pnpm build
