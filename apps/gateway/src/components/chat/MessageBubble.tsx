@@ -1,4 +1,5 @@
 import type { UIMessage } from "@tanstack/ai-react";
+import { assistantResponseClipboardText } from "@/lib/message-copy";
 import {
   protectionAnnotationsFromPart,
   protectionTextSegments,
@@ -9,15 +10,6 @@ import { MessageActions } from "./MessageActions";
 import { MessageParts } from "./MessageParts";
 import { ProtectionMark } from "./ProtectionMark";
 import { StreamingIndicator } from "./StreamingIndicator";
-
-// The display transcript already carries marker-free visible text (see use-restore-highlight-display),
-// so copy/aria text is a plain join — no marker stripping needed here.
-function textOf(message: UIMessage): string {
-  return message.parts
-    .filter((p): p is Extract<typeof p, { type: "text" }> => p.type === "text")
-    .map((p) => p.content)
-    .join("");
-}
 
 export function MessageBubble({
   message,
@@ -33,7 +25,7 @@ export function MessageBubble({
   restoreDisplayMode: RestoreHighlightDisplayMode;
 }) {
   const isUser = message.role === "user";
-  const text = textOf(message);
+  const copyText = assistantResponseClipboardText(message, restoreDisplayMode);
   const hasVisible = message.parts.some((p) => p.type !== "text" || p.content.length > 0);
 
   if (isUser) {
@@ -47,7 +39,7 @@ export function MessageBubble({
   }
 
   return (
-    <div className="group flex flex-col gap-1">
+    <div className="flex flex-col gap-1">
       <div className={cn("min-w-0 text-foreground")}>
         {streaming && !hasVisible ? (
           <StreamingIndicator />
@@ -55,8 +47,8 @@ export function MessageBubble({
           <MessageParts parts={message.parts} restoreDisplayMode={restoreDisplayMode} />
         )}
       </div>
-      {!streaming && text.length > 0 ? (
-        <MessageActions text={text} onRegenerate={onRegenerate} canRegenerate={canRegenerate} />
+      {!streaming && copyText.length > 0 ? (
+        <MessageActions text={copyText} onRegenerate={onRegenerate} canRegenerate={canRegenerate} />
       ) : null}
     </div>
   );
