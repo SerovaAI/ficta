@@ -6,8 +6,8 @@ import type { DocxDownload } from "@/lib/documents/use-docx-download";
 
 type CopyStatus = "idle" | "copied" | "error";
 
-/** Persistent actions on a completed assistant turn: copy or report the text, download it as Word,
- *  or regenerate the latest response. */
+/** Persistent actions on a completed assistant turn: copy or open a report for the response, download it as Word,
+ *  or regenerate the latest response. The report action forwards the response ID, never its text. */
 export function MessageActions({
   text,
   messageId,
