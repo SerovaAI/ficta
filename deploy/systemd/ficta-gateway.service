@@ -1,0 +1,24 @@
+# Ficta Gateway web app — installed by deploy/install.sh (@REPO_DIR@ is substituted).
+[Unit]
+Description=Ficta Gateway
+After=network-online.target ficta-proxy.service
+Wants=network-online.target ficta-proxy.service
+
+[Service]
+Type=simple
+User=ficta
+Group=ficta
+WorkingDirectory=@REPO_DIR@/apps/gateway
+EnvironmentFile=/etc/ficta/gateway.env
+# Built by `pnpm build` (vite build) — serves the TanStack Start output.
+ExecStart=/usr/bin/node .output/server/index.mjs
+Restart=on-failure
+RestartSec=3
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/ficta
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

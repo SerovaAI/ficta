@@ -1,0 +1,15 @@
+# Ficta proxy policy — installed to ~ficta/.ficta/config.toml by deploy/install.sh.
+# This is the canonical fail-closed POC policy from apps/gateway/docs/poc-configuration.md:
+# provider traffic stays paused until an enabled registry source is healthy and non-empty,
+# secret-shape detection is on, and a detector outage blocks rather than forwards.
+
+[registry]
+require = true
+
+[secret_shapes]
+enabled = true
+
+[pii]
+enabled = true
+backends = ["presidio"]
+fail_closed = true
