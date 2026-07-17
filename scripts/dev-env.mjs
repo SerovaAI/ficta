@@ -164,7 +164,9 @@ function detectGitBuildId(env) {
   const sha = (head.stdout ?? "").trim();
   if (!sha) return undefined;
   const status = spawnSync("git", ["status", "--porcelain"], options);
-  const dirty = status.status === 0 && (status.stdout ?? "").trim() !== "";
+  // A failed status check can't distinguish clean from dirty — skip the id rather than mislabel.
+  if (status.status !== 0) return undefined;
+  const dirty = (status.stdout ?? "").trim() !== "";
   return `dev-${sha}${dirty ? "-dirty" : ""}`;
 }
 

@@ -18,10 +18,9 @@ global_regex_flags: 26
 # per-deployment — there is deliberately no per-request widening.
 #
 # The shipped default (Dockerfile / docker-compose.sidecars.yml) is the SA-legal reference
-# profile ``za,us,mu``: za (home jurisdiction), us (retained for parity with the original
-# baseline — revisit whether a ZA deployment wants US identifiers on by default), mu (Mauritius
-# phone shapes seen in SA legal traffic). Add a code to widen a deployment (e.g. ``uk``); remove
-# one to narrow it. Restart the sidecar after editing.
+# profile ``za,us,mu``: za (home jurisdiction), us (US identifiers), mu (Mauritius phone shapes
+# seen in SA legal traffic). Add a code to widen a deployment (e.g. ``uk``); remove one to narrow
+# it. Restart the sidecar after editing.
 
 recognizers:
   # Recognizers listed here can either be loaded from the recognizers defined in code (type: predefined),

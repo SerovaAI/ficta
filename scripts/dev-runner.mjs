@@ -75,6 +75,16 @@ async function maybeStartPresidio(env) {
   }
 
   if (await healthOk(url, 750)) {
+    // A running analyzer's country scope is boot-time env we cannot introspect or change, and a
+    // fresh container can't bind the same port — so an explicitly requested scope on a reused
+    // sidecar would be silently ignored. Refuse loudly instead of under-detecting.
+    if (env.FICTA_PRESIDIO_SUPPORTED_COUNTRIES !== undefined) {
+      throw new Error(
+        `FICTA_PRESIDIO_SUPPORTED_COUNTRIES is set but a Presidio analyzer is already running at ${url}, ` +
+          "whose country scope cannot be verified or changed. Restart that sidecar with the desired " +
+          "scope (e.g. edit docker-compose.sidecars.yml and rerun `pnpm sidecars`), or unset the variable.",
+      );
+    }
     console.log(`[dev] using existing Presidio analyzer at ${url}`);
     return undefined;
   }

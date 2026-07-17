@@ -918,7 +918,8 @@ export function ChatView({
           <IssueReportDialog
             open={issueReportOpen}
             onOpenChange={setIssueReportOpen}
-            reporterEmail={auth.user.email}
+            // In open (`none`) mode the implicit local account's email is a placeholder, not a contact.
+            reporterEmail={auth.requiresAuth ? auth.user.email : undefined}
             threadId={tid}
           />
         ) : null}

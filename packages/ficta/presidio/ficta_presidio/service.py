@@ -26,9 +26,29 @@ def create_app():
     # `country_code` load only when their code is listed; untagged (locale-agnostic) recognizers
     # always load. Semantics: unset → no filtering (never the case in the shipped image — the
     # Dockerfile defaults the reference profile); set but empty → locale-agnostic only.
+    # A code matching no loaded recognizer fails the boot: a typo (e.g. `gb` for `uk`) or a
+    # country whose recognizers are all disabled in the registry would otherwise silently
+    # under-detect exactly what the deployment asked for.
     countries_env = os.environ.get("FICTA_PRESIDIO_SUPPORTED_COUNTRIES")
     if countries_env is not None:
-        countries = [code.strip() for code in countries_env.split(",") if code.strip()]
+        countries = [code.strip().lower() for code in countries_env.split(",") if code.strip()]
+        # Resolve each recognizer's country exactly as filter_by_countries does (including its
+        # module-path inference fallback) so validation can never disagree with the filter.
+        available = {
+            code
+            for code in (
+                RecognizerListLoader._get_recognizer_country(recognizer)
+                for recognizer in registry.recognizers
+            )
+            if code is not None
+        }
+        unknown = sorted(set(countries) - available)
+        if unknown:
+            raise RuntimeError(
+                "FICTA_PRESIDIO_SUPPORTED_COUNTRIES lists countries with no loaded recognizer: "
+                f"{', '.join(unknown)} (available: {', '.join(sorted(available))}). "
+                "Fix the code or enable that country's recognizers in the registry YAML."
+            )
         registry.recognizers = RecognizerListLoader.filter_by_countries(
             registry.recognizers, countries
         )
