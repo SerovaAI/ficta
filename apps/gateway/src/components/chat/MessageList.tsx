@@ -11,6 +11,7 @@ import { StreamingIndicator } from "./StreamingIndicator";
 export function MessageList({
   messages,
   isLoading,
+  onReport,
   onRegenerate,
   onPickSuggestion,
   restoreDisplayMode,
@@ -19,6 +20,7 @@ export function MessageList({
 }: {
   messages: UIMessage[];
   isLoading: boolean;
+  onReport?: (messageId: string) => void;
   onRegenerate: () => void;
   onPickSuggestion: (prompt: string) => void;
   restoreDisplayMode: RestoreHighlightDisplayMode;
@@ -90,6 +92,7 @@ export function MessageList({
               key={message.id}
               message={message}
               streaming={streaming}
+              onReport={onReport}
               onRegenerate={canRegen ? onRegenerate : undefined}
               canRegenerate={canRegen}
               restoreDisplayMode={restoreDisplayMode}

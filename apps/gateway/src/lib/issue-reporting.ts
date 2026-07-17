@@ -22,6 +22,7 @@ export interface IssueReportInput {
   details: string;
   pagePath?: string;
   threadId?: string;
+  messageId?: string;
 }
 
 export type IssueReportResult =
@@ -46,6 +47,7 @@ export function validateIssueReportInput(value: unknown): IssueReportInput {
     details,
     pagePath: optionalPagePath(input.pagePath),
     threadId: optionalThreadId(input.threadId),
+    messageId: optionalMessageId(input.messageId),
   };
 }
 
@@ -137,6 +139,14 @@ function optionalThreadId(value: unknown): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(value)) {
     throw new Error("Invalid report chat id.");
+  }
+  return value;
+}
+
+function optionalMessageId(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(value)) {
+    throw new Error("Invalid report response id.");
   }
   return value;
 }

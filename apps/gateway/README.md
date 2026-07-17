@@ -47,7 +47,7 @@ Current app capabilities:
 - text-file attachments inlined into chat requests so ficta can redact them;
 - PDF/DOCX conversion through a document-converter sidecar before inlining/redaction;
 - optional WorkOS AuthKit organizations/workspaces (`AUTH_PROVIDER=workos`);
-- optional create-only Linear issue reporting for authenticated users;
+- optional create-only Linear issue reporting for authenticated users, with global and per-response actions;
 - opt-in deleted-chat recovery with independently permissioned records access and automatic live-database purge;
 - open local self-hosting mode (`AUTH_PROVIDER=none`) for development and isolated POCs.
 
@@ -290,7 +290,7 @@ Web app env:
 | `OPENAI_API_KEY` | OpenAI-compatible fallback key; used only when the workspace has no saved OpenAI key | - |
 | `ANTHROPIC_API_KEY` | Anthropic fallback key; used only when the workspace has no saved Anthropic key | - |
 | `FICTA_GATEWAY_KEY_ENCRYPTION_SECRET` | Secret used to encrypt/decrypt admin-saved workspace provider keys | - |
-| `FICTA_GATEWAY_LINEAR_API_KEY` | Server-only Linear personal API key restricted to **Create issues** and the destination team; enables the report icon together with `FICTA_GATEWAY_LINEAR_TEAM_ID` | - |
+| `FICTA_GATEWAY_LINEAR_API_KEY` | Server-only Linear personal API key restricted to **Create issues** and the destination team; enables the global and per-response report actions together with `FICTA_GATEWAY_LINEAR_TEAM_ID` | - |
 | `FICTA_GATEWAY_LINEAR_TEAM_ID` | UUID of the Linear team that receives issue reports | - |
 | `FICTA_GATEWAY_BUILD_ID` | Optional release or commit identifier attached to issue-report diagnostics | - |
 | `AUTH_PROVIDER` | `none` for open local/self-hosted mode, or `workos` for AuthKit | `none` |

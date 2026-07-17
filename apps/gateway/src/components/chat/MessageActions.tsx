@@ -1,4 +1,4 @@
-import { Check, Copy, FileDown, Loader2, RotateCcw } from "lucide-react";
+import { Check, Copy, FileDown, Flag, Loader2, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -6,15 +6,19 @@ import type { DocxDownload } from "@/lib/documents/use-docx-download";
 
 type CopyStatus = "idle" | "copied" | "error";
 
-/** Persistent actions on a completed assistant turn: copy the text, download it as Word, or
- *  regenerate the latest response. */
+/** Persistent actions on a completed assistant turn: copy or report the text, download it as Word,
+ *  or regenerate the latest response. */
 export function MessageActions({
   text,
+  messageId,
+  onReport,
   docx,
   onRegenerate,
   canRegenerate,
 }: {
   text: string;
+  messageId: string;
+  onReport?: (messageId: string) => void;
   docx?: DocxDownload;
   onRegenerate?: () => void;
   canRegenerate?: boolean;
@@ -71,6 +75,22 @@ export function MessageActions({
         </TooltipTrigger>
         <TooltipContent>{copyTooltip}</TooltipContent>
       </Tooltip>
+      {onReport ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 text-muted-foreground"
+              onClick={() => onReport(messageId)}
+              aria-label="Report this response"
+            >
+              <Flag className="size-3.5" aria-hidden />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Report this response</TooltipContent>
+        </Tooltip>
+      ) : null}
       {copyStatus === "error" ? (
         <span className="text-destructive text-xs" role="alert">
           Copy failed
