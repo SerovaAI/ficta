@@ -15,12 +15,14 @@ import { StreamingIndicator } from "./StreamingIndicator";
 export function MessageBubble({
   message,
   streaming,
+  onReport,
   onRegenerate,
   canRegenerate,
   restoreDisplayMode,
 }: {
   message: UIMessage;
   streaming?: boolean;
+  onReport?: (messageId: string) => void;
   onRegenerate?: () => void;
   canRegenerate?: boolean;
   restoreDisplayMode: RestoreHighlightDisplayMode;
@@ -59,7 +61,14 @@ export function MessageBubble({
         )}
       </div>
       {!streaming && copyText.length > 0 ? (
-        <MessageActions text={copyText} docx={docx} onRegenerate={onRegenerate} canRegenerate={canRegenerate} />
+        <MessageActions
+          text={copyText}
+          messageId={message.id}
+          onReport={onReport}
+          docx={docx}
+          onRegenerate={onRegenerate}
+          canRegenerate={canRegenerate}
+        />
       ) : null}
     </div>
   );

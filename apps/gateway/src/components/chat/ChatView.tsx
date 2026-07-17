@@ -81,6 +81,13 @@ import { draftWithSuggestion } from "./suggestionDraft";
 import { ThreadEvidenceDialog } from "./ThreadEvidenceDialog";
 import { TopBar } from "./TopBar";
 
+interface IssueReportSession {
+  /** Remount the dialog for every trigger so drafts never carry between report targets. */
+  key: number;
+  open: boolean;
+  messageId?: string;
+}
+
 /**
  * Owns the conversation: the useChat client, the composer input, and the model choice. A fresh chat on
  * `/` generates its own thread id and, once the first exchange completes, persists a snapshot and syncs
@@ -115,10 +122,18 @@ export function ChatView({
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
   const [confirmSendOpen, setConfirmSendOpen] = useState(false);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
-  const [issueReportOpen, setIssueReportOpen] = useState(false);
+  const [issueReport, setIssueReport] = useState<IssueReportSession>({ key: 0, open: false });
   // Passthrough (unprotected but working) asks for consent once per chat, not on every send.
   const [passthroughAck, setPassthroughAck] = useState(false);
   const [input, setInput] = useState("");
+
+  const openIssueReport = (messageId?: string) => {
+    setIssueReport((current) => ({
+      key: current.key + 1,
+      open: true,
+      ...(messageId ? { messageId } : {}),
+    }));
+  };
   const [modelControls, setModelControls] = useState(() =>
     resolveThreadModelSettings(
       userSettings,
@@ -844,12 +859,13 @@ export function ChatView({
               setRestoreDisplayMode((mode) => (mode === "values" ? "surrogates" : "values"))
             }
             onOpenEvidence={() => setEvidenceOpen(true)}
-            onReportIssue={issueReporting.enabled && auth.user ? () => setIssueReportOpen(true) : undefined}
+            onReportIssue={issueReporting.enabled && auth.user ? () => openIssueReport() : undefined}
           />
 
           <MessageList
             messages={displayMessages}
             isLoading={isLoading}
+            onReport={issueReporting.enabled && auth.user ? openIssueReport : undefined}
             onRegenerate={regenerate}
             onPickSuggestion={pickSuggestion}
             restoreDisplayMode={restoreDisplayMode}
@@ -916,11 +932,13 @@ export function ChatView({
         <ThreadEvidenceDialog open={evidenceOpen} onOpenChange={setEvidenceOpen} threadId={tid} />
         {auth.user ? (
           <IssueReportDialog
-            open={issueReportOpen}
-            onOpenChange={setIssueReportOpen}
+            key={issueReport.key}
+            open={issueReport.open}
+            onOpenChange={(open) => setIssueReport((current) => ({ ...current, open }))}
             // In open (`none`) mode the implicit local account's email is a placeholder, not a contact.
             reporterEmail={auth.requiresAuth ? auth.user.email : undefined}
             threadId={tid}
+            messageId={issueReport.messageId}
           />
         ) : null}
 

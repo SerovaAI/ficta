@@ -30,13 +30,16 @@ describe("issue report input", () => {
         details: "  Composer lost my draft.  ",
         pagePath: "/chat/thread-1",
         threadId: "thread-1",
+        messageId: "assistant-1",
         transcript: "must not cross the boundary",
+        responseText: "must not cross the boundary either",
       }),
     ).toEqual({
       kind: "bug",
       details: "Composer lost my draft.",
       pagePath: "/chat/thread-1",
       threadId: "thread-1",
+      messageId: "assistant-1",
     });
   });
 
@@ -57,6 +60,15 @@ describe("issue report input", () => {
     );
     expect(() => validateIssueReportInput({ kind: "bug", details: "hello", threadId: "x".repeat(129) })).toThrow(
       "chat id",
+    );
+    expect(() => validateIssueReportInput({ kind: "bug", details: "hello", messageId: "invalid/id" })).toThrow(
+      "response id",
+    );
+    expect(() =>
+      validateIssueReportInput({ kind: "bug", details: "hello", messageId: "assistant-1\ninjected" }),
+    ).toThrow("response id");
+    expect(() => validateIssueReportInput({ kind: "bug", details: "hello", messageId: "x".repeat(129) })).toThrow(
+      "response id",
     );
   });
 });
@@ -82,6 +94,7 @@ describe("issue report content", () => {
       userAgent: "Example Browser",
       pagePath: "/chat/thread-123",
       threadId: "thread-123",
+      messageId: "assistant-123",
     });
 
     expect(description).toContain("## Report\n\nThe composer cleared after I changed models.");
@@ -90,6 +103,7 @@ describe("issue report content", () => {
     expect(description).toContain("- Workspace ID: org_123");
     expect(description).toContain("- Gateway build: abc123");
     expect(description).toContain("- Chat ID: thread-123");
+    expect(description).toContain("- Response ID: assistant-123");
     expect(description).not.toContain("transcript");
     expect(description).not.toContain("attachment");
     expect(description).not.toContain("protected value");

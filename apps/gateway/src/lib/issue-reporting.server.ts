@@ -22,6 +22,7 @@ export interface IssueReportContext {
   userAgent?: string;
   pagePath?: string;
   threadId?: string;
+  messageId?: string;
 }
 
 export interface LinearIssueInput {
@@ -67,6 +68,7 @@ export function issueReportDescription(context: IssueReportContext): string {
   const userAgent = cleanMetadata(context.userAgent) || "Not provided";
   const pagePath = cleanMetadata(context.pagePath) || "Not provided";
   const threadId = cleanMetadata(context.threadId) || "Not provided";
+  const messageId = cleanMetadata(context.messageId) || "Not provided";
 
   return [
     "## Report",
@@ -87,6 +89,7 @@ export function issueReportDescription(context: IssueReportContext): string {
     `- Browser: ${userAgent}`,
     `- Page: ${pagePath}`,
     `- Chat ID: ${threadId}`,
+    `- Response ID: ${messageId}`,
   ].join("\n");
 }
 

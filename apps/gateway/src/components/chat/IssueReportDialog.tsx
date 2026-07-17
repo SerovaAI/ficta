@@ -28,11 +28,13 @@ export function IssueReportDialog({
   onOpenChange,
   reporterEmail,
   threadId,
+  messageId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   reporterEmail?: string;
   threadId: string;
+  messageId?: string;
 }) {
   const detailsId = useId();
   const detailsHelpId = useId();
@@ -69,6 +71,7 @@ export function IssueReportDialog({
           details,
           pagePath: window.location.pathname,
           threadId,
+          ...(messageId ? { messageId } : {}),
         },
       });
       if (result.ok) setSuccess(result);
@@ -109,9 +112,11 @@ export function IssueReportDialog({
         ) : (
           <form onSubmit={submit} className="flex flex-col gap-5">
             <DialogHeader>
-              <DialogTitle>Report an issue</DialogTitle>
+              <DialogTitle>{messageId ? "Report this response" : "Report an issue"}</DialogTitle>
               <DialogDescription>
-                Send a bug or feedback directly to the team maintaining this deployment.
+                {messageId
+                  ? "Send a bug or feedback about this response directly to the team maintaining this deployment."
+                  : "Send a bug or feedback directly to the team maintaining this deployment."}
               </DialogDescription>
             </DialogHeader>
 
@@ -156,9 +161,9 @@ export function IssueReportDialog({
             <div className="flex gap-2.5 rounded-lg bg-muted px-3 py-2.5 text-xs leading-5 text-muted-foreground">
               <Info className="mt-0.5 size-4 shrink-0 text-foreground" aria-hidden />
               <p>
-                We'll include {reporterEmail ? <>{reporterEmail}, </> : null}this page and chat ID, your browser,
-                workspace, and app build. Chat messages, attachments, protected values, and diagnostic trace bodies are
-                never included.
+                We'll include {reporterEmail ? <>{reporterEmail}, </> : null}this page and chat ID,
+                {messageId ? " the selected response ID," : ""} your browser, workspace, and app build. Chat messages,
+                attachments, protected values, and diagnostic trace bodies are never included.
               </p>
             </div>
 
