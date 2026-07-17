@@ -5,6 +5,7 @@ import "@fontsource/fragment-mono";
 import { Button } from "@/components/ui/button";
 import { fetchAuthState } from "@/lib/auth/auth";
 import { organizationsQueryOptions } from "@/lib/auth/organizationQueries";
+import { fetchIssueReportingAvailability } from "@/lib/issue-reporting";
 import { fetchInstanceSettings } from "@/lib/storage/settings";
 import styles from "@/styles.css?url";
 
@@ -35,8 +36,8 @@ export const Route = createRootRouteWithContext<RouterContext>()({
     if (auth.requiresAuth && organizationReady) {
       void context.queryClient.prefetchQuery(organizationsQueryOptions);
     }
-    const instance = await fetchInstanceSettings();
-    return { auth, instance };
+    const [instance, issueReporting] = await Promise.all([fetchInstanceSettings(), fetchIssueReportingAvailability()]);
+    return { auth, instance, issueReporting };
   },
   head: () => ({
     meta: [
