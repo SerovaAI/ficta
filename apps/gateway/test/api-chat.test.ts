@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   latestUserText,
   messagesForModel,
+  modelOptionsForProvider,
   requiresProtectionReviewTicket,
   resolveChatTraceEnabled,
   resolveRequestedReasoningEffort,
@@ -91,5 +92,18 @@ describe("resolveRequestedReasoningEffort", () => {
     expect(resolveRequestedReasoningEffort("openai", "gpt-5.6-terra", "max")).toBe("max");
     expect(resolveRequestedReasoningEffort("openai", "gpt-5.6-luna", "none")).toBe("none");
     expect(resolveRequestedReasoningEffort("openai", "gpt-5.6-sol", "extreme")).toBe("medium");
+  });
+});
+
+describe("modelOptionsForProvider", () => {
+  it("disables OpenAI response storage while preserving the selected reasoning effort", () => {
+    expect(modelOptionsForProvider("openai", "high")).toEqual({
+      reasoning: { effort: "high" },
+      store: false,
+    });
+  });
+
+  it("does not add OpenAI-specific model options to Anthropic requests", () => {
+    expect(modelOptionsForProvider("anthropic", "medium")).toBeUndefined();
   });
 });
