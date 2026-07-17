@@ -22,7 +22,7 @@
     "@fontsource/fragment-mono": "^5.2.8",
     "@serovaai/ficta-protocol": "workspace:^",
     "@streamdown/mermaid": "^1.0.2",
-    "@tailwindcss/vite": "4.3.2",
+    "@tailwindcss/vite": "4.3.3",
     "@tanstack/ai": "latest",
     "@tanstack/ai-anthropic": "latest",
     "@tanstack/ai-openai": "latest",
@@ -42,10 +42,10 @@
     "react-dom": "^19.2.0",
     "streamdown": "2.5.0",
     "tailwind-merge": "3.6.0",
-    "tailwindcss": "4.3.2"
+    "tailwindcss": "4.3.3"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.3",
+    "@biomejs/biome": "^2.5.4",
     "@tanstack/react-router-ssr-query": "^1.167.1",
     "@types/node": "^26.1.1",
     "@types/pg": "^8.20.0",
@@ -53,7 +53,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "latest",
     "drizzle-kit": "^0.31.10",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vite": "latest",
     "vitest": "^4.1.10"
   }

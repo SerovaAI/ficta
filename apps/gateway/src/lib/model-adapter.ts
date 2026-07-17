@@ -5,7 +5,7 @@ import {
   FICTA_SCOPE_HEADER,
   FICTA_TRACE_CAPTURE_HEADER,
 } from "@serovaai/ficta-protocol";
-import { anthropicText } from "@tanstack/ai-anthropic";
+import { createAnthropicChat } from "@tanstack/ai-anthropic";
 import { openaiCompatibleText } from "@tanstack/ai-openai/compatible";
 import type { Provider } from "@/lib/models";
 
@@ -57,9 +57,8 @@ export function createModelAdapter({
   if (provider === "anthropic") {
     // ficta routes `/v1/messages` → the Anthropic upstream; the Anthropic adapter emits that wire.
     // The adapter's model param is a known-Claude-id union; the UI supplies a validated id, so cast.
-    return anthropicText(model as Parameters<typeof anthropicText>[0], {
+    return createAnthropicChat(model as Parameters<typeof createAnthropicChat>[0], apiKey, {
       baseURL: FICTA_PROXY_URL,
-      apiKey,
       defaultHeaders,
     });
   }

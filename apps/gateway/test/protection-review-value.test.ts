@@ -18,16 +18,12 @@ describe("normalizeHighlightedProtectionValue", () => {
     expect(normalizeHighlightedProtectionValue(selection)).toBe(expected);
   });
 
-  it.each([
-    "O'Connor",
-    "C++",
-    "ACME-42",
-    "user@example.com",
-    "1,234.56",
-    "§ 4.2",
-  ])("preserves meaningful punctuation in %j", (selection) => {
-    expect(normalizeHighlightedProtectionValue(selection)).toBe(selection);
-  });
+  it.each(["O'Connor", "C++", "ACME-42", "user@example.com", "1,234.56", "§ 4.2"])(
+    "preserves meaningful punctuation in %j",
+    (selection) => {
+      expect(normalizeHighlightedProtectionValue(selection)).toBe(selection);
+    },
+  );
 
   it.each(["", "  ", "!!!", '"..."'])("rejects selection %j when no substantive text remains", (selection) => {
     expect(normalizeHighlightedProtectionValue(selection)).toBe("");

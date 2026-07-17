@@ -16,7 +16,7 @@
   "dependencies": {
     "@fontsource-variable/hanken-grotesk": "^5.2.5",
     "@fontsource/fragment-mono": "^5.2.5",
-    "@tailwindcss/vite": "4.3.2",
+    "@tailwindcss/vite": "4.3.3",
     "@tanstack/react-router": "latest",
     "@tanstack/react-start": "latest",
     "class-variance-authority": "0.7.1",
@@ -26,17 +26,17 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "tailwind-merge": "3.6.0",
-    "tailwindcss": "4.3.2"
+    "tailwindcss": "4.3.3"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.3",
+    "@biomejs/biome": "^2.5.4",
     "@cloudflare/vite-plugin": "latest",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "latest",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vite": "latest",
-    "wrangler": "^4.110.0"
+    "wrangler": "^4.111.0"
   }
 }
