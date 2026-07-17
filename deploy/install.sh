@@ -6,6 +6,7 @@ set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/SerovaAI/ficta.git}"
 REPO_DIR="${REPO_DIR:-/opt/ficta}"
+REPO_REF="${REPO_REF:-}" # branch, tag, or commit to deploy; empty = the checkout's current state
 FICTA_USER="ficta"
 FICTA_HOME="/var/lib/ficta"
 ENV_DIR="/etc/ficta"
@@ -40,8 +41,16 @@ docker compose version >/dev/null || die "docker compose v2 plugin missing"
 systemctl enable --now docker
 
 if ! command -v node >/dev/null || [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]; then
-  log "Node ${NODE_MAJOR}.x (NodeSource)"
-  curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
+  log "Node ${NODE_MAJOR}.x (NodeSource apt repo)"
+  # Configure the repo directly instead of piping NodeSource's bootstrap script into root bash;
+  # apt verifies package signatures against this key from here on.
+  install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key |
+    gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+  chmod a+r /etc/apt/keyrings/nodesource.gpg
+  echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${NODE_MAJOR}.x nodistro main" \
+    > /etc/apt/sources.list.d/nodesource.list
+  apt-get update -q
   apt-get install -y -q nodejs
 else
   log "Node already installed: $(node --version)"
@@ -67,10 +76,20 @@ else
 fi
 chown -R "$FICTA_USER:$FICTA_USER" "$REPO_DIR"
 
+if [ -n "$REPO_REF" ]; then
+  log "Checking out ${REPO_REF}"
+  sudo -u "$FICTA_USER" git -C "$REPO_DIR" fetch --tags origin
+  sudo -u "$FICTA_USER" git -C "$REPO_DIR" checkout --detach "$REPO_REF"
+fi
+DEPLOY_SHA="$(sudo -u "$FICTA_USER" git -C "$REPO_DIR" rev-parse HEAD)"
+install -d -m 0750 "$ENV_DIR"
+printf '%s\n' "$DEPLOY_SHA" > "$ENV_DIR/deployed-revision"
+log "Deploying revision ${DEPLOY_SHA} (recorded in ${ENV_DIR}/deployed-revision)"
+
 log "pnpm install + build (proxy, protocol, gateway)"
-sudo -u "$FICTA_USER" bash -c "cd '$REPO_DIR' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm install --frozen-lockfile"
-sudo -u "$FICTA_USER" bash -c "cd '$REPO_DIR/packages/ficta' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm build"
-sudo -u "$FICTA_USER" bash -c "cd '$REPO_DIR/apps/gateway' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm build"
+(cd "$REPO_DIR" && sudo -u "$FICTA_USER" env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm install --frozen-lockfile)
+(cd "$REPO_DIR/packages/ficta" && sudo -u "$FICTA_USER" env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm build)
+(cd "$REPO_DIR/apps/gateway" && sudo -u "$FICTA_USER" env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm build)
 
 # --- 4. Sidecars + Postgres -------------------------------------------------
 log "Sidecars (document-converter + presidio-analyzer)"
@@ -80,10 +99,18 @@ docker compose -f "$REPO_DIR/docker-compose.sidecars.yml" \
 if grep -qs '^DATABASE_URL=postgres' "$ENV_DIR/gateway.env" 2>/dev/null &&
    ! grep -qs '^DATABASE_URL=postgres://ficta:.*@127.0.0.1' "$ENV_DIR/gateway.env" 2>/dev/null; then
   log "External DATABASE_URL configured — skipping local Postgres container"
+  if docker ps -aq -f name='^ficta-postgres$' | grep -q .; then
+    log "Stopping unused local ficta-postgres container (data volume preserved)"
+    docker stop ficta-postgres >/dev/null && docker rm ficta-postgres >/dev/null
+  fi
 else
   log "Local Postgres container (loopback, persistent volume)"
   if [ ! -f "$ENV_DIR/postgres.env" ]; then
-    install -d -m 0750 "$ENV_DIR"
+    # Never regenerate credentials under an existing deployment: if gateway.env already points at
+    # the local container, a fresh password would strand the data in the volume.
+    if grep -qs 'DATABASE_URL=postgres://ficta:' "$ENV_DIR/gateway.env" 2>/dev/null; then
+      die "$ENV_DIR/gateway.env references the local Postgres container but $ENV_DIR/postgres.env is missing; restore postgres.env from backup (or point DATABASE_URL at your managed instance) before re-running"
+    fi
     printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 24)" > "$ENV_DIR/postgres.env"
     chmod 600 "$ENV_DIR/postgres.env"
   fi
@@ -119,7 +146,7 @@ sed "s|@REPO_DIR@|$REPO_DIR|g" "$REPO_DIR/deploy/systemd/ficta-gateway.service" 
 systemctl daemon-reload
 systemctl enable ficta-proxy ficta-gateway
 
-if grep -q 'CHANGE_ME' "$ENV_DIR/gateway.env"; then
+if grep -Eq '^[A-Za-z_]+=.*CHANGE_ME' "$ENV_DIR/gateway.env"; then
   log "NOT starting services: $ENV_DIR/gateway.env still contains CHANGE_ME placeholders."
   echo "    Edit it, then: systemctl restart ficta-proxy ficta-gateway"
 else

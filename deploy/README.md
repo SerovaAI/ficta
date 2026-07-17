@@ -3,9 +3,11 @@
 An executable version of the operational posture described in
 [`apps/gateway/README.md`](../apps/gateway/README.md) ("Production-Like Gateway Setup") and
 [`apps/gateway/docs/poc-configuration.md`](../apps/gateway/docs/poc-configuration.md). One Linux
-host runs the whole stack; the only external egress is the approved model-provider endpoint.
+host runs the whole stack. The loopback bindings below control *inbound* exposure; restricting
+*outbound* traffic to the approved model-provider endpoint is enforced by your firewall/network
+policy, not by the stack itself — see "Egress allow-list".
 
-```
+```text
 [users' browsers]
       │ HTTPS (your TLS — Caddy example included, or your reverse proxy)
       ▼
@@ -29,9 +31,14 @@ Postgres run under **Docker with `restart: unless-stopped`**, so everything surv
 ## Install
 
 ```sh
-sudo ./deploy/install.sh            # from a checkout, or:
-sudo REPO_URL=https://github.com/SerovaAI/ficta.git ./install.sh
+sudo ./deploy/install.sh                          # from the repository root
+# pin a release/commit, or install from a fork/mirror:
+sudo REPO_REF=v1.2.3 REPO_URL=https://github.com/SerovaAI/ficta.git ./deploy/install.sh
 ```
+
+The exact commit deployed is resolved and recorded in `/etc/ficta/deployed-revision` before the
+build, so repeated installs are attributable and reproducible; set `REPO_REF` to pin a trusted
+tag/commit rather than deploying whatever the checkout happens to be on.
 
 The script is idempotent — re-running it converges the host. It performs, in order:
 
@@ -92,14 +99,24 @@ runbook.
 sudo systemctl restart ficta-proxy ficta-gateway     # services
 sudo reboot                                           # full host: everything must come back on its own
 systemctl status ficta-proxy ficta-gateway            # after reboot
-docker ps                                             # sidecars + postgres running
+docker ps                                             # sidecars up (+ postgres on local-container deployments)
 ```
 
 **Backup** (contains sensitive data — restored transcripts and the surrogate mapping; store per
 the firm's policy)
 
+Database — local Postgres container deployments:
+
 ```sh
 docker exec ficta-postgres pg_dump -U ficta ficta | gzip > ficta-db-$(date +%F).sql.gz
+```
+
+Database — managed `DATABASE_URL` deployments: use your provider's backup/snapshot and
+point-in-time-recovery procedures instead; the container commands here do not apply.
+
+Configuration (all deployments):
+
+```sh
 sudo tar czf ficta-config-$(date +%F).tgz /etc/ficta /var/lib/ficta/.ficta \
     /var/lib/ficta/protected-registry.json
 ```
@@ -111,6 +128,7 @@ backups contain encrypted workspace provider keys and are useless without it.
 
 ```sh
 sudo systemctl stop ficta-gateway ficta-proxy
+# local Postgres container deployments (managed DATABASE_URL: restore via your provider instead):
 gunzip -c ficta-db-<date>.sql.gz | docker exec -i ficta-postgres psql -U ficta ficta
 sudo tar xzf ficta-config-<date>.tgz -C /
 sudo systemctl start ficta-proxy ficta-gateway

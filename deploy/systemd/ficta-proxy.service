@@ -16,7 +16,9 @@ Restart=on-failure
 RestartSec=3
 # Hardening
 NoNewPrivileges=true
-ProtectSystem=full
+# strict: the whole filesystem (including the checkout under /opt) is read-only to the service;
+# mutable runtime state lives only under /var/lib/ficta.
+ProtectSystem=strict
 ReadWritePaths=/var/lib/ficta
 PrivateTmp=true
 
