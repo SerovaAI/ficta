@@ -1,5 +1,117 @@
 # Changelog
 
+## 0.2.0
+
+### Minor Changes
+
+- [#60](https://github.com/SerovaAI/ficta/pull/60) [`083e548`](https://github.com/SerovaAI/ficta/commit/083e5488d8a518b1e9e70ed1dd5b7f25221c15d5) Thanks [@steflsd](https://github.com/steflsd)! - Enable context-bound entity-family surrogates for structured entities in trusted keyed request bodies and document their metadata boundary.
+
+- [`2dbfc1a`](https://github.com/SerovaAI/ficta/commit/2dbfc1ac2b91f36d324a9c8c307c3a3e5223e9bd) Thanks [@steflsd](https://github.com/steflsd)! - Add live managed-registry reloads and Markdown-aware PII case coverage.
+
+- [#40](https://github.com/SerovaAI/ficta/pull/40) [`726f504`](https://github.com/SerovaAI/ficta/commit/726f50408683fd05fc178aab6b89b2f189b00111) Thanks [@steflsd](https://github.com/steflsd)! - Enforce strict managed-registry contracts and separate engine, proxy, protocol, and Gateway responsibilities.
+
+- [#58](https://github.com/SerovaAI/ficta/pull/58) [`b6c2cdf`](https://github.com/SerovaAI/ficta/commit/b6c2cdf913237bc3a36f28492feff37e1a06e6c2) Thanks [@steflsd](https://github.com/steflsd)! - Link unique high-confidence organization aliases to registered entity anchors and report values-free ambiguity counts in protection stats and egress proofs.
+
+- [`7c8272c`](https://github.com/SerovaAI/ficta/commit/7c8272cd293c11ab31b4ab1e9633c2cbe44862c6) Thanks [@steflsd](https://github.com/steflsd)! - Standardize validation commands on `check`, replacing the `verify` and `verify:*` scripts.
+
+- [#50](https://github.com/SerovaAI/ficta/pull/50) [`60cc3a5`](https://github.com/SerovaAI/ficta/commit/60cc3a56f44122a444f914617c106ad0831484e7) Thanks [@steflsd](https://github.com/steflsd)! - Move legal identity recognition into the Presidio sidecar, preserve structured regex protection, and add values-free trace diagnostics.
+
+- [#59](https://github.com/SerovaAI/ficta/pull/59) [`9031dad`](https://github.com/SerovaAI/ficta/commit/9031dad8aebeff406eda86aeca5074d8b8f0a730) Thanks [@steflsd](https://github.com/steflsd)! - Add gated context-bound entity-family surrogate rendering and exact restoration across buffered, streaming, and tool-call transports.
+
+- [#56](https://github.com/SerovaAI/ficta/pull/56) [`e465e5a`](https://github.com/SerovaAI/ficta/commit/e465e5adb883f2ff93a17e0acf3cc7c87ec5f085) Thanks [@steflsd](https://github.com/steflsd)! - Introduce the entity-aware managed registry v1 contract with explicit form boundaries, strict whole-registry validation, and restart-safe live reloads.
+
+- [#66](https://github.com/SerovaAI/ficta/pull/66) [`efe1203`](https://github.com/SerovaAI/ficta/commit/efe120308145ae9e1213fa235bdb407cdd495865) Thanks [@steflsd](https://github.com/steflsd)! - Observe residual surrogate tokens that survive restore. A surrogate-shaped token with no dictionary mapping — mutated, truncated, or invented by the model (e.g. a wildcard entity-family reference like `FICTA_ORG_<entityTag>_*`) — is now counted per response and surfaced as a values-free total in the proxy log (`⚠️ N unrestored surrogate token(s)`), `protection-stats.json`, and the stats summary. Detection covers opaque, typed, and entity-family token shapes plus entity-family prefix fragments, across buffered, streamed, and SSE restore paths. Observe-only: response bytes are unchanged, and restore remains exact-match — unknown tokens are never fuzzily recovered.
+
+- [#79](https://github.com/SerovaAI/ficta/pull/79) [`b96f1b0`](https://github.com/SerovaAI/ficta/commit/b96f1b06cf11453da0e11cece692077d50c80ca8) Thanks [@steflsd](https://github.com/steflsd)! - Country-scoped Presidio registry. The shipped recognizer config (renamed
+  `presidio/default_recognizers.za.yaml` → `presidio/default_recognizers.yaml`) is now fully
+  country-tagged, and the sidecar's `FICTA_PRESIDIO_SUPPORTED_COUNTRIES` env var (default `za,us,mu`,
+  the SA-legal reference profile) decides at load time which country-specific recognizers run;
+  locale-agnostic recognizers always load. Notably, the UK NHS recognizer no longer runs on default
+  traffic — add `uk` to the country scope for UK-matter deployments. `FICTA_PII_PRESIDIO_ENTITIES`
+  is now a pure optional narrowing allowlist: when unset, `/analyze` requests omit the `entities`
+  field and the deployment's loaded registry is the detection surface. The proxy also now strips
+  every inbound `x-ficta-*` header before forwarding upstream, instead of enumerating known ones.
+
+- [#42](https://github.com/SerovaAI/ficta/pull/42) [`35b2e33`](https://github.com/SerovaAI/ficta/commit/35b2e33f0d7f1cf6fdc1fd6a41a3382df9f8d1df) Thanks [@steflsd](https://github.com/steflsd)! - Add a runtime-admin grant for per-chat raw trace capture and decouple capture from log verbosity.
+
+### Patch Changes
+
+- [`b19cf46`](https://github.com/SerovaAI/ficta/commit/b19cf46a1711b3cda5bc873add03e45079352f6b) Thanks [@steflsd](https://github.com/steflsd)! - Align source-checkout Presidio startup, logging-root configuration, and documented runtime defaults.
+
+- [#41](https://github.com/SerovaAI/ficta/pull/41) [`1bd5178`](https://github.com/SerovaAI/ficta/commit/1bd517801a7aefcbf265e8f95cd090e50f4fc8fb) Thanks [@steflsd](https://github.com/steflsd)! - Allow attachment-only Gateway drafts to enter protection review or send with the existing generic review instruction.
+
+- [`2f3bf7f`](https://github.com/SerovaAI/ficta/commit/2f3bf7f7c5744c7f4186570439ed0c9f3601823c) Thanks [@steflsd](https://github.com/steflsd)! - Carry transient UTF-16 source spans through the PII detector contract for offset-based redaction.
+
+- [`737e967`](https://github.com/SerovaAI/ficta/commit/737e9678f42b1febb1b20cfb4f9be91a162bbaae) Thanks [@steflsd](https://github.com/steflsd)! - Consolidate CI, secret scanning, and release automation into one gated workflow run.
+
+- [`0b26f15`](https://github.com/SerovaAI/ficta/commit/0b26f15cef26fbb3a02501da85e4f4afb111f79e) Thanks [@steflsd](https://github.com/steflsd)! - Detect organization names via Presidio NER. Ship an NLP-engine config (`presidio/nlp_engine.za.yaml`, mounted as `NLP_CONF_FILE`) that un-suppresses `ORGANIZATION` — upstream ignores it as "many false positives" — so unregistered client/counterparty/company names get a best-effort catch from spaCy `en_core_web_lg`. This is probabilistic and over-redacts (headings, common nouns); exact confidentiality still comes from the registered-value registry.
+
+- [`af9dea2`](https://github.com/SerovaAI/ficta/commit/af9dea2cd48bef947e15e97d7160520805a9f175) Thanks [@steflsd](https://github.com/steflsd)! - Document routing `ficta claude` through a local Anthropic-compatible proxy via `FICTA_ANTHROPIC_UPSTREAM`, so an alt model (e.g. GPT‑5.6 "sol" behind CLIProxyAPI on a ChatGPT subscription) can run with redaction intact. Loopback upstreams need no `FICTA_ALLOW_CUSTOM_UPSTREAM`.
+
+- [#48](https://github.com/SerovaAI/ficta/pull/48) [`6dd6b82`](https://github.com/SerovaAI/ficta/commit/6dd6b82d2ebe6c446a905452c85d5f8456986b20) Thanks [@steflsd](https://github.com/steflsd)! - Explain restored-value underlines with accessible origin-specific tooltips.
+
+- [`e2eb4a4`](https://github.com/SerovaAI/ficta/commit/e2eb4a4d62d11985fc402274aba9f5a4ecbd5330) Thanks [@steflsd](https://github.com/steflsd)! - Redact embedded case variants of registered and detected entities and add explicit boundary policy for future aliases.
+
+- [`bd8448e`](https://github.com/SerovaAI/ficta/commit/bd8448e420a4da958fccae960e3f74a86e64a3b9) Thanks [@steflsd](https://github.com/steflsd)! - Improve Presidio organization coverage for accounting tables and same-document business variants while filtering structural NER false positives.
+
+- [`f3cbc49`](https://github.com/SerovaAI/ficta/commit/f3cbc4949d9bc28f622a187e5c251d2b1a1f8cdd) Thanks [@steflsd](https://github.com/steflsd)! - Live protected registry: values published from the gateway admin UI take effect in the running proxy without a restart. New `POST /__ficta/registry/reload` (loopback-gated, request body ignored, counts-only response including `skippedTooShort` for values below `FICTA_REGISTRY_MIN_LEN`), `ProtectionEngine.reloadRegistryValues()` registering new managed-file values into the live vault, and a stat-based cache key for the managed-registry plugin (a rewritten file is actually re-read — also fixes stale registry counts in per-request log metadata and `ficta doctor`). Additions are live; deletions still apply on restart (removing a value mid-process would break restore of surrogates already in transcripts). Protocol gains `FICTA_REGISTRY_RELOAD_PATH`, `RegistryReloadOk/Error`, and `isRegistryReloadOk`.
+
+- [`ee44595`](https://github.com/SerovaAI/ficta/commit/ee44595a6ebfb79f96b058022ac99ec70cbc9806) Thanks [@steflsd](https://github.com/steflsd)! - Map compact Markdown detection offsets back to raw request ranges so internally formatted entities are fully redacted.
+
+- [`f3cbc49`](https://github.com/SerovaAI/ficta/commit/f3cbc4949d9bc28f622a187e5c251d2b1a1f8cdd) Thanks [@steflsd](https://github.com/steflsd)! - Close two systemic PII-miss classes observed on markitdown-converted documents:
+
+  - **Markdown-aware NER input**: NLP backends (Presidio/OpenMed) now detect over compact Markdown-normalized text with exact raw-offset mapping (`**bold**`, `\_` escapes, `###` headings, list markers, `~~strike~~`), fixing contaminated spans, internal-formatting gaps, and recall lost to formatting; regex recognizers keep the raw text.
+  - **Case-variant coverage**: an entity detected in one casing is redacted in every casing actually present in the request (title-case prose vs ALL-CAPS headings/signature blocks), for detected PII and word/name-like registry values alike (digit-bearing secrets are never case-folded). Registry-derived variants carry `permanent` provenance, so the `detected` restore-into-tools policy withholds a secret's case twin from tool-call arguments exactly like the canonical form.
+
+- [#70](https://github.com/SerovaAI/ficta/pull/70) [`64335d9`](https://github.com/SerovaAI/ficta/commit/64335d9e8305f7a2c2f7a1f0fd7fc537f9a15754) Thanks [@steflsd](https://github.com/steflsd)! - Neutralize caller-provenance labels: explicit pre-send selections are now recorded with
+  `source: "user-selected"` and `plugin: "protection-preview"` (previously `gateway-user` /
+  `gateway-preview`). The strings appear in protection-preview findings, traces, and stats labels;
+  no behavior depends on them.
+
+- [#34](https://github.com/SerovaAI/ficta/pull/34) [`50a49f7`](https://github.com/SerovaAI/ficta/commit/50a49f7be1e9d5457ff22b5f91d83ff9187d3c74) Thanks [@steflsd](https://github.com/steflsd)! - Add a gateway trace-capture header so raw proxy trace/audit capture can be scoped per chat thread.
+
+- [`2d55f15`](https://github.com/SerovaAI/ficta/commit/2d55f15723805a49acbb82c6bce94ad6670cd22f) Thanks [@steflsd](https://github.com/steflsd)! - Add a loopback-only pre-send protection preview with resolver-authored spans and content-bound, single-use tickets for user-selected chat protections.
+
+- [`0b26f15`](https://github.com/SerovaAI/ficta/commit/0b26f15cef26fbb3a02501da85e4f4afb111f79e) Thanks [@steflsd](https://github.com/steflsd)! - Add an opt-in `FICTA_PRESERVE_LITERALS` mode that injects a system/developer instruction carrying the exact surrogate tokens present in each outbound request, telling the model to reproduce them verbatim. This improves restore reliability: models otherwise truncate or editorialise long opaque tokens (`FICTA_62a02923…`), which leaves them unrestorable. The instruction only ever adds surrogate tokens the proxy already minted (never raw values) and runs after the fail-closed leak gate.
+
+- [`f195c54`](https://github.com/SerovaAI/ficta/commit/f195c54bb903e069315f071a7c0d4244028065ba) Thanks [@steflsd](https://github.com/steflsd)! - Record fail-closed detector outages across body, query, and header surfaces as explicit values-free blocked-request proof events.
+
+- [`aacf45d`](https://github.com/SerovaAI/ficta/commit/aacf45da59635a71f1bc93eb2eaa798851cfeb21) Thanks [@steflsd](https://github.com/steflsd)! - Keep published documentation focused on shipped behavior and public threat-model boundaries, with private strategy and future-roadmap material maintained separately.
+
+- [#39](https://github.com/SerovaAI/ficta/pull/39) [`b60f2bf`](https://github.com/SerovaAI/ficta/commit/b60f2bf2a8c829499bb38491ec73159d96398fc3) Thanks [@steflsd](https://github.com/steflsd)! - Move request captures into lazy `runs/run-*` directories and write current protection stats to `protection-stats.json`.
+
+- [`89da819`](https://github.com/SerovaAI/ficta/commit/89da8193c2d0ff8cec4577f171d9ec46a54b1b05) Thanks [@steflsd](https://github.com/steflsd)! - Enforce required-registry readiness on standalone provider traffic and expose the blocking state to Gateway.
+
+- [#74](https://github.com/SerovaAI/ficta/pull/74) [`f640551`](https://github.com/SerovaAI/ficta/commit/f6405517fc14f7e586e78151b600a587bcd72217) Thanks [@steflsd](https://github.com/steflsd)! - Skip Doppler registry API and secret-loading commands when the launch directory has no resolvable Doppler scope.
+
+- [`f3cbc49`](https://github.com/SerovaAI/ficta/commit/f3cbc4949d9bc28f622a187e5c251d2b1a1f8cdd) Thanks [@steflsd](https://github.com/steflsd)! - Audit attribution now prefers the registry's identity when a value is both a registered secret and a probabilistic detection: the trace/stats report `env-file / secret / exact` (e.g. `CLIENT_CFO`) instead of the detector's guess (`person / pii / high`). Reporting only — span selection, surrogates, restore, and restore-into-tools provenance are unchanged.
+
+- [`7202694`](https://github.com/SerovaAI/ficta/commit/720269476b3631cba3d2fc5122cb366568ca0e6b) Thanks [@steflsd](https://github.com/steflsd)! - Resolve overlapping body entities by source spans so registered values win exact boundaries without partial leaks.
+
+- [`f3cbc49`](https://github.com/SerovaAI/ficta/commit/f3cbc4949d9bc28f622a187e5c251d2b1a1f8cdd) Thanks [@steflsd](https://github.com/steflsd)! - Scope trace-mode restore-highlight markers to assistant output. The highlight triple (the gateway's show/hide toggle format) now rides only on streamed text fragments and their sibling fields; metadata/replay events that echo the request back (`response.created` / `response.in_progress` `instructions`) restore plainly — surrogates still never reach the client, but the echoed preamble is no longer littered with marker sentinels.
+
+- [`7625390`](https://github.com/SerovaAI/ficta/commit/762539003aef48436c50dbdb701caad8f1872e66) Thanks [@steflsd](https://github.com/steflsd)! - Restore repeated document-linked short organization aliases in Presidio identity detection.
+
+- [#47](https://github.com/SerovaAI/ficta/pull/47) [`2f799b0`](https://github.com/SerovaAI/ficta/commit/2f799b08760c6a02532f09a26e4c997908b0f14e) Thanks [@steflsd](https://github.com/steflsd)! - Highlight locally restored response values without requiring sensitive trace capture.
+
+- [`e79624e`](https://github.com/SerovaAI/ficta/commit/e79624e1195c3689dba07eb935b4ea04caca6abd) Thanks [@steflsd](https://github.com/steflsd)! - Separate capture logs by proxy role so concurrent instances no longer share one directory. The
+  standalone/web server now writes under `~/.ficta/logs/gateway/`, and each `ficta <agent>` shim under
+  `~/.ficta/logs/agents/<agent>/<instance>/` (one subtree per process, so two `ficta claude` sessions
+  never interleave `runs/` or race `protection-stats.json`). Set `FICTA_LOG_ROOT` to relocate the root;
+  `FICTA_LOG_DIR` still fully overrides the exact path. Existing `config.toml` files whose
+  `[logging].log_dir` equals the default root are treated as neutral so the split applies.
+
+- [`1ae6497`](https://github.com/SerovaAI/ficta/commit/1ae6497646e95d6bc7dfc9839cfa71a9474ff47e) Thanks [@steflsd](https://github.com/steflsd)! - Preserve contained PII candidates for occurrence resolution and add legal-document ID, Mauritius phone, and ordinal-date Presidio coverage.
+
+- [`8c09e18`](https://github.com/SerovaAI/ficta/commit/8c09e18ada996917759f630f4a8a85b87d3cbb69) Thanks [@steflsd](https://github.com/steflsd)! - Add values-free, per-thread provider-egress evidence for Gateway chats.
+
+- [`89da819`](https://github.com/SerovaAI/ficta/commit/89da8193c2d0ff8cec4577f171d9ec46a54b1b05) Thanks [@steflsd](https://github.com/steflsd)! - Simplify the documented POC configuration and have setup emit only the canonical multi-backend PII setting.
+
+- [`2dbfc1a`](https://github.com/SerovaAI/ficta/commit/2dbfc1ac2b91f36d324a9c8c307c3a3e5223e9bd) Thanks [@steflsd](https://github.com/steflsd)! - Harden live Protected Registry publication: Gateway now writes private registry files atomically, serializes publish transactions, and verifies a per-generation revision echoed by the proxy together with managed-source health counts. Hosted Gateway deployments are explicitly bound to one WorkOS organization via `FICTA_GATEWAY_ORG_ID`, matching the proxy's process-global permanent registry.
+
+- Updated dependencies [[`083e548`](https://github.com/SerovaAI/ficta/commit/083e5488d8a518b1e9e70ed1dd5b7f25221c15d5), [`1bd5178`](https://github.com/SerovaAI/ficta/commit/1bd517801a7aefcbf265e8f95cd090e50f4fc8fb), [`2dbfc1a`](https://github.com/SerovaAI/ficta/commit/2dbfc1ac2b91f36d324a9c8c307c3a3e5223e9bd), [`726f504`](https://github.com/SerovaAI/ficta/commit/726f50408683fd05fc178aab6b89b2f189b00111), [`737e967`](https://github.com/SerovaAI/ficta/commit/737e9678f42b1febb1b20cfb4f9be91a162bbaae), [`af9dea2`](https://github.com/SerovaAI/ficta/commit/af9dea2cd48bef947e15e97d7160520805a9f175), [`b6c2cdf`](https://github.com/SerovaAI/ficta/commit/b6c2cdf913237bc3a36f28492feff37e1a06e6c2), [`f3cbc49`](https://github.com/SerovaAI/ficta/commit/f3cbc4949d9bc28f622a187e5c251d2b1a1f8cdd), [`50a49f7`](https://github.com/SerovaAI/ficta/commit/50a49f7be1e9d5457ff22b5f91d83ff9187d3c74), [`2d55f15`](https://github.com/SerovaAI/ficta/commit/2d55f15723805a49acbb82c6bce94ad6670cd22f), [`f195c54`](https://github.com/SerovaAI/ficta/commit/f195c54bb903e069315f071a7c0d4244028065ba), [`aacf45d`](https://github.com/SerovaAI/ficta/commit/aacf45da59635a71f1bc93eb2eaa798851cfeb21), [`7c8272c`](https://github.com/SerovaAI/ficta/commit/7c8272cd293c11ab31b4ab1e9633c2cbe44862c6), [`89da819`](https://github.com/SerovaAI/ficta/commit/89da8193c2d0ff8cec4577f171d9ec46a54b1b05), [`9031dad`](https://github.com/SerovaAI/ficta/commit/9031dad8aebeff406eda86aeca5074d8b8f0a730), [`e465e5a`](https://github.com/SerovaAI/ficta/commit/e465e5adb883f2ff93a17e0acf3cc7c87ec5f085), [`efe1203`](https://github.com/SerovaAI/ficta/commit/efe120308145ae9e1213fa235bdb407cdd495865), [`2f799b0`](https://github.com/SerovaAI/ficta/commit/2f799b08760c6a02532f09a26e4c997908b0f14e), [`b96f1b0`](https://github.com/SerovaAI/ficta/commit/b96f1b06cf11453da0e11cece692077d50c80ca8), [`8c09e18`](https://github.com/SerovaAI/ficta/commit/8c09e18ada996917759f630f4a8a85b87d3cbb69), [`35b2e33`](https://github.com/SerovaAI/ficta/commit/35b2e33f0d7f1cf6fdc1fd6a41a3382df9f8d1df), [`89da819`](https://github.com/SerovaAI/ficta/commit/89da8193c2d0ff8cec4577f171d9ec46a54b1b05), [`2dbfc1a`](https://github.com/SerovaAI/ficta/commit/2dbfc1ac2b91f36d324a9c8c307c3a3e5223e9bd)]:
+  - @serovaai/ficta-protocol@0.2.0
+
 ## 0.1.3
 
 ### Patch Changes
