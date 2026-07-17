@@ -56,6 +56,13 @@ export function prepareDevEnvironment({ forceDoppler = "auto", disableRegistryDo
     env.FICTA_REGISTRY_DOPPLER_ENABLED = "0";
   }
 
+  if (env.FICTA_GATEWAY_BUILD_ID === undefined) {
+    // Dev builds identify themselves by the running commit so issue reports are traceable; shell and
+    // .env values win, and deployments set a release id explicitly instead.
+    const buildId = detectGitBuildId(env);
+    if (buildId) env.FICTA_GATEWAY_BUILD_ID = buildId;
+  }
+
   return { env, doppler, localEnv, envSummary: envSummary(localEnv) };
 }
 
@@ -141,6 +148,24 @@ function detectDopplerCli(env) {
   if (result.status === 0) return { ok: true, reason: "Doppler CLI found" };
 
   return { ok: false, reason: "Doppler CLI check failed" };
+}
+
+function detectGitBuildId(env) {
+  const options = {
+    cwd: rootDir,
+    env,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 3000,
+    windowsHide: true,
+  };
+  const head = spawnSync("git", ["rev-parse", "--short", "HEAD"], options);
+  if (head.status !== 0) return undefined;
+  const sha = (head.stdout ?? "").trim();
+  if (!sha) return undefined;
+  const status = spawnSync("git", ["status", "--porcelain"], options);
+  const dirty = status.status === 0 && (status.stdout ?? "").trim() !== "";
+  return `dev-${sha}${dirty ? "-dirty" : ""}`;
 }
 
 function loadLocalEnvFiles(env) {

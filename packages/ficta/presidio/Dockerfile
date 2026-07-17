@@ -12,5 +12,10 @@ RUN mkdir -p /home/presidio/.cache/huggingface && chown -R 1001:1001 /home/presi
 COPY --chown=1001:1001 ficta_presidio /app/ficta_presidio
 COPY --chown=1001:1001 --chmod=755 entrypoint.sh /app/ficta-presidio-entrypoint.sh
 
+# Deployment country scope (comma-separated ISO-3166-1 alpha-2). Country-tagged recognizers in the
+# registry load only when listed here; locale-agnostic recognizers always load. The baked default is
+# the SA-legal reference profile; override per deployment. Empty string = locale-agnostic only.
+ENV FICTA_PRESIDIO_SUPPORTED_COUNTRIES="za,us,mu"
+
 USER 1001
 ENTRYPOINT ["/app/ficta-presidio-entrypoint.sh"]

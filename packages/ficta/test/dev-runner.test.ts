@@ -10,7 +10,7 @@ describe("source-checkout Presidio runner", () => {
 
     expect(runner).toContain("FICTA_PII_PRESIDIO_CONFIG_FILE");
     expect(runner).toContain("FICTA_PII_PRESIDIO_NLP_CONFIG_FILE");
-    expect(runner).toContain("default_recognizers.za.yaml");
+    expect(runner).toContain("default_recognizers.yaml");
     expect(runner).toContain("nlp_engine.za.yaml");
     expect(runner).toContain("RECOGNIZER_REGISTRY_CONF_FILE=");
     expect(runner).toContain("NLP_CONF_FILE=");

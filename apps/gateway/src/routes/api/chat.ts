@@ -1,11 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  FICTA_DETECTION_PROFILE_HEADER,
-  FICTA_PROTECTION_PREVIEW_PATH,
-  FICTA_SCOPE_HEADER,
-  isDetectionJurisdiction,
-  isProtectionPreviewOk,
-} from "@serovaai/ficta-protocol";
+import { FICTA_PROTECTION_PREVIEW_PATH, FICTA_SCOPE_HEADER, isProtectionPreviewOk } from "@serovaai/ficta-protocol";
 import { chat, toServerSentEventsResponse } from "@tanstack/ai";
 import { createFileRoute } from "@tanstack/react-router";
 import { scopeFromAuth } from "../../lib/auth/guards.server";
@@ -57,7 +51,6 @@ export const Route = createFileRoute("/api/chat")({
         let messages: Parameters<typeof chat>[0]["messages"];
         let threadId: string | undefined;
         let requestedTraceEnabled = false;
-        let requestedJurisdictions: string[] | undefined;
         let protectionTicket: string | undefined;
         try {
           const body = await request.json();
@@ -65,7 +58,6 @@ export const Route = createFileRoute("/api/chat")({
           model = body.forwardedProps?.model ?? "gpt-5-mini";
           reasoningEffort = resolveRequestedReasoningEffort(provider, model, body.forwardedProps?.reasoningEffort);
           requestedTraceEnabled = body.forwardedProps?.traceEnabled === true;
-          requestedJurisdictions = cleanDetectionJurisdictions(body.forwardedProps?.detectionJurisdictions);
           protectionTicket = cleanProtectionTicket(body.forwardedProps?.protectionTicket);
           messages = messagesForModel(body.messages);
           threadId = typeof body.threadId === "string" ? body.threadId.trim().slice(0, 128) || undefined : undefined;
@@ -96,12 +88,6 @@ export const Route = createFileRoute("/api/chat")({
         }
         if (protectionTicket && !threadId) return errorResponse(400, "a chat id is required for protection review");
 
-        // The chat's jurisdictions widen best-effort PII detection — e.g. UK identifier recognizers
-        // for a UK contract. The stored thread wins; the forwarded value only covers the first send
-        // of a new chat, whose row may not be persisted yet. Codes are validated against the static
-        // supported list and profiles are additive-only, so forged input can at worst over-redact.
-        const detectionProfile = storedThread?.thread.detectionJurisdictions ?? requestedJurisdictions;
-
         let stream: ReturnType<typeof chat>;
         try {
           // The ficta scope key pins a persistent per-thread detected-PII vault in the proxy, so a
@@ -118,12 +104,7 @@ export const Route = createFileRoute("/api/chat")({
             if (protectedValues.length > 0) {
               const currentUserText = latestUserText(messages);
               if (!currentUserText) throw new Error("the current user message could not be prepared for protection");
-              protectionTicket = await prepareStoredThreadProtection(
-                fictaScope,
-                currentUserText,
-                protectedValues,
-                detectionProfile,
-              );
+              protectionTicket = await prepareStoredThreadProtection(fictaScope, currentUserText, protectedValues);
             }
           }
           const apiKey = await resolveProviderApiKey(orgId, provider);
@@ -141,7 +122,6 @@ export const Route = createFileRoute("/api/chat")({
               egressEventId,
               traceEnabled,
               protectionTicket,
-              detectionProfile,
             }),
             messages,
             modelOptions: provider === "openai" ? { reasoning: { effort: reasoningEffort } } : undefined,
@@ -199,31 +179,17 @@ function cleanProtectionTicket(value: unknown): string | undefined {
   return /^[0-9a-f-]{20,80}$/i.test(ticket) ? ticket : undefined;
 }
 
-function cleanDetectionJurisdictions(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const codes = [
-    ...new Set(value.filter((code): code is string => typeof code === "string").map((code) => code.toLowerCase())),
-  ]
-    .filter(isDetectionJurisdiction)
-    .slice(0, 8);
-  return codes.length > 0 ? codes : undefined;
-}
-
 async function prepareStoredThreadProtection(
   fictaScope: string,
   currentUserText: string,
   protectedValues: string[],
-  detectionProfile?: readonly string[],
 ): Promise<string> {
-  // The preview must run under the same detection profile as the send it prepares, or the keyed
-  // scope's swept-leaf cache would flip between profiles on every turn.
   const response = await fetch(`${proxyBaseUrl()}${FICTA_PROTECTION_PREVIEW_PATH}`, {
     method: "POST",
     headers: {
       accept: "application/json",
       "content-type": "application/json",
       [FICTA_SCOPE_HEADER]: fictaScope,
-      ...(detectionProfile?.length ? { [FICTA_DETECTION_PROFILE_HEADER]: detectionProfile.join(",") } : {}),
     },
     body: JSON.stringify({ text: currentUserText, protectedValues }),
   });

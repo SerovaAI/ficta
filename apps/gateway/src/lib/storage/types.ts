@@ -240,12 +240,6 @@ export function resolveSuggestedPrompts(instance: InstanceSettings): string[] {
 export interface ThreadSummary {
   id: string;
   title: string;
-  /**
-   * Jurisdiction codes additively widening best-effort PII detection for this chat (e.g. `uk`
-   * enables UK identifier recognizers). Never narrows the baseline, and not part of the
-   * exact-match registered-value guarantee. Undefined/empty = baseline only.
-   */
-  detectionJurisdictions?: string[];
   /** Undefined on legacy chats until their model controls are next saved. */
   modelSettings?: ThreadModelSettings;
   /** Admin-controlled raw trace/audit capture for future requests in this thread. */

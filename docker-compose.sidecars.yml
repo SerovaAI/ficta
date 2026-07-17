@@ -52,7 +52,7 @@ services:
     ports:
       - "127.0.0.1:5002:3000"
     volumes:
-      - ./packages/ficta/presidio/default_recognizers.za.yaml:/app/ficta-presidio-recognizers.yaml:ro
+      - ./packages/ficta/presidio/default_recognizers.yaml:/app/ficta-presidio-recognizers.yaml:ro
       # The NLP engine still emits raw NER spans internally; the Ficta Presidio recognizer applies the
       # legal-identity admission rules before any span leaves the sidecar.
       - ./packages/ficta/presidio/nlp_engine.za.yaml:/app/ficta-nlp-engine.yaml:ro
@@ -60,6 +60,9 @@ services:
       RECOGNIZER_REGISTRY_CONF_FILE: /app/ficta-presidio-recognizers.yaml
       NLP_CONF_FILE: /app/ficta-nlp-engine.yaml
       FICTA_PRESIDIO_NER: spacy
+      # Deployment country scope: which country-tagged recognizers load (see the registry YAML
+      # header). This is the SA-legal reference profile; edit per deployment and restart.
+      FICTA_PRESIDIO_SUPPORTED_COUNTRIES: "za,us,mu"
     healthcheck:
       test:
         [

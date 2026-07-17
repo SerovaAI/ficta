@@ -4,6 +4,9 @@ import os
 
 from app import Server
 from presidio_analyzer.predefined_recognizers import SpacyRecognizer
+from presidio_analyzer.recognizer_registry.recognizers_loader_utils import (
+    RecognizerListLoader,
+)
 
 from .identity_recognizer import (
     FictaGlinerIdentityRecognizer,
@@ -16,6 +19,19 @@ def create_app():
     server = Server()
     registry = server.engine.registry
     registry.remove_recognizer("SpacyRecognizer")
+
+    # Deployment country scope. The pinned analyzer only exposes country filtering
+    # programmatically (the registry YAML schema forbids a `supported_countries` key), so the
+    # derived image applies the same upstream filter here: recognizers tagged with a
+    # `country_code` load only when their code is listed; untagged (locale-agnostic) recognizers
+    # always load. Semantics: unset → no filtering (never the case in the shipped image — the
+    # Dockerfile defaults the reference profile); set but empty → locale-agnostic only.
+    countries_env = os.environ.get("FICTA_PRESIDIO_SUPPORTED_COUNTRIES")
+    if countries_env is not None:
+        countries = [code.strip() for code in countries_env.split(",") if code.strip()]
+        registry.recognizers = RecognizerListLoader.filter_by_countries(
+            registry.recognizers, countries
+        )
 
     # The gating design depends on no stock NLP recognizer emitting raw PERSON/ORGANIZATION/LOCATION/
     # DATE_TIME spans. remove_recognizer is a silent no-op if the name ever stops matching (an upstream

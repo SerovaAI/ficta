@@ -15,7 +15,7 @@ const SIGNAL_EXIT_CODES = {
 const DEFAULT_PRESIDIO_URL = "http://127.0.0.1:5002";
 const DEFAULT_PRESIDIO_IMAGE = "ficta-presidio:dev";
 const DEFAULT_PRESIDIO_CONTEXT = resolve(rootDir, "packages/ficta/presidio");
-const DEFAULT_PRESIDIO_CONFIG = resolve(rootDir, "packages/ficta/presidio/default_recognizers.za.yaml");
+const DEFAULT_PRESIDIO_CONFIG = resolve(rootDir, "packages/ficta/presidio/default_recognizers.yaml");
 const DEFAULT_PRESIDIO_NLP_CONFIG = resolve(rootDir, "packages/ficta/presidio/nlp_engine.za.yaml");
 const CONTAINER_CONFIG_PATH = "/app/ficta-presidio-recognizers.yaml";
 const CONTAINER_NLP_CONFIG_PATH = "/app/ficta-nlp-engine.yaml";
@@ -122,6 +122,10 @@ async function maybeStartPresidio(env) {
       `RECOGNIZER_REGISTRY_CONF_FILE=${CONTAINER_CONFIG_PATH}`,
       "-e",
       `NLP_CONF_FILE=${CONTAINER_NLP_CONFIG_PATH}`,
+      // Country scope override; the image default is the SA-legal reference profile.
+      ...(env.FICTA_PRESIDIO_SUPPORTED_COUNTRIES !== undefined
+        ? ["-e", `FICTA_PRESIDIO_SUPPORTED_COUNTRIES=${env.FICTA_PRESIDIO_SUPPORTED_COUNTRIES}`]
+        : []),
       image,
     ],
     {
