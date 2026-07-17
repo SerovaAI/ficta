@@ -124,7 +124,7 @@ export const Route = createFileRoute("/api/chat")({
               protectionTicket,
             }),
             messages,
-            modelOptions: provider === "openai" ? { reasoning: { effort: reasoningEffort } } : undefined,
+            modelOptions: modelOptionsForProvider(provider, reasoningEffort),
             middleware:
               threadId && fictaScope && egressEventId
                 ? [
@@ -171,6 +171,11 @@ function reason(err: unknown, fallback: string): string {
 export function resolveRequestedReasoningEffort(provider: string, model: string, value: unknown): ReasoningEffort {
   const effort = isReasoningEffort(value) ? value : DEFAULT_REASONING_EFFORT;
   return normalizeReasoningEffort({ provider, model }, effort);
+}
+
+/** Minimize OpenAI response application-state storage; this does not assert organization-level ZDR. */
+export function modelOptionsForProvider(provider: Provider, reasoningEffort: ReasoningEffort) {
+  return provider === "openai" ? { reasoning: { effort: reasoningEffort }, store: false as const } : undefined;
 }
 
 function cleanProtectionTicket(value: unknown): string | undefined {
