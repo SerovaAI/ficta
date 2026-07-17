@@ -1,6 +1,5 @@
 import { isRecord } from "../../json.js";
 import type { ProtectedValue } from "../types.js";
-import { effectivePresidioEntities } from "./jurisdictions.js";
 import type { PiiRecognizer } from "./recognizer.js";
 
 /**
@@ -41,9 +40,16 @@ export interface PresidioConfig {
   language: string;
   scoreThreshold: number;
   /**
-   * Entity allowlist, sent to the analyzer and re-applied client-side. For the presidio backend an
-   * empty configured list resolves to the default baseline (never "all" — see jurisdictions.ts);
-   * for other presidio-compatible backends (openmed) empty still means all.
+   * Optional entity allowlist (FICTA_PII_PRESIDIO_ENTITIES). Empty (the default) omits the
+   * `entities` field from /analyze: the sidecar runs every recognizer its registry loaded, scoped
+   * at load time by the deployment's country filter (FICTA_PRESIDIO_SUPPORTED_COUNTRIES — see
+   * presidio/default_recognizers.yaml). A non-empty list narrows detection to exactly these types
+   * (sent to the analyzer AND re-applied client-side).
+   *
+   * HAZARD: the sidecar's identity recognizer emits its NER entities (PERSON, ORGANIZATION,
+   * DATE_TIME, LOCATION, COMPANY_REGISTRATION) only when the request either omits `entities` or
+   * lists them. A partial allowlist that names structured types but omits the NER names silently
+   * disables all NER coverage. Configure the complete set you intend, or leave unset.
    */
   entities: readonly string[];
   /** Wall-clock budget for the whole detection call (all chunk requests share one deadline). */
@@ -91,12 +97,12 @@ export const presidioRecognizer: PiiRecognizer = {
   name: "presidio",
   usesNlp: true,
   async detect(text, ctx) {
-    // Resolve the request's entity allowlist here so it is ALWAYS explicit and non-empty: the
-    // sidecar registry keeps jurisdiction-specific recognizers loaded (see jurisdictions.ts), and
-    // an /analyze payload without `entities` would run all of them for default traffic.
-    const config = presidioConfig();
-    const entities = effectivePresidioEntities(config.entities, ctx.detectionProfile);
-    return detectWithPresidioCompatibleAnalyzer(text, ctx, { ...config, entities }, "presidio");
+    // No per-request entity selection: deployment scope is the sidecar registry's load-time
+    // country filter (FICTA_PRESIDIO_SUPPORTED_COUNTRIES / presidio/default_recognizers.yaml).
+    // An /analyze payload without `entities` runs every loaded recognizer — which IS the
+    // deployment's intended detection surface. FICTA_PII_PRESIDIO_ENTITIES remains an optional
+    // narrowing knob.
+    return detectWithPresidioCompatibleAnalyzer(text, ctx, presidioConfig(), "presidio");
   },
 };
 

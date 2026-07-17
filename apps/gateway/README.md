@@ -96,7 +96,7 @@ document-converter sidecar by default so PDF/DOCX uploads work in dev; set
 `FICTA_DOC_CONVERTER_MANAGED=0` to opt out. When the effective env selects
 `FICTA_PII_BACKENDS=presidio`, the dev wrapper can also start or reuse a local Docker
 `presidio-analyzer` sidecar and mount
-`../../packages/ficta/presidio/default_recognizers.za.yaml` plus
+`../../packages/ficta/presidio/default_recognizers.yaml` plus
 `../../packages/ficta/presidio/nlp_engine.za.yaml`; it builds the Ficta-derived Presidio image so
 contextual identity policy runs inside the analyzer.
 
@@ -254,12 +254,16 @@ Run the Presidio sidecar explicitly, for example:
 ```sh
 docker build -t ficta-presidio packages/ficta/presidio
 docker run --rm -p 5002:3000 \
-  -v "$PWD/packages/ficta/presidio/default_recognizers.za.yaml:/app/ficta-presidio-recognizers.yaml:ro" \
+  -v "$PWD/packages/ficta/presidio/default_recognizers.yaml:/app/ficta-presidio-recognizers.yaml:ro" \
   -v "$PWD/packages/ficta/presidio/nlp_engine.za.yaml:/app/ficta-nlp-engine.yaml:ro" \
   -e RECOGNIZER_REGISTRY_CONF_FILE=/app/ficta-presidio-recognizers.yaml \
   -e NLP_CONF_FILE=/app/ficta-nlp-engine.yaml \
+  -e FICTA_PRESIDIO_SUPPORTED_COUNTRIES=za,us,mu \
   ficta-presidio
 ```
+
+`FICTA_PRESIDIO_SUPPORTED_COUNTRIES` scopes which country-tagged recognizers load (default
+`za,us,mu` — the SA-legal reference profile); locale-agnostic recognizers always load.
 
 The derived image keeps Presidio's structured recognizers and replaces raw spaCy results with a
 contextual identity recognizer for people, organizations and aliases, registration numbers,
@@ -292,7 +296,7 @@ Web app env:
 | `FICTA_GATEWAY_KEY_ENCRYPTION_SECRET` | Secret used to encrypt/decrypt admin-saved workspace provider keys | - |
 | `FICTA_GATEWAY_LINEAR_API_KEY` | Server-only Linear personal API key restricted to **Create issues** and the destination team; enables the global and per-response report actions together with `FICTA_GATEWAY_LINEAR_TEAM_ID` | - |
 | `FICTA_GATEWAY_LINEAR_TEAM_ID` | UUID of the Linear team that receives issue reports | - |
-| `FICTA_GATEWAY_BUILD_ID` | Optional release or commit identifier attached to issue-report diagnostics | - |
+| `FICTA_GATEWAY_BUILD_ID` | Optional release or commit identifier attached to issue-report diagnostics; set explicitly for deployments | `dev-<git sha>` under the dev scripts |
 | `AUTH_PROVIDER` | `none` for open local/self-hosted mode, or `workos` for AuthKit | `none` |
 | `FICTA_GATEWAY_ORG_ID` | WorkOS organization assigned to this single-organization Gateway/proxy deployment; required with `AUTH_PROVIDER=workos` | - |
 | `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_REDIRECT_URI`, `WORKOS_COOKIE_PASSWORD` | WorkOS AuthKit + organization/workspace support | - |

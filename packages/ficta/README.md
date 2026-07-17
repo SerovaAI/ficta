@@ -101,10 +101,11 @@ also run the analyzer sidecar explicitly before launching the agent:
 ```sh
 docker build -t ficta-presidio packages/ficta/presidio
 docker run --rm -p 5002:3000 \
-  -v "$PWD/packages/ficta/presidio/default_recognizers.za.yaml:/app/ficta-presidio-recognizers.yaml:ro" \
+  -v "$PWD/packages/ficta/presidio/default_recognizers.yaml:/app/ficta-presidio-recognizers.yaml:ro" \
   -v "$PWD/packages/ficta/presidio/nlp_engine.za.yaml:/app/ficta-nlp-engine.yaml:ro" \
   -e RECOGNIZER_REGISTRY_CONF_FILE=/app/ficta-presidio-recognizers.yaml \
   -e NLP_CONF_FILE=/app/ficta-nlp-engine.yaml \
+  -e FICTA_PRESIDIO_SUPPORTED_COUNTRIES=za,us,mu \
   ficta-presidio
 
 FICTA_PII_ENABLED=1 \
@@ -113,9 +114,11 @@ FICTA_PII_PRESIDIO_URL=http://127.0.0.1:5002 \
 ficta claude
 ```
 
-The bundled recognizer config and default entity baseline are a **reference profile** tuned for
-Southern-Africa legal-document workloads; other locales/domains should supply their own entity
-allowlist or recognizer YAML (see [`docs/plugins.md`](./docs/plugins.md)).
+The bundled recognizer config is a **reference profile** tuned for Southern-Africa legal-document
+workloads. `FICTA_PRESIDIO_SUPPORTED_COUNTRIES` (default `za,us,mu`, baked into the derived image)
+is the deployment scope knob: it decides at load time which country-tagged recognizers run, while
+locale-agnostic recognizers always load. Other locales/domains edit that list or supply their own
+recognizer YAML (see [`docs/plugins.md`](./docs/plugins.md)).
 
 The derived sidecar keeps Presidio's structured recognizers and replaces raw generic NER output with
 a legal-identity recognizer. It admits contextual people and organizations, document-local aliases,

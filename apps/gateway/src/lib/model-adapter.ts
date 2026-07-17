@@ -1,5 +1,4 @@
 import {
-  FICTA_DETECTION_PROFILE_HEADER,
   FICTA_EGRESS_EVENT_HEADER,
   FICTA_PROTECTION_TICKET_HEADER,
   FICTA_RESTORE_HIGHLIGHT_HEADER,
@@ -27,13 +26,6 @@ export interface ModelChoice {
   protectionTicket?: string;
   /** Gateway-generated correlation id for the values-free per-request egress proof. */
   egressEventId?: string;
-  /**
-   * The chat's detection jurisdictions. The stored thread's value wins; a browser-forwarded value
-   * covers only the first send of a new chat and is validated against the supported code list. Sent
-   * as the internal detection-profile header so the proxy additively widens best-effort PII
-   * detection (e.g. UK identifier recognizers). Stripped before upstream.
-   */
-  detectionProfile?: readonly string[];
 }
 
 /**
@@ -51,7 +43,6 @@ export function createModelAdapter({
   traceEnabled = false,
   protectionTicket,
   egressEventId,
-  detectionProfile,
 }: ModelChoice) {
   const defaultHeaders = {
     // Advertises that this client can render restore-highlight markers — a static capability (the UI
@@ -62,7 +53,6 @@ export function createModelAdapter({
     ...(protectionTicket ? { [FICTA_PROTECTION_TICKET_HEADER]: protectionTicket } : {}),
     ...(fictaScope ? { [FICTA_SCOPE_HEADER]: fictaScope } : {}),
     ...(egressEventId ? { [FICTA_EGRESS_EVENT_HEADER]: egressEventId } : {}),
-    ...(detectionProfile?.length ? { [FICTA_DETECTION_PROFILE_HEADER]: detectionProfile.join(",") } : {}),
   };
   if (provider === "anthropic") {
     // ficta routes `/v1/messages` → the Anthropic upstream; the Anthropic adapter emits that wire.

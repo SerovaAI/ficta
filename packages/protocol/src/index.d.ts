@@ -10,12 +10,6 @@ export declare const FICTA_EGRESS_PROOF_PATH = "/__ficta/egress-proof";
 export declare const FICTA_PROTECTION_PREVIEW_PATH = "/__ficta/protection-preview";
 export declare const FICTA_PROTECTION_TICKET_HEADER = "x-ficta-protection-ticket";
 export declare const FICTA_SCOPE_HEADER = "x-ficta-scope";
-/**
- * Comma-separated jurisdiction codes widening best-effort PII detection for one request.
- * Additive-only: codes enable extra detectors on top of the global baseline, never disable any,
- * so a spoofed header can only over-redact. Never forwarded upstream.
- */
-export declare const FICTA_DETECTION_PROFILE_HEADER = "x-ficta-detection-profile";
 /** Correlates a Gateway audit record with one proxy request. Never forwarded upstream. */
 export declare const FICTA_EGRESS_EVENT_HEADER = "x-ficta-egress-event";
 export declare const FICTA_TRACE_CAPTURE_HEADER = "x-ficta-trace-capture";
@@ -27,7 +21,6 @@ export declare const FICTA_RESTORE_HIGHLIGHT_END = "\u001eFICTA_RESTORE_END\u001
 export declare const FICTA_MANAGED_REGISTRY_SCHEMA = "ficta.managed-registry.v1";
 
 export type DetectorFailureMode = "fail-open" | "fail-closed";
-export type DetectionJurisdiction = "za" | "uk" | "us";
 export type PiiStatusState = "off" | "ok" | "degraded" | "blocking";
 export type PiiBackendName = "regex" | "presidio" | "openmed";
 export type ProxyLogLevel = "silent" | "error" | "warn" | "info" | "debug" | "trace";
@@ -60,9 +53,6 @@ export type RuntimeTraceCaptureResponse = RuntimeTraceCaptureOk | RuntimeTraceCa
 export type RestoreIntoToolsPolicy = "all" | "none" | "detected";
 
 export declare const PII_BACKEND_NAMES: readonly PiiBackendName[];
-/** Jurisdiction codes accepted in the detection-profile header; unknown codes are dropped. */
-export declare const SUPPORTED_DETECTION_JURISDICTIONS: readonly DetectionJurisdiction[];
-export declare function isDetectionJurisdiction(value: unknown): value is DetectionJurisdiction;
 export declare const RESTORE_INTO_TOOLS_POLICIES: readonly RestoreIntoToolsPolicy[];
 export declare const PROXY_LOG_LEVELS: readonly ProxyLogLevel[];
 

@@ -679,58 +679,6 @@ describe("threads + messages", () => {
   });
 });
 
-describe("thread detection jurisdictions", () => {
-  it("sets, hydrates, and clears a chat's jurisdictions", async () => {
-    await store.saveThreadSnapshot("owner", ORG, "t-juris", [textMessage("m1", "user", "hello")]);
-
-    await store.setThreadDetectionJurisdictions("owner", ORG, "t-juris", ["uk", "za"]);
-    expect((await store.getThread("owner", ORG, "t-juris"))?.thread.detectionJurisdictions).toEqual(["uk", "za"]);
-
-    await store.setThreadDetectionJurisdictions("owner", ORG, "t-juris", []);
-    expect((await store.getThread("owner", ORG, "t-juris"))?.thread.detectionJurisdictions).toBeUndefined();
-
-    await expect(store.setThreadDetectionJurisdictions("someone-else", ORG, "t-juris", ["uk"])).rejects.toThrow(
-      "thread not found",
-    );
-  });
-
-  it("can create a new thread with jurisdictions already set (first-send race)", async () => {
-    await store.startThread(
-      "juris-owner",
-      "org-first",
-      "first-juris",
-      textMessage("m", "user", "start"),
-      false,
-      undefined,
-      ["uk"],
-    );
-    expect((await store.getThread("juris-owner", "org-first", "first-juris"))?.thread.detectionJurisdictions).toEqual([
-      "uk",
-    ]);
-  });
-
-  it("does not let a delayed first-send restore jurisdictions cleared by the picker", async () => {
-    // A transcript snapshot wins the create race, leaving the column uninitialized (NULL)...
-    await store.saveThreadSnapshot("juris-owner", "org-race", "race-juris", [textMessage("m", "user", "start")]);
-    // ...the picker selects and then explicitly clears (which must persist [], not NULL)...
-    await store.setThreadDetectionJurisdictions("juris-owner", "org-race", "race-juris", ["uk"]);
-    await store.setThreadDetectionJurisdictions("juris-owner", "org-race", "race-juris", []);
-    // ...and the fire-and-forget start request arrives last, still carrying the stale selection.
-    await store.startThread(
-      "juris-owner",
-      "org-race",
-      "race-juris",
-      textMessage("m", "user", "start"),
-      false,
-      undefined,
-      ["uk"],
-    );
-    expect(
-      (await store.getThread("juris-owner", "org-race", "race-juris"))?.thread.detectionJurisdictions,
-    ).toBeUndefined();
-  });
-});
-
 describe("deleted-thread recovery", () => {
   it("records values-free policy changes when an administrator actor is supplied", async () => {
     const orgId = "org-retention-policy-audit";

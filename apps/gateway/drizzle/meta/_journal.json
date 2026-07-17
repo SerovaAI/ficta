@@ -92,6 +92,13 @@
       "when": 1784210427478,
       "tag": "0012_deleted-thread-recovery",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784266503473,
+      "tag": "0013_drop-detection-jurisdictions",
+      "breakpoints": true
     }
   ]
 }

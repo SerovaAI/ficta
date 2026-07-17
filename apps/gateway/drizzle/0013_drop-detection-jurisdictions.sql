@@ -1,0 +1,1 @@
+ALTER TABLE "threads" DROP COLUMN "detection_jurisdictions";

@@ -2,21 +2,25 @@ supported_languages:
   - en
 global_regex_flags: 26
 
-# Ficta's local Presidio registry. This starts from Presidio's default registry, enables
-# South African ID recognition, and adds context-weighted legal-document ID and Mauritius phone
-# recognizers. Company-registration, contextual date/address, alias, and OCR handling live in the
-# Ficta recognizer registered by the derived Presidio image. Keep this file as a complete registry config; Presidio's Docker
+# Ficta's local Presidio registry: a complete, country-tagged registry config scoped at load
+# time by the ``FICTA_PRESIDIO_SUPPORTED_COUNTRIES`` env var (see below). Company-registration,
+# contextual date/address, alias, and OCR handling live in the Ficta recognizer registered by the
+# derived Presidio image. Keep this file as a complete registry config; Presidio's Docker
 # RECOGNIZER_REGISTRY_CONF_FILE replaces the default registry rather than overlaying it.
 
-# To restrict the loaded predefined recognizers to a subset of countries
-# (mirrors ``supported_languages``), uncomment ``supported_countries`` and
-# list ISO-3166-1 alpha-2 codes (case-insensitive). Locale-agnostic
-# recognizers (those without a ``country_code`` below) are always loaded
-# regardless of this filter.
+# Deployment scope: the ``FICTA_PRESIDIO_SUPPORTED_COUNTRIES`` env var (comma-separated
+# ISO-3166-1 alpha-2, case-insensitive) controls which country-tagged recognizers below load.
+# The pinned analyzer only exposes country filtering programmatically — its registry YAML schema
+# rejects a top-level ``supported_countries`` key — so the derived image applies the filter in
+# ``ficta_presidio/service.py``. Locale-agnostic recognizers (those without a ``country_code``
+# below) always load regardless. Country-specific recognizers are only sound inside their home
+# jurisdiction (e.g. UK_PASSPORT matches any 9-digit run), so scope stays load-time and
+# per-deployment — there is deliberately no per-request widening.
 #
-# supported_countries:
-#   - us
-#   - uk
+# The shipped default (Dockerfile / docker-compose.sidecars.yml) is the SA-legal reference
+# profile ``za,us,mu``: za (home jurisdiction), us (US identifiers), mu (Mauritius phone shapes
+# seen in SA legal traffic). Add a code to widen a deployment (e.g. ``uk``); remove one to narrow
+# it. Restart the sidecar after editing.
 
 recognizers:
   # Recognizers listed here can either be loaded from the recognizers defined in code (type: predefined),
@@ -81,9 +85,9 @@ recognizers:
     enabled: false
     country_code: us
 
-  # UK recognizers are LOADED but reachable only through a `uk` detection profile: every ficta
-  # /analyze request sends an explicit entity allowlist (see src/engine/plugins/pii/jurisdictions.ts)
-  # and the default baseline excludes UK types, so these recognizers never run on default traffic.
+  # UK recognizers stay defined here but only load when a deployment adds `uk` to
+  # FICTA_PRESIDIO_SUPPORTED_COUNTRIES. Outside the UK they false-positive heavily (UK_PASSPORT
+  # is any 9-digit run; UK_NHS passes mod-11 on ~10% of arbitrary 10-digit numbers).
   - name: NhsRecognizer
     supported_languages:
     - en
@@ -243,6 +247,7 @@ recognizers:
       context: [phone, telephone, mobile, contact, call, reached]
     type: custom
     enabled: true
+    country_code: mu
     supported_entity: PHONE_NUMBER
     patterns:
     - name: Mauritius international telephone number
@@ -251,7 +256,9 @@ recognizers:
 
   # Municipal/utility account numbers (e.g. City of Johannesburg tax invoices) are bare 9-11 digit
   # runs with no checksum, so the base score stays below ficta's 0.5 threshold and only the context
-  # enhancer (nearby "account"/"rekening" wording) can promote a match.
+  # enhancer (nearby "account"/"rekening" wording) can promote a match. Deliberately locale-agnostic
+  # (an account number is confidential anywhere); the Afrikaans context words are additive tokens,
+  # harmless outside ZA.
   - name: FictaAccountNumberRecognizer
     supported_languages:
     - language: en

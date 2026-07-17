@@ -19,7 +19,6 @@ import { isAdmin } from "@/lib/auth/types";
 import { useAuthState } from "@/lib/auth/useAuthState";
 import { chatErrorMessage } from "@/lib/chat-error-copy";
 import { hasComposerDraft } from "@/lib/composer-submit";
-import { toggleDetectionJurisdiction as toggleJurisdictionSelection } from "@/lib/detection-jurisdictions";
 import { DOCUMENT_FENCE_INSTRUCTION } from "@/lib/documents/document-blocks";
 import {
   extractDocumentAttachment,
@@ -61,13 +60,7 @@ import { reportRestoreValidation } from "@/lib/restore-validation";
 import { uiToStored } from "@/lib/storage/messages";
 import { suggestProtectedRegistryEntries } from "@/lib/storage/protected-registry";
 import { invalidateThreads, threadKeys } from "@/lib/storage/threadQueries";
-import {
-  saveThread,
-  setThreadDetectionJurisdictions,
-  setThreadModelSettings,
-  setThreadTraceEnabled,
-  startThread,
-} from "@/lib/storage/threads";
+import { saveThread, setThreadModelSettings, setThreadTraceEnabled, startThread } from "@/lib/storage/threads";
 import type { ThreadModelSettings, ThreadSummary, UserSettings } from "@/lib/storage/types";
 import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
 import { resolveThreadModelSettings, toThreadModelSettings } from "@/lib/thread-model-settings";
@@ -81,15 +74,12 @@ import { ChatSidebar } from "./ChatSidebar";
 import { Composer, type ComposerHandle } from "./Composer";
 import { ErrorBanner } from "./ErrorBanner";
 import { IssueReportDialog } from "./IssueReportDialog";
-import { JurisdictionSidebar } from "./JurisdictionSidebar";
 import { MessageList } from "./MessageList";
 import { ProtectionNotice } from "./ProtectionNotice";
 import { ProtectionReview, ProtectionReviewLoading } from "./ProtectionReview";
 import { draftWithSuggestion } from "./suggestionDraft";
 import { ThreadEvidenceDialog } from "./ThreadEvidenceDialog";
 import { TopBar } from "./TopBar";
-
-const JURISDICTION_SIDEBAR_KEY = "ficta-jurisdiction-sidebar";
 
 interface IssueReportSession {
   /** Remount the dialog for every trigger so drafts never carry between report targets. */
@@ -110,14 +100,12 @@ export function ChatView({
   initialMessages,
   initialThreadModelSettings,
   initialThreadTraceEnabled,
-  initialThreadDetectionJurisdictions,
 }: {
   userSettings?: UserSettings;
   threadId?: string;
   initialMessages?: UIMessage[];
   initialThreadModelSettings?: ThreadModelSettings;
   initialThreadTraceEnabled?: boolean;
-  initialThreadDetectionJurisdictions?: string[];
 } = {}) {
   const queryClient = useQueryClient();
   const auth = useAuthState();
@@ -128,8 +116,6 @@ export function ChatView({
   const protectionStatus = useProtectionStatus();
   const issueReporting = useIssueReportingAvailability();
   const composerRef = useRef<ComposerHandle>(null);
-  const jurisdictionPanelTriggerRef = useRef<HTMLButtonElement>(null);
-  const jurisdictionDrawerTriggerRef = useRef<HTMLButtonElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminTarget, setAdminTarget] = useState<AdminSettingsTarget>();
@@ -137,8 +123,6 @@ export function ChatView({
   const [confirmSendOpen, setConfirmSendOpen] = useState(false);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [issueReport, setIssueReport] = useState<IssueReportSession>({ key: 0, open: false });
-  const [jurisdictionDesktopOpen, setJurisdictionDesktopOpen] = useState(true);
-  const [jurisdictionDrawerOpen, setJurisdictionDrawerOpen] = useState(false);
   // Passthrough (unprotected but working) asks for consent once per chat, not on every send.
   const [passthroughAck, setPassthroughAck] = useState(false);
   const [input, setInput] = useState("");
@@ -171,10 +155,6 @@ export function ChatView({
   const [activeThreadId, setActiveThreadId] = useState(threadId);
   const [threadTraceEnabled, setThreadTraceEnabledState] = useState(initialThreadTraceEnabled ?? false);
   const [threadTraceError, setThreadTraceError] = useState(false);
-  const [threadDetectionJurisdictions, setThreadDetectionJurisdictionsState] = useState<string[]>(
-    initialThreadDetectionJurisdictions ?? [],
-  );
-  const [detectionJurisdictionsSaveError, setDetectionJurisdictionsSaveError] = useState(false);
   const [reviewMode, setReviewMode] = useState<ProtectionReviewMode>("adaptive");
   const [traceCapture, setTraceCapture] = useState({
     loaded: false,
@@ -186,8 +166,6 @@ export function ChatView({
   const [modelSettingsSaveWarning, setModelSettingsSaveWarning] = useState(false);
   const modelSettingsSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const modelSettingsSaveSequence = useRef(0);
-  const detectionJurisdictionsSaveQueue = useRef<Promise<unknown>>(Promise.resolve());
-  const detectionJurisdictionsSaveSequence = useRef(0);
   const pendingProtectionTicket = useRef<string | undefined>(undefined);
   const protectionPreviewRequest = useRef<{ generation: number; controller?: AbortController }>({ generation: 0 });
   const protectionReviewAttempt = useRef<{ text: string; action: "send" | "reload" } | undefined>(undefined);
@@ -209,12 +187,8 @@ export function ChatView({
       model: model.model,
       reasoningEffort,
       traceEnabled: threadTraceEnabled,
-      // Covers the first send of a new chat, whose thread row may not be persisted yet; the server
-      // prefers the stored thread's value and validates codes against the supported list. Additive
-      // only, so forged codes can at worst over-redact.
-      detectionJurisdictions: threadDetectionJurisdictions,
     }),
-    [model.provider, model.model, reasoningEffort, threadTraceEnabled, threadDetectionJurisdictions],
+    [model.provider, model.model, reasoningEffort, threadTraceEnabled],
   );
   const chatConnection = useMemo(
     () => withOneShotProtectionTicket(fetchServerSentEvents("/api/chat"), pendingProtectionTicket),
@@ -306,85 +280,6 @@ export function ChatView({
   useEffect(() => {
     setThreadTraceEnabledState(initialThreadTraceEnabled ?? false);
   }, [initialThreadTraceEnabled]);
-
-  useEffect(() => {
-    setThreadDetectionJurisdictionsState(initialThreadDetectionJurisdictions ?? []);
-  }, [initialThreadDetectionJurisdictions]);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(JURISDICTION_SIDEBAR_KEY);
-      if (saved) setJurisdictionDesktopOpen(saved === "open");
-    } catch {}
-  }, []);
-
-  useEffect(() => {
-    const wideViewport = window.matchMedia("(min-width: 1280px)");
-    const closeDrawerOnWideViewport = () => {
-      if (wideViewport.matches) setJurisdictionDrawerOpen(false);
-    };
-    closeDrawerOnWideViewport();
-    wideViewport.addEventListener("change", closeDrawerOnWideViewport);
-    return () => wideViewport.removeEventListener("change", closeDrawerOnWideViewport);
-  }, []);
-
-  const setJurisdictionDesktopPanel = (open: boolean) => {
-    setJurisdictionDesktopOpen(open);
-    try {
-      localStorage.setItem(JURISDICTION_SIDEBAR_KEY, open ? "open" : "closed");
-    } catch {}
-  };
-
-  const closeJurisdictionDesktopPanel = () => {
-    setJurisdictionDesktopPanel(false);
-    requestAnimationFrame(() => jurisdictionPanelTriggerRef.current?.focus());
-  };
-
-  const toggleDetectionJurisdiction = (code: string) => {
-    const previous = threadDetectionJurisdictions;
-    const next = toggleJurisdictionSelection(previous, code);
-    setDetectionJurisdictionsSaveError(false);
-    setThreadDetectionJurisdictionsState(next);
-    const persistedThreadId = activeThreadId;
-    // An unsaved chat keeps the choice local; startThreadNow persists it with the first message.
-    if (!persistedThreadId) return;
-    const summaryValue = (jurisdictions: string[]) => (jurisdictions.length > 0 ? jurisdictions : undefined);
-    queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) =>
-      current?.map((thread) =>
-        thread.id === persistedThreadId ? { ...thread, detectionJurisdictions: summaryValue(next) } : thread,
-      ),
-    );
-    // Serialize the full-array writes like rememberThreadModelSettings: each save runs after the
-    // previous one finishes, and only the newest toggle may invalidate queries or roll state back,
-    // so a slow older save can never overwrite or revert a newer selection.
-    const sequence = detectionJurisdictionsSaveSequence.current + 1;
-    detectionJurisdictionsSaveSequence.current = sequence;
-    const queued = detectionJurisdictionsSaveQueue.current
-      .catch(() => undefined)
-      .then(() =>
-        setThreadDetectionJurisdictions({ data: { threadId: persistedThreadId, detectionJurisdictions: next } }),
-      );
-    detectionJurisdictionsSaveQueue.current = queued;
-    void queued.then(
-      () => {
-        if (detectionJurisdictionsSaveSequence.current === sequence) {
-          setDetectionJurisdictionsSaveError(false);
-          void invalidateThreads(queryClient);
-        }
-      },
-      (err) => {
-        console.warn("Failed to update the chat's detection jurisdictions", err);
-        if (detectionJurisdictionsSaveSequence.current !== sequence) return;
-        setDetectionJurisdictionsSaveError(true);
-        setThreadDetectionJurisdictionsState(previous);
-        queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) =>
-          current?.map((thread) =>
-            thread.id === persistedThreadId ? { ...thread, detectionJurisdictions: summaryValue(previous) } : thread,
-          ),
-        );
-      },
-    );
-  };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset all chat-scoped review state when the route changes
   useEffect(() => {
@@ -498,7 +393,6 @@ export function ChatView({
         message: uiToStored(message),
         traceEnabled: threadTraceEnabled,
         modelSettings,
-        detectionJurisdictions: threadDetectionJurisdictions,
       },
     }).catch((err) => {
       console.warn("Failed to start chat thread", err);
@@ -586,7 +480,6 @@ export function ChatView({
       const preview = await previewProtection({
         threadId: tid,
         text: content,
-        detectionJurisdictions: threadDetectionJurisdictions,
         signal: request.controller.signal,
       });
       if (!protectionPreviewIsCurrent(request.generation)) return;
@@ -643,7 +536,6 @@ export function ChatView({
             threadId: tid,
             text: protectionReview.text,
             addValues: [value],
-            detectionJurisdictions: threadDetectionJurisdictions,
             signal: request.controller.signal,
           });
           if (!protectionPreviewIsCurrent(request.generation))
@@ -694,7 +586,6 @@ export function ChatView({
         threadId: tid,
         text: protectionReview.text,
         removeValues: [value],
-        detectionJurisdictions: threadDetectionJurisdictions,
         signal: request.controller.signal,
       });
       if (!protectionPreviewIsCurrent(request.generation)) return;
@@ -962,12 +853,6 @@ export function ChatView({
             reviewMode={reviewMode}
             reviewMinimum={reviewMinimum}
             onReviewModeChange={setReviewMode}
-            jurisdictionCount={threadDetectionJurisdictions.length}
-            jurisdictionPanelOpen={jurisdictionDesktopOpen}
-            onToggleJurisdictionPanel={() => setJurisdictionDesktopPanel(!jurisdictionDesktopOpen)}
-            onOpenJurisdictionDrawer={() => setJurisdictionDrawerOpen(true)}
-            jurisdictionPanelTriggerRef={jurisdictionPanelTriggerRef}
-            jurisdictionDrawerTriggerRef={jurisdictionDrawerTriggerRef}
             restoreDisplayMode={restoreDisplayMode}
             restoreHighlightsAvailable={restoreHighlightsAvailable}
             onToggleRestoreDisplay={() =>
@@ -1041,19 +926,6 @@ export function ChatView({
           />
         </div>
 
-        <JurisdictionSidebar
-          desktopOpen={jurisdictionDesktopOpen}
-          drawerOpen={jurisdictionDrawerOpen}
-          onCloseDesktop={closeJurisdictionDesktopPanel}
-          onDrawerOpenChange={setJurisdictionDrawerOpen}
-          jurisdictions={threadDetectionJurisdictions}
-          onToggleJurisdiction={toggleDetectionJurisdiction}
-          saveError={detectionJurisdictionsSaveError}
-          onDismissSaveError={() => setDetectionJurisdictionsSaveError(false)}
-          desktopTriggerRef={jurisdictionPanelTriggerRef}
-          drawerTriggerRef={jurisdictionDrawerTriggerRef}
-        />
-
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} userSettings={userSettings} />
         <AdminSettingsDialog open={adminOpen} onOpenChange={changeAdminOpen} target={adminTarget} />
         <CreateWorkspaceDialog open={createWorkspaceOpen} onOpenChange={setCreateWorkspaceOpen} />
@@ -1063,7 +935,8 @@ export function ChatView({
             key={issueReport.key}
             open={issueReport.open}
             onOpenChange={(open) => setIssueReport((current) => ({ ...current, open }))}
-            reporterEmail={auth.user.email}
+            // In open (`none`) mode the implicit local account's email is a placeholder, not a contact.
+            reporterEmail={auth.requiresAuth ? auth.user.email : undefined}
             threadId={tid}
             messageId={issueReport.messageId}
           />

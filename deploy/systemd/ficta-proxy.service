@@ -1,0 +1,26 @@
+# Ficta redaction proxy — installed by deploy/install.sh (@REPO_DIR@ is substituted).
+[Unit]
+Description=Ficta redaction proxy
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ficta
+Group=ficta
+WorkingDirectory=@REPO_DIR@/packages/ficta
+EnvironmentFile=-/etc/ficta/proxy.env
+# Same as `pnpm start` (tsx src/server.ts) without depending on pnpm/corepack at runtime.
+ExecStart=@REPO_DIR@/packages/ficta/node_modules/.bin/tsx src/server.ts
+Restart=on-failure
+RestartSec=3
+# Hardening
+NoNewPrivileges=true
+# strict: the whole filesystem (including the checkout under /opt) is read-only to the service;
+# mutable runtime state lives only under /var/lib/ficta.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/ficta
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

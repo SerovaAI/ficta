@@ -1,0 +1,15 @@
+# Reverse-proxy example for the reference deployment: TLS in front of the
+# loopback-bound Gateway. For an internal pilot host, `tls internal` issues a
+# certificate from Caddy's local CA (install its root on pilot users' machines,
+# or replace with the firm's certificate). A firm using its own reverse proxy /
+# load balancer can ignore this file — the contract is simply
+# "HTTPS in front, proxy to 127.0.0.1:3000".
+#
+#   apt install caddy   (from Caddy's official apt repo)
+#   cp deploy/Caddyfile.example /etc/caddy/Caddyfile   # then edit the hostname
+#   systemctl reload caddy
+
+gateway.example.internal {
+	tls internal
+	reverse_proxy 127.0.0.1:3000
+}

@@ -18,7 +18,11 @@ import {
   submitIssueReport,
 } from "@/lib/issue-reporting";
 
-/** Collect and submit a report while preserving the draft across loading and failure states. */
+/**
+ * Collect and submit a report while preserving the draft across loading and failure states.
+ * `reporterEmail` is absent in open (`none`) auth mode, where the implicit local account's
+ * placeholder address is not a real contact — the copy then skips email mentions entirely.
+ */
 export function IssueReportDialog({
   open,
   onOpenChange,
@@ -28,7 +32,7 @@ export function IssueReportDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  reporterEmail: string;
+  reporterEmail?: string;
   threadId: string;
   messageId?: string;
 }) {
@@ -90,8 +94,8 @@ export function IssueReportDialog({
               </div>
               <DialogTitle>Report {success.identifier} sent</DialogTitle>
               <DialogDescription>
-                Thanks for helping us improve Ficta. If we need more detail, we'll contact you at{" "}
-                {success.reporterEmail}.
+                Thanks for helping improve Ficta.
+                {reporterEmail ? <> If we need more detail, we'll contact you at {success.reporterEmail}.</> : null}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -111,8 +115,8 @@ export function IssueReportDialog({
               <DialogTitle>{messageId ? "Report this response" : "Report an issue"}</DialogTitle>
               <DialogDescription>
                 {messageId
-                  ? "Send a bug or feedback about this response directly to the Ficta team."
-                  : "Send a bug or feedback directly to the Ficta team."}
+                  ? "Send a bug or feedback about this response directly to the team maintaining this deployment."
+                  : "Send a bug or feedback directly to the team maintaining this deployment."}
               </DialogDescription>
             </DialogHeader>
 
@@ -157,9 +161,9 @@ export function IssueReportDialog({
             <div className="flex gap-2.5 rounded-lg bg-muted px-3 py-2.5 text-xs leading-5 text-muted-foreground">
               <Info className="mt-0.5 size-4 shrink-0 text-foreground" aria-hidden />
               <p>
-                We'll include {reporterEmail}, this page and chat ID, {messageId ? "the selected response ID, " : ""}
-                your browser, workspace, and app build. Chat messages, attachments, protected values, and diagnostic
-                trace bodies are never included.
+                We'll include {reporterEmail ? <>{reporterEmail}, </> : null}this page and chat ID,
+                {messageId ? " the selected response ID," : ""} your browser, workspace, and app build. Chat messages,
+                attachments, protected values, and diagnostic trace bodies are never included.
               </p>
             </div>
 

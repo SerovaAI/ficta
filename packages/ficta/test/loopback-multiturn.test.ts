@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FICTA_DETECTION_PROFILE_HEADER, FICTA_SCOPE_HEADER } from "@serovaai/ficta-protocol";
+import { FICTA_SCOPE_HEADER } from "@serovaai/ficta-protocol";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DetectorPlugin } from "../src/plugins/index.js";
 
@@ -147,26 +147,18 @@ describe("multi-turn web chat: restored transcript resent through the proxy", ()
     }
   });
 
-  it("x-ficta-detection-profile reaches detector ctx normalized and never reaches the upstream", async () => {
-    const upstreamProfileHeaders: Array<string | undefined> = [];
+  it("strips inbound x-ficta-* headers before the upstream", async () => {
+    // Internal control headers must never leak to a provider, whatever their name: the proxy
+    // sweeps the whole x-ficta-* prefix rather than enumerating known headers.
+    const upstreamFictaHeaders: string[][] = [];
     const upstream = createServer((req, res) => {
       req.resume();
       req.on("end", () => {
-        upstreamProfileHeaders.push(req.headers[FICTA_DETECTION_PROFILE_HEADER] as string | undefined);
+        upstreamFictaHeaders.push(Object.keys(req.headers).filter((name) => name.startsWith("x-ficta-")));
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "ok" } }] }));
       });
     });
-
-    const seenProfiles: Array<readonly string[] | undefined> = [];
-    const recordingDetector: DetectorPlugin = {
-      kind: "detector",
-      name: "fixture-profile-detector",
-      detectText: (_text, ctx) => {
-        seenProfiles.push(ctx.detectionProfile?.jurisdictions);
-        return [];
-      },
-    };
 
     let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
     try {
@@ -174,22 +166,20 @@ describe("multi-turn web chat: restored transcript resent through the proxy", ()
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
       process.env.FICTA_PII_ENABLED = "0";
       process.env.FICTA_LOG_LEVEL = "silent";
-      process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-profilehdr-"));
+      process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-ctrlhdr-"));
 
       const { startProxy } = await import("../src/server.js");
-      proxy = await startProxy({ port: 0, plugins: [recordingDetector] });
+      proxy = await startProxy({ port: 0 });
       const url = `http://127.0.0.1:${proxy.port}/v1/chat/completions`;
       const body = JSON.stringify({ model: "gpt-5-mini", messages: [{ role: "user", content: "hello" }] });
 
-      // Unknown codes are dropped, known codes normalized/deduped; the header is stripped upstream.
       const res = await fetch(url, {
         method: "POST",
-        headers: { "content-type": "application/json", [FICTA_DETECTION_PROFILE_HEADER]: " UK ,uk,atlantis" },
+        headers: { "content-type": "application/json", "x-ficta-anything": "spoofed" },
         body,
       });
       expect(res.status).toBe(200);
-      expect(seenProfiles.some((jurisdictions) => jurisdictions?.length === 1 && jurisdictions[0] === "uk")).toBe(true);
-      expect(upstreamProfileHeaders).toEqual([undefined]);
+      expect(upstreamFictaHeaders).toEqual([[]]);
     } finally {
       proxy?.close();
       await close(upstream);
