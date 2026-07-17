@@ -13,11 +13,9 @@ import {
   LockKeyhole,
   Moon,
   PanelLeft,
-  PanelRight,
   ShieldCheck,
   Sun,
 } from "lucide-react";
-import type { Ref } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -30,7 +28,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { detectionJurisdictionToggleLabel } from "@/lib/detection-jurisdictions";
 import { type ProtectionTone, protectionPresentation } from "@/lib/protection-copy";
 import {
   effectiveProtectionReviewMode,
@@ -58,12 +55,6 @@ export function TopBar({
   reviewMode = "adaptive",
   reviewMinimum = "off",
   onReviewModeChange,
-  jurisdictionCount = 0,
-  jurisdictionPanelOpen = false,
-  onToggleJurisdictionPanel,
-  onOpenJurisdictionDrawer,
-  jurisdictionPanelTriggerRef,
-  jurisdictionDrawerTriggerRef,
   restoreDisplayMode = "values",
   restoreHighlightsAvailable = false,
   onToggleRestoreDisplay,
@@ -84,12 +75,6 @@ export function TopBar({
   reviewMode?: ProtectionReviewMode;
   reviewMinimum?: ProtectionReviewMode;
   onReviewModeChange?: (mode: ProtectionReviewMode) => void;
-  jurisdictionCount?: number;
-  jurisdictionPanelOpen?: boolean;
-  onToggleJurisdictionPanel?: () => void;
-  onOpenJurisdictionDrawer?: () => void;
-  jurisdictionPanelTriggerRef?: Ref<HTMLButtonElement>;
-  jurisdictionDrawerTriggerRef?: Ref<HTMLButtonElement>;
   restoreDisplayMode?: RestoreHighlightDisplayMode;
   restoreHighlightsAvailable?: boolean;
   onToggleRestoreDisplay?: () => void;
@@ -240,49 +225,6 @@ export function TopBar({
           </DropdownMenu>
         </div>
         <div className="flex items-center">
-          {onToggleJurisdictionPanel ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  ref={jurisdictionPanelTriggerRef}
-                  variant="ghost"
-                  size="icon"
-                  onClick={onToggleJurisdictionPanel}
-                  aria-label={detectionJurisdictionToggleLabel(
-                    jurisdictionCount,
-                    jurisdictionPanelOpen ? "close" : "open",
-                  )}
-                  aria-expanded={jurisdictionPanelOpen}
-                  className="relative hidden xl:inline-flex"
-                >
-                  <PanelRight className="size-4" aria-hidden />
-                  <JurisdictionCount count={jurisdictionCount} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {jurisdictionPanelOpen ? "Hide jurisdiction detection" : "Show jurisdiction detection"}
-              </TooltipContent>
-            </Tooltip>
-          ) : null}
-          {onOpenJurisdictionDrawer ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  ref={jurisdictionDrawerTriggerRef}
-                  variant="ghost"
-                  size="icon"
-                  onClick={onOpenJurisdictionDrawer}
-                  aria-label={detectionJurisdictionToggleLabel(jurisdictionCount, "open")}
-                  aria-haspopup="dialog"
-                  className="relative xl:hidden"
-                >
-                  <PanelRight className="size-4" aria-hidden />
-                  <JurisdictionCount count={jurisdictionCount} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Open jurisdiction detection</TooltipContent>
-            </Tooltip>
-          ) : null}
           {onReportIssue ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -304,18 +246,6 @@ export function TopBar({
         </div>
       </div>
     </header>
-  );
-}
-
-function JurisdictionCount({ count }: { count: number }) {
-  if (count === 0) return null;
-  return (
-    <span
-      aria-hidden
-      className="absolute top-0.5 right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground"
-    >
-      {count}
-    </span>
   );
 }
 

@@ -1,7 +1,6 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_BASELINE_ENTITIES, JURISDICTION_ENTITY_BUNDLES } from "../src/engine/plugins/pii/jurisdictions.js";
 import {
   checkPresidioHealth,
   chunkText,
@@ -98,49 +97,28 @@ describe("presidio recognizer", () => {
     });
   });
 
-  it("always sends an explicit entities allowlist — the default baseline when none is configured", async () => {
-    // Jurisdiction-gated recognizers stay loaded in the sidecar registry; an /analyze payload
-    // without `entities` would run all of them for default traffic, bypassing jurisdiction
-    // gating. The allowlist must therefore always be explicit.
+  it("omits the entities field when no allowlist is configured", async () => {
+    // Deployment scope lives in the sidecar registry's load-time country filter; a payload
+    // without `entities` runs exactly the recognizers that filter loaded, which is the intended
+    // detection surface.
     const text = "contact John Smith";
     const { requests } = await withStub({ analyze: () => [] }, () => presidioRecognizer.detect(text, BODY));
     expect(requests[0]).toMatchObject({ text, language: "en", score_threshold: 0.5 });
-    expect([...(requests[0]?.entities ?? [])].sort()).toEqual([...DEFAULT_BASELINE_ENTITIES].sort());
-    expect(requests[0]?.entities).not.toContain("UK_NHS");
-
-    process.env.FICTA_PII_PRESIDIO_ENTITIES = "PERSON, PHONE_NUMBER";
-    const withEntities = await withStub({ analyze: () => [] }, () => presidioRecognizer.detect(text, BODY));
-    expect(withEntities.requests[0]?.entities).toEqual(["PERSON", "PHONE_NUMBER"]);
+    expect(requests[0]?.entities).toBeUndefined();
   });
 
-  it("unions a detection profile's jurisdiction bundle onto the baseline (additive-only)", async () => {
-    const text = "NHS Number: 943 476 5919";
-    const uk = { ...BODY, detectionProfile: { jurisdictions: ["uk"] } };
-    const { requests } = await withStub({ analyze: () => [] }, () => presidioRecognizer.detect(text, uk));
-    const entities = requests[0]?.entities ?? [];
-    for (const baseline of DEFAULT_BASELINE_ENTITIES) expect(entities).toContain(baseline);
-    for (const bundled of JURISDICTION_ENTITY_BUNDLES.uk ?? []) expect(entities).toContain(bundled);
-
-    // A configured allowlist is replaced-baseline, but the profile still unions on top.
-    process.env.FICTA_PII_PRESIDIO_ENTITIES = "PERSON";
-    const configured = await withStub({ analyze: () => [] }, () => presidioRecognizer.detect(text, uk));
-    expect([...(configured.requests[0]?.entities ?? [])].sort()).toEqual(
-      ["PERSON", ...(JURISDICTION_ENTITY_BUNDLES.uk ?? [])].sort(),
-    );
-  });
-
-  it("admits UK spans client-side only under a uk profile", async () => {
+  it("sends a configured allowlist and re-applies it client-side", async () => {
     const text = "NHS Number: 943 476 5919 for John Smith";
-    const spans = () => [span(text, "943 476 5919", "UK_NHS", 0.9)];
-
-    const withoutProfile = await withStub({ analyze: spans }, () => presidioRecognizer.detect(text, BODY));
-    expect(withoutProfile.result).toHaveLength(0);
-
-    const withProfile = await withStub({ analyze: spans }, () =>
-      presidioRecognizer.detect(text, { ...BODY, detectionProfile: { jurisdictions: ["uk"] } }),
+    process.env.FICTA_PII_PRESIDIO_ENTITIES = "PERSON, PHONE_NUMBER";
+    // The analyzer is stubbed to return an out-of-allowlist span anyway; the client-side filter
+    // must drop it even though the wire request already narrowed `entities`.
+    const { requests, result } = await withStub(
+      { analyze: () => [span(text, "943 476 5919", "UK_NHS", 0.9), span(text, "John Smith", "PERSON", 0.9)] },
+      () => presidioRecognizer.detect(text, BODY),
     );
-    expect(withProfile.result).toHaveLength(1);
-    expect(withProfile.result[0]).toMatchObject({ name: "uk-nhs", value: "943 476 5919", kind: "pii" });
+    expect(requests[0]?.entities).toEqual(["PERSON", "PHONE_NUMBER"]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ name: "person", value: "John Smith", kind: "pii" });
   });
 
   it("drops below-threshold/short spans and merges coordinates for duplicate values", async () => {

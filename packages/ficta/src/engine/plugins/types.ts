@@ -107,23 +107,12 @@ export interface ProtectedValue {
   spans?: readonly ProtectedValueSpan[];
 }
 
-/**
- * Request-scoped detection widening carried from the trusted profile header. Additive-only by
- * contract: a profile lets a detector enable extra jurisdiction-specific recognizers on top of its
- * baseline; it never narrows what a detector would otherwise find.
- */
-export interface DetectionProfile {
-  jurisdictions: readonly string[];
-}
-
 export interface DetectTextContext {
   surface: "body" | "header";
   /** Request path, if available. */
   path?: string;
   /** Header name for surface="header". */
   header?: string;
-  /** Advisory jurisdiction widening for this request; absent for default traffic. */
-  detectionProfile?: DetectionProfile;
 }
 
 /**
