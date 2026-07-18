@@ -71,6 +71,7 @@ export {
 } from "../engine/plugins/policy.js";
 export { type PluginRegistrySnapshot, validatePluginBoundaries } from "../engine/plugins/registry.js";
 export {
+  detectSecretShapeLeaves,
   detectSecretShapes,
   resolveAgentSecretShapesEnabled,
   secretShapesEnabled,

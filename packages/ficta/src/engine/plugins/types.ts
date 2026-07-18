@@ -1,3 +1,5 @@
+import type { BodyLeaf } from "../vault.js";
+
 export type ProtectedValueKind = "secret" | "pii" | "custom";
 export type ProtectionConfidence = "exact" | "high" | "probabilistic";
 export type ConfigBindingKind = "boolean" | "number" | "string" | "string-array-colon" | "string-array-comma";
@@ -152,6 +154,17 @@ export interface FictaPluginBase {
   description?: string;
   /** Body detection surface: content excludes structural object keys; all preserves key/value context. */
   bodyDetectionView?: "content" | "all";
+  /**
+   * Optional structural body detection for parsed JSON requests: receives the body's leaves (object
+   * keys and string values in visit order, with paths) rather than the joined text `detectText`
+   * sees. Pairing a key with its own value from structure means an adjacent protocol key can never
+   * be misread as the preceding key's value — the joined-text view cannot guarantee that, because
+   * non-string values (e.g. `"max_tokens": 64000`) produce no leaf between two keys.
+   */
+  detectBodyLeaves?(
+    leaves: readonly BodyLeaf[],
+    ctx: DetectTextContext,
+  ): readonly ProtectedValue[] | Promise<readonly ProtectedValue[]>;
   /**
    * Safe metadata-only registry policy owned by this plugin's domain. Core enforces it (only for
    * trusted built-ins) wherever named candidates enter protection — registry load and request-time

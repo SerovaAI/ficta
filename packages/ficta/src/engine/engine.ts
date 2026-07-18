@@ -96,7 +96,19 @@ interface DetectionPass {
 interface BodyDetectedValue {
   readonly value: ProtectedValue;
   readonly leaves: readonly BodyLeaf[];
+  /** Separator used to join `leaves` into the text this detection ran over (see detectBodyValues). */
+  readonly separator: string;
 }
+
+/**
+ * Separator for the structural ("all") detection view. A non-whitespace control character keeps
+ * pattern detectors leaf-local: no `\s*`-crossing regex can capture an adjacent object key as the
+ * "value" of the previous leaf (e.g. `output_config` after a numeric-valued `max_tokens`, whose
+ * 64000 emits no leaf), and any candidate that does straddle the boundary carries the character
+ * and is rejected by the secret-shape validator. The content view keeps "\n": NLP detector spans
+ * are mapped back through mapJoinedOffsets assuming that exact historical join.
+ */
+const STRUCTURAL_LEAF_BOUNDARY = "\u0000";
 
 interface BodyDetectionPass {
   readonly complete: boolean;
@@ -154,7 +166,7 @@ export class ProtectionEngine implements RedactionEngine {
     this.registrySnapshot = loadPluginRegistry(this.plugins, this.trusted);
     // loadPluginRegistry already ran validatePluginBoundaries, so derive this directly rather than
     // calling pluginsHaveDetectors (which would re-validate every plugin).
-    this.hasDetectors = this.plugins.some((plugin) => Boolean(plugin.detectText));
+    this.hasDetectors = this.plugins.some((plugin) => Boolean(plugin.detectText || plugin.detectBodyLeaves));
     this.policy = this.registrySnapshot.registryPolicy;
     // registry.values are already policy-filtered by loadPluginRegistry; caller-supplied opts.values
     // pass through the same enforced exclusions so every ingress into the vault is consistent.
@@ -433,10 +445,10 @@ class ProtectionRequestScope implements RequestScope {
     const detectedClaimByValue = new Map(detectedClaims.map((claim) => [claim.meta.value, claim]));
 
     const occurrences: Occurrence[] = [];
-    for (const { value, leaves: detectedLeaves } of detection.detections) {
+    for (const { value, leaves: detectedLeaves, separator } of detection.detections) {
       const claim = detectedClaimByValue.get(value.value);
       if (!claim) continue;
-      const detectedText = detectedLeaves.map((leaf) => leaf.text).join("\n");
+      const detectedText = detectedLeaves.map((leaf) => leaf.text).join(separator);
       const detectedTexts = detectedLeaves.map((leaf) => leaf.text);
       const detectedIndices = detectedLeaves.map((leaf) => leaf.index);
       let validSpans = value.spans !== undefined && value.spans.length > 0;
@@ -726,13 +738,17 @@ class ProtectionRequestScope implements RequestScope {
     const detections: BodyDetectedValue[] = [];
     for (const plugin of this.plugins) {
       // NLP detectors opt into content-only leaves so protocol/object keys never contaminate spans.
-      // Exact structural detectors retain key context (e.g. `api_token` followed by its value).
+      // Exact structural detectors retain key context (e.g. `api_token` followed by its value), but
+      // behind a hard leaf boundary — see STRUCTURAL_LEAF_BOUNDARY. Key→own-value pairing lives in
+      // the structural detectBodyLeaves hook, which sees real structure instead of joined text.
       const leaves = plugin.bodyDetectionView === "content" ? contentLeaves : allLeaves;
-      const text = leaves.map((leaf) => leaf.text).join("\n");
-      if (!text) continue;
-      let detected: readonly ProtectedValue[];
+      const separator = plugin.bodyDetectionView === "content" ? "\n" : STRUCTURAL_LEAF_BOUNDARY;
+      const text = leaves.map((leaf) => leaf.text).join(separator);
+      if (!text && !plugin.detectBodyLeaves) continue;
+      let detected: ProtectedValue[];
       try {
-        detected = (await plugin.detectText?.(text, ctx)) ?? [];
+        detected = text ? [...((await plugin.detectText?.(text, ctx)) ?? [])] : [];
+        if (plugin.detectBodyLeaves) detected.push(...(await plugin.detectBodyLeaves(leaves, ctx)));
       } catch (err) {
         if (err instanceof DetectorUnavailableError) {
           const override = plugin.kind === "detector" ? plugin.failClosed?.() : undefined;
@@ -744,7 +760,7 @@ class ProtectionRequestScope implements RequestScope {
         continue;
       }
       const candidates = detected.map((value) => ({ ...value, plugin: value.plugin ?? plugin.name }));
-      for (const value of admit(candidates, this.policy)) detections.push({ value, leaves });
+      for (const value of admit(candidates, this.policy)) detections.push({ value, leaves, separator });
     }
     return { complete, detections };
   }

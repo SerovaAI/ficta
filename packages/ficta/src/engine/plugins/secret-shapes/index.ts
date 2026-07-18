@@ -1,4 +1,5 @@
 import { envFlag, parseBoolean } from "../../env-flags.js";
+import type { BodyLeaf, BodyLeafPath } from "../../vault.js";
 import type { DetectorPlugin, PluginDiscovery, ProtectedValue } from "../types.js";
 
 const PLUGIN_NAME = "secret-shapes";
@@ -118,8 +119,10 @@ const SECRET_SHAPE_PATTERNS: readonly SecretShapePattern[] = [
     validate: isLikelySecretValue,
   },
   {
-    // JSON request detection runs over redactable string leaves joined with "\n", so object key/value
-    // pairs such as {"api_key":"..."} are visible as "api_key\n...".
+    // JSON key→value pairs ({"api_key":"..."}) are detected structurally by detectSecretShapeLeaves;
+    // the engine's structural join uses a non-whitespace boundary precisely so this pattern can never
+    // fire across two leaves (an adjacent protocol key must not be capturable as a "value"). It still
+    // matches key\nvalue lines *inside* one multi-line string leaf and on plain-text surfaces.
     category: "secret-json-value",
     regex:
       /\b([A-Za-z][A-Za-z0-9_.-]*(?:api[_-]?key|token|secret|password|passwd|pwd|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]*)\b\s*\n\s*["'`]?([^\s"'`,;{}<>()[\]]+)["'`]?/gi,
@@ -142,34 +145,81 @@ export function resolveAgentSecretShapesEnabled(opts: {
   return envFlag(opts.enabled) && envFlag(opts.agents);
 }
 
+function addCandidate(
+  out: ProtectedValue[],
+  seen: Set<string>,
+  category: string,
+  raw: string,
+  confidence: ProtectedValue["confidence"],
+): void {
+  const value = trimCandidate(raw);
+  if (!value || seen.has(value) || isPlaceholder(value) || value.startsWith("FICTA_")) return;
+  // A candidate containing the engine's structural leaf boundary (U+0000) straddles two JSON
+  // leaves — by construction never one real value, so registering it could only corrupt requests.
+  if (value.includes("\u0000")) return;
+  seen.add(value);
+  out.push({ name: category, value, source: "secret-shape", plugin: PLUGIN_NAME, kind: "secret", confidence });
+}
+
 export function detectSecretShapes(text: string, ctx: { header?: string } = {}): ProtectedValue[] {
   if (!text) return [];
 
   const out: ProtectedValue[] = [];
   const seen = new Set<string>();
-  const add = (category: string, raw: string, confidence: ProtectedValue["confidence"]) => {
-    const value = trimCandidate(raw);
-    if (!value || seen.has(value) || isPlaceholder(value) || value.startsWith("FICTA_")) return;
-    seen.add(value);
-    out.push({ name: category, value, source: "secret-shape", plugin: PLUGIN_NAME, kind: "secret", confidence });
-  };
 
   for (const pattern of SECRET_SHAPE_PATTERNS) {
     for (const match of text.matchAll(pattern.regex)) {
       const value = match[2] ?? match[1] ?? match[0];
       if (!value) continue;
       if (pattern.validate && !pattern.validate(value)) continue;
-      add(pattern.category, value, pattern.confidence);
+      addCandidate(out, seen, pattern.category, value, pattern.confidence);
     }
   }
 
   const header = ctx.header?.trim();
   if (header && SECRETISH_NAME.test(header)) {
     const value = trimCandidate(text.trim());
-    if (isLikelySecretValue(value)) add("secret-header", value, "probabilistic");
+    if (isLikelySecretValue(value)) addCandidate(out, seen, "secret-header", value, "probabilistic");
   }
 
   return out;
+}
+
+/** First token of a leaf's text, mirroring the value side of the assignment/json-value patterns. */
+const LEADING_VALUE_TOKEN = /^\s*["'`]?([^\s"'`,;{}<>()[\]]+)/;
+
+/**
+ * Structural JSON detection: pair a secret-ish object key with its *own* string value (or the
+ * string elements of its direct array value) using leaf paths. The joined-text view cannot express
+ * this safely — a non-string value emits no leaf, so `{"max_tokens": 64000, "output_config": ...}`
+ * put two keys adjacent in the join and the json-value regex registered the protocol key
+ * `output_config` as a secret, corrupting every later request through the proxy.
+ */
+export function detectSecretShapeLeaves(leaves: readonly BodyLeaf[]): ProtectedValue[] {
+  const out: ProtectedValue[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < leaves.length; i++) {
+    const key = leaves[i];
+    if (!key || key.kind !== "key" || !SECRETISH_NAME.test(key.text)) continue;
+    for (let j = i + 1; j < leaves.length; j++) {
+      const leaf = leaves[j];
+      if (!leaf || leaf.kind !== "value" || !isOwnValuePath(key.path, leaf.path)) break;
+      const token = LEADING_VALUE_TOKEN.exec(leaf.text)?.[1];
+      if (token !== undefined && isLikelySecretValue(token)) {
+        addCandidate(out, seen, "secret-json-value", token, "probabilistic");
+      }
+    }
+  }
+  return out;
+}
+
+/** The value leaf that belongs to `keyPath`: the key's own string value, or a direct array element. */
+function isOwnValuePath(keyPath: BodyLeafPath, valuePath: BodyLeafPath): boolean {
+  const direct = valuePath.length === keyPath.length;
+  const element = valuePath.length === keyPath.length + 1 && typeof valuePath[valuePath.length - 1] === "number";
+  if (!direct && !element) return false;
+  for (let i = 0; i < keyPath.length; i++) if (valuePath[i] !== keyPath[i]) return false;
+  return true;
 }
 
 export const secretShapesPlugin: DetectorPlugin = {
@@ -203,6 +253,10 @@ export const secretShapesPlugin: DetectorPlugin = {
   detectText(text, ctx) {
     if (!text || !secretShapesEnabled()) return [];
     return detectSecretShapes(text, { header: ctx.header });
+  },
+  detectBodyLeaves(leaves) {
+    if (!secretShapesEnabled()) return [];
+    return detectSecretShapeLeaves(leaves);
   },
 };
 
