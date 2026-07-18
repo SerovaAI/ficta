@@ -57,6 +57,12 @@ export function validatePluginBoundaries(plugins: readonly FictaPluginBase[]): v
     const name = typeof rawPlugin.name === "string" ? rawPlugin.name : "<unnamed>";
     validateRegistryPolicy(name, rawPlugin.registryPolicy);
 
+    // detectBodyLeaves lives on the shared plugin base — shape-check it for every kind when
+    // declared, so a malformed hook fails at load time instead of as a per-request detector outage.
+    if ("detectBodyLeaves" in rawPlugin && typeof rawPlugin.detectBodyLeaves !== "function") {
+      throw new Error(`ficta plugin ${name} detectBodyLeaves must be a function when declared`);
+    }
+
     // loadValues is the registry-source-defining capability; no other kind may declare it.
     if (rawPlugin.kind !== "registry-source" && "loadValues" in rawPlugin) {
       throw new Error(`ficta plugin ${name} declares registry-source hooks but is not kind="registry-source"`);

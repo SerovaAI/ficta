@@ -17,12 +17,14 @@ function bodyLeavesOf(value: unknown): BodyLeaf[] {
 }
 
 async function redactWithDetector(body: string) {
+  const previous = process.env.FICTA_SECRET_SHAPES_ENABLED;
   process.env.FICTA_SECRET_SHAPES_ENABLED = "1";
   try {
     const engine = new ProtectionEngine({ plugins: [secretShapesPlugin] });
     return { engine, redacted: await engine.redactBodyDetailed(body) };
   } finally {
-    delete process.env.FICTA_SECRET_SHAPES_ENABLED;
+    if (previous === undefined) delete process.env.FICTA_SECRET_SHAPES_ENABLED;
+    else process.env.FICTA_SECRET_SHAPES_ENABLED = previous;
   }
 }
 
@@ -48,6 +50,11 @@ describe("structural secret-json-value detection", () => {
     // output_config. The old joined-text regex captured the protocol key as a "secret".
     expect(detectSecretShapeLeaves(bodyLeavesOf({ max_tokens: 64000, output_config: { effort: "high" } }))).toEqual([]);
     expect(detectSecretShapeLeaves(bodyLeavesOf({ api_token: { nested: "irrelevant" } }))).toEqual([]);
+  });
+
+  it("still inspects direct array elements after a nested element in a mixed array", () => {
+    const found = detectSecretShapeLeaves(bodyLeavesOf({ api_keys: [{ note: "irrelevant" }, SECRET_A] }));
+    expect(found.map((value) => value.value)).toEqual([SECRET_A]);
   });
 
   it("takes only the leading token of a value, like the assignment patterns", () => {

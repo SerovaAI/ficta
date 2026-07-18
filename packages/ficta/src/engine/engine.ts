@@ -741,14 +741,17 @@ class ProtectionRequestScope implements RequestScope {
       // Exact structural detectors retain key context (e.g. `api_token` followed by its value), but
       // behind a hard leaf boundary — see STRUCTURAL_LEAF_BOUNDARY. Key→own-value pairing lives in
       // the structural detectBodyLeaves hook, which sees real structure instead of joined text.
-      const leaves = plugin.bodyDetectionView === "content" ? contentLeaves : allLeaves;
+      const textLeaves = plugin.bodyDetectionView === "content" ? contentLeaves : allLeaves;
       const separator = plugin.bodyDetectionView === "content" ? "\n" : STRUCTURAL_LEAF_BOUNDARY;
-      const text = leaves.map((leaf) => leaf.text).join(separator);
+      const text = textLeaves.map((leaf) => leaf.text).join(separator);
       if (!text && !plugin.detectBodyLeaves) continue;
-      let detected: ProtectedValue[];
+      let textDetected: readonly ProtectedValue[] = [];
+      let structuralDetected: readonly ProtectedValue[] = [];
       try {
-        detected = text ? [...((await plugin.detectText?.(text, ctx)) ?? [])] : [];
-        if (plugin.detectBodyLeaves) detected.push(...(await plugin.detectBodyLeaves(leaves, ctx)));
+        if (text) textDetected = (await plugin.detectText?.(text, ctx)) ?? [];
+        // The structural hook always sees the full leaf view: pairing a key with its own value
+        // needs the object keys that a "content" text view strips out.
+        if (plugin.detectBodyLeaves) structuralDetected = await plugin.detectBodyLeaves(allLeaves, ctx);
       } catch (err) {
         if (err instanceof DetectorUnavailableError) {
           const override = plugin.kind === "detector" ? plugin.failClosed?.() : undefined;
@@ -759,8 +762,12 @@ class ProtectionRequestScope implements RequestScope {
         complete = false;
         continue;
       }
-      const candidates = detected.map((value) => ({ ...value, plugin: value.plugin ?? plugin.name }));
-      for (const value of admit(candidates, this.policy)) detections.push({ value, leaves, separator });
+      const record = (detected: readonly ProtectedValue[], leaves: readonly BodyLeaf[], joinedWith: string) => {
+        const candidates = detected.map((value) => ({ ...value, plugin: value.plugin ?? plugin.name }));
+        for (const value of admit(candidates, this.policy)) detections.push({ value, leaves, separator: joinedWith });
+      };
+      record(textDetected, textLeaves, separator);
+      record(structuralDetected, allLeaves, STRUCTURAL_LEAF_BOUNDARY);
     }
     return { complete, detections };
   }

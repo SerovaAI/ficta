@@ -200,10 +200,13 @@ export function detectSecretShapeLeaves(leaves: readonly BodyLeaf[]): ProtectedV
   const seen = new Set<string>();
   for (let i = 0; i < leaves.length; i++) {
     const key = leaves[i];
-    if (!key || key.kind !== "key" || !SECRETISH_NAME.test(key.text)) continue;
+    if (key?.kind !== "key" || !SECRETISH_NAME.test(key.text)) continue;
     for (let j = i + 1; j < leaves.length; j++) {
       const leaf = leaves[j];
-      if (!leaf || leaf.kind !== "value" || !isOwnValuePath(key.path, leaf.path)) break;
+      if (!leaf || !isWithinSubtree(key.path, leaf.path)) break;
+      // Descendants of nested objects/arrays get their own key-pairing pass; skip them but keep
+      // scanning — in a mixed array a direct string element can follow a nested element.
+      if (leaf.kind !== "value" || !isOwnValuePath(key.path, leaf.path)) continue;
       const token = LEADING_VALUE_TOKEN.exec(leaf.text)?.[1];
       if (token !== undefined && isLikelySecretValue(token)) {
         addCandidate(out, seen, "secret-json-value", token, "probabilistic");
@@ -211,6 +214,13 @@ export function detectSecretShapeLeaves(leaves: readonly BodyLeaf[]): ProtectedV
     }
   }
   return out;
+}
+
+/** True when `path` is the key's own value position or anywhere inside the key's subtree. */
+function isWithinSubtree(keyPath: BodyLeafPath, path: BodyLeafPath): boolean {
+  if (path.length < keyPath.length) return false;
+  for (let i = 0; i < keyPath.length; i++) if (path[i] !== keyPath[i]) return false;
+  return true;
 }
 
 /** The value leaf that belongs to `keyPath`: the key's own string value, or a direct array element. */
