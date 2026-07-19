@@ -1,6 +1,6 @@
 {
   "name": "@serovaai/ficta",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": false,
   "type": "module",
   "description": "Keep your registered secrets out of the LLM — local redaction proxy for coding agents",

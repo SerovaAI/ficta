@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1
+
+### Patch Changes
+
+- [#83](https://github.com/SerovaAI/ficta/pull/83) [`08a6dcc`](https://github.com/SerovaAI/ficta/commit/08a6dcc6968a143f4c534ee2a281d42ca8a0a288) Thanks [@steflsd](https://github.com/steflsd)! - Fix secret-shape detection false positives that could misread an adjacent JSON object key as a secret value and corrupt the forwarded request body: JSON key→value secrets are now detected structurally from body leaves (new optional `detectBodyLeaves` plugin hook), and the pattern-detection view separates leaves with a boundary no match can cross.
+
+- Updated dependencies []:
+  - @serovaai/ficta-protocol@0.2.1
+
 ## 0.2.0
 
 ### Minor Changes
