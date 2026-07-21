@@ -9,21 +9,21 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as RecordsRouteImport } from './routes/records'
-import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ChatThreadIdRouteImport } from './routes/chat.$threadId'
-import { Route as ApiRenderRouteImport } from './routes/api/render'
-import { Route as ApiProtectionPreviewRouteImport } from './routes/api/protection-preview'
-import { Route as ApiExtractRouteImport } from './routes/api/extract'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as RecordsRouteImport } from './routes/records'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
-import { Route as ApiAuthSignOutRouteImport } from './routes/api/auth/sign-out'
-import { Route as ApiAuthSignInRouteImport } from './routes/api/auth/sign-in'
+import { Route as ApiExtractRouteImport } from './routes/api/extract'
+import { Route as ApiProtectionPreviewRouteImport } from './routes/api/protection-preview'
+import { Route as ApiRenderRouteImport } from './routes/api/render'
+import { Route as ChatThreadIdRouteImport } from './routes/chat.$threadId'
 import { Route as ApiAuthCallbackRouteImport } from './routes/api/auth/callback'
+import { Route as ApiAuthSignInRouteImport } from './routes/api/auth/sign-in'
+import { Route as ApiAuthSignOutRouteImport } from './routes/api/auth/sign-out'
 
-const RecordsRoute = RecordsRouteImport.update({
-  id: '/records',
-  path: '/records',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OnboardingRoute = OnboardingRouteImport.update({
@@ -31,29 +31,9 @@ const OnboardingRoute = OnboardingRouteImport.update({
   path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ChatThreadIdRoute = ChatThreadIdRouteImport.update({
-  id: '/chat/$threadId',
-  path: '/chat/$threadId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiRenderRoute = ApiRenderRouteImport.update({
-  id: '/api/render',
-  path: '/api/render',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiProtectionPreviewRoute = ApiProtectionPreviewRouteImport.update({
-  id: '/api/protection-preview',
-  path: '/api/protection-preview',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiExtractRoute = ApiExtractRouteImport.update({
-  id: '/api/extract',
-  path: '/api/extract',
+const RecordsRoute = RecordsRouteImport.update({
+  id: '/records',
+  path: '/records',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiChatRoute = ApiChatRouteImport.update({
@@ -61,9 +41,29 @@ const ApiChatRoute = ApiChatRouteImport.update({
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAuthSignOutRoute = ApiAuthSignOutRouteImport.update({
-  id: '/api/auth/sign-out',
-  path: '/api/auth/sign-out',
+const ApiExtractRoute = ApiExtractRouteImport.update({
+  id: '/api/extract',
+  path: '/api/extract',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProtectionPreviewRoute = ApiProtectionPreviewRouteImport.update({
+  id: '/api/protection-preview',
+  path: '/api/protection-preview',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRenderRoute = ApiRenderRouteImport.update({
+  id: '/api/render',
+  path: '/api/render',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChatThreadIdRoute = ChatThreadIdRouteImport.update({
+  id: '/chat/$threadId',
+  path: '/chat/$threadId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAuthCallbackRoute = ApiAuthCallbackRouteImport.update({
+  id: '/api/auth/callback',
+  path: '/api/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSignInRoute = ApiAuthSignInRouteImport.update({
@@ -71,9 +71,9 @@ const ApiAuthSignInRoute = ApiAuthSignInRouteImport.update({
   path: '/api/auth/sign-in',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAuthCallbackRoute = ApiAuthCallbackRouteImport.update({
-  id: '/api/auth/callback',
-  path: '/api/auth/callback',
+const ApiAuthSignOutRoute = ApiAuthSignOutRouteImport.update({
+  id: '/api/auth/sign-out',
+  path: '/api/auth/sign-out',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -175,11 +175,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/records': {
-      id: '/records'
-      path: '/records'
-      fullPath: '/records'
-      preLoaderRoute: typeof RecordsRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/onboarding': {
@@ -189,39 +189,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OnboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/chat/$threadId': {
-      id: '/chat/$threadId'
-      path: '/chat/$threadId'
-      fullPath: '/chat/$threadId'
-      preLoaderRoute: typeof ChatThreadIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/render': {
-      id: '/api/render'
-      path: '/api/render'
-      fullPath: '/api/render'
-      preLoaderRoute: typeof ApiRenderRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/protection-preview': {
-      id: '/api/protection-preview'
-      path: '/api/protection-preview'
-      fullPath: '/api/protection-preview'
-      preLoaderRoute: typeof ApiProtectionPreviewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/extract': {
-      id: '/api/extract'
-      path: '/api/extract'
-      fullPath: '/api/extract'
-      preLoaderRoute: typeof ApiExtractRouteImport
+    '/records': {
+      id: '/records'
+      path: '/records'
+      fullPath: '/records'
+      preLoaderRoute: typeof RecordsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/chat': {
@@ -231,11 +203,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/auth/sign-out': {
-      id: '/api/auth/sign-out'
-      path: '/api/auth/sign-out'
-      fullPath: '/api/auth/sign-out'
-      preLoaderRoute: typeof ApiAuthSignOutRouteImport
+    '/api/extract': {
+      id: '/api/extract'
+      path: '/api/extract'
+      fullPath: '/api/extract'
+      preLoaderRoute: typeof ApiExtractRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/protection-preview': {
+      id: '/api/protection-preview'
+      path: '/api/protection-preview'
+      fullPath: '/api/protection-preview'
+      preLoaderRoute: typeof ApiProtectionPreviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/render': {
+      id: '/api/render'
+      path: '/api/render'
+      fullPath: '/api/render'
+      preLoaderRoute: typeof ApiRenderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/chat/$threadId': {
+      id: '/chat/$threadId'
+      path: '/chat/$threadId'
+      fullPath: '/chat/$threadId'
+      preLoaderRoute: typeof ChatThreadIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/callback': {
+      id: '/api/auth/callback'
+      path: '/api/auth/callback'
+      fullPath: '/api/auth/callback'
+      preLoaderRoute: typeof ApiAuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/sign-in': {
@@ -245,11 +245,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSignInRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/auth/callback': {
-      id: '/api/auth/callback'
-      path: '/api/auth/callback'
-      fullPath: '/api/auth/callback'
-      preLoaderRoute: typeof ApiAuthCallbackRouteImport
+    '/api/auth/sign-out': {
+      id: '/api/auth/sign-out'
+      path: '/api/auth/sign-out'
+      fullPath: '/api/auth/sign-out'
+      preLoaderRoute: typeof ApiAuthSignOutRouteImport
       parentRoute: typeof rootRouteImport
     }
   }

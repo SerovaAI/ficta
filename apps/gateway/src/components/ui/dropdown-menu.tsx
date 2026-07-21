@@ -1,5 +1,5 @@
 import { ChevronRightIcon, CircleIcon } from "lucide-react";
-import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui";
+import * as DropdownMenuPrimitive from "radix-ui/dropdown-menu";
 import type * as React from "react";
 
 import { cn } from "@/lib/utils";
