@@ -56,7 +56,8 @@ matter-specific enforcement.
 - Binary responses.
 - Unregistered secrets that the best-effort detectors do not match. `secret-shapes` catches vendor-shaped values (`sk-…`, JWTs, PEM blocks, credential URLs) anywhere, but its key/value pairing is deliberately conservative and misses opaque values in several positions — a secret-ish word at the very start of the key (`token:`, `password:`), a decoration between the separator and the value (`api_token: |`, `Authorization: Bearer …`), and flag forms with no separator. Path-shaped values are rejected outright so file listings an agent reads are not mangled. See [Known coverage limits](./plugins.md#known-coverage-limits). Loosening any of these trades a narrow miss for broad over-redaction, which withholds values the agent needs; register the secret instead.
 - Secrets the agent reads or sends outside the proxied model API channel.
-- Session mirroring to a non-provider host, notably Claude Code's remote control. See [Remote control is out of scope](#remote-control-is-out-of-scope) below.
+- Remote-transport MCP servers, which talk to their own hosts and never reach the proxy. See [Remote MCP servers are a second egress path](#remote-mcp-servers-are-a-second-egress-path) below.
+- Session mirroring over non-model-API wires, notably Claude Code's remote control. See [Remote control is out of scope](#remote-control-is-out-of-scope) below.
 - IDE clients that do not route all model traffic through the proxy, for example Cursor, whose Agent / Edit / Tab / Composer features bypass a custom base URL. See [IDE clients](#ide-clients-cursor-etc) below.
 
 ## IDE clients (Cursor, etc.)
@@ -80,13 +81,51 @@ If a future Cursor build routes **all** model traffic (including Agent/Edit/Tab)
 user-controlled base URL, revisit this — full coverage would make the same exact-match promise
 honest there too.
 
+## Remote MCP servers are a second egress path
+
+ficta redacts the **model API** channel. An agent's MCP servers are a separate channel, and their
+transport decides whether ficta is even in a position to see them:
+
+- **stdio servers** run as local child processes. Nothing leaves the machine on ficta's account, and
+  what the agent later tells the *model* about their output is redacted normally.
+- **`http` / `sse` servers** open their own connection to their own host. Tool arguments the agent
+  sends — which may quote file contents, env values, or a registered secret verbatim — go straight
+  to that vendor. ficta never sees the request and cannot redact it.
+
+This is easy to miss because MCP configuration is not obviously network configuration, and a
+user-scoped server in `~/.claude.json` loads in **every** project, including ones you would never
+have pointed at that vendor:
+
+```json
+"mcpServers": {
+  "some-docs": { "type": "http", "url": "https://vendor.example/api/mcp" }
+}
+```
+
+Audit with `claude mcp list` and treat every non-stdio entry as an egress destination in its own
+right. This is the same shape of gap as [remote control](#remote-control-is-out-of-scope): a channel
+carrying the same material ficta just protected, over a wire ficta has no reader for. Routing it
+through the proxy would not help — a redactor would need per-server schema knowledge, and MCP tool
+arguments are arbitrary vendor-defined shapes.
+
 ## Remote control is out of scope
 
 Claude Code's remote control (`claude remote-control`, `--remote-control`/`--rc`, settings
-auto-start, or the in-session toggle) mirrors the session — transcript and tool calls — to
-`wss://bridge.claudeusercontent.com` so it can be driven from claude.ai or the mobile app. That is a
-**different host from the Messages API**, so a base-URL override does not capture it: nothing on that
-channel is redacted, and ficta cannot see it.
+auto-start, or the in-session toggle) mirrors the session — transcript and tool calls — to Anthropic
+so it can be driven from claude.ai or the mobile app. Observed on 2.1.220, it does this over
+**control-plane endpoints on `api.anthropic.com`**, by HTTP long-poll rather than a websocket:
+
+```
+POST /v1/environments/bridge                     registration
+POST /v1/sessions                                session create
+POST /v1/code/sessions/{cse}/worker/register     worker attach
+GET  /v1/environments/{env}/work/poll            long poll, ~5s
+POST /v1/environments/{env}/work/{id}/ack        work ack
+```
+
+Same host as the Messages API, but **not** the Messages wire: ficta parses and redacts model-API
+request bodies, and these are a different schema it does not understand. Routing them through the
+proxy would not redact them.
 
 In practice the two features are mutually exclusive today, which is the safer failure:
 
@@ -99,8 +138,8 @@ In practice the two features are mutually exclusive today, which is the safer fa
   `--rc` (see `claudeRemoteControlPreflight`).
 
 `FICTA_DISABLE=1 claude --rc` gets remote control back and gives up redaction for that session. Do
-not read that as a redaction gap ficta could close by relaxing the routing: it is the bridge channel
-itself that is unprotected.
+not read that as a redaction gap ficta could close by relaxing the routing: the mirroring channel is
+unredacted either way, because ficta has no reader for that schema.
 
 ## Design tradeoffs
 

@@ -397,7 +397,9 @@ function shimDirs(): string[] {
 }
 
 function routeSummary(command: string): string {
-  if (command === "claude") return "sets ANTHROPIC_BASE_URL to the ephemeral ficta proxy";
+  if (command === "claude") {
+    return "sets ANTHROPIC_BASE_URL to the ephemeral ficta proxy (disables Claude Code remote control)";
+  }
   if (command === "codex") {
     return codexUsesChatgptAuth(process.env)
       ? "injects Codex custom provider + chatgpt_base_url (ChatGPT/OAuth detected)"

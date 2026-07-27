@@ -140,12 +140,13 @@ function claudeRemoteControlPreflight(args: readonly string[]): AgentPreflightNo
     "  ficta routes Claude Code through its local redaction proxy (ANTHROPIC_BASE_URL), and Claude",
     "  Code only starts the remote-control bridge when that points at api.anthropic.com.",
   ];
-  // Remote control mirrors the transcript to a bridge host ficta does not proxy, so bypassing ficta
-  // to get it is a real trade, not a formality. Name it at the moment of the decision.
+  // Remote control mirrors the transcript over api.anthropic.com control-plane endpoints
+  // (/v1/environments/*, /v1/sessions) that ficta does not parse or redact, so bypassing ficta to
+  // get it is a real trade, not a formality. Name it at the moment of the decision.
   const bypass = (invocation: string) => [
     `  To use remote control, run it outside ficta: FICTA_DISABLE=1 ${invocation}`,
     "  That session's model traffic is not redacted, and remote control mirrors the transcript to",
-    "  Anthropic over a channel ficta never sees, redirected or not.",
+    "  Anthropic over control-plane endpoints ficta does not redact even when it does route them.",
   ];
 
   if (args[0] === "remote-control") {
