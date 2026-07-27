@@ -110,6 +110,32 @@ describe("secret-shape detector", () => {
     }
   });
 
+  it("does not swallow file paths on the line after a secret-ish token", () => {
+    // The `secret-json-value` branch needs no separator between key and value, so before the
+    // path-shape guard any listing whose previous line ended in a token containing `token`/
+    // `secret`/`auth` lost the entire next path — silently, and only in that position.
+    const listings = [
+      ["convex/lib/rotateToken", "apps/web/app/settings/page.tsx"],
+      ["apps/web/hooks/useAuth.ts", "packages/core/src/index.ts"],
+      ["// falls back to the registered-secret", "packages/ficta/src/defaults.ts:12:  const x = 1;"],
+      ["gated behind oauth", "apps/gateway/src/server.ts"],
+      ["src/routes/api/v1/authToken.ts", "src/routes/api/v1/$.ts"],
+    ];
+    for (const lines of listings) {
+      expect(detectSecretShapes(lines.join("\n"))).toEqual([]);
+    }
+  });
+
+  it("still pairs a bare secret-ish key with a credential on the next line", () => {
+    // The path guard must not disarm the separator-less branch for real credentials, including
+    // base64 (excluded from the path char class via `+`/`=`) and slash-containing values.
+    const credentials = ["aB3/xY9z+Qw1RtU7pLmN2vK4hJ6gF8dS0cE5bA==", "Xk9sQ2mZ7pL4vN8rT1wY6hB3jF5dG0cA2eR7uI4o/S"];
+    for (const credential of credentials) {
+      const found = detectSecretShapes(["API_TOKEN", credential].join("\n"));
+      expect(found.map((value) => value.value)).toContain(credential);
+    }
+  });
+
   it("still detects a real key inside a secret-ish assignment", () => {
     const found = detectSecretShapes(`API_KEY=${OPENAI}`);
     expect(found.map((value) => value.value)).toContain(OPENAI);
