@@ -113,8 +113,12 @@ const SECRET_SHAPE_PATTERNS: readonly SecretShapePattern[] = [
   },
   {
     category: "secret-assignment",
+    // The `["'`]?` after the key is what makes this work on JSON *text* — a quoted key
+    // (`"api_token": "…"`) otherwise fails, because the closing quote sits between the key and the
+    // separator and `\s*` cannot cross it. JSON request *bodies* are paired structurally by
+    // detectSecretShapeLeaves; this covers a JSON config an agent reads into a tool result.
     regex:
-      /\b([A-Za-z][A-Za-z0-9_.-]*(?:api[_-]?key|token|secret|password|passwd|pwd|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]*)\b\s*[:=]\s*["'`]?([^\s"'`,;{}<>()[\]]+)["'`]?/gi,
+      /\b([A-Za-z][A-Za-z0-9_.-]*(?:api[_-]?key|token|secret|password|passwd|pwd|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]*)\b["'`]?\s*[:=]\s*["'`]?([^\s"'`,;{}<>()[\]]+)["'`]?/gi,
     confidence: "probabilistic",
     validate: isLikelySecretValue,
   },
