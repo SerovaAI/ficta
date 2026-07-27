@@ -104,6 +104,12 @@ describe("secret-shape detector", () => {
       "const secret = envData.ADMIN_JWT_SECRET",
       "const token = localStorage.getItem('admin_token')",
       "const authToken = getAuthorizationTokenValue",
+      // Optional chaining and non-null assertions sit outside `[\w$]`, so without explicit
+      // tolerance these read as opaque high-entropy values and get redacted out of the source.
+      "const token = config.auth?.accessToken",
+      "const secret = options?.client?.clientSecret",
+      "const apiKey = process.env.SERVICE_API_KEY!",
+      "const password = creds.db?.password!",
     ];
     for (const source of cases) {
       expect(detectSecretShapes(source)).toEqual([]);

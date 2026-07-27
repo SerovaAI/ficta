@@ -314,8 +314,13 @@ function isLikelySecretValue(raw: string): boolean {
   if (/^[a-z][a-z0-9-]*$/i.test(value) && value.length < 20) return false;
   // Code references, not secrets: dotted identifier chains (localStorage.getItem,
   // envData.ADMIN_JWT_SECRET) and bare mixed-case identifiers with no digits (getValidApiKeys).
-  if (/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(value)) return false;
-  if (/^[A-Za-z_$][\w$]*$/.test(value) && !/\d/.test(value) && /[a-z]/.test(value) && /[A-Z]/.test(value)) return false;
+  // The chain tolerates optional chaining (`env.FOO?.trim`) and a trailing TypeScript non-null
+  // assertion (`process.env.BAR!`): both are outside `[\w$]`, so without this the expression reads
+  // as an opaque high-entropy value and gets redacted out of the source the agent is reading.
+  if (/^[A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*)+!?$/.test(value)) return false;
+  if (/^[A-Za-z_$][\w$]*!?$/.test(value) && !/\d/.test(value) && /[a-z]/.test(value) && /[A-Z]/.test(value)) {
+    return false;
+  }
 
   const classes = [/[a-z]/.test(value), /[A-Z]/.test(value), /\d/.test(value), /[^A-Za-z0-9]/.test(value)].filter(
     Boolean,
