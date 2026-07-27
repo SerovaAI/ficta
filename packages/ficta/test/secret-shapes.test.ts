@@ -136,6 +136,22 @@ describe("secret-shape detector", () => {
     }
   });
 
+  it("pairs a quoted key with its value on a text surface", () => {
+    // JSON read into a tool result is text, not a body, so detectSecretShapeLeaves never sees it.
+    // An opaque value with no vendor shape isolates the key-pairing branch: only the quote
+    // tolerance can catch these.
+    const opaque = "aB3xY9zQw1RtU7pLmN2vK4hJ6gF8dS0cE5bA7nP2";
+    const surfaces = [
+      `{"api_token": "${opaque}"}`,
+      ["{", `  "api_token": "${opaque}"`, "}"].join("\n"),
+      [`  "api_token":`, `    "${opaque}"`].join("\n"),
+      `'api_token': ${opaque}`,
+    ];
+    for (const surface of surfaces) {
+      expect(detectSecretShapes(surface).map((value) => value.value)).toContain(opaque);
+    }
+  });
+
   it("still detects a real key inside a secret-ish assignment", () => {
     const found = detectSecretShapes(`API_KEY=${OPENAI}`);
     expect(found.map((value) => value.value)).toContain(OPENAI);
