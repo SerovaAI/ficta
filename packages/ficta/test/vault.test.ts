@@ -713,6 +713,58 @@ describe("vault", () => {
     expect(scope.withheldFromToolsCount).toBe(1);
   });
 
+  it("escapes a restored tool argument so JSON-special characters cannot corrupt the tool input", async () => {
+    // A tool-call argument fragment is itself JSON text: the client concatenates every
+    // `partial_json` and parses the result. A detected value containing a newline or a quote must
+    // therefore be re-escaped on the way in, exactly as restoreJsonText does for response bodies.
+    // Splicing it in raw yields a literal newline inside a JSON string literal, which is invalid.
+    const detValue = ["line-one-alpha", 'quote"inside', "line-two-bravo"].join("\n");
+    const vault = new Vault([]);
+    const scope = vault.beginScope();
+    scope.register([{ value: detValue }]);
+    const detSur = scope.redactText(detValue).text;
+    const sse = [
+      anthropicInputDelta(0, `{"content":"${detSur}"}`),
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+    ].join("");
+
+    const out = await transformText(scope.restoreEventStream(sseRestoreAdapterFor("anthropic")), [sse]);
+    const toolInput = streamedJsonData(out)
+      .map((event) => event?.delta?.partial_json ?? "")
+      .join("");
+
+    expect(() => JSON.parse(toolInput)).not.toThrow();
+    expect(JSON.parse(toolInput).content).toBe(detValue);
+  });
+
+  it("escapes restored tool arguments under `all`, which withholds nothing", async () => {
+    // `all` skips the withhold bookkeeping entirely, so it used to fall through to the blanket
+    // restore and corrupt the same way. Escaping is a property of the JSON context, not of the
+    // withhold policy.
+    const previous = process.env.FICTA_RESTORE_INTO_TOOLS;
+    process.env.FICTA_RESTORE_INTO_TOOLS = "all";
+    try {
+      const permValue = ["-----BEGIN KEY-----", 'has"quote', "-----END KEY-----"].join("\n");
+      const vault = new Vault([{ value: permValue }]);
+      const surrogate = vault.redactText(permValue).text;
+      const sse = [
+        anthropicInputDelta(0, `{"content":"${surrogate}"}`),
+        `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+      ].join("");
+
+      const out = await transformText(vault.restoreEventStream(sseRestoreAdapterFor("anthropic")), [sse]);
+      const toolInput = streamedJsonData(out)
+        .map((event) => event?.delta?.partial_json ?? "")
+        .join("");
+
+      expect(() => JSON.parse(toolInput)).not.toThrow();
+      expect(JSON.parse(toolInput).content).toBe(permValue);
+    } finally {
+      if (previous === undefined) delete process.env.FICTA_RESTORE_INTO_TOOLS;
+      else process.env.FICTA_RESTORE_INTO_TOOLS = previous;
+    }
+  });
+
   it("`none` withholds both layers; `all` restores both", async () => {
     const permValue = "alpha-registry-eu-west-1x";
     const detValue = "bravo-content-hostname-9z";

@@ -496,7 +496,12 @@ export abstract class VaultView {
       const restoreHere = policy === "all" || (policy === "detected" && this.provenanceFor(m) === "detected");
       if (restoreHere) {
         this.recordRestored(value, m);
-        return value;
+        // A tool-argument fragment is JSON text that the client concatenates and parses, and the
+        // surrogate always sits inside a string literal there. Splice the value in escaped for that
+        // context — as restoreJsonText does for response bodies — or a value containing a newline,
+        // `"`, or `\` (a PEM key, a quoted password, any multi-line file content the agent is
+        // writing back) produces invalid JSON and the tool call is corrupted.
+        return jsonStringEscape(value);
       }
       withheldSink.add(m);
       this.recordWithheld(value, m);
@@ -1112,11 +1117,17 @@ function restoreSseRecord(
     // `input_json_delta` chunks is stitched back to a whole token here, then `restoreToolArg`
     // makes the per-token restore/withhold decision on the complete token. Under withhold this is
     // the fix for split-token pass-through — a partial fragment can no longer slip a placeholder
-    // piece through unrestored and uncounted. Text fragments (and, under `all`, tool fragments)
-    // use the blanket restore.
+    // piece through unrestored and uncounted.
+    //
+    // Tool fragments route here under EVERY policy, `all` included: their content is nested JSON
+    // that the client concatenates and parses, so a restored value has to be escaped for that
+    // context regardless of whether anything is being withheld. The blanket restore would splice it
+    // in raw and a value carrying a newline, `"`, or `\` would corrupt the tool call. `withheld`
+    // stays undefined under `all`, so the deep sweep below keeps its existing behaviour.
+    const toolSink = withheld ?? new Set<string>();
     const restore =
-      withheld && fragment.kind === "tool"
-        ? (text: string) => tool.restoreToolArg(text, withheld)
+      fragment.kind === "tool"
+        ? (text: string) => tool.restoreToolArg(text, toolSink)
         : fragment.kind === "text"
           ? restoreDisplayText
           : restoreText;
