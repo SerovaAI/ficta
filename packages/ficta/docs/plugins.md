@@ -180,6 +180,31 @@ loaded from a managed registry file, `.env`, process env, or Doppler gets the st
 exact-match/fail-closed invariant, while a newly pasted value is protected only if it matches one of
 the known shapes.
 
+### Known coverage limits
+
+Most of the shapes above are **value-only** — a vendor-prefixed key (`sk-…`, `ghp_…`, `AKIA…`), a
+JWT, a PEM block, or a credential URL is caught wherever it appears, regardless of any surrounding
+key. Two patterns instead pair a secret-ish **key** with an adjacent value, and that pairing is
+deliberately conservative, so an *opaque* value (a random blob with no recognizable vendor shape)
+is missed in these positions:
+
+| Shape | Example | Why |
+| --- | --- | --- |
+| Secret-ish word at the start of the key | `token: …`, `password: …`, `secret: …` | The key pattern requires at least one character before the word. Relaxing this makes every `name: value` line in ordinary source a candidate — measured at +83% detections on a 4,000-file corpus, nearly all of them identifiers and i18n keys. |
+| Decoration between separator and value | `api_token: \|`, `api_token: >`, `- <value>`, `Authorization: Bearer <value>` | The value capture stops at the decoration, so the token that follows is not considered. |
+| No separator at all | `deploy --api-token <value>` | The assignment pattern requires `:` or `=`. |
+
+Values that look like **filesystem paths** are also rejected on purpose, including `path:line`
+locators from `grep`/`ripgrep`. Without that, a listing whose previous line ends in a token
+containing a secret-ish word (`…/rotateToken`, `useAuth.ts`) would have the next path replaced by a
+surrogate, silently removing entries from `git diff --name-only`, `ls`, and grep output that an
+agent reads. A path segment that looks like credential material — a long unbroken run mixing letter
+cases and digits — still disqualifies the value from path treatment.
+
+None of this changes the exact-match promise: a value in the registry is protected regardless of the
+shape it appears in. These limits apply only to the best-effort detection layer. If a secret matters,
+register it rather than relying on shape detection — see [Threat model](./threat-model.md).
+
 Like PII, it has separate web/standalone and agent-launch posture:
 
 ```toml
