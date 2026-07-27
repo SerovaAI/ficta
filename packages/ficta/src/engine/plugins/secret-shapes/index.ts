@@ -301,6 +301,12 @@ function isLikelySecretValue(raw: string): boolean {
   }
   resetPatternState();
   if (/^(?:true|false|null|undefined|none|password|secret|token|example|changeme)$/i.test(value)) return false;
+  // Filesystem paths, not secrets. Must come after the credential-URL and known-shape checks above
+  // so a credential URL (which contains slashes) still wins. Without this, the separator-less
+  // `secret-json-value` branch swallows the path on the line after any token containing a
+  // secret-ish word (`.../rotateToken`, `useAuth.ts`, a comment ending `(registered-secret`),
+  // which silently deletes ~1 path per 150 from any file listing an agent reads.
+  if (isPathShaped(value)) return false;
   if (/^[a-z][a-z0-9-]*$/i.test(value) && value.length < 20) return false;
   // Code references, not secrets: dotted identifier chains (localStorage.getItem,
   // envData.ADMIN_JWT_SECRET) and bare mixed-case identifiers with no digits (getValidApiKeys).
@@ -319,6 +325,37 @@ function trimCandidate(value: string): string {
     .trim()
     .replace(/^[`"'{(<[]+/, "")
     .replace(/[`"'}\])>,.;:]+$/, "");
+}
+
+/** Shortest run of unbroken mixed-case-plus-digits we read as credential material, not a filename. */
+const MIN_CREDENTIAL_SEGMENT_LENGTH = 20;
+
+/**
+ * True when a path segment looks like credential material rather than a filename: a long unbroken
+ * run mixing letter cases and digits. Real filenames that long carry a separator (`.`, `-`, `_`) —
+ * including content-hashed assets like `app.4f3a2b1c9d8e.js` — so requiring an unbroken run keeps
+ * them on the path side while catching a slash-containing token such as
+ * `Xk9sQ2mZ7pL4vN8rT1wY6hB3jF5dG0cA2eR7uI4o/S`.
+ */
+function isCredentialLikeSegment(segment: string): boolean {
+  if (segment.length < MIN_CREDENTIAL_SEGMENT_LENGTH) return false;
+  if (/[._-]/.test(segment)) return false;
+  return /[a-z]/.test(segment) && /[A-Z]/.test(segment) && /\d/.test(segment);
+}
+
+/**
+ * True for multi-segment filesystem paths (`apps/web/app/settings/page.tsx`), optionally carrying a
+ * grep/ripgrep locator suffix (`src/defaults.ts:12`, `src/defaults.ts:12:9`). Deliberately narrow:
+ * a single-segment value is never path-shaped, `+` and `=` are excluded from the char class so
+ * base64 credentials stay detectable, and one credential-like segment disqualifies the whole value
+ * so a slash-containing secret is not mistaken for a path.
+ */
+function isPathShaped(value: string): boolean {
+  if (!/^[A-Za-z0-9_.@~$%-]+(?:\/[A-Za-z0-9_.@~$%-]+)+\/?(?::\d+)*:?$/.test(value)) return false;
+  return !value
+    .replace(/(?::\d+)*:?$/, "")
+    .split("/")
+    .some(isCredentialLikeSegment);
 }
 
 function isPlaceholder(value: string): boolean {
