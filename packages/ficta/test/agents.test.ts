@@ -36,6 +36,27 @@ describe("agent integration plugins", () => {
     expect(codexAgent.isMachineReadable?.(["exec", "hello"])).toBe(false);
   });
 
+  it("blocks `claude remote-control`, which ficta routing cannot serve", () => {
+    const notice = claudeAgent.preflight?.(["remote-control"], {});
+    expect(notice?.level).toBe("block");
+    expect(notice?.lines.join("\n")).toContain("FICTA_DISABLE=1 claude remote-control");
+  });
+
+  it("warns but allows a remote-control flag on an otherwise normal session", () => {
+    for (const flag of ["--remote-control", "--rc"]) {
+      const notice = claudeAgent.preflight?.(["--dangerously-skip-permissions", flag], {});
+      expect(notice?.level).toBe("warn");
+      expect(notice?.lines[0]).toContain(flag);
+    }
+  });
+
+  it("leaves ordinary Claude Code invocations unflagged", () => {
+    expect(claudeAgent.preflight?.([], {})).toBeUndefined();
+    expect(claudeAgent.preflight?.(["-p", "summarize the diff"], {})).toBeUndefined();
+    // A session-name prefix only ever accompanies the subcommand, which is already blocked above.
+    expect(claudeAgent.preflight?.(["--model", "opus"], {})).toBeUndefined();
+  });
+
   it("configures Claude Code via ANTHROPIC_BASE_URL", () => {
     const plan = claudeAgent.configureLaunch({
       baseUrl: BASE,

@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { AgentIntegration, AgentIntegrationPlugin } from "./agent-types.js";
+import type { AgentIntegration, AgentIntegrationPlugin, AgentPreflightNotice } from "./agent-types.js";
 
 export const claudeAgent: AgentIntegration = {
   id: "builtin/claude",
@@ -19,6 +19,7 @@ export const claudeAgent: AgentIntegration = {
   description: "Uses ANTHROPIC_BASE_URL to route Claude Messages API traffic through ficta",
   shouldBypass: commonNonModelCommand,
   isMachineReadable: claudeMachineReadableCommand,
+  preflight: claudeRemoteControlPreflight,
   configureLaunch: ({ baseUrl, args, realExecutable, env }) => ({
     executable: realExecutable,
     args,
@@ -116,6 +117,54 @@ function claudeMachineReadableCommand(args: readonly string[]): boolean {
 
 function codexMachineReadableCommand(args: readonly string[]): boolean {
   return args.includes("--json");
+}
+
+const CLAUDE_RC_FLAGS = new Set(["--remote-control", "--rc"]);
+
+/**
+ * Claude Code only starts the remote-control bridge when it talks to the provider directly: its gate
+ * is `new URL(ANTHROPIC_BASE_URL).host === "api.anthropic.com"` (host includes the port, so even a
+ * loopback proxy on a spoofed hostname fails), and the `_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL`
+ * escape hatch is explicitly excluded from this check. ficta owns ANTHROPIC_BASE_URL for the launched
+ * agent, so remote control cannot work under ficta at all — Claude Code prints its own reason and
+ * carries on as a local session, but that notice is repainted away by the TUI, so the flag reads as
+ * simply not working. Say so ourselves before the TUI can bury it.
+ *
+ * `claude remote-control` exists only to serve remote control, so launching it is pointless: block.
+ * A bare `--rc` on an otherwise normal session still gives a useful local session: warn and continue.
+ * Sessions that enable remote control from settings (auto-start) or the in-session toggle are not
+ * visible in argv and fall through silently.
+ */
+function claudeRemoteControlPreflight(args: readonly string[]): AgentPreflightNotice | undefined {
+  const why = [
+    "  ficta routes Claude Code through its local redaction proxy (ANTHROPIC_BASE_URL), and Claude",
+    "  Code only starts the remote-control bridge when that points at api.anthropic.com.",
+  ];
+  // Remote control mirrors the transcript to a bridge host ficta does not proxy, so bypassing ficta
+  // to get it is a real trade, not a formality. Name it at the moment of the decision.
+  const bypass = (invocation: string) => [
+    `  To use remote control, run it outside ficta: FICTA_DISABLE=1 ${invocation}`,
+    "  That session's model traffic is not redacted, and remote control mirrors the transcript to",
+    "  Anthropic over a channel ficta never sees, redirected or not.",
+  ];
+
+  if (args[0] === "remote-control") {
+    return {
+      level: "block",
+      lines: ["ficta: `claude remote-control` cannot work under ficta.", ...why, ...bypass("claude remote-control")],
+    };
+  }
+
+  const flag = args.find((arg) => CLAUDE_RC_FLAGS.has(arg));
+  if (!flag) return undefined;
+  return {
+    level: "warn",
+    lines: [
+      `⚠ ficta: ${flag} is a no-op under ficta — continuing as a normal local session.`,
+      ...why,
+      ...bypass(`claude ${flag}`),
+    ],
+  };
 }
 
 export function codexUsesChatgptAuth(env: NodeJS.ProcessEnv = process.env): boolean {

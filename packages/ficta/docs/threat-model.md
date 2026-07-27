@@ -56,6 +56,7 @@ matter-specific enforcement.
 - Binary responses.
 - Unregistered secrets that the best-effort detectors do not match. `secret-shapes` catches vendor-shaped values (`sk-…`, JWTs, PEM blocks, credential URLs) anywhere, but its key/value pairing is deliberately conservative and misses opaque values in several positions — a secret-ish word at the very start of the key (`token:`, `password:`), a decoration between the separator and the value (`api_token: |`, `Authorization: Bearer …`), and flag forms with no separator. Path-shaped values are rejected outright so file listings an agent reads are not mangled. See [Known coverage limits](./plugins.md#known-coverage-limits). Loosening any of these trades a narrow miss for broad over-redaction, which withholds values the agent needs; register the secret instead.
 - Secrets the agent reads or sends outside the proxied model API channel.
+- Session mirroring to a non-provider host, notably Claude Code's remote control. See [Remote control is out of scope](#remote-control-is-out-of-scope) below.
 - IDE clients that do not route all model traffic through the proxy, for example Cursor, whose Agent / Edit / Tab / Composer features bypass a custom base URL. See [IDE clients](#ide-clients-cursor-etc) below.
 
 ## IDE clients (Cursor, etc.)
@@ -78,6 +79,28 @@ claim Cursor protection on that basis.
 If a future Cursor build routes **all** model traffic (including Agent/Edit/Tab) through a
 user-controlled base URL, revisit this — full coverage would make the same exact-match promise
 honest there too.
+
+## Remote control is out of scope
+
+Claude Code's remote control (`claude remote-control`, `--remote-control`/`--rc`, settings
+auto-start, or the in-session toggle) mirrors the session — transcript and tool calls — to
+`wss://bridge.claudeusercontent.com` so it can be driven from claude.ai or the mobile app. That is a
+**different host from the Messages API**, so a base-URL override does not capture it: nothing on that
+channel is redacted, and ficta cannot see it.
+
+In practice the two features are mutually exclusive today, which is the safer failure:
+
+- Claude Code starts the bridge only when `ANTHROPIC_BASE_URL` is unset or its host is exactly
+  `api.anthropic.com` (the host comparison includes the port, and the
+  `_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL` escape hatch is explicitly excluded from it). ficta owns
+  that variable for the launched agent, so under ficta the bridge never starts.
+- Claude Code says so at startup, but a full-screen TUI repaints the notice away, so the flag reads
+  as silently broken. ficta therefore refuses `claude remote-control` outright and warns on a bare
+  `--rc` (see `claudeRemoteControlPreflight`).
+
+`FICTA_DISABLE=1 claude --rc` gets remote control back and gives up redaction for that session. Do
+not read that as a redaction gap ficta could close by relaxing the routing: it is the bridge channel
+itself that is unprotected.
 
 ## Design tradeoffs
 

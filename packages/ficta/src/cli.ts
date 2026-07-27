@@ -182,6 +182,15 @@ if (agent.shouldBypass?.(rest)) {
   process.exit(await runChild(spawn(agentPath, rest, { stdio: "inherit", env: sanitizeAgentEnv(process.env) })));
 }
 
+// Some invocations ask for behaviour that ficta's routing silently defeats (notably Claude Code's
+// remote control, which requires a direct api.anthropic.com endpoint). Say so before the proxy
+// starts and before a full-screen agent TUI can repaint the message away.
+const preflight = agent.preflight?.(rest, process.env);
+if (preflight && (preflight.level === "block" || agent.isMachineReadable?.(rest) !== true)) {
+  process.stderr.write(`${preflight.lines.join("\n")}\n`);
+  if (preflight.level === "block") process.exit(1);
+}
+
 // Route this shim's capture logs to a per-agent, per-instance subtree so concurrent agent launches
 // (and the gateway's own proxy) never share a run dir or race protection-stats.json. Must run before
 // config/log load (the dynamic import("./server.js") below); FICTA_LOG_DIR still overrides the whole

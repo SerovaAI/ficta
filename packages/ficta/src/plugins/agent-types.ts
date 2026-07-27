@@ -26,6 +26,17 @@ export interface AgentLaunchPlan {
   cleanup?: () => void | Promise<void>;
 }
 
+/**
+ * A pre-launch verdict for an invocation ficta cannot serve faithfully — e.g. an agent flag whose
+ * behaviour depends on reaching the provider directly, which routing through ficta silently defeats.
+ */
+export interface AgentPreflightNotice {
+  /** "block" refuses the launch (exit 1); "warn" prints and launches anyway. */
+  level: "block" | "warn";
+  /** stderr lines, without trailing newlines. */
+  lines: readonly string[];
+}
+
 /** How to launch one AI coding client through ficta. */
 export interface AgentIntegration {
   /** Stable id, e.g. builtin/claude. */
@@ -38,6 +49,8 @@ export interface AgentIntegration {
   shouldBypass?(args: readonly string[]): boolean;
   /** Return true when the invocation is intended for machine-readable output, so diagnostics stay quiet by default. */
   isMachineReadable?(args: readonly string[]): boolean;
+  /** Flag invocations ficta routing silently breaks. Runs after shouldBypass, before the proxy starts. */
+  preflight?(args: readonly string[], env: NodeJS.ProcessEnv): AgentPreflightNotice | undefined;
   /** Launch through ficta. */
   configureLaunch(ctx: AgentLaunchContext): AgentLaunchPlan;
   /** Optional dynamic cleanup for FICTA_DISABLE=1 bypasses, e.g. neutralizing stale persisted config. */

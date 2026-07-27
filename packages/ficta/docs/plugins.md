@@ -717,7 +717,11 @@ Detector output enters the same vault as registry values, but the protection cla
 
 The `builtin-agent-integrations` plugin currently provides:
 
-- `claude` — launches the real Claude Code executable with `ANTHROPIC_BASE_URL=<ficta>`.
+- `claude` — launches the real Claude Code executable with `ANTHROPIC_BASE_URL=<ficta>`. Its
+  `preflight` refuses `claude remote-control` and warns on `--remote-control`/`--rc`: Claude Code
+  starts the remote-control bridge only when `ANTHROPIC_BASE_URL` is unset or its host is exactly
+  `api.anthropic.com`, so under ficta the flag is a silent no-op (see
+  [Remote control](./threat-model.md#remote-control-is-out-of-scope)).
 - `codex` — launches the real Codex executable with temporary `-c` provider overrides; detects
   ChatGPT/OAuth auth and adds `requires_openai_auth` + `chatgpt_base_url` when needed.
 - `pi` — launches Pi with `PI_CODING_AGENT_DIR` pointed at an ephemeral agent dir that symlinks the
