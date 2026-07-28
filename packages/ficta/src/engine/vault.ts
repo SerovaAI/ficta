@@ -230,6 +230,22 @@ export abstract class VaultView {
   }
 
   /**
+   * Distinct known values ficta DID splice into a tool-call argument — the complement of
+   * {@link withheldFromTools} under the same policy. These are the restores that run one JSON
+   * context deeper than the response body, so they are the ones whose escaping can corrupt a tool
+   * call; counting them separately is what makes that class of failure visible in a run's metadata
+   * instead of only in the bytes the agent received. Populated by both restore paths: the streamed
+   * fragment path ({@link restoreToolArgText}) and the buffered/replay path (a restore landing
+   * inside a `nestedJsonSpans` region in {@link restoreJsonText}).
+   */
+  readonly restoredIntoTools = new Set<string>();
+
+  /** How many distinct values were restored into tool-call arguments in this view's responses. */
+  get restoredIntoToolsCount(): number {
+    return this.restoredIntoTools.size;
+  }
+
+  /**
    * Distinct surrogate-shaped tokens that survived restore with no dictionary mapping — the model
    * mutated, truncated, or invented them (e.g. a wildcard family reference like
    * `FICTA_ORG_<entityTag>_*`). Exact-match restore correctly leaves them alone, so each one reached
@@ -495,7 +511,7 @@ export abstract class VaultView {
       if (value === undefined) return m; // unmapped placeholder — pass through untouched
       const restoreHere = policy === "all" || (policy === "detected" && this.provenanceFor(m) === "detected");
       if (restoreHere) {
-        this.recordRestored(value, m);
+        this.recordRestoredIntoTools(value, m);
         // A tool-argument fragment is JSON text that the client concatenates and parses, and the
         // surrogate always sits inside a string literal there. Splice the value in escaped for that
         // context — as restoreJsonText does for response bodies — or a value containing a newline,
@@ -539,7 +555,33 @@ export abstract class VaultView {
     } catch {
       return this.restoreText(body, opts);
     }
-    return this.restoreJsonText(body, this.collectWithheldToolTokens(adapter, parsed, this.toolPolicy()), opts);
+    return this.restoreJsonBody(body, adapter, parsed, this.toolPolicy(), opts);
+  }
+
+  /**
+   * Shared implementation of the complete-payload restore, used by the buffered response path and by
+   * the full-payload SSE replay events that re-send a finished tool call. It applies the
+   * restore-into-tools withholding AND escapes each restored value for the JSON depth of the region
+   * it sits in: a value inside a tool-argument region needs one more level than one in an ordinary
+   * body string, because the OpenAI wires carry `arguments` as JSON text nested inside a JSON string
+   * (Anthropic's `tool_use.input` is a real object, so it stays at one level and is unaffected).
+   * Single-escaping there yields a body that parses while its tool arguments do not — the buffered
+   * twin of the streamed-fragment corruption fixed in restoreToolArgText.
+   */
+  private restoreJsonBody(
+    body: string,
+    adapter: BufferedRestoreAdapter,
+    parsed: unknown,
+    policy: RestoreIntoToolsPolicy,
+    opts: RestoreOptions = {},
+  ): string {
+    const regions = adapter.toolArgumentTexts(parsed);
+    return this.restoreJsonText(
+      body,
+      this.collectWithheldToolTokens(regions, policy),
+      opts,
+      nestedJsonStringSpans(body, regions, this.surrogate),
+    );
   }
 
   /** The active restore-into-tools policy (read per call, mirroring the streaming path). */
@@ -555,14 +597,10 @@ export abstract class VaultView {
    * detected-layer tokens restore. Each withheld token is recorded in {@link withheldFromTools} so
    * the count spans buffered and streaming restore alike.
    */
-  private collectWithheldToolTokens(
-    adapter: BufferedRestoreAdapter,
-    parsed: unknown,
-    policy: RestoreIntoToolsPolicy,
-  ): ReadonlySet<string> {
+  private collectWithheldToolTokens(regions: readonly string[], policy: RestoreIntoToolsPolicy): ReadonlySet<string> {
     if (policy === "all") return EMPTY_SKIP;
     let withheld: Set<string> | undefined;
-    for (const region of adapter.toolArgumentTexts(parsed)) {
+    for (const region of regions) {
       for (const token of region.match(this.surrogate.pattern) ?? []) {
         if (policy === "detected" && this.provenanceFor(token) === "detected") continue; // will be restored
         const value = this.valueFor(token);
@@ -579,8 +617,18 @@ export abstract class VaultView {
    * In-place surrogate restore for JSON text, escaping each value for its string context. Tokens in
    * `skip` are left untouched — the buffered withhold path passes the tool-argument tokens here so
    * the body-wide restore cannot undo the withholding (mirror of {@link restoreTextExcept}).
+   *
+   * `nestedJsonSpans` names regions of `text` that are themselves JSON text inside a JSON string
+   * (tool-call arguments on the OpenAI wires). A value restored there is two string contexts deep,
+   * so it is escaped twice: once for the nested document the client parses out of the field, once
+   * for the field's own literal. See {@link restoreJsonBody}.
    */
-  restoreJsonText(text: string, skip: ReadonlySet<string> = EMPTY_SKIP, opts: RestoreOptions = {}): string {
+  restoreJsonText(
+    text: string,
+    skip: ReadonlySet<string> = EMPTY_SKIP,
+    opts: RestoreOptions = {},
+    nestedJsonSpans: ReadonlyArray<readonly [number, number]> = NO_SPANS,
+  ): string {
     if (!this.hasSurrogates || !text) {
       this.noteResiduals(text); // an empty vault still observes token debris in complete payloads
       return text;
@@ -591,8 +639,12 @@ export abstract class VaultView {
       if (skip.has(m)) return m;
       const value = this.valueFor(m);
       if (value === undefined) return m;
-      this.recordRestored(value, m);
-      return jsonStringEscape(markRestoredValue(value, m, this.restoreOriginFor(m), opts.markers));
+      const nested = overlapsSpan(nestedJsonSpans, index, index + m.length);
+      if (nested) this.recordRestoredIntoTools(value, m);
+      else this.recordRestored(value, m);
+      const escaped = jsonStringEscape(markRestoredValue(value, m, this.restoreOriginFor(m), opts.markers));
+      // Inner escape first (the nested document), then the enclosing literal.
+      return nested ? jsonStringEscape(escaped) : escaped;
     });
     this.noteResiduals(out); // callers pass complete JSON payloads (whole bodies / whole SSE records)
     return out;
@@ -700,6 +752,11 @@ export abstract class VaultView {
     this.withheldSurrogates.set(value, surrogate);
   }
 
+  private recordRestoredIntoTools(value: string, surrogate: string): void {
+    this.recordRestored(value, surrogate);
+    this.restoredIntoTools.add(value);
+  }
+
   /**
    * A TransformStream that restores surrogates in a streamed response. Holds back a short tail
    * each chunk so a surrogate split across chunk boundaries is never emitted half-restored.
@@ -777,8 +834,7 @@ export abstract class VaultView {
         restoreExcept: (text, skip) => this.restoreTextExcept(text, skip, opts),
         // No-fragment metadata/replay path (the request-echo events): plain, so `instructions` and
         // other non-output fields are restored without highlight decoration.
-        restoreJsonExcept: (text, skip) => this.restoreJsonText(text, skip),
-        collectWithheld: (data) => this.collectWithheldToolTokens(buffered, data, policy),
+        restoreReplayJson: (text, data) => this.restoreJsonBody(text, buffered, data, policy),
         restoreToolArg: (text, withheldSink) => this.restoreToolArgText(text, policy, withheldSink),
       },
       displayText,
@@ -1012,10 +1068,13 @@ export const NOOP_BUFFERED_RESTORE_ADAPTER: BufferedRestoreAdapter = { toolArgum
 interface ToolRestorePolicy {
   withhold: boolean;
   restoreExcept: (text: string, skip: ReadonlySet<string>) => string;
-  /** JSON-context restore that leaves `skip` tokens in place (see {@link VaultView.restoreJsonText}). */
-  restoreJsonExcept: (text: string, skip: ReadonlySet<string>) => string;
-  /** Tool-argument tokens in a complete event payload (replay events), already counted as withheld. */
-  collectWithheld: (data: unknown) => ReadonlySet<string>;
+  /**
+   * Complete (non-delta) event payload restore: applies the same tool-argument withholding as the
+   * fragment path and escapes restored values for the JSON depth they sit at, so a replayed tool
+   * call is neither un-withheld nor corrupted (see {@link VaultView.restoreJsonBody}). Runs under
+   * every policy — `all` withholds nothing but still needs the nested-context escaping.
+   */
+  restoreReplayJson: (text: string, data: unknown) => string;
   /** Restore a reassembled tool-argument fragment per policy; withheld tokens go to `withheldSink`. */
   restoreToolArg: (text: string, withheldSink: Set<string>) => string;
 }
@@ -1099,14 +1158,14 @@ function restoreSseRecord(
   const fragments = adapter.fragments(data, parsed.eventName);
   if (fragments.length === 0) {
     // No incremental fragments to reassemble. If the event body parsed as JSON, restore surrogates
-    // inside its `data:` payload in place (escaping each restored value for its string context) so
-    // numbers and formatting survive untouched; otherwise fall back to a raw text restore. Replay
+    // inside its `data:` payload in place (escaping each restored value for the depth of the string
+    // context it sits in) so numbers and formatting survive untouched; otherwise fall back to a raw
+    // text restore. Replay
     // events (e.g. openai-responses `response.completed` / `output_item.done`) re-send COMPLETE
     // tool-call arguments here, so the same withhold policy that held back every delta must hold
     // back the replay too — otherwise the final event would hand the sink the real secret anyway.
     if (data === undefined) return prefix + restoreText(record);
-    const withheld = tool.withhold ? tool.collectWithheld(data) : EMPTY_SKIP;
-    return prefix + renderSseRecordRawData(parsed, tool.restoreJsonExcept(parsed.data ?? "", withheld));
+    return prefix + renderSseRecordRawData(parsed, tool.restoreReplayJson(parsed.data ?? "", data));
   }
 
   // Tokens withheld from tool-call arguments in this event; the deep sweep below must not restore
@@ -1247,6 +1306,56 @@ function entitySurfaceKey(entityId: string, surface: string): string {
 }
 
 const NO_SPANS: ReadonlyArray<readonly [number, number]> = [];
+
+/**
+ * Spans of `text` (in text order) whose contents are one of `regions` — the tool-argument strings a
+ * {@link BufferedRestoreAdapter} named in the parsed payload. Locating them in the raw text is what
+ * lets the restore escape by position instead of by token: the same surrogate can appear both inside
+ * a tool argument and in ordinary assistant text in one body, and each occurrence needs the escaping
+ * of the context it actually sits in.
+ *
+ * The scan walks string literals and compares each DECODED literal against the region set, so it
+ * matches whatever escaping the provider emitted rather than assuming JSON.stringify's. Literals
+ * carrying no surrogate are skipped without decoding, and a payload whose regions carry no surrogate
+ * costs nothing. Two byte-identical literals where only one is a tool argument would both be marked;
+ * that over-escapes a value into a visible `\n` rather than producing invalid JSON, so the ambiguity
+ * fails in the safe direction.
+ */
+function nestedJsonStringSpans(
+  text: string,
+  regions: readonly string[],
+  surrogate: SurrogateStrategy,
+): ReadonlyArray<readonly [number, number]> {
+  if (regions.length === 0) return NO_SPANS;
+  const wanted = new Set<string>();
+  for (const region of regions) if (region.match(surrogate.pattern)) wanted.add(region);
+  if (wanted.size === 0) return NO_SPANS;
+
+  const spans: Array<readonly [number, number]> = [];
+  let cursor = 0;
+  while (cursor < text.length) {
+    if (text[cursor] !== '"') {
+      cursor += 1;
+      continue;
+    }
+    const open = cursor;
+    cursor += 1;
+    while (cursor < text.length && text[cursor] !== '"') cursor += text[cursor] === "\\" ? 2 : 1;
+    if (cursor >= text.length) break; // unterminated literal: malformed payload, nothing more to mark
+    const close = cursor;
+    cursor += 1;
+    const literal = text.slice(open, close + 1);
+    if (!literal.match(surrogate.pattern)) continue; // no surrogate inside: escaping depth is moot
+    let decoded: unknown;
+    try {
+      decoded = JSON.parse(literal);
+    } catch {
+      continue;
+    }
+    if (typeof decoded === "string" && wanted.has(decoded)) spans.push([open + 1, close]);
+  }
+  return spans.length === 0 ? NO_SPANS : spans;
+}
 
 /** Whether [start, end) overlaps any of the (ordered) excluded spans. */
 function overlapsSpan(spans: ReadonlyArray<readonly [number, number]>, start: number, end: number): boolean {

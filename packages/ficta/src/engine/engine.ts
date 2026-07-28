@@ -672,6 +672,10 @@ class ProtectionRequestScope implements RequestScope {
     return this.vault.withheldFromToolsCount;
   }
 
+  get restoredIntoToolsCount(): number {
+    return this.vault.restoredIntoToolsCount;
+  }
+
   get residualSurrogateCount(): number {
     return this.vault.residualSurrogateCount;
   }

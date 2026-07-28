@@ -877,6 +877,134 @@ describe("buffered restore withholding", () => {
     expect(vault.withheldFromToolsCount).toBe(1);
   });
 
+  it("escapes a restored value spliced into buffered OpenAI tool arguments", () => {
+    // `function.arguments` is JSON text nested inside a JSON string, so a value restored there is
+    // two string contexts deep. Escaping it once leaves a body that parses while the tool call
+    // inside it does not — the buffered twin of the streamed-fragment corruption.
+    const detValue = ["line-one-alpha", 'quote"inside', "back\\slash"].join("\n");
+    const vault = new Vault([]);
+    const scope = vault.beginScope();
+    scope.register([{ value: detValue }]);
+    const token = scope.redactText(detValue).text;
+    const body = JSON.stringify({
+      choices: [
+        { message: { tool_calls: [{ function: { name: "write", arguments: JSON.stringify({ content: token }) } }] } },
+      ],
+    });
+
+    const out = scope.restoreJson(body, bufferedRestoreAdapterFor("openai-chat"));
+
+    const args = JSON.parse(out).choices[0].message.tool_calls[0].function.arguments;
+    expect(() => JSON.parse(args)).not.toThrow();
+    expect(JSON.parse(args).content).toBe(detValue);
+  });
+
+  it("escapes a restored value in tool arguments replayed by an openai-responses completion event", async () => {
+    const detValue = ["alpha-line-value", 'has"quote', "and\\slash"].join("\n");
+    const vault = new Vault([]);
+    const scope = vault.beginScope();
+    scope.register([{ value: detValue }]);
+    const token = scope.redactText(detValue).text;
+    const sse = `event: response.completed\ndata: ${JSON.stringify({
+      type: "response.completed",
+      response: {
+        output: [{ type: "function_call", id: "fc_1", name: "write", arguments: JSON.stringify({ content: token }) }],
+      },
+    })}\n\n`;
+
+    const out = await transformText(
+      scope.restoreEventStream(sseRestoreAdapterFor("openai-responses"), bufferedRestoreAdapterFor("openai-responses")),
+      [sse],
+    );
+
+    const args = streamedJsonData(out)[0]?.response?.output?.[0]?.arguments;
+    expect(() => JSON.parse(args)).not.toThrow();
+    expect(JSON.parse(args).content).toBe(detValue);
+  });
+
+  it("escapes by position: the same surrogate in tool arguments and in assistant text", () => {
+    // Depth is a property of where the token sits, not of the token. Escaping the tool-argument
+    // occurrence twice must not also double-escape the one in `content`, or the assistant text
+    // renders a literal `\n` where the value had a newline.
+    const detValue = ["first-line-value", 'quote"inside'].join("\n");
+    const vault = new Vault([]);
+    const scope = vault.beginScope();
+    scope.register([{ value: detValue }]);
+    const token = scope.redactText(detValue).text;
+    const body = JSON.stringify({
+      choices: [
+        {
+          message: {
+            content: `wrote ${token}`,
+            tool_calls: [{ function: { name: "write", arguments: JSON.stringify({ content: token }) } }],
+          },
+        },
+      ],
+    });
+
+    const message = JSON.parse(scope.restoreJson(body, bufferedRestoreAdapterFor("openai-chat"))).choices[0].message;
+
+    expect(message.content).toBe(`wrote ${detValue}`);
+    expect(JSON.parse(message.tool_calls[0].function.arguments).content).toBe(detValue);
+  });
+
+  it("counts values restored into tool arguments separately from body restores", () => {
+    // The count is what makes a tool-argument restore visible in a run's metadata; a body restore
+    // must not inflate it, or the signal stops meaning "something went in one level deeper".
+    const toolValue = "tool-bound-detected-value";
+    const textValue = "text-bound-detected-value";
+    const vault = new Vault([]);
+    const scope = vault.beginScope();
+    scope.register([{ value: toolValue }, { value: textValue }]);
+    const toolToken = scope.redactText(toolValue).text;
+    const textToken = scope.redactText(textValue).text;
+    const body = JSON.stringify({
+      choices: [
+        {
+          message: {
+            content: `see ${textToken}`,
+            tool_calls: [{ function: { name: "bash", arguments: JSON.stringify({ cmd: toolToken }) } }],
+          },
+        },
+      ],
+    });
+
+    scope.restoreJson(body, bufferedRestoreAdapterFor("openai-chat"));
+
+    expect(scope.restoredIntoToolsCount).toBe(1);
+    expect(scope.restoredCount).toBe(2); // both values reached the client
+    expect(scope.withheldFromToolsCount).toBe(0);
+  });
+
+  it("counts a streamed tool-argument restore into the same tally", async () => {
+    const detValue = "streamed-detected-tool-value";
+    const vault = new Vault([]);
+    const scope = vault.beginScope();
+    scope.register([{ value: detValue }]);
+    const token = scope.redactText(detValue).text;
+    const sse = [
+      anthropicInputDelta(0, `{"cmd":"${token}"}`),
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+    ].join("");
+
+    await transformText(scope.restoreEventStream(sseRestoreAdapterFor("anthropic")), [sse]);
+
+    expect(scope.restoredIntoToolsCount).toBe(1);
+  });
+
+  it("leaves Anthropic tool_use input at one escaping level (input is an object, not nested JSON)", () => {
+    const detValue = ["anthropic-line-one", 'quote"inside'].join("\n");
+    const vault = new Vault([]);
+    const scope = vault.beginScope();
+    scope.register([{ value: detValue }]);
+    const token = scope.redactText(detValue).text;
+    const body = JSON.stringify({ content: [{ type: "tool_use", name: "write", input: { content: token } }] });
+
+    const out = scope.restoreJson(body, bufferedRestoreAdapterFor("anthropic"));
+
+    expect(JSON.parse(out).content[0].input.content).toBe(detValue);
+  });
+
   it("restores tool arguments in buffered bodies when FICTA_RESTORE_INTO_TOOLS=1 (opt-in)", () => {
     process.env.FICTA_RESTORE_INTO_TOOLS = "1";
     const secret = "corova-control-plane";

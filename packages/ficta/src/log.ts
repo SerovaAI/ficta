@@ -220,6 +220,31 @@ export async function logResponse(args: {
 }
 
 /**
+ * Restore-side counters for response #n, written as `res-NNNN.restore.meta.json`.
+ *
+ * Separate from `res-NNNN.meta.json` because restore finishes AFTER that file is written: a streamed
+ * body only knows its counts once the stream drains. Without this, a run's metadata records what was
+ * redacted on the way up and nothing about what came back — a restore that mangled a tool call left
+ * no trace at all unless raw body capture happened to be granted, which the CLI shim path never does.
+ *
+ * `restoredIntoTools` is the pointed one: those restores land one JSON context deeper than the body
+ * and are the ones whose escaping can corrupt a tool call. Written only when something happened, so
+ * absence means the response restored nothing (the common case) — matching the log lines it mirrors.
+ */
+export function writeRestoreMeta(
+  n: number,
+  counts: {
+    restoredValues: number;
+    restoredIntoToolsValues: number;
+    withheldFromToolsValues: number;
+    residualSurrogateValues: number;
+  },
+): void {
+  if (Object.values(counts).every((count) => count === 0)) return;
+  writeCaptureFile(`res-${pad(n)}.restore.meta.json`, JSON.stringify({ kind: "restore", n, ...counts }, null, 2));
+}
+
+/**
  * Buffered twin of the streaming `restoredBodyTap`: when capture is granted, persist the client-bound (post-restore)
  * body to res-XXXX.restored.txt. Pairs with the pre-restore res-XXXX.txt so an operator can diff
  * exactly which surrogates reached the client vs which were withheld from tool arguments.

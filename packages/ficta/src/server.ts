@@ -65,6 +65,7 @@ import {
   restoredBodyTap,
   writeCaptureFile,
   writeRestoredBody,
+  writeRestoreMeta,
   writeTraceAudit,
 } from "./log.js";
 import { log } from "./logger.js";
@@ -850,6 +851,13 @@ export async function startProxy(
       if (withheld > 0) {
         log.warn({ reqId: n, withheld }, `🛡️ withheld ${withheld} value(s) from tool-call arguments`);
       }
+      // The complement of the line above: values that DID go into a tool-call argument. These restore
+      // one JSON context deeper than the body, so they are the ones an escaping bug can corrupt —
+      // worth its own line rather than being folded into the `restored` total.
+      const restoredIntoTools = scope.restoredIntoToolsCount;
+      if (restoredIntoTools > 0) {
+        log.info({ reqId: n, restoredIntoTools }, `🔧 restored ${restoredIntoTools} value(s) into tool-call arguments`);
+      }
       // A surrogate-shaped token with no dictionary mapping survived restore — the model mutated,
       // truncated, or invented it, and the client received it as-is. Restore correctly refused to
       // guess (exact-match only); surfacing the count turns silent token debris into an operator
@@ -861,6 +869,14 @@ export async function startProxy(
       // Persist the counts so they are visible beyond this log line (protection-stats.json, /__ficta/status).
       stats.recordRestore({
         restoredValues: restored,
+        withheldFromToolsValues: withheld,
+        residualSurrogateValues: residuals,
+      });
+      // Per-response sidecar: protection-stats.json only aggregates, so it cannot say WHICH response
+      // restored into a tool call. This pairs the counts with res-NNNN.meta.json's wire and path.
+      writeRestoreMeta(n, {
+        restoredValues: restored,
+        restoredIntoToolsValues: restoredIntoTools,
         withheldFromToolsValues: withheld,
         residualSurrogateValues: residuals,
       });

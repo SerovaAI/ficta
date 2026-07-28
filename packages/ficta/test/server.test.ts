@@ -702,6 +702,19 @@ describe("proxy hardening", () => {
       expect(files).not.toContain("req-0005.json");
       expect(files).not.toContain("audit-0005.trace.json");
 
+      // The restore sidecar carries counts only, so unlike every capture file above it is NOT gated
+      // on the trace grant — requests 1-3 and 5 have no grant and must still record what came back.
+      // That is the point of it: on the CLI shim path, which never grants capture, a restore is
+      // otherwise invisible in the run's metadata.
+      const withRestoreMeta = await waitForFiles(runDir, (names) => names.includes("res-0005.restore.meta.json"));
+      expect(withRestoreMeta).toContain("res-0001.restore.meta.json");
+      expect(JSON.parse(readFileSync(join(runDir, "res-0001.restore.meta.json"), "utf8"))).toMatchObject({
+        kind: "restore",
+        n: 1,
+        restoredValues: 1,
+        restoredIntoToolsValues: 0,
+      });
+
       const captureDecisions = [1, 2, 3, 4, 5].map((requestId) => {
         const name = `req-${String(requestId).padStart(4, "0")}.meta.json`;
         return JSON.parse(readFileSync(join(runDir, name), "utf8")) as {

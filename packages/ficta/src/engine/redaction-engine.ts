@@ -137,6 +137,14 @@ export interface RequestScope {
   readonly withheldFromToolsCount: number;
 
   /**
+   * Distinct values the policy allowed INTO a tool-call argument in this request's response — the
+   * complement of {@link withheldFromToolsCount}. These restore one JSON context deeper than the
+   * response body, so they are the ones an escaping defect can corrupt; counted separately to make
+   * that visible per response rather than only in the bytes the agent received.
+   */
+  readonly restoredIntoToolsCount: number;
+
+  /**
    * Distinct surrogate-shaped tokens that survived this request's restore with no dictionary mapping
    * (model-mutated, truncated, or invented — token debris forwarded to the client as-is). Values-free
    * restore-failure observability; read alongside {@link restoredCount} to log the
