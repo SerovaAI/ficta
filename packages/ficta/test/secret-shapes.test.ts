@@ -97,6 +97,35 @@ describe("secret-shape detector", () => {
     }
   });
 
+  it("does not redact credential URLs whose password is only a template variable", () => {
+    const schemeSeparator = [":", "//"].join("");
+    const credentialUrl = (password: string) =>
+      `postgresql${schemeSeparator}serova:${password}@database.internal.test/application`;
+    const shellVariable = (name: string) => ["$", "{", name, "}"].join("");
+    const templates = [
+      shellVariable("DB_PASSWORD"),
+      "$DB_PASSWORD",
+      "$(DB_PASSWORD)",
+      "{{db_password}}",
+      "%DB_PASSWORD%",
+    ];
+
+    for (const template of templates) {
+      expect(detectSecretShapes(`TARGET_URL="${credentialUrl(template)}"`)).toEqual([]);
+      expect(detectSecretShapes(`DATABASE_PASSWORD="${credentialUrl(template)}"`)).toEqual([]);
+    }
+
+    const incidentShape =
+      `postgresql${schemeSeparator}serova:${shellVariable("pass")}@${shellVariable("host")}:` +
+      `${shellVariable("port")}/${shellVariable("TARGET_DB")}?sslmode=require`;
+    expect(detectSecretShapes(`TARGET_URL="${incidentShape}"`)).toEqual([]);
+
+    const literal = credentialUrl("actual-$-literal-pass-123");
+    expect(detectSecretShapes(literal)).toEqual([
+      expect.objectContaining({ name: "credential-url", value: literal, confidence: "high" }),
+    ]);
+  });
+
   it("does not treat code references as secret-assignment values", () => {
     // Dotted identifier chains and bare mixed-case identifiers are code, not secrets. The value
     // char class also stops before a call/index expression so `foo(` never enters the candidate.

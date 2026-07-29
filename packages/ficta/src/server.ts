@@ -108,10 +108,20 @@ export interface ProxyHandle {
   close: () => void;
 }
 
+export interface StartProxyOptions {
+  host?: string;
+  port?: number;
+  plugins?: readonly RedactionPlugin[];
+  /**
+   * Trusted process-owned scope for a dedicated single-agent proxy. Forwarded model requests use
+   * this instead of client headers, while control endpoints continue to require their explicit
+   * caller scope. Omit it for the standalone/multi-tenant proxy.
+   */
+  defaultScopeKey?: string;
+}
+
 /** Start the redaction proxy. Returns the bound port + a handle to close it. */
-export async function startProxy(
-  opts: { host?: string; port?: number; plugins?: readonly RedactionPlugin[] } = {},
-): Promise<ProxyHandle> {
+export async function startProxy(opts: StartProxyOptions = {}): Promise<ProxyHandle> {
   // Reconnect the engine's detector-domain warnings (e.g. a PII backend being unavailable) to the
   // proxy's pino logger. The engine itself carries no logger dependency (see diagnostics.ts); this is
   // the single wiring point, and it covers both the standalone proxy and the agent-launch path
@@ -123,6 +133,7 @@ export async function startProxy(
   const stats = new ProtectionStats(protectionStatsPath, { captureDir: currentRunDir });
   const protectionTickets = new Map<string, ProtectionTicket>();
   const egressProofs = new Map<string, EgressProof>();
+  const defaultScopeKey = normalizeScopeKey(opts.defaultScopeKey);
   let runtimeTraceCaptureEnabled = false;
   const app = new Hono<{ Bindings: HttpBindings }>();
 
@@ -453,7 +464,10 @@ export async function startProxy(
     // when the handler returns, so detected values are bounded and can never be restored into
     // another request's response. A trusted caller may pin a persistent per-thread detected vault
     // via the internal scope header (see scopeKeyFrom); isolation then holds across keys instead.
-    const scopeKey = scopeKeyFrom(c);
+    // A launched coding agent gets a process-owned scope: its loopback proxy serves exactly one
+    // child process, so detected values may safely survive model requests and hidden compaction
+    // calls for that agent's lifetime. Standalone/web callers still supply an explicit trusted key.
+    const scopeKey = defaultScopeKey ?? scopeKeyFrom(c);
     const scope = engine.beginRequest(scopeKey);
     const egressEvidence = createEgressEvidence({
       scopeKey,
@@ -1041,7 +1055,11 @@ export async function startProxy(
  * stripped before the request is forwarded upstream.
  */
 function scopeKeyFrom(c: Context): string | undefined {
-  const key = c.req.header(FICTA_SCOPE_HEADER)?.trim();
+  return normalizeScopeKey(c.req.header(FICTA_SCOPE_HEADER));
+}
+
+function normalizeScopeKey(value: string | undefined): string | undefined {
+  const key = value?.trim();
   if (!key) return undefined;
   return key.length > MAX_SCOPE_KEY_LENGTH ? key.slice(0, MAX_SCOPE_KEY_LENGTH) : key;
 }

@@ -2,6 +2,9 @@
 
 The preferred runtime shape is an **ephemeral proxy per agent session**: secrets are discovered in
 the current project/env, kept in memory for that session, then forgotten when the agent exits.
+Request-time detector mappings use that same agent-session boundary, so a surrogate retained by a
+hidden compaction or subagent request can still be restored on a later response. Standalone and web
+proxies keep their separate per-request or explicitly keyed isolation.
 
 Install ficta globally with your package manager:
 

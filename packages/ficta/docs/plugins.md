@@ -172,7 +172,7 @@ to run until you unset it or provide a real path.
 The `secret-shapes` detector catches newly pasted secret-shaped values that were not present in the
 launch-time registry. It is local and in-process: no network verification, no sidecar, and no
 entropy-only scanning. The initial detector set focuses on high-signal shapes: common API key
-prefixes, JWTs, PEM private keys, credential URLs with userinfo, AWS access key IDs and secret
+prefixes, JWTs, PEM private keys, credential URLs with literal userinfo, AWS access key IDs and secret
 assignments such as `API_TOKEN=...`.
 
 This layer is **best effort**. It complements, but does not replace, registry exact matching: a value
@@ -200,6 +200,11 @@ containing a secret-ish word (`…/rotateToken`, `useAuth.ts`) would have the ne
 surrogate, silently removing entries from `git diff --name-only`, `ls`, and grep output that an
 agent reads. A path segment that looks like credential material — a long unbroken run mixing letter
 cases and digits — still disqualifies the value from path treatment.
+
+Credential URLs whose password is entirely a recognized source-language variable expression (for
+example a shell `${DB_PASSWORD}` reference) are also left intact. The source contains a runtime
+reference, not the credential itself; replacing that reference with a surrogate would corrupt code
+without hiding secret bytes. A URL containing a literal password is still detected.
 
 None of this changes the exact-match promise: a value in the registry is protected regardless of the
 shape it appears in. These limits apply only to the best-effort detection layer. If a secret matters,

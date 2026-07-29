@@ -245,7 +245,10 @@ if (surrogate.generated && printStartupDiagnostics) {
 const { startProxy } = await import("./server.js");
 const { surrogateKeyWarning } = await import("./engine/vault.js");
 const { surrogateStyle } = await import("./engine/surrogate.js");
-const proxy = await startProxy({ port: 0 });
+// Every launched agent owns its loopback proxy, so one process-owned scope is the correct isolation
+// boundary. Keeping detected mappings across its model requests lets hidden compaction/subagent
+// calls echo a surrogate into a later tool call without turning that placeholder into file content.
+const proxy = await startProxy({ port: 0, defaultScopeKey: `agent:${agent.command}:${logInstanceId}` });
 const base = `http://127.0.0.1:${proxy.port}`;
 
 if (printStartupDiagnostics) {

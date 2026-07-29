@@ -110,6 +110,7 @@ const SECRET_SHAPE_PATTERNS: readonly SecretShapePattern[] = [
     category: "credential-url",
     regex: /\b([a-z][a-z0-9+.-]*:\/\/[^\s"'<>:]+:[^\s"'<>@]+@[^\s"'<>]+)\b/gi,
     confidence: "high",
+    validate: isLiteralCredentialUrl,
   },
   {
     category: "secret-assignment",
@@ -117,8 +118,10 @@ const SECRET_SHAPE_PATTERNS: readonly SecretShapePattern[] = [
     // (`"api_token": "…"`) otherwise fails, because the closing quote sits between the key and the
     // separator and `\s*` cannot cross it. JSON request *bodies* are paired structurally by
     // detectSecretShapeLeaves; this covers a JSON config an agent reads into a tool result.
+    // The URI alternative deliberately retains template braces/parentheses so validation sees the
+    // whole credential URL rather than a misleading `scheme://user:$` prefix.
     regex:
-      /\b([A-Za-z][A-Za-z0-9_.-]*(?:api[_-]?key|token|secret|password|passwd|pwd|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]*)\b["'`]?\s*[:=]\s*["'`]?([^\s"'`,;{}<>()[\]]+)["'`]?/gi,
+      /\b([A-Za-z][A-Za-z0-9_.-]*(?:api[_-]?key|token|secret|password|passwd|pwd|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]*)\b["'`]?\s*[:=]\s*["'`]?((?:[a-z][a-z0-9+.-]*:\/\/[^\s"'`,;<>]+|[^\s"'`,;{}<>()[\]]+))["'`]?/gi,
     confidence: "probabilistic",
     validate: isLikelySecretValue,
   },
@@ -129,7 +132,7 @@ const SECRET_SHAPE_PATTERNS: readonly SecretShapePattern[] = [
     // matches key\nvalue lines *inside* one multi-line string leaf and on plain-text surfaces.
     category: "secret-json-value",
     regex:
-      /\b([A-Za-z][A-Za-z0-9_.-]*(?:api[_-]?key|token|secret|password|passwd|pwd|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]*)\b\s*\n\s*["'`]?([^\s"'`,;{}<>()[\]]+)["'`]?/gi,
+      /\b([A-Za-z][A-Za-z0-9_.-]*(?:api[_-]?key|token|secret|password|passwd|pwd|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]*)\b\s*\n\s*["'`]?((?:[a-z][a-z0-9+.-]*:\/\/[^\s"'`,;<>]+|[^\s"'`,;{}<>()[\]]+))["'`]?/gi,
     confidence: "probabilistic",
     validate: isLikelySecretValue,
   },
@@ -298,12 +301,8 @@ function isLikelySecretValue(raw: string): boolean {
   const value = trimCandidate(raw);
   if (value.length < 12 || value.length > MAX_GENERIC_VALUE_LENGTH) return false;
   if (isPlaceholder(value)) return false;
-  if (/^[a-z][a-z0-9+.-]*:\/\/[^\s"'<>:]+:[^\s"'<>@]+@[^\s"'<>]+$/i.test(value)) return true;
-  if (SECRET_SHAPE_PATTERNS.slice(1, -2).some((pattern) => pattern.regex.test(value))) {
-    resetPatternState();
-    return true;
-  }
-  resetPatternState();
+  if (credentialUrlPassword(value) !== undefined) return isLiteralCredentialUrl(value);
+  if (SECRET_SHAPE_PATTERNS.slice(1, -2).some((pattern) => matchesValidatedShape(value, pattern))) return true;
   if (/^(?:true|false|null|undefined|none|password|secret|token|example|changeme)$/i.test(value)) return false;
   // Filesystem paths, not secrets. Must come after the credential-URL and known-shape checks above
   // so a credential URL (which contains slashes) still wins. Without this, the separator-less
@@ -327,6 +326,37 @@ function isLikelySecretValue(raw: string): boolean {
   ).length;
   if (classes < 2) return false;
   return new Set(value).size >= 8;
+}
+
+/**
+ * A URI whose password is entirely a source-language template references a credential at runtime
+ * but does not contain one in the text the agent read. Redacting it only hides usable source code,
+ * and an echoed surrogate can later be written back to disk. Keep detecting literal passwords,
+ * including values that merely contain `$` or braces; only whole, unambiguous variable expressions
+ * are excluded.
+ */
+function isLiteralCredentialUrl(value: string): boolean {
+  const password = credentialUrlPassword(value);
+  return password !== undefined && !isCredentialTemplate(password);
+}
+
+function credentialUrlPassword(value: string): string | undefined {
+  return /^[a-z][a-z0-9+.-]*:\/\/[^\s"'<>:]+:([^\s"'<>@]+)@[^\s"'<>]+$/i.exec(value)?.[1];
+}
+
+function isCredentialTemplate(value: string): boolean {
+  return /^(?:\$\{[A-Za-z_][A-Za-z0-9_.-]*\}|\$[A-Za-z_][A-Za-z0-9_]*|\$\([A-Za-z_][A-Za-z0-9_.-]*\)|\{\{[A-Za-z_][A-Za-z0-9_.-]*\}\}|%[A-Za-z_][A-Za-z0-9_]*%)$/.test(
+    value,
+  );
+}
+
+function matchesValidatedShape(text: string, pattern: SecretShapePattern): boolean {
+  pattern.regex.lastIndex = 0;
+  for (const match of text.matchAll(pattern.regex)) {
+    const value = match[2] ?? match[1] ?? match[0];
+    if (value && (!pattern.validate || pattern.validate(value))) return true;
+  }
+  return false;
 }
 
 function trimCandidate(value: string): string {
@@ -393,8 +423,4 @@ function parseBase64UrlJson(segment: string): unknown {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
-}
-
-function resetPatternState(): void {
-  for (const pattern of SECRET_SHAPE_PATTERNS) pattern.regex.lastIndex = 0;
 }
