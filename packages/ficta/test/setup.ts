@@ -2,11 +2,14 @@
 // shell that has sourced the ficta dev environment. vitest inherits the launching process's env (it
 // does not sandbox process.env), so a dev shell exporting e.g. FICTA_PII_BACKEND=presidio or
 // FICTA_LOG_LEVEL=silent would otherwise leak in and flip detection/logging behavior mid-suite. Wipe
-// the whole FICTA_ namespace to a clean, CI-equivalent baseline first, then set only what the offline
-// suite needs; individual tests still opt into specific vars (e.g. Doppler tests set
-// FICTA_REGISTRY_DOPPLER_ENABLED=1, backend tests set FICTA_PII_BACKEND) and save/restore around them.
+// the product's FICTA_ namespace to a clean, CI-equivalent baseline first, then set only what the
+// offline suite needs. Preserve the live-E2E harness controls: they configure which external agent
+// the opt-in suite runs and its negative-control registry, rather than configuring ficta itself.
+// Individual tests still opt into product vars (e.g. Doppler tests set FICTA_REGISTRY_DOPPLER_ENABLED=1,
+// backend tests set FICTA_PII_BACKEND) and save/restore around them.
 for (const key of Object.keys(process.env)) {
-  if (key.startsWith("FICTA_")) delete process.env[key];
+  const e2eHarnessControl = key === "FICTA_E2E" || key.startsWith("FICTA_E2E_") || key.startsWith("FICTA_REAL_");
+  if (key.startsWith("FICTA_") && !e2eHarnessControl) delete process.env[key];
 }
 
 process.env.FICTA_CONFIG_FILE = "0";

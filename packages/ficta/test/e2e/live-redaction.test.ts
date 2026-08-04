@@ -16,6 +16,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ProtectionStatsSnapshot } from "@serovaai/ficta-protocol";
 import { describe, expect, it } from "vitest";
 import { defaultShimDir, findExecutable } from "../../src/install.js";
 
@@ -31,9 +32,6 @@ const SECRET_FILE = "service.env";
 const SECRET_VAR = "BUILD_REF";
 const CANARY = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0";
 const PROMPT = `Read ${SECRET_FILE} in the current working directory and tell me the value of ${SECRET_VAR}.`;
-
-// ficta surrogate format (src/vault.ts): FICTA_ + 32 hex chars.
-const PLACEHOLDER_RE = /FICTA_[0-9a-f]{32}/;
 
 const REPO = process.cwd();
 const TSX = join(REPO, "node_modules", ".bin", "tsx");
@@ -126,33 +124,66 @@ interface RunArtifacts {
   status: number | null;
   stdout: string;
   stderr: string;
-  /** Concatenated pre-redaction request bodies (req-NNNN.json). */
-  preRedaction: string;
-  /** Concatenated post-redaction outbound bodies (req-NNNN.sent.json). */
-  egress: string;
-  sentFileCount: number;
+  logDir: string;
+  requestMeta: RequestMeta[];
+  restoreMeta: RestoreMeta[];
+  stats?: ProtectionStatsSnapshot;
 }
 
-function collectBodies(logDir: string): { pre: string; egress: string; sentCount: number } {
-  if (!existsSync(logDir)) return { pre: "", egress: "", sentCount: 0 };
+interface RequestMeta {
+  kind: "request";
+  n: number;
+  method: string;
+  path: string;
+  wire: string;
+  bodyLogged: boolean;
+  registeredValues: number;
+  inspection: {
+    enabled: boolean;
+    registeredValues: number;
+    hits: Array<{ path: string; names: string[] }>;
+    truncated: boolean;
+  };
+}
+
+interface RestoreMeta {
+  kind: "restore";
+  n: number;
+  restoredValues: number;
+  restoredIntoToolsValues: number;
+  withheldFromToolsValues: number;
+  residualSurrogateValues: number;
+}
+
+function readJson<T>(path: string): T {
+  return JSON.parse(readFileSync(path, "utf8")) as T;
+}
+
+function collectProof(logDir: string): {
+  requestMeta: RequestMeta[];
+  restoreMeta: RestoreMeta[];
+  stats?: ProtectionStatsSnapshot;
+} {
+  const statsPath = join(logDir, "protection-stats.json");
+  const stats = existsSync(statsPath) ? readJson<ProtectionStatsSnapshot>(statsPath) : undefined;
+  if (!existsSync(logDir)) return { requestMeta: [], restoreMeta: [], stats };
   const runsDir = join(logDir, "runs");
-  if (!existsSync(runsDir)) return { pre: "", egress: "", sentCount: 0 };
-  const pre: string[] = [];
-  const egress: string[] = [];
-  let sentCount = 0;
+  if (!existsSync(runsDir)) return { requestMeta: [], restoreMeta: [], stats };
+  const requestMeta: RequestMeta[] = [];
+  const restoreMeta: RestoreMeta[] = [];
   for (const run of readdirSync(runsDir).filter((n) => n.startsWith("run-"))) {
     const runDir = join(runsDir, run);
     for (const file of readdirSync(runDir)) {
-      const body = readFileSync(join(runDir, file), "utf8");
-      if (file.endsWith(".sent.json")) {
-        egress.push(body);
-        sentCount += 1;
-      } else if (/^req-\d+\.json$/.test(file)) {
-        pre.push(body);
-      }
+      const path = join(runDir, file);
+      if (/^req-\d+\.meta\.json$/.test(file)) requestMeta.push(readJson<RequestMeta>(path));
+      else if (/^res-\d+\.restore\.meta\.json$/.test(file)) restoreMeta.push(readJson<RestoreMeta>(path));
     }
   }
-  return { pre: pre.join("\n"), egress: egress.join("\n"), sentCount };
+  return {
+    requestMeta: requestMeta.sort((a, b) => a.n - b.n),
+    restoreMeta: restoreMeta.sort((a, b) => a.n - b.n),
+    stats,
+  };
 }
 
 function runAgent(agent: AgentSpec, bin: string): RunArtifacts {
@@ -178,20 +209,20 @@ function runAgent(agent: AgentSpec, bin: string): RunArtifacts {
       // Refuse to launch if the canary did not load — catches test-setup breakage.
       // Relaxed for the negative control, which deliberately registers nothing.
       FICTA_REQUIRE_REGISTRY: REGISTRY_OVERRIDE ? "0" : "1",
-      // Capture exactly what ficta forwards upstream.
+      // Keep detailed diagnostics. Raw bodies intentionally remain disabled: the live proof uses
+      // values-free request metadata plus structured redaction/restore statistics.
       FICTA_LOG_LEVEL: "trace",
       FICTA_LOG_DIR: logDir,
     },
   });
 
-  const { pre, egress, sentCount } = collectBodies(logDir);
+  const proof = collectProof(logDir);
   return {
     status: res.status,
     stdout: res.stdout ?? "",
     stderr: res.stderr ?? "",
-    preRedaction: pre,
-    egress,
-    sentFileCount: sentCount,
+    logDir,
+    ...proof,
   };
 }
 
@@ -215,33 +246,80 @@ describe("live redaction through real agents", () => {
 
     it(`${agent.name}: redacts a canary the agent reads from .env`, () => {
       const run = runAgent(agent, bin as string);
-      const diag = `\n--- ${agent.name} exit=${run.status} ---\nstdout:\n${run.stdout}\nstderr:\n${run.stderr}`;
+      const diag =
+        `\n--- ${agent.name} exit=${run.status} ---\n` +
+        `artifacts: ${run.logDir}\nstdout:\n${run.stdout}\nstderr:\n${run.stderr}`;
+
+      expect(run.status, `real ${agent.name} process did not exit cleanly.${diag}`).toBe(0);
 
       // The agent must have pulled the canary into the request, otherwise we
       // cannot verify protection (a silent no-op would be a false pass).
-      // If ficta captured nothing at all, the agent bypassed the proxy entirely.
-      const bypassed = run.preRedaction === "" && run.sentFileCount === 0;
+      // The safe request sidecar records registered label hits without persisting the value.
+      const modelRequests = run.requestMeta.filter((request) => request.wire !== "unknown");
+      const canaryRequests = modelRequests.filter((request) =>
+        request.inspection.hits.some((hit) => hit.names.includes(SECRET_VAR)),
+      );
       expect(
-        run.preRedaction.includes(CANARY),
-        bypassed
-          ? `ficta captured 0 requests — the agent BYPASSED the proxy (provider not routed through ficta).${diag}`
-          : `agent did not send the canary upstream — cannot verify redaction.${diag}`,
-      ).toBe(true);
+        modelRequests.length,
+        `ficta recorded no model requests — the agent bypassed the proxy or never contacted its provider.${diag}`,
+      ).toBeGreaterThan(0);
+      expect(
+        canaryRequests.length,
+        `no proxied request contained the registered ${SECRET_VAR} value — cannot verify redaction.${diag}`,
+      ).toBeGreaterThan(0);
+      expect(canaryRequests.every((request) => request.bodyLogged === false)).toBe(true);
 
-      // Core guarantee: ficta must not forward the canary verbatim.
-      expect(run.sentFileCount, `expected at least one forwarded request body.${diag}`).toBeGreaterThan(0);
-      expect(run.egress.includes(CANARY), `LEAK: canary appeared in a body ficta forwarded upstream.${diag}`).toBe(
-        false,
+      // Core guarantee: every request that contained the canary has a linked structured event saying
+      // the value was redacted, no registered value survived screening, and the request was forwarded.
+      expect(run.stats, `ficta did not write protection-stats.json.${diag}`).toBeDefined();
+      const stats = run.stats as ProtectionStatsSnapshot;
+      const canaryRequestIds = new Set(canaryRequests.map((request) => request.n));
+      const canaryEvents = stats.events.filter(
+        (event) =>
+          event.requestId !== undefined &&
+          canaryRequestIds.has(event.requestId) &&
+          event.redactedHits.some((hit) => hit.name === SECRET_VAR),
+      );
+      expect(
+        canaryEvents.length,
+        `no redaction event was linked to the canary-bearing request.${diag}`,
+      ).toBeGreaterThan(0);
+      for (const event of canaryEvents) {
+        expect(event).toMatchObject({
+          method: "POST",
+          surface: "body",
+          redactedValues: 1,
+          survivingValues: 0,
+          blocked: false,
+        });
+        expect(event.survivingHits).toEqual([]);
+      }
+      expect(stats.totals).toMatchObject({
+        survivingValues: 0,
+        blockedRequests: 0,
+      });
+      expect(stats.totals.redactedValues).toBeGreaterThanOrEqual(canaryEvents.length);
+      expect(stats.totals.keptOutOfModelValues).toBeGreaterThanOrEqual(canaryEvents.length);
+      expect(stats.byLabel).toContainEqual(
+        expect.objectContaining({
+          name: SECRET_VAR,
+          source: "env-file",
+          plugin: "known-env-values",
+          kind: "secret",
+          confidence: "exact",
+          survivingValues: 0,
+        }),
       );
 
-      // Positive proof the value was redacted (not merely absent).
-      expect(run.egress, `expected a FICTA_ placeholder in the forwarded body.${diag}`).toMatch(PLACEHOLDER_RE);
-
-      // Secondary (soft): local restore should hand the agent the real value back.
-      // Model phrasing varies, so warn rather than fail when not echoed verbatim.
-      if (!run.stdout.includes(CANARY)) {
+      // Secondary (soft): local restore should hand the agent the real value back. Some clients stop
+      // consuming after their protocol-level completion event, so the stream flush that records restore
+      // telemetry is not guaranteed to run. Cross-check it when present; keep stdout soft because model
+      // phrasing varies too.
+      const restoredValues = run.restoreMeta.reduce((total, meta) => total + meta.restoredValues, 0);
+      expect(stats.totals.restoredValues).toBe(restoredValues);
+      if (restoredValues === 0 && !run.stdout.includes(CANARY)) {
         console.warn(
-          `[e2e] ${agent.name}: restored canary not found verbatim in agent stdout ` +
+          `[e2e] ${agent.name}: no restore telemetry and restored canary not found verbatim in stdout ` +
             `(redaction passed; restore/round-trip unconfirmed).`,
         );
       }

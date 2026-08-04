@@ -40,16 +40,25 @@ Optional overrides:
 
 ## What each run asserts
 
-Against ficta's own egress capture (runtime trace grant plus the per-request selector → `runs/run-*/req-*.sent.json`,
-the exact bytes forwarded upstream):
+Against ficta's values-free request metadata (`runs/run-*/req-*.meta.json`) and structured
+`protection-stats.json` / restore sidecars:
 
-1. **Pre-redaction body contains the canary** — proves the agent actually pulled it
-   into the request (guards against a false pass where the agent never read the file).
-2. **No forwarded body contains the canary** — the core guarantee: nothing leaked.
-3. **A `FICTA_…` placeholder is present** — positive proof the value was redacted,
-   not merely absent.
-4. *(soft)* the agent's stdout contains the restored canary — confirms the local
-   restore round-trip. Warns instead of failing, since model phrasing varies.
+1. **A real provider request contains a registered `BUILD_REF` hit** — proves the agent
+   pulled the canary into model context and actually routed through ficta, without writing
+   the raw value into trace files.
+2. **The same request ID has a body-redaction event** with the registered env-file label,
+   at least one redacted value, zero surviving values, and no fail-open forwarding.
+3. **The aggregate proof remains clean** — zero survivors/blocked requests, with the
+   canary counted as kept out of the model.
+4. *(soft)* **Restore evidence is cross-checked when available.** Some clients stop consuming
+   after their protocol completion event, before stream-flush telemetry is written; model stdout
+   is also only a soft signal because phrasing can vary.
+
+Exact outbound-byte behavior is covered by the offline proxy integration suite in
+`test/server.test.ts`, where a loopback fake provider records what `fetch()` actually receives
+and the tests assert that registered values are absent and surrogate tokens are present. Keeping
+that proof offline makes it deterministic while the live suite validates real-agent routing and
+the linked redaction/restore evidence without weakening runtime trace privacy.
 
 ## Negative control (prove the test can fail)
 
@@ -60,9 +69,6 @@ off. Confirm it on one agent with the canary **unregistered**:
 FICTA_E2E_ONLY=claude FICTA_E2E_REGISTRY_OVERRIDE=/dev/null pnpm test:e2e
 ```
 
-ficta now has nothing to redact, so it forwards the agent's request verbatim and
-writes no redacted body — the run produces **no redaction evidence**, and the suite
-**FAILS** (no forwarded `.sent.json` / no `FICTA_…` placeholder). A green run here
-would mean the assertions are vacuous; a red run confirms they depend on real
-protection. (ficta only logs bodies it actually redacted, so the unprotected canary
-shows up as absence-of-evidence rather than a captured leak.)
+ficta now has nothing to redact, so the values-free request metadata contains no registered
+`BUILD_REF` hit and no linked protection event exists. The suite **FAILS**. A green run here
+would mean the assertions are vacuous; a red run confirms they depend on real protection.
