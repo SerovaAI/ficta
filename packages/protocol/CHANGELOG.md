@@ -1,5 +1,11 @@
 # @serovaai/ficta-protocol
 
+## 0.2.4
+
+### Patch Changes
+
+- [`ef4f682`](https://github.com/SerovaAI/ficta/commit/ef4f6828037221f3448c0f4088657922f5285424) Thanks [@steflsd](https://github.com/steflsd)! - Preserve exact surrogate literals by default, with an explicit opt-out.
+
 ## 0.2.3
 
 ## 0.2.2

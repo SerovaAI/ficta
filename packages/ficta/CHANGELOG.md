@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.4
+
+### Patch Changes
+
+- [`ef4f682`](https://github.com/SerovaAI/ficta/commit/ef4f6828037221f3448c0f4088657922f5285424) Thanks [@steflsd](https://github.com/steflsd)! - Preserve exact surrogate literals by default, with an explicit opt-out.
+
+- [`f4209d9`](https://github.com/SerovaAI/ficta/commit/f4209d9458f221047f8a4c892ecae683418e2edf) Thanks [@steflsd](https://github.com/steflsd)! - Prevent detected surrogates from corrupting files across launched-agent turns and ignore template-only credential URLs.
+
+- [`e6740b1`](https://github.com/SerovaAI/ficta/commit/e6740b101ec4e29d431eefb2fd4c16b09480c3f6) Thanks [@steflsd](https://github.com/steflsd)! - Escape restored values by JSON depth in complete (non-delta) payloads. The OpenAI wires carry tool-call arguments as JSON text nested inside a JSON string, so a value restored there sits two string contexts deep, but the buffered response path and the SSE replay events (`response.completed`, `response.output_item.done`, `choices[].message.tool_calls[]`) escaped it once. A restored value containing a newline, `"`, or `\` produced a body that parsed while the tool call inside it did not — the buffered twin of the streamed-fragment corruption fixed previously. Anthropic payloads were unaffected: `tool_use.input` is a real object, not nested JSON text. Escaping is now chosen per occurrence position, so the same surrogate in both a tool argument and assistant text in one payload is escaped correctly in each.
+
+- [#91](https://github.com/SerovaAI/ficta/pull/91) [`999473f`](https://github.com/SerovaAI/ficta/commit/999473f56acd0f2eb2d031993a2c374ab417535c) Thanks [@steflsd](https://github.com/steflsd)! - Escape restored values spliced into streamed tool-call arguments. A tool-argument fragment is itself JSON text that the client concatenates and parses, but the tool-argument restore path returned the value raw where the response-body path escapes it for its string context. A restored value containing a newline, `"`, or `\` — a PEM key, a quoted password, any multi-line file content the agent was writing back — therefore produced invalid JSON and corrupted the tool call. Both the withholding policies and `all` route through the escaping path now.
+
+- [#90](https://github.com/SerovaAI/ficta/pull/90) [`7d4b093`](https://github.com/SerovaAI/ficta/commit/7d4b093d565a1854b02b5a90bb15f988771a9038) Thanks [@steflsd](https://github.com/steflsd)! - Stop redacting optional-chained and non-null-asserted property accesses. The code-reference rejections in the secret-shape detector matched only plain dotted identifier chains, and `?.` and `!` fall outside the identifier character class — so expressions like `config.auth?.accessToken` and `process.env.SERVICE_API_KEY!` read as opaque high-entropy values and were replaced with surrogates in source an agent was reading. Measured across 4,098 tracked files, this removes 14 such detections and adds none.
+
+- [`e6740b1`](https://github.com/SerovaAI/ficta/commit/e6740b101ec4e29d431eefb2fd4c16b09480c3f6) Thanks [@steflsd](https://github.com/steflsd)! - Record restore-side counters per response. A run's metadata described what was redacted on the way up and nothing about what came back, so a restore that mangled a tool call left no trace unless raw body capture happened to be granted — which the CLI shim path never does. Each response that restores something now writes a `res-NNNN.restore.meta.json` sidecar next to its existing meta, carrying counts only (no values, no bodies), and so is written regardless of the trace-capture grant. It adds a `restoredIntoTools` count — values the policy spliced into a tool-call argument, the complement of the existing withheld count — because those restore one JSON context deeper than the response body and are the ones an escaping defect can corrupt. The same count is logged as `🔧 restored N value(s) into tool-call arguments` and exposed on the request scope as `restoredIntoToolsCount`.
+
+- Updated dependencies [[`ef4f682`](https://github.com/SerovaAI/ficta/commit/ef4f6828037221f3448c0f4088657922f5285424)]:
+  - @serovaai/ficta-protocol@0.2.4
+
 ## 0.2.3
 
 ### Patch Changes
