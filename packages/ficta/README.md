@@ -150,7 +150,7 @@ for the request-time secret-shape detector's web/agent surfaces and pattern-base
 FICTA_REQUIRE_REGISTRY=1 claude   # require a healthy, non-empty registry before provider traffic
 FICTA_REDACT_PATHS=1 claude       # also redact path-like tokens on every surface this run
 FICTA_LOG_LEVEL=trace claude      # most verbose structured proxy logs
-FICTA_PRESERVE_LITERALS=1 claude  # ask the model to preserve exact surrogate tokens for restore
+FICTA_PRESERVE_LITERALS=0 claude  # disable the default prompt that preserves exact surrogate tokens
 FICTA_SECRET_SHAPES_ENABLED=1 ficta claude # force secret-shape detection for this agent run
 FICTA_PII_ENABLED=1 claude        # force PII detection for this one agent run
 FICTA_PII_BACKENDS=presidio FICTA_PII_ENABLED=1 ficta claude # use Presidio for this agent run
@@ -167,6 +167,11 @@ Raw request/response capture is a separate, process-local admin control. It defa
 active until an administrator disables it or the proxy restarts, and still requires an explicit
 per-request `x-ficta-trace-capture: 1` selector. Gateway administrators can enable it from Admin settings; a
 standalone loopback operator can use `PATCH /__ficta/trace-capture` with `{ "enabled": true }`.
+
+When a request contains redacted values, Ficta defaults to adding a system/developer instruction that
+asks the model to reproduce the exact surrogate literals. Exact reproduction lets Ficta restore the
+original values in the response; models can otherwise truncate or editorialize opaque tokens. Set
+`FICTA_PRESERVE_LITERALS=0` to disable this prompt modification for a run.
 
 ## Commands
 

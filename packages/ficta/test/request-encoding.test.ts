@@ -133,9 +133,11 @@ describe("proxy request decompression", () => {
       await res.text();
 
       expect(receivedEncoding).toBeUndefined();
-      const forwarded = JSON.parse(receivedBody) as { messages: Array<{ content: string }> };
+      const forwarded = JSON.parse(receivedBody) as { messages: Array<{ role: string; content: string }> };
       expect(receivedBody).not.toContain(AWS);
-      expect(forwarded.messages[0]?.content).toContain("the key is FICTA_");
+      expect(forwarded.messages[0]).toMatchObject({ role: "system" });
+      expect(forwarded.messages[0]?.content).toContain("reproduce it exactly");
+      expect(forwarded.messages[1]?.content).toContain("the key is FICTA_");
     } finally {
       proxy?.close();
       await close(upstream);

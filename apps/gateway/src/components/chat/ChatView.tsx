@@ -198,7 +198,6 @@ export function ChatView({
   const { messages, sendMessage, isLoading, error, stop, reload, clear, setMessages } = useChat({
     connection: chatConnection,
     forwardedProps,
-    id: tid,
     threadId: tid,
     initialMessages,
     onFinish: (message) => {

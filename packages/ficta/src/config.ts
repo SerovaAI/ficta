@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { defaultLogDir } from "./defaults.js";
-import { envFlag } from "./engine/env-flags.js";
+import { envEnabled, envFlag } from "./engine/env-flags.js";
 import { type LogLevel, parseLogLevel } from "./log-level.js";
 import { loadUserConfig, wasLoadedFromUserConfig } from "./user-config.js";
 
@@ -63,8 +63,9 @@ export function loadConfig(): Config {
     failClosed: process.env.FICTA_FAIL_CLOSED !== "0",
     // Inject a system/developer instruction listing the exact surrogate tokens in the outbound request and
     // telling the model to reproduce them verbatim. Improves restore reliability (models otherwise truncate
-    // or editorialise long opaque tokens). Opt-in — it modifies the prompt sent upstream. See preserve-literals.ts.
-    preserveLiterals: envFlag(process.env.FICTA_PRESERVE_LITERALS),
+    // or editorialise long opaque tokens). Default on; FICTA_PRESERVE_LITERALS=0 opts out because this modifies
+    // the prompt sent upstream. See preserve-literals.ts.
+    preserveLiterals: envEnabled(process.env.FICTA_PRESERVE_LITERALS, true),
   };
 }
 

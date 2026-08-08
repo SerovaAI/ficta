@@ -37,7 +37,7 @@
     "@changesets/changelog-github": "^0.7.0",
     "@changesets/cli": "^2.31.1",
     "@types/node": "^26.1.2",
-    "knip": "^6.31.0",
+    "knip": "^6.32.0",
     "turbo": "^2.10.8",
     "typescript": "^7.0.2"
   },

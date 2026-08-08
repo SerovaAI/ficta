@@ -13,6 +13,7 @@ const originalHost = process.env.FICTA_HOST;
 const originalLogDir = process.env.FICTA_LOG_DIR;
 const originalLogRoot = process.env.FICTA_LOG_ROOT;
 const originalLogRole = process.env.FICTA_LOG_ROLE;
+const originalPreserveLiterals = process.env.FICTA_PRESERVE_LITERALS;
 
 function restore(key: string, value: string | undefined): void {
   if (value === undefined) delete process.env[key];
@@ -35,6 +36,7 @@ afterEach(() => {
   restore("FICTA_LOG_DIR", originalLogDir);
   restore("FICTA_LOG_ROOT", originalLogRoot);
   restore("FICTA_LOG_ROLE", originalLogRole);
+  restore("FICTA_PRESERVE_LITERALS", originalPreserveLiterals);
 });
 
 describe("config hardening", () => {
@@ -61,6 +63,19 @@ describe("config hardening", () => {
       process.env.FICTA_LOG_LEVEL = level;
       expect(loadConfig().logBodies).toBe(false);
     }
+  });
+
+  it("preserves surrogate literals by default and honours an explicit opt-out", () => {
+    delete process.env.FICTA_PRESERVE_LITERALS;
+    expect(loadConfig().preserveLiterals).toBe(true);
+
+    for (const value of ["0", "false", "off", "disabled", "no"]) {
+      process.env.FICTA_PRESERVE_LITERALS = value;
+      expect(loadConfig().preserveLiterals).toBe(false);
+    }
+
+    process.env.FICTA_PRESERVE_LITERALS = "1";
+    expect(loadConfig().preserveLiterals).toBe(true);
   });
 
   it("treats FICTA_TRACE_AUDIT as a capability independent of log verbosity", () => {
