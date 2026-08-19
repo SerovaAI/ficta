@@ -85,7 +85,7 @@ This is the load-bearing caveat and must not be blurred:
   happens when the **detector itself is unavailable** (Presidio down): skip detection for that request
   (default, warn-once) or block it (503). **For the gateway, run this as block (fail-closed):** a firm
   should not silently forward un-scanned text because a sidecar was down. This is about detector
-  *availability*, not detection *completeness* — even with it on, undetected PII still passes.
+  _availability_, not detection _completeness_ — even with it on, undetected PII still passes.
 
 ## Intentionally not covered
 

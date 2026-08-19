@@ -91,7 +91,7 @@ function UserMessageText({
     return segments.map((segment, segmentIndex) =>
       segment.annotation ? (
         <ProtectionMark
-          // biome-ignore lint/suspicious/noArrayIndexKey: annotations are immutable within a persisted message part
+          // Annotations are immutable within a persisted message part.
           key={`${partIndex}:${segmentIndex}`}
           direction={segment.annotation.direction}
           displayMode={restoreDisplayMode}
@@ -101,7 +101,7 @@ function UserMessageText({
         </ProtectionMark>
       ) : (
         <span
-          // biome-ignore lint/suspicious/noArrayIndexKey: annotations are immutable within a persisted message part
+          // Annotations are immutable within a persisted message part.
           key={`${partIndex}:${segmentIndex}`}
         >
           {segment.text}

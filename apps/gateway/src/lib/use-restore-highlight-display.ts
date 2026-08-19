@@ -67,7 +67,7 @@ export function useRestoreHighlightDisplay(
   // Persist the current store after each message change so a subsequent remount can re-seed. Serializing a
   // handful of small entries is cheap; `messages` identity changes on every stream delta and on finish.
   // `storeRef` is mount-stable, so read it inside rather than listing it as a dependency.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-persist whenever the transcript changes
+  // Re-persist whenever the transcript changes.
   useEffect(() => {
     const current = storeRef.current;
     if (current) queryClient.setQueryData<SerializedStore>(restoreHighlightKey(threadId), serializeStore(current));

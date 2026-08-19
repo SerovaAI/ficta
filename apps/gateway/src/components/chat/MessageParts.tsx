@@ -26,7 +26,7 @@ export function MessageParts({
         switch (part.type) {
           case "text":
             return (
-              // biome-ignore lint/suspicious/noArrayIndexKey: streamed parts are append-only, index is stable
+              // Streamed parts are append-only, so the index is stable.
               <Suspense key={i} fallback={<MarkdownFallback content={part.content} />}>
                 <Markdown
                   content={part.content}
@@ -36,7 +36,7 @@ export function MessageParts({
               </Suspense>
             );
           case "thinking":
-            // biome-ignore lint/suspicious/noArrayIndexKey: streamed parts are append-only, index is stable
+            // Streamed parts are append-only, so the index is stable.
             return <Reasoning key={i} content={part.content} />;
           case "tool-call":
             return (

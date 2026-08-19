@@ -153,7 +153,7 @@ describe("proxy hardening", () => {
             ];
       },
     };
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -270,7 +270,7 @@ describe("proxy hardening", () => {
       });
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       const logDir = mkdtempSync(join(tmpdir(), "ficta-safe-meta-"));
@@ -361,7 +361,7 @@ describe("proxy hardening", () => {
       FICTA_LOG_DIR: process.env.FICTA_LOG_DIR,
     };
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       process.env.FICTA_LOG_LEVEL = "silent";
       process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-proof-empty-"));
@@ -429,7 +429,7 @@ describe("proxy hardening", () => {
       ],
     };
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -515,7 +515,7 @@ describe("proxy hardening", () => {
     };
 
     async function run(traceAudit: boolean): Promise<{ auditFiles: string[]; runDir: string }> {
-      let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+      let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
       const upstream = createServer((req, res) => {
         let body = "";
         req.setEncoding("utf8");
@@ -635,7 +635,7 @@ describe("proxy hardening", () => {
       });
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       vi.resetModules();
       const upstreamPort = await listen(upstream);
@@ -788,7 +788,7 @@ describe("proxy hardening", () => {
       ],
     };
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       vi.resetModules();
       process.env.FICTA_UPSTREAM = "https://custom-upstream.example";
@@ -859,7 +859,7 @@ describe("proxy hardening", () => {
       ],
     };
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -934,7 +934,7 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
       });
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -998,7 +998,7 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
       });
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -1065,7 +1065,7 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
       });
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -1144,7 +1144,7 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
       });
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -1222,7 +1222,7 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
       });
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -1286,7 +1286,7 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
       res.end(receivedUrl);
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -1335,7 +1335,7 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
       res.end("ok");
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -1399,7 +1399,7 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
       res.end("ok");
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -1452,7 +1452,7 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
       res.end(receivedHeader);
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -1511,7 +1511,7 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
       });
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -1576,7 +1576,7 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
       res.end(binary);
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -1624,7 +1624,7 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
       res.end("should not be hit");
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -1678,7 +1678,7 @@ describe("pii fail-closed backend", () => {
       upstreamHits++;
       res.writeHead(200).end();
     });
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
 
     try {
       const upstreamPort = await listen(upstream);
@@ -1724,7 +1724,7 @@ describe("pii fail-closed backend", () => {
 
   it("reports Presidio outage and fail-open/closed posture via status", async () => {
     const original = Object.fromEntries(PII_ENV.map((k) => [k, process.env[k]]));
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       // A bound-then-released port refuses connections → presidio backend is "down".
       const dead = createServer();
@@ -1790,7 +1790,7 @@ describe("pii fail-closed backend", () => {
       });
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       // A bound-then-released port refuses connections → presidio backend is "down".
@@ -1904,7 +1904,7 @@ describe("config posture endpoint", () => {
       ],
     };
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
       process.env.FICTA_REGISTRY_PROCESS_ENV_ENABLED = "0";
@@ -2002,7 +2002,7 @@ describe("config posture endpoint", () => {
     const original = Object.fromEntries(CONFIG_ENV.map((k) => [k, process.env[k]]));
     const path = join(mkdtempSync(join(tmpdir(), "ficta-config-edit-server-")), "config.toml");
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       process.env.FICTA_CONFIG_FILE = path;
       process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
@@ -2086,7 +2086,7 @@ describe("buffered tool-call withholding", () => {
       });
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       const logDir = mkdtempSync(join(tmpdir(), "ficta-buffered-withhold-"));

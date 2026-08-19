@@ -25,7 +25,7 @@ code bypass the redaction boundary.
   such as Claude Code, Codex, or Pi.
 - **Registry policy contribution** — optional, safe metadata-only rules declared by the plugin that
   owns a domain. These rules can exclude exact identifiers such as env var names from protection;
-  they never contain raw values or arbitrary code. Excluding a name is *un-protection* — the inverse
+  they never contain raw values or arbitrary code. Excluding a name is _un-protection_ — the inverse
   of the normal add-only contract — so core only enforces rules declared by trusted built-in
   plugins, and applies them wherever a named candidate enters protection (registry load and
   request-time detection alike). Rules from untrusted plugins are reported but not enforced.
@@ -80,7 +80,7 @@ print. Built-in `RegistryPluginConfig` / `RegistryPluginSetup` metadata lets eac
 own its TOML/env bindings and setup prompts. `AgentIntegration` returns a launch plan; the CLI still
 owns shim resolution, proxy lifecycle, and cleanup.
 
-`loadValues()` returns *candidates*, not the final protected set: core (`loadPluginRegistry` /
+`loadValues()` returns _candidates_, not the final protected set: core (`loadPluginRegistry` /
 `ProtectionEngine`) applies trusted registry-policy exclusions and the vault dedupes before anything
 is protected. A source's discovery count is therefore a candidate count and can exceed the protected
 total — the startup banner reconciles the difference (see "Launch-time discovery UX").
@@ -185,14 +185,14 @@ the known shapes.
 Most of the shapes above are **value-only** — a vendor-prefixed key (`sk-…`, `ghp_…`, `AKIA…`), a
 JWT, a PEM block, or a credential URL is caught wherever it appears, regardless of any surrounding
 key. Two patterns instead pair a secret-ish **key** with an adjacent value, and that pairing is
-deliberately conservative, so an *opaque* value (a random blob with no recognizable vendor shape)
+deliberately conservative, so an _opaque_ value (a random blob with no recognizable vendor shape)
 is missed in these positions:
 
-| Shape | Example | Why |
-| --- | --- | --- |
-| Secret-ish word at the start of the key | `token: …`, `password: …`, `secret: …` | The key pattern requires at least one character before the word. Relaxing this makes every `name: value` line in ordinary source a candidate — measured at +83% detections on a 4,000-file corpus, nearly all of them identifiers and i18n keys. |
-| Decoration between separator and value | `api_token: \|`, `api_token: >`, `- <value>`, `Authorization: Bearer <value>` | The value capture stops at the decoration, so the token that follows is not considered. |
-| No separator at all | `deploy --api-token <value>` | The assignment pattern requires `:` or `=`. |
+| Shape                                   | Example                                                                       | Why                                                                                                                                                                                                                                              |
+| --------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Secret-ish word at the start of the key | `token: …`, `password: …`, `secret: …`                                        | The key pattern requires at least one character before the word. Relaxing this makes every `name: value` line in ordinary source a candidate — measured at +83% detections on a 4,000-file corpus, nearly all of them identifiers and i18n keys. |
+| Decoration between separator and value  | `api_token: \|`, `api_token: >`, `- <value>`, `Authorization: Bearer <value>` | The value capture stops at the decoration, so the token that follows is not considered.                                                                                                                                                          |
+| No separator at all                     | `deploy --api-token <value>`                                                  | The assignment pattern requires `:` or `=`.                                                                                                                                                                                                      |
 
 Values that look like **filesystem paths** are also rejected on purpose, including `path:line`
 locators from `grep`/`ripgrep`. Without that, a listing whose previous line ends in a token
@@ -226,22 +226,22 @@ agent run, an explicit shell `FICTA_SECRET_SHAPES_ENABLED=1` or `0` wins over TO
 
 ## Built-in detector plugin: `pii`
 
-Unlike the registry sources below — which load *exact* secrets to protect — the PII plugin is a
+Unlike the registry sources below — which load _exact_ secrets to protect — the PII plugin is a
 **detector**: it inspects request text at runtime and redacts PII before the model hop, restoring it
-in the response. Detection is a *concept* backed by a registry of pluggable **backends**, of which
+in the response. Detection is a _concept_ backed by a registry of pluggable **backends**, of which
 one or more can run at a time: the in-process `regex` backend (emails, US SSNs, Luhn-validated
 cards) is the always-available default, an out-of-process Microsoft Presidio sidecar (`presidio`)
 covers general/rule-based PII, and an external OpenMed analyzer service (`medical`) covers learned
 medical/PHI-style spans. Backend selection is config-driven (see [Choosing backends](#choosing-backends)
 below). Coverage is best-effort, not a guarantee; see [`threat-model.md`](./threat-model.md).
 
-**Two surfaces, and their defaults differ on purpose.** PII posture is scoped to *where the request
-came from*, because tokenizing an email inside code you're editing is rarely what you want, while
+**Two surfaces, and their defaults differ on purpose.** PII posture is scoped to _where the request
+came from_, because tokenizing an email inside code you're editing is rarely what you want, while
 redacting it in a web-chat message usually is:
 
 - **Web / standalone proxy** — governed by `[pii] enabled` (`FICTA_PII_ENABLED`). An unconfigured
   proxy is **off** (`envDefaults: { FICTA_PII_ENABLED: "0" }`) — a raw `ficta` run protects only
-  *registered* secrets. After `ficta setup` it is **on**: the wizard's first PII prompt defaults to
+  _registered_ secrets. After `ficta setup` it is **on**: the wizard's first PII prompt defaults to
   **yes** and persists `[pii] enabled = true`, because for the web UI, PII detection is a first-class
   part of the gateway.
 - **Launched coding agents** (`ficta claude|codex|pi`) — **off by default even when `[pii] enabled`
@@ -358,13 +358,13 @@ pnpm --filter @serovaai/ficta check:presidio
 
 Config (`[pii.presidio]` ↔ `FICTA_PII_PRESIDIO_*`):
 
-| TOML key | env | default | meaning |
-| --- | --- | --- | --- |
-| `url` | `FICTA_PII_PRESIDIO_URL` | `http://127.0.0.1:5002` | analyzer base URL |
-| `language` | `FICTA_PII_PRESIDIO_LANGUAGE` | `en` | analyzer language |
-| `score_threshold` | `FICTA_PII_PRESIDIO_SCORE_THRESHOLD` | `0.5` | drop spans below this score |
-| `entities` | `FICTA_PII_PRESIDIO_ENTITIES` | *(default baseline)* | entity allowlist (replaces the baseline) |
-| `timeout_ms` | `FICTA_PII_PRESIDIO_TIMEOUT_MS` | `1500` | total detection budget per request |
+| TOML key          | env                                  | default                 | meaning                                  |
+| ----------------- | ------------------------------------ | ----------------------- | ---------------------------------------- |
+| `url`             | `FICTA_PII_PRESIDIO_URL`             | `http://127.0.0.1:5002` | analyzer base URL                        |
+| `language`        | `FICTA_PII_PRESIDIO_LANGUAGE`        | `en`                    | analyzer language                        |
+| `score_threshold` | `FICTA_PII_PRESIDIO_SCORE_THRESHOLD` | `0.5`                   | drop spans below this score              |
+| `entities`        | `FICTA_PII_PRESIDIO_ENTITIES`        | _(default baseline)_    | entity allowlist (replaces the baseline) |
+| `timeout_ms`      | `FICTA_PII_PRESIDIO_TIMEOUT_MS`      | `1500`                  | total detection budget per request       |
 
 (The fail-open/fail-closed behavior when Presidio is unreachable is `[pii] fail_closed`, covered in
 [Failure policy](#failure-policy--core-enforced-global-default--per-detector-override) below.)
@@ -384,7 +384,7 @@ recognizers).
 A detected value replaces **every** eligible occurrence of that string in the body. Leaving
 `entities` / `FICTA_PII_PRESIDIO_ENTITIES` unset (the default) omits the `entities` field from
 `/analyze`: the sidecar runs exactly the recognizers its registry loaded under the deployment's
-country scope, which *is* the intended detection surface — there is deliberately no TypeScript-side
+country scope, which _is_ the intended detection surface — there is deliberately no TypeScript-side
 mirror of the registry to keep in sync. A non-empty list narrows detection to exactly those types
 (sent to the analyzer and re-applied client-side) — e.g.
 `entities = ["PERSON", "PHONE_NUMBER", "LOCATION", "EMAIL_ADDRESS"]` for coding-agent traffic.
@@ -442,14 +442,14 @@ ficta claude
 
 Config (`[pii.openmed]` ↔ `FICTA_PII_OPENMED_*`):
 
-| TOML key | env | default | meaning |
-| --- | --- | --- | --- |
-| `url` | `FICTA_PII_OPENMED_URL` | `http://127.0.0.1:5004` | service base URL |
-| `model` | `FICTA_PII_OPENMED_MODEL` | *(server default)* | model repo id sent as `model_name` |
-| `lang` | `FICTA_PII_OPENMED_LANG` | `en` | PII language |
-| `score_threshold` | `FICTA_PII_OPENMED_SCORE_THRESHOLD` | `0.5` | drop entities below this confidence |
-| `entities` | `FICTA_PII_OPENMED_ENTITIES` | *(all)* | canonical-label allowlist, applied client-side |
-| `timeout_ms` | `FICTA_PII_OPENMED_TIMEOUT_MS` | `2500` | total detection budget per request |
+| TOML key          | env                                 | default                 | meaning                                        |
+| ----------------- | ----------------------------------- | ----------------------- | ---------------------------------------------- |
+| `url`             | `FICTA_PII_OPENMED_URL`             | `http://127.0.0.1:5004` | service base URL                               |
+| `model`           | `FICTA_PII_OPENMED_MODEL`           | _(server default)_      | model repo id sent as `model_name`             |
+| `lang`            | `FICTA_PII_OPENMED_LANG`            | `en`                    | PII language                                   |
+| `score_threshold` | `FICTA_PII_OPENMED_SCORE_THRESHOLD` | `0.5`                   | drop entities below this confidence            |
+| `entities`        | `FICTA_PII_OPENMED_ENTITIES`        | _(all)_                 | canonical-label allowlist, applied client-side |
+| `timeout_ms`      | `FICTA_PII_OPENMED_TIMEOUT_MS`      | `2500`                  | total detection budget per request             |
 
 Transformer inference is slower than Presidio's rule engine — preload the model
 (`OPENMED_SERVICE_PRELOAD_MODELS`) so a cold start doesn't consume the request budget. OpenMed
@@ -465,10 +465,10 @@ skipped while reachable selected backends still run. In fail-closed mode, the re
 
 The decision resolves **per-detector override, else global default**:
 
-| Setting | Scope | Default | Effect when a detector backend is unreachable |
-| --- | --- | --- | --- |
-| `[detection] fail_closed` / `FICTA_FAIL_CLOSED_DETECTION` | all detectors | `false` | global default: fail-open (skip) unless a detector overrides |
-| `[pii] fail_closed` / `FICTA_PII_FAIL_CLOSED` | the `pii` detector | *(unset → defers to global)* | override: `true` blocks, `false` forces fail-open, unset defers |
+| Setting                                                   | Scope              | Default                      | Effect when a detector backend is unreachable                   |
+| --------------------------------------------------------- | ------------------ | ---------------------------- | --------------------------------------------------------------- |
+| `[detection] fail_closed` / `FICTA_FAIL_CLOSED_DETECTION` | all detectors      | `false`                      | global default: fail-open (skip) unless a detector overrides    |
+| `[pii] fail_closed` / `FICTA_PII_FAIL_CLOSED`             | the `pii` detector | _(unset → defers to global)_ | override: `true` blocks, `false` forces fail-open, unset defers |
 
 - **Fail-open** — skip the failed backend for that request (one-time warning) and forward with any
   other reachable backend detections. Best-effort; PII covered only by the failed backend may reach
@@ -482,7 +482,7 @@ under a supervisor. `ficta setup` prompts for the per-PII override when Presidio
 
 This is **core-enforced**: a detector plugin exposes its `failClosed()` config but never blocks the
 request itself — the engine resolves the policy and the transport returns the 503. It is also
-**independent of the global `FICTA_FAIL_CLOSED`**, which blocks only when a *registered exact secret*
+**independent of the global `FICTA_FAIL_CLOSED`**, which blocks only when a _registered exact secret_
 would leak (a different condition, default on) — unaffected by a detector's availability. `ficta
 doctor` probes `/health` and, when `presidio` is selected but unreachable, warns whether requests are
 being skipped or blocked given the resolved policy.
@@ -599,9 +599,7 @@ Canonical file shape:
       "protectionKind": "entity",
       "entityType": "organization",
       "canonicalValue": "Northstar Biologics (Pty) Ltd",
-      "forms": [
-        { "value": "Northstar", "kind": "short_name", "boundary": "token" }
-      ]
+      "forms": [{ "value": "Northstar", "kind": "short_name", "boundary": "token" }]
     },
     {
       "id": "entry-2",
@@ -675,17 +673,17 @@ process.
 
 ### Reviewing what gets redacted (`ficta review`)
 
-The default posture is to redact every discovered value; deciding what *not* to redact is a
+The default posture is to redact every discovered value; deciding what _not_ to redact is a
 per-name opt-out, not a length heuristic. `ficta review` (also offered as a step in `ficta setup`)
 loads the registry and shows the discovered names — grouped by source, never the values. Each name is
-pre-selected as "protect" *unless* a heuristic classifier flags it as likely non-secret, in which
+pre-selected as "protect" _unless_ a heuristic classifier flags it as likely non-secret, in which
 case it starts unchecked with a reason hint (e.g. "probably not a secret — looks like a URL (no
 credentials)"). The classifier reads the discovered value(s) once, in memory only, to decide — a
 credential-shaped or high-entropy value is always kept protected (so `DATABASE_URL` with an embedded
 password stays checked), while credential-free URLs, filesystem/socket paths, booleans/enums, and
 well-known config names (`AWS_PROFILE`, `LOG_LEVEL`, `*_PROMPT_*`, …) default to unchecked. The
 verdict is a fixed label; no value text is ever stored on a candidate, rendered, or hinted. This only
-changes the prompt's *default* selection — nothing is persisted until you submit, which is your
+changes the prompt's _default_ selection — nothing is persisted until you submit, which is your
 confirmation. Deselecting a name writes it to `registry.exclude_names` /
 `FICTA_REGISTRY_EXCLUDE_NAMES`; re-selecting a previously-excluded name removes it. Excluded names
 are enforced at both the registry-load and request-time-detection seams and are listed in the

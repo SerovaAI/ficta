@@ -1,9 +1,9 @@
 # Routing `ficta claude` through a local Anthropic-compatible proxy
 
-*How to point ficta's Anthropic route at a local provider-proxy so `ficta claude` can drive a model
+_How to point ficta's Anthropic route at a local provider-proxy so `ficta claude` can drive a model
 ficta doesn't reach natively — e.g. an OpenAI/Codex or Gemini model behind a subscription — while
 ficta redaction stays fully in the loop. Concrete example here: running GPT‑5.6 "sol" on a ChatGPT
-subscription via [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI).*
+subscription via [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)._
 
 ## Runtime model
 

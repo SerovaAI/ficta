@@ -238,7 +238,7 @@ describe("proxy registry reload endpoint", () => {
     });
     process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const { startProxy } = await import("../src/server.js");
       proxy = await startProxy({ port: 0 });
@@ -322,7 +322,7 @@ describe("proxy registry reload endpoint", () => {
     });
     process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const { startProxy } = await import("../src/server.js");
       proxy = await startProxy({ port: 0 });

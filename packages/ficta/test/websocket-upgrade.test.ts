@@ -52,7 +52,7 @@ describe("websocket upgrade refusal", () => {
       res.writeHead(200, { "content-type": "application/json" });
       res.end("{}");
     });
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     const savedUpstream = process.env.FICTA_UPSTREAM;
     const savedLogLevel = process.env.FICTA_LOG_LEVEL;
     try {

@@ -280,7 +280,7 @@ export function ChatView({
     setThreadTraceEnabledState(initialThreadTraceEnabled ?? false);
   }, [initialThreadTraceEnabled]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset all chat-scoped review state when the route changes
+  // Reset all chat-scoped review state when the route changes.
   useEffect(() => {
     cancelProtectionPreview();
     pendingProtectionTicket.current = undefined;

@@ -74,7 +74,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   // Auto-grow: reset then match content, capped so it scrolls past a few lines. `value` isn't read in
   // the body but must stay in deps so the height recomputes on every edit (including programmatic clears).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-measure whenever the text changes
+  // Re-measure whenever the text changes.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;

@@ -599,7 +599,7 @@ export async function startProxy(opts: StartProxyOptions = {}): Promise<ProxyHan
     // Every x-ficta-* header is internal control metadata (scope routing, egress audit, trace
     // capture, restore highlighting, protection tickets, retired selectors) — sweep the whole
     // prefix so no current or future control header can ever reach the upstream vendor.
-    for (const name of [...headers.keys()]) {
+    for (const name of Array.from(headers.keys())) {
       if (name.startsWith("x-ficta-")) headers.delete(name);
     }
 
@@ -1749,7 +1749,7 @@ async function redactNonAuthHeaders(
   traceValues: boolean,
 ): Promise<SurfaceRedaction> {
   const total = emptyRedaction();
-  for (const [name, value] of [...headers]) {
+  for (const [name, value] of Array.from(headers)) {
     if (REQUIRED_AUTH_HEADER_NAMES.has(name.toLowerCase())) continue;
     // Headers do not preserve path-like tokens (unlike the query string): a registered secret inside a
     // slash-path in a header value is redacted, not left intact.

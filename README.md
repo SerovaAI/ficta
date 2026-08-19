@@ -78,11 +78,11 @@ egress. See the [threat model](packages/ficta/docs/threat-model.md) for the full
 
 ## Supported Agents
 
-| Agent | Status | Notes |
-| --- | --- | --- |
-| Claude Code | Verified | Uses Anthropic base URL routing. |
-| Codex | Verified | Supports API-key and ChatGPT/OAuth flows. |
-| Pi | Verified | Routes built-in `anthropic`/`openai`/`openai-codex` providers via an ephemeral `PI_CODING_AGENT_DIR` + `models.json` base-URL override. |
+| Agent       | Status   | Notes                                                                                                                                   |
+| ----------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code | Verified | Uses Anthropic base URL routing.                                                                                                        |
+| Codex       | Verified | Supports API-key and ChatGPT/OAuth flows.                                                                                               |
+| Pi          | Verified | Routes built-in `anthropic`/`openai`/`openai-codex` providers via an ephemeral `PI_CODING_AGENT_DIR` + `models.json` base-URL override. |
 
 Ficta only supports CLI agents that route **all** of their model traffic through its proxy. **IDE
 clients such as Cursor are not supported** - their agentic features bypass a custom base URL, so

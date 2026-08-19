@@ -93,10 +93,7 @@ async function maybeStartPresidio(env) {
   if (!existsSync(configPath)) {
     throw new Error(`Presidio registry config not found: ${configPath}`);
   }
-  const nlpConfigPath = resolve(
-    rootDir,
-    env.FICTA_PII_PRESIDIO_NLP_CONFIG_FILE ?? DEFAULT_PRESIDIO_NLP_CONFIG,
-  );
+  const nlpConfigPath = resolve(rootDir, env.FICTA_PII_PRESIDIO_NLP_CONFIG_FILE ?? DEFAULT_PRESIDIO_NLP_CONFIG);
   if (!existsSync(nlpConfigPath)) {
     throw new Error(`Presidio NLP config not found: ${nlpConfigPath}`);
   }

@@ -10,8 +10,7 @@
 # document context and entity-shape gates before a PERSON/ORGANIZATION span leaves Presidio.
 nlp_engine_name: spacy
 models:
-  -
-    lang_code: en
+  - lang_code: en
     model_name: en_core_web_lg
 
 ner_model_configuration:
@@ -30,16 +29,16 @@ ner_model_configuration:
 
   low_confidence_score_multiplier: 0.4
   low_score_entity_names:
-  -
+    -
   labels_to_ignore:
-  # ORGANIZATION intentionally NOT ignored here (upstream ignores it) — see header.
-  - CARDINAL
-  - EVENT
-  - LANGUAGE
-  - LAW
-  - MONEY
-  - ORDINAL
-  - PERCENT
-  - PRODUCT
-  - QUANTITY
-  - WORK_OF_ART
+    # ORGANIZATION intentionally NOT ignored here (upstream ignores it) — see header.
+    - CARDINAL
+    - EVENT
+    - LANGUAGE
+    - LAW
+    - MONEY
+    - ORDINAL
+    - PERCENT
+    - PRODUCT
+    - QUANTITY
+    - WORK_OF_ART

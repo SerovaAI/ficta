@@ -390,7 +390,7 @@ function scanInlineCodeSpans(text: string, from: number, to: number, regions: Ma
 
 function scanInlineCodeChunk(chunk: string, offset: number, regions: MarkdownCodeRegion[]): void {
   const runs = [...chunk.matchAll(/`+/g)];
-  for (let i = 0; i < runs.length; ) {
+  for (let i = 0; i < runs.length;) {
     const open = runs[i];
     if (!open) return;
     const openStart = offset + open.index;

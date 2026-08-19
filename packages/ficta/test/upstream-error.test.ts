@@ -99,7 +99,7 @@ describe("upstream transport error response", () => {
     process.env.FICTA_LOG_LEVEL = "silent";
     process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-upstream-error-"));
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const { startProxy } = await import("../src/server.js");
       proxy = await startProxy({ port: 0, plugins: [] });

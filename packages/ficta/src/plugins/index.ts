@@ -110,13 +110,7 @@ export type {
   AgentLaunchPlan,
 } from "./agent-types.js";
 // --- Re-exports: the public plugin API surface (kept stable across the engine/product split). ---
-export {
-  claudeAgent,
-  codexAgent,
-  codexPersistedFictaCleanupOverrides,
-  piAgent,
-  piModelsConfig,
-} from "./agents.js";
+export { claudeAgent, codexAgent, codexPersistedFictaCleanupOverrides, piAgent, piModelsConfig } from "./agents.js";
 export { dopplerPlugin } from "./doppler.js";
 export {
   managedRegistryFilePlugin,

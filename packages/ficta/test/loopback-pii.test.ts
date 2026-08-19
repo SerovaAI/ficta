@@ -87,7 +87,7 @@ describe("loopback PII round-trip through the real proxy", () => {
       });
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     // pino logs to stderr (JSON lines when not a TTY, as in tests); capture them.
     const stderrLines: string[] = [];
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
@@ -166,7 +166,7 @@ describe("loopback PII round-trip through the real proxy", () => {
       });
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -227,7 +227,7 @@ describe("loopback PII round-trip through the real proxy", () => {
       });
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -303,7 +303,7 @@ describe("loopback PII round-trip through the real proxy", () => {
       });
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;

@@ -766,14 +766,13 @@ export abstract class VaultView {
     const encoder = new TextEncoder();
     const HOLD = this.surrogate.maxLength - 1; // max partial surrogate; a full token is maxLength chars
     let buf = "";
-    const self = this;
     // Residuals are scanned on the EMITTED output, not the working buffer: the buffer tail can end
     // mid-token, and an incomplete token must not be classified until its right context has arrived.
     const residuals = this.residualScanner();
     return new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, controller) {
+      transform: (chunk, controller) => {
         // Restore complete surrogates in the full buffer; only a partial token can remain at the tail.
-        buf = self.restoreTextExcept(buf + decoder.decode(chunk, { stream: true }), EMPTY_SKIP, opts);
+        buf = this.restoreTextExcept(buf + decoder.decode(chunk, { stream: true }), EMPTY_SKIP, opts);
         if (buf.length > HOLD) {
           const emitted = buf.slice(0, buf.length - HOLD);
           residuals.feed(emitted);
@@ -781,8 +780,8 @@ export abstract class VaultView {
           buf = buf.slice(buf.length - HOLD);
         }
       },
-      flush(controller) {
-        buf = self.restoreTextExcept(buf + decoder.decode(), EMPTY_SKIP, opts);
+      flush: (controller) => {
+        buf = this.restoreTextExcept(buf + decoder.decode(), EMPTY_SKIP, opts);
         residuals.feed(buf);
         residuals.end();
         if (buf) controller.enqueue(encoder.encode(buf));
@@ -1216,7 +1215,7 @@ function flushPendingSseFragments(
   keyPrefix = "",
 ): string {
   let out = "";
-  for (const [key, fragment] of [...pending]) {
+  for (const [key, fragment] of pending) {
     if (keyPrefix && !key.startsWith(keyPrefix)) continue;
     const value = restoreText(fragment.value);
     if (value) out += renderSseDataEvent(fragment.eventName, fragment.flushData(value));

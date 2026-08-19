@@ -55,7 +55,7 @@ export function MessageList({
     stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   };
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run as content grows during streaming
+  // Re-run as content grows during streaming.
   useEffect(() => {
     if (!stick.current) return;
     const el = scrollRef.current;

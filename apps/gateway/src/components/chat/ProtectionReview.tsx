@@ -224,7 +224,7 @@ export function ProtectionReview({
               aria-label="Message to review"
               onMouseUp={(event) => captureSelection(event.currentTarget)}
               onKeyUp={(event) => captureSelection(event.currentTarget)}
-              // biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard selection capture in review text.
+              // Focus enables keyboard selection capture in review text.
               tabIndex={0}
             >
               <HighlightedText text={text} findings={preview.findings} />
@@ -238,7 +238,7 @@ export function ProtectionReview({
             aria-label="Text the model will see"
             onMouseUp={(event) => captureSelection(event.currentTarget)}
             onKeyUp={(event) => captureSelection(event.currentTarget)}
-            // biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard selection capture in review text.
+            // Focus enables keyboard selection capture in review text.
             tabIndex={0}
           >
             <ModelText text={preview.redactedText} />
@@ -459,7 +459,7 @@ function HighlightedText({ text, findings }: { text: string; findings: Protectio
         {segment.text}
       </ProtectionMark>
     ) : (
-      // biome-ignore lint/suspicious/noArrayIndexKey: plain segments are stable between authoritative findings
+      // Plain segments are stable between authoritative findings.
       <span key={index}>{segment.text}</span>
     ),
   );

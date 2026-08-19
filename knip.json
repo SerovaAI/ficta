@@ -1,59 +1,27 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignoreBinaries": [
-    "doppler"
-  ],
+  "ignoreBinaries": ["doppler"],
   "ignoreExportsUsedInFile": true,
-  "tags": [
-    "-lintignore"
-  ],
+  "tags": ["-lintignore"],
   "workspaces": {
     ".": {
-      "entry": [
-        "scripts/dev-runner.mjs",
-        "scripts/gateway-dev.mjs"
-      ],
-      "project": [
-        "scripts/**/*.mjs"
-      ]
+      "entry": ["scripts/dev-runner.mjs", "scripts/gateway-dev.mjs"],
+      "project": ["scripts/**/*.mjs"]
     },
     "apps/gateway": {
-      "entry": [
-        "src/router.tsx",
-        "src/start.ts",
-        "src/routes/**/*.{ts,tsx}"
-      ],
-      "project": [
-        "src/**/*.{ts,tsx}",
-        "src/**/*.css",
-        "test/**/*.ts"
-      ]
+      "entry": ["src/router.tsx", "src/start.ts", "src/routes/**/*.{ts,tsx}"],
+      "project": ["src/**/*.{ts,tsx}", "src/**/*.css", "test/**/*.ts"]
     },
     "apps/web": {
-      "entry": [
-        "src/router.tsx",
-        "src/routes/**/*.{ts,tsx}"
-      ],
-      "project": [
-        "src/**/*.{ts,tsx}",
-        "src/**/*.css"
-      ]
+      "entry": ["src/router.tsx", "src/routes/**/*.{ts,tsx}"],
+      "project": ["src/**/*.{ts,tsx}", "src/**/*.css"]
     },
     "packages/ficta": {
-      "entry": [
-        "bench/*.mts"
-      ],
-      "project": [
-        "src/**/*.ts",
-        "test/**/*.ts",
-        "bench/**/*.mts",
-        "*.config.ts"
-      ]
+      "entry": ["bench/*.mts"],
+      "project": ["src/**/*.ts", "test/**/*.ts", "bench/**/*.mts", "*.config.ts"]
     },
     "packages/protocol": {
-      "project": [
-        "src/**/*.d.ts"
-      ]
+      "project": ["src/**/*.d.ts"]
     }
   }
 }

@@ -1,8 +1,8 @@
 # Intercepting Codex (ChatGPT/OAuth) through ficta
 
-*How ficta dynamically routes OpenAI Codex CLI when Codex is logged in with a ChatGPT
+_How ficta dynamically routes OpenAI Codex CLI when Codex is logged in with a ChatGPT
 subscription/OAuth account instead of an API key. Hard-won; don't re-derive. Prior art: headroom
-(`headroom/providers/codex/install.py`).*
+(`headroom/providers/codex/install.py`)._
 
 ## Runtime model
 
@@ -58,12 +58,12 @@ No persistent TOML changes are needed.
 Codex posts model traffic to the temporary provider's `/responses` endpoint. ficta then routes by
 auth mode:
 
-| Incoming (from Codex) | OAuth? | Forwarded to |
-|---|---|---|
-| `/v1/responses`, `/v1/codex/responses` | yes | `https://chatgpt.com/backend-api/codex/responses` |
-| `/v1/responses` | no (API key) | `https://api.openai.com/v1/responses` |
-| `/v1/models` | yes | `https://chatgpt.com/backend-api/codex/models` |
-| `/backend-api/*` | — | `https://chatgpt.com/backend-api/*` |
+| Incoming (from Codex)                  | OAuth?       | Forwarded to                                      |
+| -------------------------------------- | ------------ | ------------------------------------------------- |
+| `/v1/responses`, `/v1/codex/responses` | yes          | `https://chatgpt.com/backend-api/codex/responses` |
+| `/v1/responses`                        | no (API key) | `https://api.openai.com/v1/responses`             |
+| `/v1/models`                           | yes          | `https://chatgpt.com/backend-api/codex/models`    |
+| `/backend-api/*`                       | —            | `https://chatgpt.com/backend-api/*`               |
 
 All required auth headers are forwarded untouched, so Codex auth continues to work.
 `FICTA_CHATGPT_UPSTREAM` overrides the ChatGPT host if needed; default is `https://chatgpt.com`.

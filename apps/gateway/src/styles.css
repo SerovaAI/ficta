@@ -114,7 +114,6 @@
    typing pulse, skeleton shimmer, and Radix enter/exit motions settle without movement. `!important`
    is required here — this reset must win over Tailwind's animation utilities and inline animation
    styles, which is exactly the accepted exception to the no-!important rule. */
-/* biome-ignore-start lint/complexity/noImportantStyles: reduced-motion reset must override utility + inline animations */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -125,4 +124,3 @@
     scroll-behavior: auto !important;
   }
 }
-/* biome-ignore-end lint/complexity/noImportantStyles: reduced-motion reset */

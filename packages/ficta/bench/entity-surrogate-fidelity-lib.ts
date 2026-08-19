@@ -223,7 +223,7 @@ export function factValueMatches(answer: unknown, expected: unknown): boolean {
   const answerText = normalizedFactText(answer);
   const expectedText = normalizedFactText(expected);
   if (answerText.length === 0 || expectedText.length === 0) return false;
-  for (let from = 0; ; ) {
+  for (let from = 0; ;) {
     const at = answerText.indexOf(expectedText, from);
     if (at === -1) return false;
     from = at + 1;

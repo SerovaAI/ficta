@@ -112,7 +112,7 @@ describe("isProtectionStatsOk", () => {
     expect(isProtectionStatsOk(badSurface)).toBe(false);
 
     const badHit = validPayload();
-    (badHit.stats.events[0]?.redactedHits[0] as Record<string, unknown>).confidence = "medium";
+    (badHit.stats.events[0]!.redactedHits[0]! as Record<string, unknown>).confidence = "medium";
     expect(isProtectionStatsOk(badHit)).toBe(false);
 
     const badBlocked = validPayload();

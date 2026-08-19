@@ -24,10 +24,7 @@ description = "Fixed synthetic surrogate key used by server and diagnostic tests
 targetRules = ["generic-api-key"]
 condition = "AND"
 regexes = ['''0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef''']
-paths = [
-  '''(^|.*/)packages/ficta/test/doctor\.test\.ts$''',
-  '''(^|.*/)packages/ficta/test/server\.test\.ts$''',
-]
+paths = ['''(^|.*/)packages/ficta/test/doctor\.test\.ts$''', '''(^|.*/)packages/ficta/test/server\.test\.ts$''']
 
 [[allowlists]]
 description = "Synthetic detector inputs in the dedicated secret-shape test."

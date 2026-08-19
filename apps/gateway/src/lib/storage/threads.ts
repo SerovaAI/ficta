@@ -127,7 +127,9 @@ export const startThread = createServerFn({ method: "POST" })
     const auth = await requireAuthState();
     const scope = scopeFromAuth(auth);
     if (!scope) throw new Error("unauthorized");
-    await (await getStorage()).startThread(
+    await (
+      await getStorage()
+    ).startThread(
       scope.userId,
       scope.orgId,
       data.threadId,

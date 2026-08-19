@@ -104,7 +104,7 @@ describe("proxy request decompression", () => {
         res.end(JSON.stringify({ ok: true }));
       });
     });
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     let restoreEnv: (() => void) | undefined;
     try {
       const upstreamPort = await listen(upstream);
@@ -152,7 +152,7 @@ describe("proxy request decompression", () => {
       res.writeHead(200, { "content-type": "application/json" });
       res.end("{}");
     });
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     let restoreEnv: (() => void) | undefined;
     try {
       const upstreamPort = await listen(upstream);
@@ -200,7 +200,7 @@ describe("proxy request decompression", () => {
       res.writeHead(200, { "content-type": "application/json" });
       res.end("{}");
     });
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     let restoreEnv: (() => void) | undefined;
     try {
       const upstreamPort = await listen(upstream);

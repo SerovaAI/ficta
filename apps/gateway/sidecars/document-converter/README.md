@@ -23,9 +23,9 @@ a `.docx` extension.
 
 ## Backends
 
-| `CONVERTER_BACKEND` | Engine     | When                                                                   |
-| ------------------- | ---------- | ---------------------------------------------------------------------- |
-| `markitdown` (def.) | markitdown | Light/fast. Good on text-based PDFs/DOCX.                              |
+| `CONVERTER_BACKEND` | Engine     | When                                                                                                                                                                                                                 |
+| ------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `markitdown` (def.) | markitdown | Light/fast. Good on text-based PDFs/DOCX.                                                                                                                                                                            |
 | `docling`           | docling    | Heavy (layout + tables + OCR). Better on scanned/table-heavy PDFs — and better PII recall, since format-anchored entities (SSNs, cards) survive extraction more reliably. Uncomment `docling` in `requirements.txt`. |
 
 Rendering (`/render`) is backed by pandoc (`RENDER_BACKEND=pandoc`, the only backend today): real

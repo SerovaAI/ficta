@@ -288,22 +288,22 @@ network boundary and validate it on representative documents before using real s
 
 Web app env:
 
-| Env var | Purpose | Default |
-| --- | --- | --- |
-| `FICTA_PROXY_URL` | ficta proxy base URL the model adapters point at | `http://127.0.0.1:8787` |
-| `OPENAI_API_KEY` | OpenAI-compatible fallback key; used only when the workspace has no saved OpenAI key | - |
-| `ANTHROPIC_API_KEY` | Anthropic fallback key; used only when the workspace has no saved Anthropic key | - |
-| `FICTA_GATEWAY_KEY_ENCRYPTION_SECRET` | Secret used to encrypt/decrypt admin-saved workspace provider keys | - |
-| `FICTA_GATEWAY_LINEAR_API_KEY` | Server-only Linear personal API key restricted to **Create issues** and the destination team; enables the global and per-response report actions together with `FICTA_GATEWAY_LINEAR_TEAM_ID` | - |
-| `FICTA_GATEWAY_LINEAR_TEAM_ID` | UUID of the Linear team that receives issue reports | - |
-| `FICTA_GATEWAY_BUILD_ID` | Optional release or commit identifier attached to issue-report diagnostics; set explicitly for deployments | `dev-<git sha>` under the dev scripts |
-| `AUTH_PROVIDER` | `none` for open local/self-hosted mode, or `workos` for AuthKit | `none` |
-| `FICTA_GATEWAY_ORG_ID` | WorkOS organization assigned to this single-organization Gateway/proxy deployment; required with `AUTH_PROVIDER=workos` | - |
-| `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_REDIRECT_URI`, `WORKOS_COOKIE_PASSWORD` | WorkOS AuthKit + organization/workspace support | - |
-| `DATABASE_URL` | Postgres connection for shared/multi-process deployments | embedded PGlite when unset |
-| `FICTA_GATEWAY_DATA_DIR` | PGlite data directory when `DATABASE_URL` is unset | `.data/pglite` |
-| `FICTA_GATEWAY_MANAGED_REGISTRY_PATH` | Private managed-registry file shared with the proxy; use the same absolute path as `FICTA_REGISTRY_MANAGED_FILE_PATHS` | `.data/protected-registry.json` |
-| `FICTA_DOC_CONVERTER_URL` | Document-converter sidecar URL for PDF/DOCX extraction | `http://127.0.0.1:5003` |
+| Env var                                                                               | Purpose                                                                                                                                                                                       | Default                               |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `FICTA_PROXY_URL`                                                                     | ficta proxy base URL the model adapters point at                                                                                                                                              | `http://127.0.0.1:8787`               |
+| `OPENAI_API_KEY`                                                                      | OpenAI-compatible fallback key; used only when the workspace has no saved OpenAI key                                                                                                          | -                                     |
+| `ANTHROPIC_API_KEY`                                                                   | Anthropic fallback key; used only when the workspace has no saved Anthropic key                                                                                                               | -                                     |
+| `FICTA_GATEWAY_KEY_ENCRYPTION_SECRET`                                                 | Secret used to encrypt/decrypt admin-saved workspace provider keys                                                                                                                            | -                                     |
+| `FICTA_GATEWAY_LINEAR_API_KEY`                                                        | Server-only Linear personal API key restricted to **Create issues** and the destination team; enables the global and per-response report actions together with `FICTA_GATEWAY_LINEAR_TEAM_ID` | -                                     |
+| `FICTA_GATEWAY_LINEAR_TEAM_ID`                                                        | UUID of the Linear team that receives issue reports                                                                                                                                           | -                                     |
+| `FICTA_GATEWAY_BUILD_ID`                                                              | Optional release or commit identifier attached to issue-report diagnostics; set explicitly for deployments                                                                                    | `dev-<git sha>` under the dev scripts |
+| `AUTH_PROVIDER`                                                                       | `none` for open local/self-hosted mode, or `workos` for AuthKit                                                                                                                               | `none`                                |
+| `FICTA_GATEWAY_ORG_ID`                                                                | WorkOS organization assigned to this single-organization Gateway/proxy deployment; required with `AUTH_PROVIDER=workos`                                                                       | -                                     |
+| `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_REDIRECT_URI`, `WORKOS_COOKIE_PASSWORD` | WorkOS AuthKit + organization/workspace support                                                                                                                                               | -                                     |
+| `DATABASE_URL`                                                                        | Postgres connection for shared/multi-process deployments                                                                                                                                      | embedded PGlite when unset            |
+| `FICTA_GATEWAY_DATA_DIR`                                                              | PGlite data directory when `DATABASE_URL` is unset                                                                                                                                            | `.data/pglite`                        |
+| `FICTA_GATEWAY_MANAGED_REGISTRY_PATH`                                                 | Private managed-registry file shared with the proxy; use the same absolute path as `FICTA_REGISTRY_MANAGED_FILE_PATHS`                                                                        | `.data/protected-registry.json`       |
+| `FICTA_DOC_CONVERTER_URL`                                                             | Document-converter sidecar URL for PDF/DOCX extraction                                                                                                                                        | `http://127.0.0.1:5003`               |
 
 Proxy policy and backend tuning belong in the proxy TOML file. See the
 [minimal POC contract](./docs/poc-configuration.md) first and the fully annotated

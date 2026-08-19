@@ -60,14 +60,14 @@ full reference into an environment file.
 [`config.toml.example`](./config.toml.example) is the authoritative, fully annotated reference for
 every advanced option. The normal POC policy surface is intentionally smaller:
 
-| TOML | Env override | Default | What it does |
-| --- | --- | --- | --- |
-| `registry.require` | `FICTA_REQUIRE_REGISTRY` | `false` | Block provider requests and agent launch until values load without registry-source errors. |
-| `registry.managed_file.paths` | `FICTA_REGISTRY_MANAGED_FILE_PATHS` | `.data/protected-registry.json` | Managed registry JSON files for admin-approved business values. |
-| `secret_shapes.enabled` | `FICTA_SECRET_SHAPES_ENABLED` | unconfigured: `false`; after `ficta setup`: prompted, default `true` | Best-effort request-time detection of known secret shapes for the standalone/web proxy. |
-| `pii.enabled` | `FICTA_PII_ENABLED` | unconfigured: `false`; after `ficta setup`: prompted, default `true` | Best-effort PII detection for the standalone/web proxy. |
-| `pii.backends` | `FICTA_PII_BACKENDS` | `regex` | PII backend set, e.g. `presidio` or `presidio,openmed`. |
-| `pii.fail_closed` | `FICTA_PII_FAIL_CLOSED` | `false` | PII-specific detector-outage policy; overrides `detection.fail_closed`. |
+| TOML                          | Env override                        | Default                                                              | What it does                                                                               |
+| ----------------------------- | ----------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `registry.require`            | `FICTA_REQUIRE_REGISTRY`            | `false`                                                              | Block provider requests and agent launch until values load without registry-source errors. |
+| `registry.managed_file.paths` | `FICTA_REGISTRY_MANAGED_FILE_PATHS` | `.data/protected-registry.json`                                      | Managed registry JSON files for admin-approved business values.                            |
+| `secret_shapes.enabled`       | `FICTA_SECRET_SHAPES_ENABLED`       | unconfigured: `false`; after `ficta setup`: prompted, default `true` | Best-effort request-time detection of known secret shapes for the standalone/web proxy.    |
+| `pii.enabled`                 | `FICTA_PII_ENABLED`                 | unconfigured: `false`; after `ficta setup`: prompted, default `true` | Best-effort PII detection for the standalone/web proxy.                                    |
+| `pii.backends`                | `FICTA_PII_BACKENDS`                | `regex`                                                              | PII backend set, e.g. `presidio` or `presidio,openmed`.                                    |
+| `pii.fail_closed`             | `FICTA_PII_FAIL_CLOSED`             | `false`                                                              | PII-specific detector-outage policy; overrides `detection.fail_closed`.                    |
 
 NLP detection removes internal Markdown formatting with an offset map so detected spans re-anchor to
 the exact raw body range.
@@ -187,11 +187,11 @@ ficta claude       # launch an agent through ficta without shims
 
 ## Supported agents
 
-| Agent | Status | Notes |
-| --- | --- | --- |
+| Agent       | Status   | Notes                                                                                                                                                                    |
+| ----------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Claude Code | Verified | Anthropic base-URL routing. Point the anthropic route at a local proxy to run alt models — see [`docs/anthropic-upstream-proxy.md`](./docs/anthropic-upstream-proxy.md). |
-| Codex | Verified | API-key and ChatGPT/OAuth flows — see [`docs/codex-oauth-intercept.md`](./docs/codex-oauth-intercept.md). |
-| Pi | Verified | Built-in `anthropic`/`openai`/`openai-codex` providers via ephemeral `PI_CODING_AGENT_DIR` + `models.json` base-URL override. |
+| Codex       | Verified | API-key and ChatGPT/OAuth flows — see [`docs/codex-oauth-intercept.md`](./docs/codex-oauth-intercept.md).                                                                |
+| Pi          | Verified | Built-in `anthropic`/`openai`/`openai-codex` providers via ephemeral `PI_CODING_AGENT_DIR` + `models.json` base-URL override.                                            |
 
 Only CLI agents that route **all** model traffic through the proxy are supported. IDE clients such as
 Cursor are not — their agentic features bypass a custom base URL. See the

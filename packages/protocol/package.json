@@ -33,11 +33,10 @@
     "build": "node -e \"process.exit(0)\"",
     "typecheck": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 src/index.d.ts",
     "check": "pnpm check:static && pnpm typecheck && pnpm test",
-    "check:static": "biome check .",
+    "check:static": "oxlint . && oxfmt --check .",
     "test": "node --test test/**/*.test.js"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.8",
     "typescript": "^7.0.2"
   },
   "engines": {

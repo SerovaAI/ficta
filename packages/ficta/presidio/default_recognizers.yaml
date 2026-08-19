@@ -37,50 +37,50 @@ recognizers:
   # - Custom pattern recognizers with this configuration can be added to this file, with type: custom
   - name: CreditCardRecognizer
     supported_languages:
-    - language: en
-      context: [credit, card, visa, mastercard, cc, amex, discover, jcb, diners, maestro, instapayment]
+      - language: en
+        context: [credit, card, visa, mastercard, cc, amex, discover, jcb, diners, maestro, instapayment]
     type: predefined
 
   - name: UsBankRecognizer
-    supported_languages: 
-    - en
+    supported_languages:
+      - en
     type: predefined
     country_code: us
 
   - name: UsLicenseRecognizer
-    supported_languages: 
-    - en
+    supported_languages:
+      - en
     type: predefined
     country_code: us
 
   - name: UsItinRecognizer
-    supported_languages: 
-    - en
+    supported_languages:
+      - en
     type: predefined
     country_code: us
-  
+
   - name: UsPassportRecognizer
-    supported_languages: 
-    - en
+    supported_languages:
+      - en
     type: predefined
     country_code: us
-  
+
   - name: UsSsnRecognizer
     supported_languages:
-    - en
+      - en
     type: predefined
     country_code: us
 
   - name: UsMbiRecognizer
     supported_languages:
-    - en
+      - en
     type: predefined
     enabled: false
     country_code: us
 
   - name: UsNpiRecognizer
     supported_languages:
-    - en
+      - en
     type: predefined
     enabled: false
     country_code: us
@@ -90,126 +90,126 @@ recognizers:
   # is any 9-digit run; UK_NHS passes mod-11 on ~10% of arbitrary 10-digit numbers).
   - name: NhsRecognizer
     supported_languages:
-    - en
+      - en
     type: predefined
     country_code: uk
 
   - name: UkDrivingLicenceRecognizer
     supported_languages:
-    - en
+      - en
     type: predefined
     country_code: uk
 
   - name: UkNinoRecognizer
     supported_languages:
-    - en
+      - en
     type: predefined
     country_code: uk
 
   - name: UkPassportRecognizer
     supported_languages:
-    - en
+      - en
     type: predefined
     country_code: uk
 
   - name: UkPostcodeRecognizer
     supported_languages:
-    - en
+      - en
     type: predefined
     country_code: uk
 
   - name: UkVehicleRegistrationRecognizer
     supported_languages:
-    - en
+      - en
     type: predefined
     country_code: uk
 
   - name: SgFinRecognizer
-    supported_languages: 
-    - en
+    supported_languages:
+      - en
     type: predefined
     enabled: false
     country_code: sg
 
   - name: AuAbnRecognizer
-    supported_languages: 
-    - en
+    supported_languages:
+      - en
     type: predefined
     enabled: false
     country_code: au
 
   - name: AuAcnRecognizer
-    supported_languages: 
-    - en
+    supported_languages:
+      - en
     type: predefined
     enabled: false
     country_code: au
 
   - name: AuTfnRecognizer
-    supported_languages: 
-    - en
+    supported_languages:
+      - en
     type: predefined
     enabled: false
     country_code: au
 
   - name: AuMedicareRecognizer
-    supported_languages: 
-    - en
+    supported_languages:
+      - en
     type: predefined
     enabled: false
     country_code: au
 
   - name: NgNinRecognizer
     supported_languages:
-    - en
+      - en
     type: predefined
     enabled: false
     country_code: ng
 
   - name: NgVehicleRegistrationRecognizer
     supported_languages:
-    - en
+      - en
     type: predefined
     enabled: false
     country_code: ng
 
   - name: InPanRecognizer
-    supported_languages: 
-    - en
+    supported_languages:
+      - en
     type: predefined
     enabled: false
     country_code: in
 
   - name: InAadhaarRecognizer
-    supported_languages: 
-    - en
+    supported_languages:
+      - en
     type: predefined
     enabled: false
     country_code: in
 
   - name: InVehicleRegistrationRecognizer
-    supported_languages: 
-    - en
+    supported_languages:
+      - en
     type: predefined
     enabled: false
     country_code: in
 
   - name: InPassportRecognizer
-    supported_languages: 
-    - en
+    supported_languages:
+      - en
     type: predefined
     enabled: false
     country_code: in
 
   - name: PhTinRecognizer
-    supported_languages: 
-    - en
+    supported_languages:
+      - en
     type: predefined
     enabled: false
 
   - name: ZaIdNumberRecognizer
     supported_languages:
-    - en
+      - en
     type: predefined
     enabled: true
     country_code: za
@@ -220,39 +220,39 @@ recognizers:
   # despite Presidio's global IGNORECASE regex flag.
   - name: FictaDocumentIdRecognizer
     supported_languages:
-    - language: en
-      context:
-      - passport
-      - passport number
-      - identity
-      - identity number
-      - document number
-      - reference number
-      - registration number
-      - permit
+      - language: en
+        context:
+          - passport
+          - passport number
+          - identity
+          - identity number
+          - document number
+          - reference number
+          - registration number
+          - permit
     type: custom
     enabled: true
     supported_entity: DOCUMENT_ID
     patterns:
-    - name: Letter followed by eight digits
-      regex: "\\b(?-i:[A-Z])\\d{8}\\b"
-      score: 0.65
-    - name: Structured mixed alphanumeric document identifier
-      regex: "\\b(?-i:[A-Z])\\d{4}(?-i:[A-Z]{3})\\d{6}\\b"
-      score: 0.85
+      - name: Letter followed by eight digits
+        regex: "\\b(?-i:[A-Z])\\d{8}\\b"
+        score: 0.65
+      - name: Structured mixed alphanumeric document identifier
+        regex: "\\b(?-i:[A-Z])\\d{4}(?-i:[A-Z]{3})\\d{6}\\b"
+        score: 0.85
 
   - name: FictaMauritiusPhoneRecognizer
     supported_languages:
-    - language: en
-      context: [phone, telephone, mobile, contact, call, reached]
+      - language: en
+        context: [phone, telephone, mobile, contact, call, reached]
     type: custom
     enabled: true
     country_code: mu
     supported_entity: PHONE_NUMBER
     patterns:
-    - name: Mauritius international telephone number
-      regex: "(?<!\\d)\\+230(?:[ .-]?\\d){8}\\b"
-      score: 0.85
+      - name: Mauritius international telephone number
+        regex: "(?<!\\d)\\+230(?:[ .-]?\\d){8}\\b"
+        score: 0.85
 
   # Municipal/utility account numbers (e.g. City of Johannesburg tax invoices) are bare 9-11 digit
   # runs with no checksum, so the base score stays below ficta's 0.5 threshold and only the context
@@ -261,27 +261,27 @@ recognizers:
   # harmless outside ZA.
   - name: FictaAccountNumberRecognizer
     supported_languages:
-    - language: en
-      context:
-      - account
-      - account number
-      - account no
-      - acc no
-      - rekening
-      - rekeningnommer
-      - meter
-      - invoice
+      - language: en
+        context:
+          - account
+          - account number
+          - account no
+          - acc no
+          - rekening
+          - rekeningnommer
+          - meter
+          - invoice
     type: custom
     enabled: true
     supported_entity: ACCOUNT_NUMBER
     patterns:
-    - name: Bare 9-11 digit account number
-      regex: "(?<!\\d)\\d{9,11}(?!\\d)"
-      score: 0.3
+      - name: Bare 9-11 digit account number
+        regex: "(?<!\\d)\\d{9,11}(?!\\d)"
+        score: 0.3
 
   - name: HuggingFaceNerRecognizer
     supported_languages:
-    - en
+      - en
     type: predefined
     enabled: false
 
@@ -320,8 +320,8 @@ recognizers:
     country_code: in
 
   - name: InGstinRecognizer
-    supported_languages: 
-    - en
+    supported_languages:
+      - en
     type: predefined
     enabled: false
     country_code: in
@@ -335,7 +335,7 @@ recognizers:
 
   - name: CaSinRecognizer
     supported_languages:
-    - en
+      - en
     type: predefined
     enabled: false
     country_code: ca

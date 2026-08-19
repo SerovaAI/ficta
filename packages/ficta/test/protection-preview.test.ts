@@ -57,7 +57,7 @@ describe("pre-send protection preview", () => {
             ]
           : [],
     };
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       process.env.FICTA_UPSTREAM = "http://127.0.0.1:1";
       const { startProxy } = await import("../src/server.js");
@@ -98,7 +98,7 @@ describe("pre-send protection preview", () => {
         res.end(body);
       });
     });
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
 
     try {
       const upstreamPort = await listen(upstream);
@@ -259,7 +259,7 @@ describe("pre-send protection preview", () => {
         res.end(JSON.stringify({ ok: true }));
       });
     });
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
 
     try {
       const upstreamPort = await listen(upstream);

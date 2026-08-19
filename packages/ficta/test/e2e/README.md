@@ -33,6 +33,7 @@ absent, so a partial setup still produces honest output (never a false green).
     `anthropic`/`openai`/`openai-codex` providers are routed through ficta.
 
 Optional overrides:
+
 - `FICTA_E2E_CLAUDE_MODEL`, `FICTA_E2E_CODEX_MODEL` — pin a model.
 - `FICTA_E2E_ONLY=claude,codex` — run only the named agents (cheaper targeted runs).
 - `FICTA_E2E_REGISTRY_OVERRIDE=<path>` — point the registry elsewhere (negative control).
@@ -50,7 +51,7 @@ Against ficta's values-free request metadata (`runs/run-*/req-*.meta.json`) and 
    at least one redacted value, zero surviving values, and no fail-open forwarding.
 3. **The aggregate proof remains clean** — zero survivors/blocked requests, with the
    canary counted as kept out of the model.
-4. *(soft)* **Restore evidence is cross-checked when available.** Some clients stop consuming
+4. _(soft)_ **Restore evidence is cross-checked when available.** Some clients stop consuming
    after their protocol completion event, before stream-flush telemetry is written; model stdout
    is also only a soft signal because phrasing can vary.
 

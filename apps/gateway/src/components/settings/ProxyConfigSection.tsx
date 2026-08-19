@@ -84,8 +84,9 @@ export function ProxyConfigSection({
   }, []);
 
   useEffect(() => {
+    const timers = textTimers.current;
     return () => {
-      for (const timer of Object.values(textTimers.current)) {
+      for (const timer of Object.values(timers)) {
         if (timer !== undefined) window.clearTimeout(timer);
       }
     };

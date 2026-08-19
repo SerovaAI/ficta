@@ -3,8 +3,8 @@
 An executable version of the operational posture described in
 [`apps/gateway/README.md`](../apps/gateway/README.md) ("Production-Like Gateway Setup") and
 [`apps/gateway/docs/poc-configuration.md`](../apps/gateway/docs/poc-configuration.md). One Linux
-host runs the whole stack. The loopback bindings below control *inbound* exposure; restricting
-*outbound* traffic to the approved model-provider endpoint is enforced by your firewall/network
+host runs the whole stack. The loopback bindings below control _inbound_ exposure; restricting
+_outbound_ traffic to the approved model-provider endpoint is enforced by your firewall/network
 policy, not by the stack itself — see "Egress allow-list".
 
 ```text
@@ -150,13 +150,13 @@ Gateway/proxy hop — is loopback. Remember the WorkOS endpoints if `AUTH_PROVID
 
 ## Files
 
-| Path | Purpose |
-| --- | --- |
-| `install.sh` | Idempotent host bootstrap + build + service install |
-| `systemd/ficta-proxy.service` | ficta redaction proxy unit |
-| `systemd/ficta-gateway.service` | Gateway web app unit |
-| `docker-compose.postgres.yml` | Pinned loopback Postgres with persistent volume |
-| `env/gateway.env.example` | Gateway environment template → `/etc/ficta/gateway.env` |
-| `env/proxy.env.example` | Proxy environment template → `/etc/ficta/proxy.env` |
-| `ficta-config.toml` | Fail-closed proxy policy → `~ficta/.ficta/config.toml` |
-| `Caddyfile.example` | Internal-TLS reverse proxy example |
+| Path                            | Purpose                                                 |
+| ------------------------------- | ------------------------------------------------------- |
+| `install.sh`                    | Idempotent host bootstrap + build + service install     |
+| `systemd/ficta-proxy.service`   | ficta redaction proxy unit                              |
+| `systemd/ficta-gateway.service` | Gateway web app unit                                    |
+| `docker-compose.postgres.yml`   | Pinned loopback Postgres with persistent volume         |
+| `env/gateway.env.example`       | Gateway environment template → `/etc/ficta/gateway.env` |
+| `env/proxy.env.example`         | Proxy environment template → `/etc/ficta/proxy.env`     |
+| `ficta-config.toml`             | Fail-closed proxy policy → `~ficta/.ficta/config.toml`  |
+| `Caddyfile.example`             | Internal-TLS reverse proxy example                      |

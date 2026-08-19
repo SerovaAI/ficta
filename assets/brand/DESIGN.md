@@ -3,19 +3,19 @@ name: ficta brand
 description: Dark-only identity for ficta — the local redaction gateway for model traffic.
 logo_direction: 2c · Token Wrapper
 core_colors:
-  vermilion: "#F1552F"   # oklch(0.67 0.2 33)
-  ink: "#0A0A0C"         # oklch(0.165 0.006 264)
-  chalk: "#F3F1EA"       # oklch(0.96 0.004 90)
-  stamp-ink: "#1A130F"   # oklch(0.16 0.02 40)
+  vermilion: "#F1552F" # oklch(0.67 0.2 33)
+  ink: "#0A0A0C" # oklch(0.165 0.006 264)
+  chalk: "#F3F1EA" # oklch(0.96 0.004 90)
+  stamp-ink: "#1A130F" # oklch(0.16 0.02 40)
 signal_colors:
-  restored-mint: "oklch(0.86 0.15 165)"   # semantic only — never brand/decoration
+  restored-mint: "oklch(0.86 0.15 165)" # semantic only — never brand/decoration
 supporting_neutrals:
   panel: "oklch(0.205 0.007 264)"
   graphite: "oklch(0.245 0.008 264)"
   muted-chalk: "oklch(0.73 0.006 264)"
   redaction-bar: "oklch(0.29 0.006 264)"
   hairline: "oklch(1 0 0 / 10%)"
-  signal-red: "oklch(0.63 0.21 27)"        # destructive/error only
+  signal-red: "oklch(0.63 0.21 27)" # destructive/error only
 typography:
   display: "Hanken Grotesk, 600, letter-spacing -0.02em"
   body: "Hanken Grotesk, 400, line-height 1.625"
@@ -44,6 +44,7 @@ The system is dark-only by design. It rejects cybersecurity theater (padlocks, s
 ## 3. Colors
 
 ### Core palette
+
 A near-monochrome ink field where vermilion is the only voice.
 
 - **Vermilion Stamp** — `#F1552F` / `oklch(0.67 0.2 33)`. Brand + every CTA, the wordmark brackets, `::selection`, wire labels, focus rings, and — at ≤14% alpha — the corner radial wash. Brand and call-to-action, simultaneously.
@@ -51,10 +52,12 @@ A near-monochrome ink field where vermilion is the only voice.
 - **Ink** — `#0A0A0C` / `oklch(0.165 0.006 264)`. The page. Cool, near-black.
 - **Chalk** — `#F3F1EA` / `oklch(0.96 0.004 90)`. Headings and primary text; 85–90% alpha for code on panels.
 
-### Signal — semantic, *not* a brand color
+### Signal — semantic, _not_ a brand color
+
 - **Restored Mint** — `oklch(0.86 0.15 165)`. Appears **only** when a real value stays local: restored values in the wire demo, list checkmarks, the "on your machine" label, the eyebrow status dot. Kept scarce so it always reads as "the real thing stayed local." **Never in the logo, never as a generic accent, link, or success color.**
 
 ### Supporting neutrals
+
 - **Panel** `oklch(0.205 0.007 264)` — cards, the wire demo. One tonal step above ink.
 - **Graphite** `oklch(0.245 0.008 264)` — muted surfaces, quiet-control hovers.
 - **Muted Chalk** `oklch(0.73 0.006 264)` — secondary copy, nav at rest. AA floor for body text.
@@ -63,6 +66,7 @@ A near-monochrome ink field where vermilion is the only voice.
 - **Signal Red** `oklch(0.63 0.21 27)` — destructive/error only. Never decorative; kept distinct from vermilion by context.
 
 ### Named rules
+
 - **Vermilion is the stamp.** It carries brand, CTAs, and redaction semantics — nothing else. Sanctioned exception: a corner radial wash at ≤14% alpha.
 - **Mint means restored.** Only for a real value staying local. If it's decorative, it's wrong.
 - **Dark only.** There is no light theme. Every color decision assumes the ink field.

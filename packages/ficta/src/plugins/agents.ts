@@ -323,7 +323,7 @@ export function piModelsConfig(baseUrl: string, sourceModels?: string): string {
     }
   }
   const override = (name: string, providerBase: string) => {
-    providers[name] = { ...(providers[name] ?? {}), baseUrl: providerBase };
+    providers[name] = { ...providers[name], baseUrl: providerBase };
   };
   override("anthropic", base); // Pi appends /v1/messages
   override("openai", `${base}/v1`); // Pi appends /chat/completions or /responses

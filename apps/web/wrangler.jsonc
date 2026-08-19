@@ -11,5 +11,5 @@
   "workers_dev": true,
   // Apex custom domain. Requires the ficta.sh Cloudflare zone to be on THIS account; wrangler then
   // attaches it and provisions the DNS record + TLS cert automatically. (www → apex: a redirect rule.)
-  "routes": [{ "pattern": "ficta.sh", "custom_domain": true }]
+  "routes": [{ "pattern": "ficta.sh", "custom_domain": true }],
 }

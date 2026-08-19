@@ -112,7 +112,7 @@ describe("multi-turn detected-value scopes", () => {
           : [],
     };
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -215,7 +215,7 @@ describe("multi-turn detected-value scopes", () => {
           : [],
     };
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -277,7 +277,7 @@ describe("multi-turn detected-value scopes", () => {
       });
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
@@ -326,7 +326,7 @@ describe("multi-turn detected-value scopes", () => {
       });
     });
 
-    let proxy: Awaited<ReturnType<typeof import("../src/server.js")["startProxy"]>> | undefined;
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
     try {
       const upstreamPort = await listen(upstream);
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;

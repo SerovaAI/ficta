@@ -23,7 +23,7 @@ export function ProtectionMark({
           className={`cursor-help rounded-[3px] border-b-2 bg-emerald-100 px-0.5 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-emerald-950/60 ${displayMode === "surrogates" ? "font-mono text-[0.86em]" : ""} ${borderClass}`}
           // A focusable mark keeps arbitrary inline text keyboard-accessible without creating invalid
           // interactive nesting inside markdown links or other prose.
-          // biome-ignore lint/a11y/noNoninteractiveTabindex: focus is the keyboard trigger for this tooltip
+          // Focus is the keyboard trigger for this tooltip.
           tabIndex={0}
         >
           {children}
