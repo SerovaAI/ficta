@@ -1,15 +1,13 @@
 {
   "name": "ficta-monorepo",
   "private": true,
-  "type": "module",
   "description": "Workspace root for ficta (packages/ficta) and its chat UI (apps/gateway). Not published.",
-  "engines": {
-    "node": ">=22.13"
-  },
+  "type": "module",
   "scripts": {
     "//turbo": "Turbo-managed: cached, parallel across all packages. See turbo.json",
     "build": "turbo run build",
-    "check": "turbo run check",
+    "check": "pnpm check:static && turbo run check",
+    "check:static": "oxlint . && oxfmt --check .",
     "check:entity-fidelity-live": "pnpm --filter @serovaai/ficta check:entity-fidelity-live",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
@@ -45,6 +43,9 @@
     "oxlint": "^1.79.0",
     "turbo": "^2.10.11",
     "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=22.13"
   },
   "packageManager": "pnpm@11.22.0"
 }

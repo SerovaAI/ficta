@@ -11,6 +11,6 @@
   "arrowParens": "always",
   "bracketSameLine": false,
   "bracketSpacing": true,
-  "sortPackageJson": false,
+  "sortPackageJson": true,
   "ignorePatterns": ["**/dist/**", "**/.output/**", "**/.nitro/**", "**/routeTree.gen.ts"]
 }
