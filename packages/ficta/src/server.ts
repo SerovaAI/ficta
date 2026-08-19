@@ -94,6 +94,7 @@ import {
   proxyConfigLockedFields,
 } from "./proxy-config-edit.js";
 import { decodeRequestBody, MAX_ENCODED_BYTES, RequestBodyDecodeError } from "./request-encoding.js";
+import { formatUpstreamError, upstreamErrorDiagnostic } from "./upstream-error.js";
 
 export interface ProxyHandle {
   port: number;
@@ -827,10 +828,12 @@ export async function startProxy(opts: StartProxyOptions = {}): Promise<ProxyHan
     try {
       upstreamRes = await fetch(target, { method, headers, body: bodyToSend });
     } catch (err) {
-      log.error({ reqId: n, err: (err as Error).message }, `✗ upstream fetch failed: ${(err as Error).message}`);
+      const diagnostic = upstreamErrorDiagnostic(err);
+      const message = formatUpstreamError(diagnostic);
+      log.error({ reqId: n, err: diagnostic }, `✗ upstream fetch failed: ${message}`);
       writeProtectionTraceAudit(n, traceRedactions, scope, "upstream-error", captureTraceAudit);
       egressEvidence?.finish("upstream_error", requestModel);
-      return c.json({ error: { type: "ficta_upstream_error", message: String(err) } }, 502);
+      return c.json({ error: { type: "ficta_upstream_error", message, diagnostic } }, 502);
     }
     egressEvidence?.finish("forwarded", requestModel);
 

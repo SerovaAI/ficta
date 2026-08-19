@@ -21,7 +21,7 @@
     "@tanstack/react-start": "latest",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
-    "lucide-react": "1.30.0",
+    "lucide-react": "1.31.0",
     "radix-ui": "^1.6.7",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -29,14 +29,14 @@
     "tailwindcss": "4.3.3"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.7",
+    "@biomejs/biome": "^2.5.8",
     "@cloudflare/vite-plugin": "latest",
-    "@types/node": "^26.1.2",
+    "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "latest",
     "typescript": "^7.0.2",
     "vite": "latest",
-    "wrangler": "^4.119.0"
+    "wrangler": "^4.122.0"
   }
 }
