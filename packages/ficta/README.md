@@ -202,6 +202,7 @@ Cursor are not — their agentic features bypass a custom base URL. See the
 - [`docs/install.md`](./docs/install.md) — ficta shim installation and runtime behavior
 - [`docs/threat-model.md`](./docs/threat-model.md) — exact promise, covered surfaces, and non-goals
 - [`docs/plugins.md`](./docs/plugins.md) — registry-source, detector, and agent-integration plugins
+- [`docs/control-plane.md`](./docs/control-plane.md) — typed oRPC/OpenAPI contract for frontend implementors
 - [`docs/plugins.md#built-in-detector-plugin-pii`](./docs/plugins.md#built-in-detector-plugin-pii) — PII detector surfaces, backends, and failure policy
 - [`docs/codex-oauth-intercept.md`](./docs/codex-oauth-intercept.md) — Codex ChatGPT/OAuth routing
 - [`docs/anthropic-upstream-proxy.md`](./docs/anthropic-upstream-proxy.md) — route `ficta claude` through a local Anthropic-compatible proxy to run alt models (e.g. sol via CLIProxyAPI)

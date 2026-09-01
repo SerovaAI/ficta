@@ -1,9 +1,4 @@
-import {
-  FICTA_STATUS_PATH,
-  isProtectionStatusOk,
-  type ProtectionStatusOk,
-  type RegistryProtectionStatus,
-} from "@serovaai/ficta-protocol";
+import { isProtectionStatusOk, type ProtectionStatusOk, type RegistryProtectionStatus } from "@serovaai/ficta-protocol";
 import { createServerFn } from "@tanstack/react-start";
 import type { ProxyCallResult } from "@/lib/proxy-result";
 
@@ -26,25 +21,18 @@ const STATUS_TIMEOUT_MS = 1500;
  */
 export const fetchProtectionStatus = createServerFn({ method: "GET" }).handler(async (): Promise<ProtectionStatus> => {
   const { proxyBaseUrl } = await import("@/lib/proxy-base.server");
+  const { fictaControlErrorStatus, GatewayFictaCompatibilityError, gatewayFictaControlClient } =
+    await import("@/lib/ficta-control-client.server");
   const proxyUrl = proxyBaseUrl();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), STATUS_TIMEOUT_MS);
 
   try {
-    const res = await fetch(`${proxyUrl}${FICTA_STATUS_PATH}`, {
-      headers: { accept: "application/json" },
+    const client = await gatewayFictaControlClient({
+      requiredCapability: "status",
       signal: controller.signal,
     });
-    if (!res.ok) {
-      return {
-        ok: false,
-        proxyUrl,
-        status: "bad_response",
-        message: `ficta proxy status returned HTTP ${res.status}; restart the proxy so the web UI can show protection posture.`,
-      };
-    }
-
-    const json = (await res.json()) as unknown;
+    const json: unknown = await client.status(undefined, { signal: controller.signal });
     if (!isProtectionStatusOk(json)) {
       return {
         ok: false,
@@ -55,6 +43,23 @@ export const fetchProtectionStatus = createServerFn({ method: "GET" }).handler(a
     }
     return json;
   } catch (err) {
+    if (err instanceof GatewayFictaCompatibilityError) {
+      return {
+        ok: false,
+        proxyUrl,
+        status: "bad_response",
+        message: err.message,
+      };
+    }
+    const httpStatus = fictaControlErrorStatus(err);
+    if (httpStatus !== undefined) {
+      return {
+        ok: false,
+        proxyUrl,
+        status: "bad_response",
+        message: `ficta proxy status returned HTTP ${httpStatus}; restart the proxy so the web UI can show protection posture.`,
+      };
+    }
     return {
       ok: false,
       proxyUrl,

@@ -5,6 +5,11 @@ endpoint constants, runtime guards, versioned managed-registry file contracts, a
 declarations used by the proxy and Ficta Gateway. Gateway-local network and presentation errors do
 not belong to this package.
 
+For new frontend integrations, `@serovaai/ficta-contract` layers executable Zod/oRPC contracts, a
+typed client, and generated OpenAPI on top of these dependency-free wire primitives. The implementor
+guide is
+[`packages/ficta/docs/control-plane.md`](https://github.com/SerovaAI/ficta/blob/main/packages/ficta/docs/control-plane.md).
+
 The control-plane contract includes the loopback-only pre-send protection preview endpoint and its opaque,
 short-lived ticket header. Tickets are bound to the reviewed current message and consumed on first use.
 Preview responses contain redacted text, UTF-16 finding coordinates, safe detector metadata, and surrogates;

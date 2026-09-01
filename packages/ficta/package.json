@@ -47,9 +47,9 @@
     "access": "public"
   },
   "scripts": {
-    "dev": "node --watch --import tsx src/server.ts",
-    "start": "tsx src/server.ts",
-    "ficta": "tsx src/cli.ts",
+    "dev": "node --conditions=development --watch --import tsx src/server.ts",
+    "start": "node --conditions=development --import tsx src/server.ts",
+    "ficta": "node --conditions=development --import tsx src/cli.ts",
     "build": "tsc",
     "check:presidio": "tsx scripts/verify-presidio-sidecar.mts",
     "prepack": "pnpm build",
@@ -74,6 +74,9 @@
   "dependencies": {
     "@clack/prompts": "^1.7.0",
     "@hono/node-server": "^2.1.1",
+    "@orpc/openapi": "1.15.0",
+    "@orpc/server": "1.15.0",
+    "@serovaai/ficta-contract": "workspace:^",
     "@serovaai/ficta-protocol": "workspace:^",
     "hono": "^4.13.5",
     "pino": "^10.3.1",

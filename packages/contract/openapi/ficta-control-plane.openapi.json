@@ -1,0 +1,282 @@
+{
+  "info": {
+    "title": "Ficta control plane",
+    "version": "1.0.0",
+    "description": "Portable HTTP contract for building a frontend for the Ficta protection engine."
+  },
+  "servers": [{ "url": "http://127.0.0.1:8787", "description": "Default local Ficta proxy" }],
+  "openapi": "3.1.1",
+  "paths": {
+    "/__ficta/capabilities": {
+      "get": {
+        "operationId": "getFictaCapabilities",
+        "summary": "Discover the Ficta control-plane version and supported procedures",
+        "tags": ["Ficta control plane"],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "const": true },
+                    "service": { "const": "ficta" },
+                    "protocolVersion": { "const": 1 },
+                    "capabilities": {
+                      "type": "array",
+                      "items": { "enum": ["health", "status", "protection-preview"], "type": "string" }
+                    }
+                  },
+                  "required": ["ok", "service", "protocolVersion", "capabilities"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/__ficta/health": {
+      "get": {
+        "operationId": "getFictaHealth",
+        "summary": "Check whether the Ficta proxy process is serving requests",
+        "tags": ["Ficta control plane"],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "ok": { "const": true }, "service": { "const": "ficta" } },
+                  "required": ["ok", "service"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/__ficta/status": {
+      "get": {
+        "operationId": "getFictaProtectionStatus",
+        "summary": "Read values-free protection readiness and activity metadata",
+        "tags": ["Ficta control plane"],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "const": true },
+                    "service": { "const": "ficta" },
+                    "protection": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": { "type": "boolean" },
+                        "protecting": { "type": "boolean" },
+                        "registeredValues": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                        "policyExcluded": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+                      },
+                      "required": ["enabled", "protecting", "registeredValues", "policyExcluded"],
+                      "additionalProperties": false
+                    },
+                    "registry": {
+                      "type": "object",
+                      "properties": {
+                        "required": { "type": "boolean" },
+                        "status": { "enum": ["ready", "empty", "error"], "type": "string" },
+                        "message": { "type": "string" }
+                      },
+                      "required": ["required", "status", "message"],
+                      "additionalProperties": false
+                    },
+                    "secretShapes": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": { "type": "boolean" },
+                        "status": { "enum": ["off", "ok"], "type": "string" },
+                        "message": { "type": "string" }
+                      },
+                      "required": ["enabled", "status", "message"],
+                      "additionalProperties": false
+                    },
+                    "pii": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": { "type": "boolean" },
+                        "configuredBackend": { "type": "string" },
+                        "configuredBackends": { "type": "array", "items": { "type": "string" } },
+                        "backend": { "type": "string" },
+                        "status": { "enum": ["off", "ok", "degraded", "blocking"], "type": "string" },
+                        "failureMode": { "enum": ["fail-open", "fail-closed"], "type": "string" },
+                        "url": { "type": "string" },
+                        "detail": { "type": "string" },
+                        "message": { "type": "string" }
+                      },
+                      "required": ["enabled", "configuredBackend", "backend", "status", "failureMode", "message"],
+                      "additionalProperties": false
+                    },
+                    "activity": {
+                      "type": "object",
+                      "properties": {
+                        "restoredValues": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                        "withheldFromTools": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+                      },
+                      "required": ["restoredValues", "withheldFromTools"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["ok", "service", "protection", "secretShapes", "pii"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/__ficta/protection-preview": {
+      "post": {
+        "operationId": "createFictaProtectionPreview",
+        "summary": "Preview protection and issue a short-lived send ticket",
+        "tags": ["Ficta control plane"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": { "type": "string", "maxLength": 2097152 },
+                  "protectedValues": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "items": { "type": "string", "minLength": 1, "maxLength": 2000 }
+                  }
+                },
+                "required": ["text"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "const": true },
+                    "service": { "const": "ficta" },
+                    "ticket": { "type": "string" },
+                    "textSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "redactedText": { "type": "string" },
+                    "findings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": { "type": "string" },
+                          "source": { "type": "string" },
+                          "plugin": { "type": "string" },
+                          "kind": { "enum": ["secret", "pii", "custom"], "type": "string" },
+                          "confidence": { "enum": ["exact", "high", "probabilistic"], "type": "string" },
+                          "start": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                          "end": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                          "surrogate": { "type": "string" },
+                          "origin": { "enum": ["registry", "detected", "user"], "type": "string" }
+                        },
+                        "required": ["name", "source", "start", "end", "surrogate", "origin"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["ok", "service", "ticket", "textSha256", "redactedText", "findings"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "400",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "const": false },
+                    "service": { "const": "ficta" },
+                    "status": { "const": "invalid_request" },
+                    "message": { "type": "string" }
+                  },
+                  "required": ["ok", "service", "status", "message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "const": false },
+                    "service": { "const": "ficta" },
+                    "status": { "const": "forbidden" },
+                    "message": { "type": "string" }
+                  },
+                  "required": ["ok", "service", "status", "message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "422",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "const": false },
+                    "service": { "const": "ficta" },
+                    "status": { "const": "invariant" },
+                    "message": { "type": "string" }
+                  },
+                  "required": ["ok", "service", "status", "message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "503",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "const": false },
+                    "service": { "const": "ficta" },
+                    "status": { "const": "detector_unavailable" },
+                    "message": { "type": "string" }
+                  },
+                  "required": ["ok", "service", "status", "message"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

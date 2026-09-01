@@ -1,0 +1,62 @@
+{
+  "name": "@serovaai/ficta-contract",
+  "version": "0.0.0",
+  "private": false,
+  "description": "Typed oRPC and OpenAPI contract for the Ficta control plane",
+  "homepage": "https://ficta.sh",
+  "bugs": {
+    "url": "https://github.com/SerovaAI/ficta/issues"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SerovaAI/ficta.git",
+    "directory": "packages/contract"
+  },
+  "files": [
+    "dist/",
+    "openapi/",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "import": "./dist/index.js"
+    },
+    "./openapi.json": "./openapi/ficta-control-plane.openapi.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc && node scripts/generate-openapi.mjs",
+    "check": "pnpm check:static && pnpm typecheck && pnpm test && pnpm check:openapi",
+    "check:openapi": "node scripts/generate-openapi.mjs --check",
+    "check:static": "oxlint . && oxfmt --check .",
+    "prepack": "pnpm build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@orpc/client": "1.15.0",
+    "@orpc/contract": "1.15.0",
+    "@orpc/openapi-client": "1.15.0",
+    "@serovaai/ficta-protocol": "workspace:^",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@orpc/openapi": "1.15.0",
+    "@orpc/zod": "1.15.0",
+    "@types/node": "^26.4.0",
+    "oxfmt": "^0.65.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
