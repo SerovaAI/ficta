@@ -31,9 +31,9 @@ Call `GET /__ficta/capabilities` before depending on optional procedures:
 }
 ```
 
-`protocolVersion` changes only for a breaking wire-contract revision. Capability names are a finite
-set for that version; clients should require the capabilities they use and ignore names added by a
-compatible implementation.
+`protocolVersion` changes only for a breaking wire-contract revision. Capability names may be added
+without changing that version; clients should require the capabilities they use and ignore names
+they do not recognize.
 
 ## Procedures
 

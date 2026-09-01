@@ -25,7 +25,8 @@
     ".": {
       "types": "./src/index.ts",
       "development": "./src/index.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./openapi.json": "./openapi/ficta-control-plane.openapi.json"
   },
@@ -33,9 +34,10 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc && node scripts/generate-openapi.mjs",
+    "build": "pnpm build:dist && node scripts/generate-openapi.mjs",
+    "build:dist": "tsc",
     "check": "pnpm check:static && pnpm typecheck && pnpm test && pnpm check:openapi",
-    "check:openapi": "node scripts/generate-openapi.mjs --check",
+    "check:openapi": "pnpm build:dist && node scripts/generate-openapi.mjs --check",
     "check:static": "oxlint . && oxfmt --check .",
     "prepack": "pnpm build",
     "test": "vitest run",

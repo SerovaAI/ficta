@@ -9,19 +9,19 @@ import {
 } from "../src/index.js";
 
 describe("Ficta control-plane schemas", () => {
-  it("defines a versioned, finite capability set", () => {
+  it("accepts added capability names within the same protocol version", () => {
     expect(
       capabilitiesSchema.parse({
         ok: true,
         service: "ficta",
         protocolVersion: FICTA_CONTROL_PROTOCOL_VERSION,
-        capabilities: FICTA_CONTROL_CAPABILITIES,
+        capabilities: [...FICTA_CONTROL_CAPABILITIES, "future-capability"],
       }),
     ).toEqual({
       ok: true,
       service: "ficta",
       protocolVersion: 1,
-      capabilities: ["health", "status", "protection-preview"],
+      capabilities: ["health", "status", "protection-preview", "future-capability"],
     });
   });
 

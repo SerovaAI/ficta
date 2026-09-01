@@ -23,10 +23,7 @@
                     "ok": { "const": true },
                     "service": { "const": "ficta" },
                     "protocolVersion": { "const": 1 },
-                    "capabilities": {
-                      "type": "array",
-                      "items": { "enum": ["health", "status", "protection-preview"], "type": "string" }
-                    }
+                    "capabilities": { "type": "array", "items": { "type": "string", "minLength": 1 } }
                   },
                   "required": ["ok", "service", "protocolVersion", "capabilities"],
                   "additionalProperties": false

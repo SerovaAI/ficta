@@ -23,7 +23,7 @@ export const capabilitiesSchema = z
     ok: z.literal(true),
     service: z.literal("ficta"),
     protocolVersion: z.literal(FICTA_CONTROL_PROTOCOL_VERSION),
-    capabilities: z.array(z.enum(FICTA_CONTROL_CAPABILITIES)),
+    capabilities: z.array(z.string().min(1)),
   })
   .strict();
 

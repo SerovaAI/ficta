@@ -65,6 +65,12 @@ describe("oRPC control plane", () => {
         [FICTA_CAPABILITIES_PATH, FICTA_HEALTH_PATH, FICTA_STATUS_PATH].map((path) => fetch(`${baseUrl}${path}`)),
       );
       expect(rawResponses.map((response) => response.status)).toEqual([200, 200, 200]);
+
+      const headResponses = await Promise.all(
+        [FICTA_HEALTH_PATH, FICTA_STATUS_PATH].map((path) => fetch(`${baseUrl}${path}`, { method: "HEAD" })),
+      );
+      expect(headResponses.map((response) => response.status)).toEqual([200, 200]);
+      await expect(Promise.all(headResponses.map((response) => response.text()))).resolves.toEqual(["", ""]);
     } finally {
       proxy.close();
     }

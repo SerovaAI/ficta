@@ -160,16 +160,21 @@ export async function startProxy(opts: StartProxyOptions = {}): Promise<ProxyHan
     }
     const controlMethod = FICTA_CONTROL_METHODS.get(url.pathname);
     if (controlMethod) {
-      if (method === controlMethod.method) {
-        const result = await controlHandler.handle(c.req.raw, {
-          context: {
-            remoteAddress: c.env.incoming.socket.remoteAddress,
-            scopeKey: scopeKeyFrom(c),
-          },
-        });
-        if (result.matched) return c.newResponse(result.response.body, result.response);
+      const allowed = method === controlMethod.method || (method === "HEAD" && controlMethod.allowHead);
+      if (!allowed) {
+        return c.json({ error: { type: "method_not_allowed", message: controlMethod.message } }, 405);
       }
-      return c.json({ error: { type: "method_not_allowed", message: controlMethod.message } }, 405);
+      const request = method === "HEAD" ? new Request(c.req.raw, { method: "GET" }) : c.req.raw;
+      const result = await controlHandler.handle(request, {
+        context: {
+          remoteAddress: c.env.incoming.socket.remoteAddress,
+          scopeKey: scopeKeyFrom(c),
+        },
+      });
+      if (result.matched) {
+        return c.newResponse(method === "HEAD" ? null : result.response.body, result.response);
+      }
+      return c.json({ error: { type: "not_found", message: "Ficta control route was not found." } }, 404);
     }
     if (url.pathname === FICTA_PROTECTION_STATS_PATH) return c.json(protectionStatsResponse(stats, url));
     if (url.pathname === FICTA_EGRESS_PROOF_PATH) {
@@ -1176,10 +1181,10 @@ const MAX_PROTECTION_STATS_LIMIT = 500;
 const PROTECTION_TICKET_TTL_MS = 5 * 60_000;
 const PROTECTION_TICKETS_MAX = 256;
 const PROTECTION_TICKETS_PER_SCOPE_MAX = 8;
-const FICTA_CONTROL_METHODS: ReadonlyMap<string, { method: string; message: string }> = new Map([
+const FICTA_CONTROL_METHODS: ReadonlyMap<string, { method: string; allowHead?: boolean; message: string }> = new Map([
   [FICTA_CAPABILITIES_PATH, { method: "GET", message: "Use GET for capabilities." }],
-  [FICTA_HEALTH_PATH, { method: "GET", message: "Use GET for health." }],
-  [FICTA_STATUS_PATH, { method: "GET", message: "Use GET for status." }],
+  [FICTA_HEALTH_PATH, { method: "GET", allowHead: true, message: "Use GET or HEAD for health." }],
+  [FICTA_STATUS_PATH, { method: "GET", allowHead: true, message: "Use GET or HEAD for status." }],
   [FICTA_PROTECTION_PREVIEW_PATH, { method: "POST", message: "Use POST for protection preview." }],
 ]);
 const REQUIRED_AUTH_HEADER_NAMES = new Set(["authorization", "proxy-authorization", "x-api-key", "cookie"]);
