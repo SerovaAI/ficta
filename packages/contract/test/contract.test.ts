@@ -4,6 +4,7 @@ import {
   capabilitiesSchema,
   FICTA_CONTROL_CAPABILITIES,
   FICTA_CONTROL_PROTOCOL_VERSION,
+  PROTECTION_PREVIEW_TEXT_MAX_BYTES,
   protectionPreviewInputSchema,
   protectionStatusSchema,
 } from "../src/index.js";
@@ -34,6 +35,13 @@ describe("Ficta control-plane schemas", () => {
     ).toEqual({ text: "Review Project Finch", protectedValues: ["Project Finch"] });
   });
 
+  it("rejects multibyte preview text over the published UTF-8 byte limit", () => {
+    const text = "€".repeat(Math.floor(PROTECTION_PREVIEW_TEXT_MAX_BYTES / 3) + 1);
+    expect(text.length).toBeLessThan(PROTECTION_PREVIEW_TEXT_MAX_BYTES);
+    expect(new TextEncoder().encode(text).byteLength).toBeGreaterThan(PROTECTION_PREVIEW_TEXT_MAX_BYTES);
+    expect(protectionPreviewInputSchema.safeParse({ text }).success).toBe(false);
+  });
+
   it("keeps status compatibility fields optional", () => {
     expect(
       protectionStatusSchema.safeParse({
@@ -57,7 +65,18 @@ describe("Ficta control-plane schemas", () => {
     const raw = await readFile(new URL("../openapi/ficta-control-plane.openapi.json", import.meta.url), "utf8");
     const specification = JSON.parse(raw) as {
       openapi?: string;
-      paths?: Record<string, Record<string, { responses?: Record<string, unknown> }>>;
+      paths?: Record<
+        string,
+        Record<
+          string,
+          {
+            requestBody?: {
+              content?: Record<string, { schema?: { properties?: Record<string, Record<string, unknown>> } }>;
+            };
+            responses?: Record<string, unknown>;
+          }
+        >
+      >;
     };
     expect(specification.openapi).toBe("3.1.1");
     expect(Object.keys(specification.paths ?? {})).toEqual([
@@ -67,5 +86,12 @@ describe("Ficta control-plane schemas", () => {
       "/__ficta/protection-preview",
     ]);
     expect(specification.paths?.["/__ficta/protection-preview"]?.post?.responses).toHaveProperty("400");
+    const textSchema =
+      specification.paths?.["/__ficta/protection-preview"]?.post?.requestBody?.content?.["application/json"]?.schema
+        ?.properties?.text;
+    expect(textSchema).toMatchObject({
+      description: `Maximum ${PROTECTION_PREVIEW_TEXT_MAX_BYTES} bytes when encoded as UTF-8.`,
+      "x-ficta-max-utf8-bytes": PROTECTION_PREVIEW_TEXT_MAX_BYTES,
+    });
   });
 });

@@ -1,9 +1,15 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { OpenAPIGenerator } from "@orpc/openapi";
-import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
+import { JSON_SCHEMA_INPUT_REGISTRY, ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
 import { format } from "oxfmt";
 import { fictaControlContract } from "../dist/contract.js";
+import { PROTECTION_PREVIEW_TEXT_MAX_BYTES, protectionPreviewTextSchema } from "../dist/schemas.js";
+
+JSON_SCHEMA_INPUT_REGISTRY.add(protectionPreviewTextSchema, {
+  description: `Maximum ${PROTECTION_PREVIEW_TEXT_MAX_BYTES} bytes when encoded as UTF-8.`,
+  "x-ficta-max-utf8-bytes": PROTECTION_PREVIEW_TEXT_MAX_BYTES,
+});
 
 const outputUrl = new URL("../openapi/ficta-control-plane.openapi.json", import.meta.url);
 const generator = new OpenAPIGenerator({ schemaConverters: [new ZodToJsonSchemaConverter()] });

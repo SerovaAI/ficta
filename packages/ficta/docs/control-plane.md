@@ -49,6 +49,10 @@ The complete field schemas, limits, optional compatibility fields, and response 
 Existing `@serovaai/ficta-protocol` guards remain useful when a JavaScript integration wants an
 additional runtime check at a trust boundary.
 
+Preview `text` is limited to 2,097,152 bytes after UTF-8 encoding. Its OpenAPI schema publishes this
+as `x-ficta-max-utf8-bytes`; clients must enforce that byte limit rather than relying only on the
+coarser standard `maxLength` character ceiling.
+
 ## TypeScript client
 
 ```ts

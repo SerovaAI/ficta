@@ -104,14 +104,16 @@ const protectedValueSchema = z
     message: "A protected value is empty or too long.",
   });
 
+export const protectionPreviewTextSchema = z
+  .string()
+  .max(PROTECTION_PREVIEW_TEXT_MAX_BYTES)
+  .refine((value) => utf8Length(value) <= PROTECTION_PREVIEW_TEXT_MAX_BYTES, {
+    message: "Preview text is too large.",
+  });
+
 export const protectionPreviewInputSchema = z
   .object({
-    text: z
-      .string()
-      .max(PROTECTION_PREVIEW_TEXT_MAX_BYTES)
-      .refine((value) => utf8Length(value) <= PROTECTION_PREVIEW_TEXT_MAX_BYTES, {
-        message: "Preview text is too large.",
-      }),
+    text: protectionPreviewTextSchema,
     protectedValues: z.array(protectedValueSchema).max(PROTECTION_PREVIEW_VALUES_MAX).optional(),
   })
   .transform(({ text, protectedValues = [] }, context) => {

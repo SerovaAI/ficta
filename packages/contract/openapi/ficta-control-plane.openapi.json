@@ -149,7 +149,12 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "text": { "type": "string", "maxLength": 2097152 },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 2097152,
+                    "description": "Maximum 2097152 bytes when encoded as UTF-8.",
+                    "x-ficta-max-utf8-bytes": 2097152
+                  },
                   "protectedValues": {
                     "type": "array",
                     "maxItems": 200,
