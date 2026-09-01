@@ -20,6 +20,10 @@
       "entry": ["bench/*.mts"],
       "project": ["src/**/*.ts", "test/**/*.ts", "bench/**/*.mts", "*.config.ts"]
     },
+    "packages/contract": {
+      "entry": ["src/index.ts", "scripts/generate-openapi.mjs"],
+      "project": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.mjs"]
+    },
     "packages/protocol": {
       "project": ["src/**/*.d.ts"]
     }

@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { argv } from "node:process";
 import { fileURLToPath } from "node:url";
 import { type HttpBindings, serve } from "@hono/node-server";
+import { encodeFictaControlError, FICTA_CAPABILITIES_PATH } from "@serovaai/ficta-contract";
+import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import {
   type EgressProof,
   FICTA_CONFIG_PATH,
@@ -22,9 +24,9 @@ import {
   FICTA_STATUS_PATH,
   FICTA_TRACE_CAPTURE_HEADER,
   FICTA_TRACE_CAPTURE_PATH,
+  type ProtectionPreviewError,
   type ProtectionPreviewFinding,
   type ProtectionPreviewOk,
-  type ProtectionPreviewRequest,
   type ProtectionStatsOk,
   type ProtectionStatusOk,
   type ProxyConfigOk,
@@ -38,6 +40,7 @@ import {
 import { type Context, Hono } from "hono";
 import { loadConfig, resolveTarget, upstreamPolicyIssue } from "./config.js";
 import { configPosture } from "./config-posture.js";
+import { createFictaControlRouter } from "./control-plane.js";
 import { detectorFailClosed } from "./engine/detection-policy.js";
 import { setEngineWarnSink } from "./engine/diagnostics.js";
 import { ProtectionEngine } from "./engine/engine.js";
@@ -137,6 +140,14 @@ export async function startProxy(opts: StartProxyOptions = {}): Promise<ProxyHan
   const defaultScopeKey = normalizeScopeKey(opts.defaultScopeKey);
   let runtimeTraceCaptureEnabled = false;
   const app = new Hono<{ Bindings: HttpBindings }>();
+  const controlHandler = new OpenAPIHandler(
+    createFictaControlRouter({
+      status: () => protectionStatus(engine, stats),
+      protectionPreview: (input, context) =>
+        protectionPreview(engine, protectionTickets, context.remoteAddress, context.scopeKey, input),
+    }),
+    { customErrorResponseBodyEncoder: encodeFictaControlError },
+  );
 
   app.all("*", async (c) => {
     const url = new URL(c.req.url);
@@ -147,8 +158,24 @@ export async function startProxy(opts: StartProxyOptions = {}): Promise<ProxyHan
     if (c.req.raw.headers.get("upgrade")?.toLowerCase() === "websocket") {
       return refusedWebSocketUpgradeResponse(c, url.pathname);
     }
-    if (url.pathname === FICTA_HEALTH_PATH) return c.json({ ok: true, service: "ficta" });
-    if (url.pathname === FICTA_STATUS_PATH) return c.json(await protectionStatus(engine, stats));
+    const controlMethod = FICTA_CONTROL_METHODS.get(url.pathname);
+    if (controlMethod) {
+      const allowed = method === controlMethod.method || (method === "HEAD" && controlMethod.allowHead);
+      if (!allowed) {
+        return c.json({ error: { type: "method_not_allowed", message: controlMethod.message } }, 405);
+      }
+      const request = method === "HEAD" ? new Request(c.req.raw, { method: "GET" }) : c.req.raw;
+      const result = await controlHandler.handle(request, {
+        context: {
+          remoteAddress: c.env.incoming.socket.remoteAddress,
+          scopeKey: scopeKeyFrom(c),
+        },
+      });
+      if (result.matched) {
+        return c.newResponse(method === "HEAD" ? null : result.response.body, result.response);
+      }
+      return c.json({ error: { type: "not_found", message: "Ficta control route was not found." } }, 404);
+    }
     if (url.pathname === FICTA_PROTECTION_STATS_PATH) return c.json(protectionStatsResponse(stats, url));
     if (url.pathname === FICTA_EGRESS_PROOF_PATH) {
       if (method !== "GET")
@@ -216,90 +243,6 @@ export async function startProxy(opts: StartProxyOptions = {}): Promise<ProxyHan
         return c.json({ ok: true, service: "ficta", traceCapture } satisfies RuntimeTraceCaptureOk);
       }
       return c.json({ error: { type: "method_not_allowed", message: "Use GET or PATCH for trace capture." } }, 405);
-    }
-    if (url.pathname === FICTA_PROTECTION_PREVIEW_PATH) {
-      if (method !== "POST") {
-        return c.json({ error: { type: "method_not_allowed", message: "Use POST for protection preview." } }, 405);
-      }
-      if (!isLoopbackAddress(c.env.incoming.socket.remoteAddress)) {
-        return c.json(
-          { ok: false, service: "ficta", status: "forbidden", message: "Protection preview is loopback-only." },
-          403,
-        );
-      }
-      const scopeKey = scopeKeyFrom(c);
-      if (!scopeKey) {
-        return c.json(
-          { ok: false, service: "ficta", status: "invalid_request", message: "A trusted scope is required." },
-          400,
-        );
-      }
-      let preview: ProtectionPreviewRequest;
-      try {
-        preview = validateProtectionPreviewRequest(await c.req.json());
-      } catch (err) {
-        return c.json(
-          {
-            ok: false,
-            service: "ficta",
-            status: "invalid_request",
-            message: err instanceof Error ? err.message : "Invalid protection preview request.",
-          },
-          400,
-        );
-      }
-
-      const scope = engine.beginRequest(scopeKey);
-      const selected = preview.protectedValues ?? [];
-      scope.registerProtectedValues(selected.map(userProtectedValue));
-      try {
-        const result = await scope.redactBodyDetailed(JSON.stringify(preview.text), {
-          path: FICTA_PROTECTION_PREVIEW_PATH,
-          traceOccurrences: true,
-        });
-        if (result.leaks > 0) throw new RedactionInvariantError("preview left known values unprotected");
-        const redactedText = JSON.parse(result.body) as unknown;
-        if (typeof redactedText !== "string") throw new RedactionInvariantError("preview body shape changed");
-        const ticket = randomUUID();
-        const now = Date.now();
-        pruneProtectionTickets(protectionTickets, now);
-        pruneScopeProtectionTickets(protectionTickets, scopeKey);
-        const textSha256 = sha256(preview.text);
-        protectionTickets.set(ticket, {
-          scopeKey,
-          protectedValues: selected,
-          textSha256,
-          expiresAt: now + PROTECTION_TICKET_TTL_MS,
-        });
-        const response: ProtectionPreviewOk = {
-          ok: true,
-          service: "ficta",
-          ticket,
-          textSha256,
-          redactedText,
-          findings: protectionPreviewFindings(result.traceOccurrences ?? []),
-        };
-        return c.json(response);
-      } catch (err) {
-        if (err instanceof DetectorUnavailableError) {
-          return c.json(
-            {
-              ok: false,
-              service: "ficta",
-              status: "detector_unavailable",
-              message: `Protection preview could not run because ${err.plugin} is unavailable.`,
-            },
-            503,
-          );
-        }
-        if (err instanceof RedactionInvariantError) {
-          return c.json(
-            { ok: false, service: "ficta", status: "invariant", message: "Protection preview was blocked." },
-            422,
-          );
-        }
-        throw err;
-      }
     }
     // Values-free config posture (see ConfigPosture). Kept separate from FICTA_STATUS_PATH, which the
     // gateway's non-admin protection widget polls: transport config (upstreams, host/port, log dir)
@@ -1235,13 +1178,15 @@ function registryProtectionStatus(engine: RedactionEngine): RegistryProtectionSt
 
 const DEFAULT_PROTECTION_STATS_LIMIT = 100;
 const MAX_PROTECTION_STATS_LIMIT = 500;
-const PROTECTION_PREVIEW_TEXT_MAX = 2 * 1024 * 1024;
-const PROTECTION_PREVIEW_VALUES_MAX = 200;
-const PROTECTION_PREVIEW_VALUE_MAX = 2_000;
-const PROTECTION_PREVIEW_VALUES_BYTES_MAX = 64 * 1024;
 const PROTECTION_TICKET_TTL_MS = 5 * 60_000;
 const PROTECTION_TICKETS_MAX = 256;
 const PROTECTION_TICKETS_PER_SCOPE_MAX = 8;
+const FICTA_CONTROL_METHODS: ReadonlyMap<string, { method: string; allowHead?: boolean; message: string }> = new Map([
+  [FICTA_CAPABILITIES_PATH, { method: "GET", message: "Use GET for capabilities." }],
+  [FICTA_HEALTH_PATH, { method: "GET", allowHead: true, message: "Use GET or HEAD for health." }],
+  [FICTA_STATUS_PATH, { method: "GET", allowHead: true, message: "Use GET or HEAD for status." }],
+  [FICTA_PROTECTION_PREVIEW_PATH, { method: "POST", message: "Use POST for protection preview." }],
+]);
 const REQUIRED_AUTH_HEADER_NAMES = new Set(["authorization", "proxy-authorization", "x-api-key", "cookie"]);
 const SURROGATE_RE = /FICTA_(?:[0-9a-f]{32}|[A-Z0-9]{1,12}_[0-9a-f]{32}|(?:ORG|PERSON)_[A-Z2-7]{12}_[A-Z2-7]{12})/;
 
@@ -1364,36 +1309,64 @@ function pruneEgressProofs(proofs: Map<string, EgressProof>): void {
   }
 }
 
-function validateProtectionPreviewRequest(value: unknown): ProtectionPreviewRequest {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Preview body must be an object.");
-  const record = value as Record<string, unknown>;
-  if (typeof record.text !== "string") throw new Error("Preview text is required.");
-  if (Buffer.byteLength(record.text, "utf8") > PROTECTION_PREVIEW_TEXT_MAX) {
-    throw new Error("Preview text is too large.");
+async function protectionPreview(
+  engine: RedactionEngine,
+  protectionTickets: Map<string, ProtectionTicket>,
+  remoteAddress: string | undefined,
+  scopeKey: string | undefined,
+  preview: { text: string; protectedValues: string[] },
+): Promise<ProtectionPreviewOk | ProtectionPreviewError> {
+  if (!isLoopbackAddress(remoteAddress)) {
+    return { ok: false, service: "ficta", status: "forbidden", message: "Protection preview is loopback-only." };
   }
-  if (record.protectedValues !== undefined && !Array.isArray(record.protectedValues)) {
-    throw new Error("Protected values must be a list.");
+  if (!scopeKey) {
+    return { ok: false, service: "ficta", status: "invalid_request", message: "A trusted scope is required." };
   }
-  const raw = (record.protectedValues ?? []) as unknown[];
-  if (raw.length > PROTECTION_PREVIEW_VALUES_MAX) throw new Error("Too many protected values for one chat.");
-  const seen = new Set<string>();
-  const protectedValues: string[] = [];
-  let protectedValueBytes = 0;
-  for (const entry of raw) {
-    if (typeof entry !== "string") throw new Error("Every protected value must be text.");
-    const normalized = entry.trim();
-    if (!normalized || normalized.length > PROTECTION_PREVIEW_VALUE_MAX) {
-      throw new Error("A protected value is empty or too long.");
+
+  const scope = engine.beginRequest(scopeKey);
+  const selected = preview.protectedValues;
+  scope.registerProtectedValues(selected.map(userProtectedValue));
+  try {
+    const result = await scope.redactBodyDetailed(JSON.stringify(preview.text), {
+      path: FICTA_PROTECTION_PREVIEW_PATH,
+      traceOccurrences: true,
+    });
+    if (result.leaks > 0) throw new RedactionInvariantError("preview left known values unprotected");
+    const redactedText = JSON.parse(result.body) as unknown;
+    if (typeof redactedText !== "string") throw new RedactionInvariantError("preview body shape changed");
+    const ticket = randomUUID();
+    const now = Date.now();
+    pruneProtectionTickets(protectionTickets, now);
+    pruneScopeProtectionTickets(protectionTickets, scopeKey);
+    const textSha256 = sha256(preview.text);
+    protectionTickets.set(ticket, {
+      scopeKey,
+      protectedValues: selected,
+      textSha256,
+      expiresAt: now + PROTECTION_TICKET_TTL_MS,
+    });
+    return {
+      ok: true,
+      service: "ficta",
+      ticket,
+      textSha256,
+      redactedText,
+      findings: protectionPreviewFindings(result.traceOccurrences ?? []),
+    };
+  } catch (err) {
+    if (err instanceof DetectorUnavailableError) {
+      return {
+        ok: false,
+        service: "ficta",
+        status: "detector_unavailable",
+        message: `Protection preview could not run because ${err.plugin} is unavailable.`,
+      };
     }
-    if (seen.has(normalized)) continue;
-    protectedValueBytes += Buffer.byteLength(normalized, "utf8");
-    if (protectedValueBytes > PROTECTION_PREVIEW_VALUES_BYTES_MAX) {
-      throw new Error("Protected values are too large for one chat.");
+    if (err instanceof RedactionInvariantError) {
+      return { ok: false, service: "ficta", status: "invariant", message: "Protection preview was blocked." };
     }
-    seen.add(normalized);
-    protectedValues.push(normalized);
+    throw err;
   }
-  return { text: record.text, protectedValues };
 }
 
 function userProtectedValue(value: string): ProtectedValue {

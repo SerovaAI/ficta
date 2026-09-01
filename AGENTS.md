@@ -4,7 +4,8 @@
 
 Releases are managed by [Changesets](https://github.com/changesets/changesets). The per-package `CHANGELOG.md` files are **generated** — never hand-edit them.
 
-For any meaningful change to a **published** package (`@serovaai/ficta` or `@serovaai/ficta-protocol`), add a changeset before finishing:
+For any meaningful change to a **published** package (`@serovaai/ficta`, `@serovaai/ficta-protocol`,
+or `@serovaai/ficta-contract`), add a changeset before finishing:
 
 ```
 pnpm changeset
@@ -21,6 +22,7 @@ Pick the affected package(s) and bump type (patch/minor/major), write a one-line
 Rules:
 
 - `@serovaai/ficta` and `@serovaai/ficta-protocol` are a **fixed pair** — they always release together at the same version, so a changeset selecting either one bumps both.
+- `@serovaai/ficta-contract` is versioned independently; select it when its schemas, client, or generated OpenAPI change.
 - The apps (`@serovaai/ficta-gateway`, `@serovaai/ficta-web`) are private and not published; they need no changeset.
 - Skip changesets for purely internal refactors, test-only changes, formatting, or agent-instruction-only changes that do not affect shipped behavior.
 - When unsure whether a change is meaningful, add a short changeset.

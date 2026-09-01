@@ -1,14 +1,14 @@
-import {
-  FICTA_PROTECTION_PREVIEW_PATH,
-  FICTA_SCOPE_HEADER,
-  isProtectionPreviewOk,
-  type ProtectionPreviewOk,
-} from "@serovaai/ficta-protocol";
+import { FICTA_SCOPE_HEADER, isProtectionPreviewOk, type ProtectionPreviewOk } from "@serovaai/ficta-protocol";
 import { createFileRoute } from "@tanstack/react-router";
 import { scopeFromAuth } from "../../lib/auth/guards.server";
 import { getActiveProvider } from "../../lib/auth/provider.server";
 import { fictaScopeFor } from "../../lib/ficta-scope.server";
-import { proxyBaseUrl } from "../../lib/proxy-base.server";
+import {
+  fictaControlErrorData,
+  fictaControlErrorStatus,
+  GatewayFictaCompatibilityError,
+  gatewayFictaControlClient,
+} from "../../lib/ficta-control-client.server";
 import { getStorage, type Storage, ThreadProtectionLimitError } from "../../lib/storage/storage.server";
 
 const TEXT_MAX = 2 * 1024 * 1024;
@@ -56,22 +56,24 @@ export const Route = createFileRoute("/api/protection-preview")({
         }
 
         try {
-          const response = await fetch(`${proxyBaseUrl()}${FICTA_PROTECTION_PREVIEW_PATH}`, {
-            method: "POST",
+          const client = await gatewayFictaControlClient({
             headers: {
-              accept: "application/json",
-              "content-type": "application/json",
               [FICTA_SCOPE_HEADER]: fictaScopeFor(orgId, userId, input.threadId),
             },
-            body: JSON.stringify({ text: input.text, protectedValues }),
+            requiredCapability: "protection-preview",
           });
-          const json = (await response.json()) as unknown;
-          if (!response.ok || !isProtectionPreviewOk(json)) {
-            const message = previewErrorMessage(json) ?? `Protection preview failed (HTTP ${response.status}).`;
-            return errorResponse(response.status >= 400 ? response.status : 502, message);
+          const json: unknown = await client.protectionPreview({ text: input.text, protectedValues });
+          if (!isProtectionPreviewOk(json)) {
+            return errorResponse(502, "The ficta proxy returned an invalid protection preview.");
           }
           return Response.json({ ...json, protectedValues } satisfies GatewayProtectionPreview);
-        } catch {
+        } catch (error) {
+          if (error instanceof GatewayFictaCompatibilityError) return errorResponse(502, error.message);
+          const status = fictaControlErrorStatus(error);
+          if (status !== undefined) {
+            const message = fictaControlErrorData(error)?.message ?? `Protection preview failed (HTTP ${status}).`;
+            return errorResponse(status, message);
+          }
           return errorResponse(502, "Could not reach the ficta proxy. Check that it is running, then try again.");
         }
       },
@@ -120,12 +122,6 @@ function validateValues(value: unknown, action: "added" | "removed"): string[] {
     return normalized;
   });
   return [...new Set(values)];
-}
-
-function previewErrorMessage(value: unknown): string | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const message = (value as Record<string, unknown>).message;
-  return typeof message === "string" ? message : undefined;
 }
 
 function errorResponse(status: number, message: string): Response {
