@@ -1,26 +1,58 @@
-# Ficta frontend control-plane contract
+# Ficta frontend integration contract
 
-Ficta exposes a small, versioned HTTP control plane for user interfaces and operator tools. The
-canonical machine-readable contract is the oRPC router and generated OpenAPI 3.1.1 document in
-`@serovaai/ficta-contract`. A frontend can use the supplied TypeScript client, generate a client from
-OpenAPI, or implement the HTTP calls directly.
+This document is the normative behavioral contract for integrating a frontend, operator tool, or
+provider client with Ficta. It is intentionally language- and framework-neutral. TypeScript users
+may use `@serovaai/ficta-contract`; other clients may generate code from OpenAPI or issue the HTTP
+requests directly.
 
-## Boundary
+The terms **MUST**, **SHOULD**, and **MAY** describe required, recommended, and optional behavior for
+a conforming integration.
 
-The contract covers discovery, process health, values-free protection status, and pre-send
-protection preview. It does **not** redefine provider traffic: OpenAI and Anthropic requests continue
-through Ficta on their native paths and wire formats. This keeps existing SDK streaming, tool calls,
-and provider compatibility independent from the frontend contract.
+## Contract sources and precedence
 
-The default base URL is `http://127.0.0.1:8787`. Ficta's control endpoints do not provide user
-authentication. The standalone proxy is intended to remain loopback-bound, and protection preview
-rejects non-loopback callers. In a multi-user product, terminate user authentication in the
-frontend's trusted server and have that server call Ficta. The server—not browser input—owns the
-`x-ficta-scope` value used to isolate users and threads.
+| Source                                                                                                                  | Normative for                                                                                   |
+| ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [OpenAPI 3.1.1](https://github.com/SerovaAI/ficta/blob/main/packages/contract/openapi/ficta-control-plane.openapi.json) | Control paths, methods, request and response shapes, HTTP statuses, and machine-readable limits |
+| This document                                                                                                           | Trust boundaries, compatibility, scope isolation, preview-ticket lifecycle, and recovery        |
+| The upstream provider's API documentation                                                                               | Native Anthropic and OpenAI request, response, streaming, and tool-call formats                 |
+| [`@serovaai/ficta-contract`](https://www.npmjs.com/package/@serovaai/ficta-contract) and repository examples            | Convenience APIs and non-normative examples                                                     |
 
-## Compatibility handshake
+If the OpenAPI document and this guide disagree about a control-plane wire shape, OpenAPI wins. If
+a behavior is not expressible in OpenAPI, this guide wins. Provider traffic is not redefined by the
+Ficta control contract.
 
-Call `GET /__ficta/capabilities` before depending on optional procedures:
+## Integration profiles
+
+An integration implements only the profiles it needs. Advertised capability names determine which
+optional control procedures are available.
+
+| Profile               | Required interaction                                   | Typical use                                                         |
+| --------------------- | ------------------------------------------------------ | ------------------------------------------------------------------- |
+| Transparent proxy     | Native provider request through Ficta                  | Existing SDK or agent needing protection without a review UI        |
+| Status-aware frontend | `capabilities`, then `status`                          | Protection posture, readiness messaging, and send gating            |
+| Reviewed send         | `capabilities`, `protection-preview`, then native send | Show findings and bind user-selected values to one outbound message |
+| Operator liveness     | `health` using `GET` or `HEAD`                         | Process monitoring and local orchestration                          |
+
+`health` is liveness only. A successful `status` call already proves liveness, so a frontend SHOULD
+not call `health` before every `status` or preview request.
+
+## Boundary and deployment
+
+The control plane covers discovery, process health, values-free protection status, and trusted
+pre-send review. OpenAI- and Anthropic-compatible model traffic continues through Ficta on native
+paths and wire formats. This preserves provider SDK behavior, streaming, and tool calls.
+
+The default Ficta origin is `http://127.0.0.1:8787`. Control endpoints do not authenticate users.
+The standalone proxy is intended to remain loopback-bound, and protection preview rejects
+non-loopback callers.
+
+A multi-user frontend MUST terminate user authentication in its own trusted server and have that
+server call Ficta. A browser SHOULD call the frontend's server, not Ficta directly. The trusted
+server—not browser input—owns the `x-ficta-scope` header and provider credentials.
+
+## Compatibility and discovery
+
+Before using an optional control procedure, call `GET /__ficta/capabilities`:
 
 ```json
 {
@@ -31,27 +63,202 @@ Call `GET /__ficta/capabilities` before depending on optional procedures:
 }
 ```
 
-`protocolVersion` changes only for a breaking wire-contract revision. Capability names may be added
-without changing that version; clients should require the capabilities they use and ignore names
-they do not recognize.
+A version-1 client:
 
-## Procedures
+- MUST require `protocolVersion` to equal `1`;
+- MUST require every capability it plans to call;
+- MUST ignore capability names it does not recognize;
+- MAY cache a successful discovery response briefly; and
+- MUST treat a missing, malformed, or incompatible discovery response as an incompatible proxy, not
+  as confirmation that protection is active.
 
-| oRPC procedure      | HTTP route                         | Input                                                            | Success output                         |
-| ------------------- | ---------------------------------- | ---------------------------------------------------------------- | -------------------------------------- |
-| `capabilities`      | `GET /__ficta/capabilities`        | none                                                             | version and supported capability names |
-| `health`            | `GET /__ficta/health`              | none                                                             | `{ ok: true, service: "ficta" }`       |
-| `status`            | `GET /__ficta/status`              | none                                                             | values-free protection posture         |
-| `protectionPreview` | `POST /__ficta/protection-preview` | `{ text: string, protectedValues?: string[] }` plus scope header | redacted preview and send ticket       |
+`protocolVersion` changes for a breaking wire-contract revision. Capability names may be added
+without changing it. Other version-1 response objects are closed (`additionalProperties: false`):
+unknown response fields are not currently a version-1 compatibility mechanism. Adding a required
+field, changing a field's type or meaning, or otherwise invalidating a version-1 response requires a
+new protocol version.
 
-The complete field schemas, limits, optional compatibility fields, and response examples are in the
-[generated OpenAPI document](https://github.com/SerovaAI/ficta/blob/main/packages/contract/openapi/ficta-control-plane.openapi.json).
-Existing `@serovaai/ficta-protocol` guards remain useful when a JavaScript integration wants an
-additional runtime check at a trust boundary.
+Package semver and `protocolVersion` serve different purposes. Package releases may improve clients,
+documentation, or implementation while retaining protocol version 1. Runtime compatibility MUST be
+negotiated with the discovery response, not inferred from an npm version.
 
-Preview `text` is limited to 2,097,152 bytes after UTF-8 encoding. Its OpenAPI schema publishes this
-as `x-ficta-max-utf8-bytes`; clients must enforce that byte limit rather than relying only on the
-coarser standard `maxLength` character ceiling.
+## Control-plane procedures
+
+| oRPC procedure      | HTTP route                         | Input                                           | Success output                                |
+| ------------------- | ---------------------------------- | ----------------------------------------------- | --------------------------------------------- |
+| `capabilities`      | `GET /__ficta/capabilities`        | none                                            | Protocol version and capability names         |
+| `health`            | `GET` or `HEAD /__ficta/health`    | none                                            | Liveness JSON for `GET`; no body for `HEAD`   |
+| `status`            | `GET` or `HEAD /__ficta/status`    | none                                            | Protection posture for `GET`; none for `HEAD` |
+| `protectionPreview` | `POST /__ficta/protection-preview` | `{ text, protectedValues? }` plus trusted scope | Redacted preview, findings, and ticket        |
+
+The supplied oRPC client exposes the JSON-returning `GET` procedures. `HEAD` is available to generic
+HTTP monitoring clients and is represented separately in OpenAPI.
+
+### Interpreting status
+
+Status contains counts, configuration, and health metadata only; it never contains registered or
+detected values.
+
+| Field or state                                   | Client behavior                                                                |
+| ------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `protection.protecting: false`                   | Do not claim the current proxy is actively protecting data                     |
+| `registry.required: true` and status not `ready` | Pause provider sends and show `registry.message`                               |
+| `pii.status: blocking`                           | Expect provider requests requiring that detector to be refused                 |
+| `pii.status: degraded`                           | Protection is operating with the values-free limitation described in `message` |
+| `activity.withheldFromTools > 0`                 | Surface an operator-visible warning; protected output was withheld from a tool |
+
+Clients SHOULD use the structured state fields for decisions and the accompanying `message` fields
+for display. They MUST NOT parse display messages to recover state.
+
+### Preview limits and normalization
+
+- `text` is limited to 2,097,152 bytes after UTF-8 encoding.
+- `protectedValues` accepts at most 200 entries.
+- Each protected value must be non-empty and at most 2,000 characters; values are trimmed.
+- Duplicate protected values are removed while preserving first occurrence order.
+- The combined unique protected values are limited to 65,536 bytes after trimming and UTF-8
+  encoding.
+- Finding `start` and `end` are inclusive/exclusive UTF-16 offsets into the exact submitted `text`,
+  matching JavaScript string indexing.
+
+OpenAPI's standard `maxLength` is only a character ceiling. The actual byte constraints are exposed
+as `x-ficta-max-utf8-bytes`; clients MUST enforce those extensions before sending large inputs.
+
+## Native provider data plane
+
+Ficta is a transforming reverse proxy, not a replacement provider API. Use the provider's normal
+request and response types and change only the base URL so traffic reaches Ficta.
+
+| Supported wire          | Stable request path         | Provider SDK base URL      |
+| ----------------------- | --------------------------- | -------------------------- |
+| Anthropic Messages      | `POST /v1/messages`         | `http://127.0.0.1:8787`    |
+| OpenAI Chat Completions | `POST /v1/chat/completions` | `http://127.0.0.1:8787/v1` |
+| OpenAI Responses        | `POST /v1/responses`        | `http://127.0.0.1:8787/v1` |
+
+Ficta supports buffered HTTP responses and HTTP server-sent events for these wires. It does not
+proxy WebSocket upgrades; a client MUST use HTTP/SSE fallback. Packaged Codex ChatGPT/OAuth routing
+is an agent adapter and is not a portable third-party frontend wire contract.
+
+Provider authentication headers remain provider-native. Ficta consumes and strips all internal
+`x-ficta-*` headers before forwarding a request upstream. A frontend MUST NOT translate native
+provider streaming or tool-call events into the control protocol.
+
+Requests without a protection-preview ticket are valid: Ficta still applies its configured registry
+and detectors. The reviewed-send profile is required only when the frontend wants findings,
+user-selected protected values, or explicit approval binding.
+
+## Trusted scopes
+
+`x-ficta-scope` selects the persistent detected-value and ticket isolation boundary. A conforming
+multi-user frontend:
+
+- MUST derive the scope from authenticated tenant, user, and conversation identity;
+- MUST NOT accept a complete scope value from untrusted browser input;
+- MUST use the same scope for preview and the corresponding provider send;
+- MUST use different scopes for conversations that must not share detected values;
+- MUST keep it non-empty and at most 256 characters; and
+- SHOULD keep it opaque and free of protected text.
+
+Without a scope, ordinary provider requests receive an isolated ephemeral request scope. Preview
+requires a trusted scope and fails without one.
+
+## Reviewed-send lifecycle
+
+The required state sequence is:
+
+```text
+discover capability
+        │
+        ▼
+preview exact text ──▶ render redactedText/findings ──▶ native provider send
+        ▲                                                    │
+        └──────────────────── 409 stale ─────────────────────┘
+```
+
+1. Assign a trusted scope for the authenticated tenant, user, and conversation.
+2. Send the exact current message and any user-selected values to
+   `POST /__ficta/protection-preview` with `x-ficta-scope`.
+3. Render `redactedText` and `findings`. Previewing does not contact the provider.
+4. If the user sends the reviewed message, make the normal provider request with the same
+   `x-ficta-scope` and the returned ticket in `x-ficta-protection-ticket`.
+5. On `409 ficta_protection_preview_stale`, discard the ticket, preview the current text again, and
+   require review again when the product's review policy calls for it.
+
+A ticket is opaque, short-lived, scoped, bound to the SHA-256 of the preview text, and consumed once.
+Clients MUST NOT inspect it, persist it as conversation state, reuse it, or depend on a particular
+expiry duration. A client MUST treat a ticket as spent once it attaches the ticket to an attempted
+send; a failure is not a promise that the ticket remains usable. After the request body and ticket
+binding are accepted, Ficta atomically consumes the ticket before body detection or upstream I/O.
+
+For JSON provider requests, ticket binding accepts these message shapes:
+
+- `input` as the exact preview string;
+- `input` or `messages` as an array whose last `role: "user"` message contains the exact preview
+  string; and
+- user content as a string or an array part with a string `text` or `content` field.
+
+For a non-JSON body, the complete body must match the preview text. A changed scope, changed text,
+missing request body, expired ticket, or replayed ticket produces `409` and is never forwarded.
+
+## Language-neutral HTTP example
+
+Discover the protocol:
+
+```sh
+curl --fail-with-body http://127.0.0.1:8787/__ficta/capabilities
+```
+
+Preview one exact message from a trusted server:
+
+```sh
+curl --fail-with-body \
+  --request POST \
+  --header 'content-type: application/json' \
+  --header 'x-ficta-scope: workspace-7:user-42:thread-9' \
+  --data '{"text":"Review Project Juniper","protectedValues":["Project Juniper"]}' \
+  http://127.0.0.1:8787/__ficta/protection-preview
+```
+
+An illustrative response is below. Ticket and surrogate values vary; `textSha256` is the real digest
+of the example text and can be used as a test vector.
+
+```json
+{
+  "ok": true,
+  "service": "ficta",
+  "ticket": "opaque-value",
+  "textSha256": "b788b189eab44ecd34ebb281e093cf2cb32d835b9f9fbc4a3e1b530b962694e7",
+  "redactedText": "Review [opaque surrogate]",
+  "findings": [
+    {
+      "name": "USER_SELECTED",
+      "source": "user-selected",
+      "kind": "custom",
+      "confidence": "exact",
+      "start": 7,
+      "end": 22,
+      "surrogate": "[opaque surrogate]",
+      "origin": "user"
+    }
+  ]
+}
+```
+
+Send the unchanged text using the provider's native OpenAI Responses shape:
+
+```sh
+curl --no-buffer --fail-with-body \
+  --request POST \
+  --header 'authorization: Bearer provider-key' \
+  --header 'content-type: application/json' \
+  --header 'x-ficta-scope: workspace-7:user-42:thread-9' \
+  --header 'x-ficta-protection-ticket: opaque-value' \
+  --data '{"model":"provider-model","input":[{"role":"user","content":[{"type":"input_text","text":"Review Project Juniper"}]}],"stream":true}' \
+  http://127.0.0.1:8787/v1/responses
+```
+
+The ticket and scope headers stop at Ficta. The provider receives the protected representation, and
+the client receives the provider's native response with eligible surrogates restored locally.
 
 ## TypeScript client
 
@@ -64,47 +271,31 @@ import {
 } from "@serovaai/ficta-contract";
 
 const client = createFictaControlClient({ baseUrl: "http://127.0.0.1:8787" });
+const discovery = await client.capabilities();
+if (discovery.protocolVersion !== 1 || !discovery.capabilities.includes("status")) {
+  throw new Error("Incompatible Ficta control plane");
+}
 const status = await client.status();
 
 const scopedClient = createFictaControlClient({
   baseUrl: "http://127.0.0.1:8787",
-  headers: { [FICTA_SCOPE_HEADER]: trustedThreadScope },
+  headers: { [FICTA_SCOPE_HEADER]: trustedConversationScope },
 });
 
 try {
   const preview = await scopedClient.protectionPreview({ text, protectedValues });
-  // Store preview.ticket only long enough to perform the reviewed send.
+  // Render preview, then attach preview.ticket and the same trusted scope to the native provider send.
 } catch (error) {
-  const httpStatus = fictaControlErrorStatus(error);
-  const response = fictaControlErrorData(error);
-  console.error(httpStatus, response?.message);
+  console.error(fictaControlErrorStatus(error), fictaControlErrorData(error)?.message);
 }
 ```
 
-The client uses oRPC's OpenAPI transport. `baseUrl` may be a string or `URL`; static request headers
-and a custom `fetch` implementation are optional.
+The supplied client uses oRPC's OpenAPI transport. `baseUrl` may be a string or `URL`; static request
+headers and a custom `fetch` implementation are optional. oRPC is not required for conformance.
 
-## Protection preview and send
+## Error and recovery contract
 
-Preview is a trusted, loopback-only preparation step:
-
-1. Assign an opaque, server-owned scope for the authenticated organization, user, and thread.
-2. Send the current message text and any user-selected protected values to
-   `POST /__ficta/protection-preview` with `x-ficta-scope`.
-3. Render `redactedText` and `findings`. Finding offsets are UTF-16 coordinates into the exact input
-   text, matching JavaScript string indexing.
-4. If the user sends that reviewed message, include the returned ticket as
-   `x-ficta-protection-ticket` on the native provider request and repeat the same `x-ficta-scope`.
-
-The ticket is opaque, short-lived, scoped, bound to the final user-message hash, and consumed once.
-It is never forwarded upstream. Previewing is not sending: if text or scope changes, request a new
-preview. A client must handle `409 ficta_protection_preview_stale` from the provider request by
-previewing again.
-
-## Error contract
-
-Preview errors preserve the established HTTP body while the supplied client exposes them as typed
-oRPC errors:
+Preview errors use a stable values-free body:
 
 ```json
 {
@@ -115,27 +306,83 @@ oRPC errors:
 }
 ```
 
-| `status`               | HTTP | Meaning                                             |
-| ---------------------- | ---- | --------------------------------------------------- |
-| `invalid_request`      | 400  | body, limits, or trusted scope are invalid          |
-| `forbidden`            | 403  | preview caller is not loopback                      |
-| `invariant`            | 422  | Ficta blocked a preview that could not be made safe |
-| `detector_unavailable` | 503  | a required request-time detector could not run      |
+| Preview status         | HTTP | Required handling                          |
+| ---------------------- | ---- | ------------------------------------------ |
+| `invalid_request`      | 400  | Correct the body, limits, or trusted scope |
+| `forbidden`            | 403  | Move preview behind a trusted local server |
+| `invariant`            | 422  | Do not send the unreviewed message         |
+| `detector_unavailable` | 503  | Follow product retry/fail-closed policy    |
 
-Do not put protected text or values into error metadata, logs, analytics, or exception messages.
+Common provider-path failures have `{ "error": { "type", "message" } }` bodies:
 
-## Implementing another engine or frontend
+| HTTP | Error type or class                  | Client behavior                                             |
+| ---- | ------------------------------------ | ----------------------------------------------------------- |
+| 409  | `ficta_protection_preview_stale`     | Preview the current message again                           |
+| 403  | Protection or upstream-policy block  | Do not bypass Ficta; show a safe diagnostic                 |
+| 503  | Registry or required-detector outage | Pause or retry according to operator policy                 |
+| 413  | Request body too large               | Reduce the provider request                                 |
+| 415  | Unsupported or undecodable encoding  | Send a supported HTTP encoding                              |
+| 426  | WebSocket unsupported                | Retry over HTTP/SSE                                         |
+| 500  | Internal protection invariant        | Do not forward directly; report the failure                 |
+| 502  | Upstream connection failure          | Retry as a provider failure; get a new ticket when required |
 
-An alternative engine implementation conforms when it serves the documented methods and paths,
-validates inputs, returns the OpenAPI response shapes and status codes, isolates trusted scopes, and
-implements the ticket properties above. An alternative frontend should treat discovery and status
-as values-free, keep protected values on the trusted local/server boundary, and pass native provider
-traffic through without translating it into the control protocol.
+Protected text and values MUST NOT be placed in errors, logs, analytics, traces, scope strings, or
+exception metadata.
 
-The repository's contract and proxy conformance tests cover route discovery, typed-client calls,
-legacy HTTP errors, method isolation, scope handling, and ticket behavior. Run them with:
+## Minimal implementation algorithm
+
+A frontend or coding system can implement the reviewed-send profile with this algorithm:
+
+```text
+1. GET capabilities.
+2. Require protocolVersion == 1 and the capabilities you will use.
+3. GET status; pause sends when a required registry is not ready.
+4. Derive a server-owned scope from authenticated conversation identity.
+5. POST preview with exact current text and optional protected selections.
+6. Validate the response against OpenAPI and render findings using UTF-16 offsets.
+7. If the text changes, discard the ticket and return to step 5.
+8. Send the native provider request with the same scope and the ticket.
+9. On 409, discard the ticket and return to step 5.
+10. Never retry a ticket or log protected input.
+```
+
+## Conformance checklist
+
+### Frontend
+
+A conforming frontend:
+
+- negotiates protocol and required capabilities at runtime;
+- validates control responses and enforces both standard and Ficta byte limits;
+- keeps provider credentials, scopes, selected protected values, and preview calls behind a trusted
+  boundary;
+- uses stable per-conversation scope isolation;
+- sends the exact reviewed text on the native provider wire;
+- treats tickets as ephemeral and single-use;
+- handles `409` by previewing again;
+- preserves provider streaming and tool-call formats; and
+- never bypasses the proxy after a protection failure.
+
+### Alternative engine
+
+An alternative engine implementation:
+
+- serves the documented control methods, paths, schemas, and statuses;
+- advertises only procedures it implements;
+- keeps health, discovery, status, and errors free of protected values;
+- enforces trusted local preview and scope isolation;
+- implements opaque, short-lived, scoped, hash-bound, atomic single-use tickets;
+- strips internal Ficta headers before provider forwarding;
+- preserves supported native provider request, response, and SSE formats; and
+- returns `409` without forwarding when preview authorization is stale or mismatched.
+
+The repository tests exercise the reference implementation's route discovery, generated OpenAPI,
+typed client, error bodies, method isolation, scope handling, `HEAD` behavior, and ticket lifecycle:
 
 ```sh
 pnpm --filter @serovaai/ficta-contract check
 pnpm --filter @serovaai/ficta test
 ```
+
+These commands validate the Ficta implementation in this repository; an alternative engine SHOULD
+run equivalent black-box tests against its own deployed base URL.

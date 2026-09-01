@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { argv } from "node:process";
 import { fileURLToPath } from "node:url";
 import { type HttpBindings, serve } from "@hono/node-server";
-import { encodeFictaControlError, FICTA_CAPABILITIES_PATH } from "@serovaai/ficta-contract";
+import { encodeFictaControlError, FICTA_CAPABILITIES_PATH, FICTA_SCOPE_MAX_LENGTH } from "@serovaai/ficta-contract";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import {
   type EgressProof,
@@ -1007,10 +1007,8 @@ function scopeKeyFrom(c: Context): string | undefined {
 function normalizeScopeKey(value: string | undefined): string | undefined {
   const key = value?.trim();
   if (!key) return undefined;
-  return key.length > MAX_SCOPE_KEY_LENGTH ? key.slice(0, MAX_SCOPE_KEY_LENGTH) : key;
+  return key.length > FICTA_SCOPE_MAX_LENGTH ? key.slice(0, FICTA_SCOPE_MAX_LENGTH) : key;
 }
-
-const MAX_SCOPE_KEY_LENGTH = 256;
 
 function traceCaptureDecisionFrom(
   c: Context,

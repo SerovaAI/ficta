@@ -110,7 +110,10 @@ private chat surface built on the same redaction engine.
 
 - **[`packages/ficta`](packages/ficta)** - [`@serovaai/ficta`](https://www.npmjs.com/package/@serovaai/ficta),
   the MIT-licensed CLI, redaction proxy, registry sources, agent integrations, detector backends, and
-  plugin seams. This is the package published to npm.
+  plugin seams. This is the main package published to npm.
+- **[`packages/contract`](packages/contract)** - [`@serovaai/ficta-contract`](https://www.npmjs.com/package/@serovaai/ficta-contract),
+  the language-neutral OpenAPI control contract plus the optional typed oRPC client and schemas for
+  frontend implementors.
 - **[`packages/protocol`](packages/protocol)** - [`@serovaai/ficta-protocol`](https://www.npmjs.com/package/@serovaai/ficta-protocol),
   the dependency-free wire contract package shared by the proxy and Gateway control-plane calls.
 - **[`apps/gateway`](apps/gateway)** - Ficta Gateway, a self-hosted TanStack Start chat UI with
@@ -121,6 +124,8 @@ private chat surface built on the same redaction engine.
 ## Documentation
 
 - [`packages/ficta/README.md`](packages/ficta/README.md) - full CLI/proxy install, usage, and commands
+- [`packages/ficta/docs/control-plane.md`](packages/ficta/docs/control-plane.md) - language-neutral frontend integration and conformance contract
+- [`packages/contract/openapi/ficta-control-plane.openapi.json`](packages/contract/openapi/ficta-control-plane.openapi.json) - generated OpenAPI 3.1.1 control-plane schema
 - [`apps/gateway/README.md`](apps/gateway/README.md) - Ficta Gateway setup, POC defaults, and deployment cautions
 - [`apps/gateway/docs/poc-configuration.md`](apps/gateway/docs/poc-configuration.md) - canonical minimal Gateway POC environment and proxy policy
 - [`docs/install.md`](packages/ficta/docs/install.md) - Ficta shim installation and runtime behavior

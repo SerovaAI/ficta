@@ -4,7 +4,11 @@ import {
   capabilitiesSchema,
   FICTA_CONTROL_CAPABILITIES,
   FICTA_CONTROL_PROTOCOL_VERSION,
+  FICTA_SCOPE_HEADER,
+  FICTA_SCOPE_MAX_LENGTH,
   PROTECTION_PREVIEW_TEXT_MAX_BYTES,
+  PROTECTION_PREVIEW_VALUE_MAX,
+  PROTECTION_PREVIEW_VALUES_MAX_BYTES,
   protectionPreviewInputSchema,
   protectionStatusSchema,
 } from "../src/index.js";
@@ -42,6 +46,18 @@ describe("Ficta control-plane schemas", () => {
     expect(protectionPreviewInputSchema.safeParse({ text }).success).toBe(false);
   });
 
+  it("rejects protected selections over the published combined UTF-8 byte limit", () => {
+    const protectedValues = Array.from(
+      { length: 12 },
+      (_, index) => `${"€".repeat(PROTECTION_PREVIEW_VALUE_MAX - 2)}${String(index).padStart(2, "0")}`,
+    );
+    const totalBytes = protectedValues.reduce((total, value) => total + new TextEncoder().encode(value).byteLength, 0);
+    expect(totalBytes).toBeGreaterThan(PROTECTION_PREVIEW_VALUES_MAX_BYTES);
+    expect(protectionPreviewInputSchema.safeParse({ text: "Review these values", protectedValues }).success).toBe(
+      false,
+    );
+  });
+
   it("keeps status compatibility fields optional", () => {
     expect(
       protectionStatusSchema.safeParse({
@@ -70,6 +86,12 @@ describe("Ficta control-plane schemas", () => {
         Record<
           string,
           {
+            parameters?: Array<{
+              name?: string;
+              in?: string;
+              required?: boolean;
+              schema?: Record<string, unknown>;
+            }>;
             requestBody?: {
               content?: Record<string, { schema?: { properties?: Record<string, Record<string, unknown>> } }>;
             };
@@ -85,13 +107,25 @@ describe("Ficta control-plane schemas", () => {
       "/__ficta/status",
       "/__ficta/protection-preview",
     ]);
-    expect(specification.paths?.["/__ficta/protection-preview"]?.post?.responses).toHaveProperty("400");
-    const textSchema =
-      specification.paths?.["/__ficta/protection-preview"]?.post?.requestBody?.content?.["application/json"]?.schema
-        ?.properties?.text;
+    expect(specification.paths?.["/__ficta/health"]?.head?.responses).toHaveProperty("200");
+    expect(specification.paths?.["/__ficta/status"]?.head?.responses).toHaveProperty("200");
+    const previewOperation = specification.paths?.["/__ficta/protection-preview"]?.post;
+    expect(previewOperation?.responses).toHaveProperty("400");
+    expect(previewOperation?.parameters).toContainEqual({
+      name: FICTA_SCOPE_HEADER,
+      in: "header",
+      required: true,
+      description: "Trusted, server-owned tenant/user/conversation isolation key. Never forwarded upstream.",
+      schema: { type: "string", minLength: 1, maxLength: FICTA_SCOPE_MAX_LENGTH },
+    });
+    const previewProperties = previewOperation?.requestBody?.content?.["application/json"]?.schema?.properties;
+    const textSchema = previewProperties?.text;
     expect(textSchema).toMatchObject({
       description: `Maximum ${PROTECTION_PREVIEW_TEXT_MAX_BYTES} bytes when encoded as UTF-8.`,
       "x-ficta-max-utf8-bytes": PROTECTION_PREVIEW_TEXT_MAX_BYTES,
+    });
+    expect(previewProperties?.protectedValues).toMatchObject({
+      "x-ficta-max-utf8-bytes": PROTECTION_PREVIEW_VALUES_MAX_BYTES,
     });
   });
 });

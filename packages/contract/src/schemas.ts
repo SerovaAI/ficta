@@ -3,6 +3,7 @@ import { z } from "zod";
 export const FICTA_CAPABILITIES_PATH = "/__ficta/capabilities" as const;
 export const FICTA_CONTROL_PROTOCOL_VERSION = 1 as const;
 export const FICTA_CONTROL_CAPABILITIES = ["health", "status", "protection-preview"] as const;
+export const FICTA_SCOPE_MAX_LENGTH = 256;
 
 export const PROTECTION_PREVIEW_TEXT_MAX_BYTES = 2 * 1024 * 1024;
 export const PROTECTION_PREVIEW_VALUES_MAX = 200;
@@ -22,16 +23,20 @@ export const capabilitiesSchema = z
   .object({
     ok: z.literal(true),
     service: z.literal("ficta"),
-    protocolVersion: z.literal(FICTA_CONTROL_PROTOCOL_VERSION),
-    capabilities: z.array(z.string().min(1)),
+    protocolVersion: z
+      .literal(FICTA_CONTROL_PROTOCOL_VERSION)
+      .describe("Breaking wire-contract version implemented by this control plane."),
+    capabilities: z
+      .array(z.string().min(1))
+      .describe("Supported optional procedures. Clients must ignore capability names they do not recognize."),
   })
   .strict();
 
 export const registryProtectionStatusSchema = z
   .object({
-    required: z.boolean(),
-    status: z.enum(["ready", "empty", "error"]),
-    message: z.string(),
+    required: z.boolean().describe("Whether provider requests are blocked until the registry is ready."),
+    status: z.enum(["ready", "empty", "error"]).describe("Current exact-match registry readiness."),
+    message: z.string().describe("Values-free operator guidance for the current registry state."),
   })
   .strict();
 
@@ -41,37 +46,51 @@ export const protectionStatusSchema = z
     service: z.literal("ficta"),
     protection: z
       .object({
-        enabled: z.boolean(),
-        protecting: z.boolean(),
-        registeredValues: z.number().int().nonnegative(),
-        policyExcluded: z.number().int().nonnegative(),
+        enabled: z.boolean().describe("Whether the engine has registered values or detector plugins available."),
+        protecting: z.boolean().describe("Whether registered values or an active detector are currently configured."),
+        registeredValues: z.number().int().nonnegative().describe("Count of loaded exact-match protected values."),
+        policyExcluded: z
+          .number()
+          .int()
+          .nonnegative()
+          .describe("Count of discovered registry values excluded by configured policy."),
       })
       .strict(),
     registry: registryProtectionStatusSchema.optional(),
     secretShapes: z
       .object({
-        enabled: z.boolean(),
-        status: z.enum(["off", "ok"]),
-        message: z.string(),
+        enabled: z.boolean().describe("Whether request-time secret-shape detection is enabled."),
+        status: z.enum(["off", "ok"]).describe("Secret-shape detector posture."),
+        message: z.string().describe("Values-free explanation of the secret-shape posture."),
       })
       .strict(),
     pii: z
       .object({
-        enabled: z.boolean(),
-        configuredBackend: z.string(),
-        configuredBackends: z.array(z.string()).optional(),
-        backend: z.string(),
-        status: z.enum(["off", "ok", "degraded", "blocking"]),
-        failureMode: z.enum(["fail-open", "fail-closed"]),
-        url: z.string().optional(),
-        detail: z.string().optional(),
-        message: z.string(),
+        enabled: z.boolean().describe("Whether request-time PII detection is enabled."),
+        configuredBackend: z.string().describe("Compatibility string naming the configured PII backend set."),
+        configuredBackends: z.array(z.string()).optional().describe("Configured PII backend names."),
+        backend: z.string().describe("Active PII backend names as a compatibility string."),
+        status: z.enum(["off", "ok", "degraded", "blocking"]).describe("Current PII detector posture."),
+        failureMode: z
+          .enum(["fail-open", "fail-closed"])
+          .describe("Whether a required PII backend outage skips that backend or blocks provider traffic."),
+        url: z.string().optional().describe("Values-free health URL for a single configured network backend."),
+        detail: z.string().optional().describe("Values-free backend health diagnostic."),
+        message: z.string().describe("Values-free explanation of the current PII posture."),
       })
       .strict(),
     activity: z
       .object({
-        restoredValues: z.number().int().nonnegative(),
-        withheldFromTools: z.number().int().nonnegative(),
+        restoredValues: z
+          .number()
+          .int()
+          .nonnegative()
+          .describe("Cumulative protected values restored during this proxy run."),
+        withheldFromTools: z
+          .number()
+          .int()
+          .nonnegative()
+          .describe("Cumulative protected values withheld from tool-call arguments during this proxy run."),
       })
       .strict()
       .optional(),
@@ -80,19 +99,22 @@ export const protectionStatusSchema = z
 
 export const protectionHitSchema = z
   .object({
-    name: z.string(),
-    source: z.string(),
-    plugin: z.string().optional(),
-    kind: z.enum(["secret", "pii", "custom"]).optional(),
-    confidence: z.enum(["exact", "high", "probabilistic"]).optional(),
+    name: z.string().describe("Values-free detector or registry label for the finding."),
+    source: z.string().describe("Values-free source category for the finding."),
+    plugin: z.string().optional().describe("Plugin that produced the finding, when available."),
+    kind: z.enum(["secret", "pii", "custom"]).optional().describe("Coarse protected-value category."),
+    confidence: z
+      .enum(["exact", "high", "probabilistic"])
+      .optional()
+      .describe("Confidence class assigned by the protection source."),
   })
   .strict();
 
 export const protectionPreviewFindingSchema = protectionHitSchema.extend({
-  start: z.number().int().nonnegative(),
-  end: z.number().int().nonnegative(),
-  surrogate: z.string(),
-  origin: z.enum(["registry", "detected", "user"]),
+  start: z.number().int().nonnegative().describe("Inclusive UTF-16 offset into the exact preview text."),
+  end: z.number().int().nonnegative().describe("Exclusive UTF-16 offset into the exact preview text."),
+  surrogate: z.string().describe("Opaque replacement rendered in redactedText."),
+  origin: z.enum(["registry", "detected", "user"]).describe("How this protected value entered the preview."),
 });
 
 const protectedValueSchema = z
@@ -111,10 +133,15 @@ export const protectionPreviewTextSchema = z
     message: "Preview text is too large.",
   });
 
+export const protectionPreviewProtectedValuesSchema = z
+  .array(protectedValueSchema)
+  .max(PROTECTION_PREVIEW_VALUES_MAX)
+  .optional();
+
 export const protectionPreviewInputSchema = z
   .object({
     text: protectionPreviewTextSchema,
-    protectedValues: z.array(protectedValueSchema).max(PROTECTION_PREVIEW_VALUES_MAX).optional(),
+    protectedValues: protectionPreviewProtectedValuesSchema,
   })
   .transform(({ text, protectedValues = [] }, context) => {
     const uniqueValues = [...new Set(protectedValues)];
@@ -130,10 +157,13 @@ export const protectionPreviewSchema = z
   .object({
     ok: z.literal(true),
     service: z.literal("ficta"),
-    ticket: z.string(),
-    textSha256: z.string().regex(/^[0-9a-f]{64}$/u),
-    redactedText: z.string(),
-    findings: z.array(protectionPreviewFindingSchema),
+    ticket: z.string().describe("Opaque, short-lived, single-use authorization for the reviewed provider send."),
+    textSha256: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/u)
+      .describe("Lowercase SHA-256 of the exact preview text bound to the ticket."),
+    redactedText: z.string().describe("Preview text with all planned protections applied."),
+    findings: z.array(protectionPreviewFindingSchema).describe("Ordered protected occurrences in the preview text."),
   })
   .strict();
 

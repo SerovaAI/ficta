@@ -5,6 +5,16 @@
     "description": "Portable HTTP contract for building a frontend for the Ficta protection engine."
   },
   "servers": [{ "url": "http://127.0.0.1:8787", "description": "Default local Ficta proxy" }],
+  "tags": [
+    {
+      "name": "Ficta control plane",
+      "description": "Discovery, process health, values-free protection status, and trusted pre-send review."
+    }
+  ],
+  "externalDocs": {
+    "description": "Frontend integration contract, trust boundary, and reviewed-send lifecycle",
+    "url": "https://github.com/SerovaAI/ficta/blob/main/packages/ficta/docs/control-plane.md"
+  },
   "openapi": "3.1.1",
   "paths": {
     "/__ficta/capabilities": {
@@ -22,8 +32,15 @@
                   "properties": {
                     "ok": { "const": true },
                     "service": { "const": "ficta" },
-                    "protocolVersion": { "const": 1 },
-                    "capabilities": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+                    "protocolVersion": {
+                      "const": 1,
+                      "description": "Breaking wire-contract version implemented by this control plane."
+                    },
+                    "capabilities": {
+                      "type": "array",
+                      "items": { "type": "string", "minLength": 1 },
+                      "description": "Supported optional procedures. Clients must ignore capability names they do not recognize."
+                    }
                   },
                   "required": ["ok", "service", "protocolVersion", "capabilities"],
                   "additionalProperties": false
@@ -54,6 +71,12 @@
             }
           }
         }
+      },
+      "head": {
+        "operationId": "headFictaHealth",
+        "summary": "Check whether the Ficta proxy process is serving requests without a response body",
+        "tags": ["Ficta control plane"],
+        "responses": { "200": { "description": "OK" } }
       }
     },
     "/__ficta/status": {
@@ -74,10 +97,26 @@
                     "protection": {
                       "type": "object",
                       "properties": {
-                        "enabled": { "type": "boolean" },
-                        "protecting": { "type": "boolean" },
-                        "registeredValues": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-                        "policyExcluded": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+                        "enabled": {
+                          "type": "boolean",
+                          "description": "Whether the engine has registered values or detector plugins available."
+                        },
+                        "protecting": {
+                          "type": "boolean",
+                          "description": "Whether registered values or an active detector are currently configured."
+                        },
+                        "registeredValues": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "description": "Count of loaded exact-match protected values."
+                        },
+                        "policyExcluded": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "description": "Count of discovered registry values excluded by configured policy."
+                        }
                       },
                       "required": ["enabled", "protecting", "registeredValues", "policyExcluded"],
                       "additionalProperties": false
@@ -85,9 +124,19 @@
                     "registry": {
                       "type": "object",
                       "properties": {
-                        "required": { "type": "boolean" },
-                        "status": { "enum": ["ready", "empty", "error"], "type": "string" },
-                        "message": { "type": "string" }
+                        "required": {
+                          "type": "boolean",
+                          "description": "Whether provider requests are blocked until the registry is ready."
+                        },
+                        "status": {
+                          "enum": ["ready", "empty", "error"],
+                          "type": "string",
+                          "description": "Current exact-match registry readiness."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Values-free operator guidance for the current registry state."
+                        }
                       },
                       "required": ["required", "status", "message"],
                       "additionalProperties": false
@@ -95,9 +144,19 @@
                     "secretShapes": {
                       "type": "object",
                       "properties": {
-                        "enabled": { "type": "boolean" },
-                        "status": { "enum": ["off", "ok"], "type": "string" },
-                        "message": { "type": "string" }
+                        "enabled": {
+                          "type": "boolean",
+                          "description": "Whether request-time secret-shape detection is enabled."
+                        },
+                        "status": {
+                          "enum": ["off", "ok"],
+                          "type": "string",
+                          "description": "Secret-shape detector posture."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "Values-free explanation of the secret-shape posture."
+                        }
                       },
                       "required": ["enabled", "status", "message"],
                       "additionalProperties": false
@@ -105,15 +164,42 @@
                     "pii": {
                       "type": "object",
                       "properties": {
-                        "enabled": { "type": "boolean" },
-                        "configuredBackend": { "type": "string" },
-                        "configuredBackends": { "type": "array", "items": { "type": "string" } },
-                        "backend": { "type": "string" },
-                        "status": { "enum": ["off", "ok", "degraded", "blocking"], "type": "string" },
-                        "failureMode": { "enum": ["fail-open", "fail-closed"], "type": "string" },
-                        "url": { "type": "string" },
-                        "detail": { "type": "string" },
-                        "message": { "type": "string" }
+                        "enabled": {
+                          "type": "boolean",
+                          "description": "Whether request-time PII detection is enabled."
+                        },
+                        "configuredBackend": {
+                          "type": "string",
+                          "description": "Compatibility string naming the configured PII backend set."
+                        },
+                        "configuredBackends": {
+                          "type": "array",
+                          "items": { "type": "string" },
+                          "description": "Configured PII backend names."
+                        },
+                        "backend": {
+                          "type": "string",
+                          "description": "Active PII backend names as a compatibility string."
+                        },
+                        "status": {
+                          "enum": ["off", "ok", "degraded", "blocking"],
+                          "type": "string",
+                          "description": "Current PII detector posture."
+                        },
+                        "failureMode": {
+                          "enum": ["fail-open", "fail-closed"],
+                          "type": "string",
+                          "description": "Whether a required PII backend outage skips that backend or blocks provider traffic."
+                        },
+                        "url": {
+                          "type": "string",
+                          "description": "Values-free health URL for a single configured network backend."
+                        },
+                        "detail": { "type": "string", "description": "Values-free backend health diagnostic." },
+                        "message": {
+                          "type": "string",
+                          "description": "Values-free explanation of the current PII posture."
+                        }
                       },
                       "required": ["enabled", "configuredBackend", "backend", "status", "failureMode", "message"],
                       "additionalProperties": false
@@ -121,8 +207,18 @@
                     "activity": {
                       "type": "object",
                       "properties": {
-                        "restoredValues": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-                        "withheldFromTools": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+                        "restoredValues": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "description": "Cumulative protected values restored during this proxy run."
+                        },
+                        "withheldFromTools": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "description": "Cumulative protected values withheld from tool-call arguments during this proxy run."
+                        }
                       },
                       "required": ["restoredValues", "withheldFromTools"],
                       "additionalProperties": false
@@ -135,6 +231,12 @@
             }
           }
         }
+      },
+      "head": {
+        "operationId": "headFictaProtectionStatus",
+        "summary": "Check whether protection status can be evaluated without a response body",
+        "tags": ["Ficta control plane"],
+        "responses": { "200": { "description": "OK" } }
       }
     },
     "/__ficta/protection-preview": {
@@ -158,7 +260,9 @@
                   "protectedValues": {
                     "type": "array",
                     "maxItems": 200,
-                    "items": { "type": "string", "minLength": 1, "maxLength": 2000 }
+                    "items": { "type": "string", "minLength": 1, "maxLength": 2000 },
+                    "description": "Optional protected selections; maximum 65536 combined bytes after UTF-8 encoding, trimming, and deduplication.",
+                    "x-ficta-max-utf8-bytes": 65536
                   }
                 },
                 "required": ["text"]
@@ -176,27 +280,69 @@
                   "properties": {
                     "ok": { "const": true },
                     "service": { "const": "ficta" },
-                    "ticket": { "type": "string" },
-                    "textSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-                    "redactedText": { "type": "string" },
+                    "ticket": {
+                      "type": "string",
+                      "description": "Opaque, short-lived, single-use authorization for the reviewed provider send."
+                    },
+                    "textSha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$",
+                      "description": "Lowercase SHA-256 of the exact preview text bound to the ticket."
+                    },
+                    "redactedText": {
+                      "type": "string",
+                      "description": "Preview text with all planned protections applied."
+                    },
                     "findings": {
                       "type": "array",
                       "items": {
                         "type": "object",
                         "properties": {
-                          "name": { "type": "string" },
-                          "source": { "type": "string" },
-                          "plugin": { "type": "string" },
-                          "kind": { "enum": ["secret", "pii", "custom"], "type": "string" },
-                          "confidence": { "enum": ["exact", "high", "probabilistic"], "type": "string" },
-                          "start": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-                          "end": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
-                          "surrogate": { "type": "string" },
-                          "origin": { "enum": ["registry", "detected", "user"], "type": "string" }
+                          "name": {
+                            "type": "string",
+                            "description": "Values-free detector or registry label for the finding."
+                          },
+                          "source": { "type": "string", "description": "Values-free source category for the finding." },
+                          "plugin": {
+                            "type": "string",
+                            "description": "Plugin that produced the finding, when available."
+                          },
+                          "kind": {
+                            "enum": ["secret", "pii", "custom"],
+                            "type": "string",
+                            "description": "Coarse protected-value category."
+                          },
+                          "confidence": {
+                            "enum": ["exact", "high", "probabilistic"],
+                            "type": "string",
+                            "description": "Confidence class assigned by the protection source."
+                          },
+                          "start": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991,
+                            "description": "Inclusive UTF-16 offset into the exact preview text."
+                          },
+                          "end": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991,
+                            "description": "Exclusive UTF-16 offset into the exact preview text."
+                          },
+                          "surrogate": {
+                            "type": "string",
+                            "description": "Opaque replacement rendered in redactedText."
+                          },
+                          "origin": {
+                            "enum": ["registry", "detected", "user"],
+                            "type": "string",
+                            "description": "How this protected value entered the preview."
+                          }
                         },
                         "required": ["name", "source", "start", "end", "surrogate", "origin"],
                         "additionalProperties": false
-                      }
+                      },
+                      "description": "Ordered protected occurrences in the preview text."
                     }
                   },
                   "required": ["ok", "service", "ticket", "textSha256", "redactedText", "findings"],
@@ -277,7 +423,16 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "x-ficta-scope",
+            "in": "header",
+            "required": true,
+            "description": "Trusted, server-owned tenant/user/conversation isolation key. Never forwarded upstream.",
+            "schema": { "type": "string", "minLength": 1, "maxLength": 256 }
+          }
+        ]
       }
     }
   }
