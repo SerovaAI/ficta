@@ -47,19 +47,36 @@ describe("withPreservationInstruction", () => {
     expect(out.messages[1]).toMatchObject({ role: "user", content: "hi" });
   });
 
-  it("prepends to an anthropic string `system`", () => {
+  it("appends to an anthropic string `system`", () => {
     const body = JSON.stringify({ system: "You are helpful.", messages: [] });
     const out = JSON.parse(withPreservationInstruction(body, "anthropic", SURR));
-    expect(out.system.startsWith("The messages below")).toBe(true);
-    expect(out.system).toContain("You are helpful.");
+    expect(out.system.startsWith("You are helpful.")).toBe(true);
+    expect(out.system.endsWith(buildPreservationInstruction(SURR))).toBe(true);
   });
 
-  it("prepends a text block to an anthropic array `system`", () => {
+  it("appends a text block to an anthropic array `system`", () => {
     const body = JSON.stringify({ system: [{ type: "text", text: "base" }], messages: [] });
     const out = JSON.parse(withPreservationInstruction(body, "anthropic", SURR));
-    expect(out.system[0].type).toBe("text");
-    expect(out.system[0].text).toContain(SURR[0]);
-    expect(out.system[1]).toMatchObject({ type: "text", text: "base" });
+    expect(out.system[0]).toMatchObject({ type: "text", text: "base" });
+    expect(out.system[1].type).toBe("text");
+    expect(out.system[1].text).toContain(SURR[0]);
+  });
+
+  // Regression: api.anthropic.com rejects Claude Code subscription requests whose first system block
+  // is not the client's billing header (429 rate_limit_error "Error", on every retry). The cached
+  // prefix must also survive byte-for-byte so a redacted turn does not bust the prompt cache.
+  it("keeps Claude Code's leading billing block and cache_control prefix untouched", () => {
+    const system = [
+      { type: "text", text: "x-anthropic-billing-header: cc_version=2.1.25; cc_entrypoint=cli" },
+      { type: "text", text: "You are a Claude agent.", cache_control: { type: "ephemeral" } },
+      { type: "text", text: "Long instructions…", cache_control: { type: "ephemeral", ttl: "1h" } },
+    ];
+    const body = JSON.stringify({ system, messages: [{ role: "user", content: "hi" }] });
+    const out = JSON.parse(withPreservationInstruction(body, "anthropic", SURR));
+    expect(out.system.slice(0, system.length)).toEqual(system);
+    expect(out.system).toHaveLength(system.length + 1);
+    expect(out.system.at(-1)).toEqual({ type: "text", text: buildPreservationInstruction(SURR) });
+    expect(out.messages).toEqual([{ role: "user", content: "hi" }]);
   });
 
   it("sets anthropic `system` when absent", () => {

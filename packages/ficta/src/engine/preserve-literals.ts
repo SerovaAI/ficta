@@ -36,7 +36,8 @@ export function buildPreservationInstruction(surrogates: readonly string[]): str
 }
 
 /**
- * Inject the preservation instruction into a redacted request body at the wire's system/developer slot.
+ * Inject the preservation instruction into a redacted request body at the wire's system/developer slot
+ * (leading for the OpenAI wires, trailing for Anthropic — see the anthropic case for why).
  * Returns the body unchanged when there is nothing to do (no surrogates, unknown wire, non-JSON body, or
  * an unrecognised shape) so it can never corrupt a request it does not understand.
  */
@@ -68,12 +69,17 @@ export function withPreservationInstruction(body: string, wire: Wire, surrogates
       break;
     }
     case "anthropic": {
-      // Anthropic `system` is a string or an array of content blocks; prepend in whichever shape is present.
+      // Anthropic `system` is a string or an array of content blocks; APPEND in whichever shape is
+      // present. Never prepend: Claude Code subscription (OAuth) traffic carries an
+      // `x-anthropic-billing-header: …` block as `system[0]`, and api.anthropic.com rejects requests
+      // where that block is displaced with a bare `429 rate_limit_error "Error"` on every retry.
+      // Appending also keeps the caller's cached system prefix (its `cache_control` breakpoints)
+      // byte-identical, so a redacted turn no longer forces a full prompt-cache miss.
       const existing = obj.system;
       if (typeof existing === "string") {
-        obj.system = existing ? `${instruction}\n\n${existing}` : instruction;
+        obj.system = existing ? `${existing}\n\n${instruction}` : instruction;
       } else if (Array.isArray(existing)) {
-        obj.system = [{ type: "text", text: instruction }, ...existing];
+        obj.system = [...existing, { type: "text", text: instruction }];
       } else {
         obj.system = instruction;
       }

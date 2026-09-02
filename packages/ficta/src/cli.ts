@@ -21,10 +21,15 @@ import {
 import { renderStartupBanner, shouldPrintStartupDiagnostics } from "./startup-banner.js";
 import { ensureSurrogateKey, loadUserConfig } from "./user-config.js";
 
-// Capture any *shell* FICTA_PII_ENABLED before loadUserConfig() merges the TOML default in — the
-// agent-launch PII gate below distinguishes an explicit override from a config-derived value.
-const shellPiiEnabled = process.env.FICTA_PII_ENABLED;
-const shellSecretShapesEnabled = process.env.FICTA_SECRET_SHAPES_ENABLED;
+// Snapshot the environment as the shell handed it to us, before loadUserConfig() and
+// applyRuntimeEnvDefaults() merge config.toml and built-in defaults into process.env. Two uses:
+//   - the agent-launch PII/secret-shapes gates below distinguish an explicit shell override from a
+//     config-derived value;
+//   - the launched agent inherits only these shell FICTA_* values (sanitizeAgentEnv), never our
+//     merged runtime settings, so a nested launch re-resolves from config like a fresh shell would.
+const shellEnv: NodeJS.ProcessEnv = { ...process.env };
+const shellPiiEnabled = shellEnv.FICTA_PII_ENABLED;
+const shellSecretShapesEnabled = shellEnv.FICTA_SECRET_SHAPES_ENABLED;
 
 loadUserConfig();
 
@@ -159,7 +164,7 @@ if (disableReason) {
     process.stderr.write(`ficta: disabled but could not find real ${agent.command} outside the shim dir\n`);
     process.exit(127);
   }
-  const env = sanitizeAgentEnv(process.env);
+  const env = sanitizeAgentEnv(process.env, shellEnv);
   const plan = agent.configureBypass?.({ args: rest, realExecutable: agentPath, env, cwd: process.cwd() }) ?? {
     executable: agentPath,
     args: rest,
@@ -179,7 +184,9 @@ if (agent.shouldBypass?.(rest)) {
     process.stderr.write(`ficta: could not find real ${agent.command} outside the shim dir\n`);
     process.exit(127);
   }
-  process.exit(await runChild(spawn(agentPath, rest, { stdio: "inherit", env: sanitizeAgentEnv(process.env) })));
+  process.exit(
+    await runChild(spawn(agentPath, rest, { stdio: "inherit", env: sanitizeAgentEnv(process.env, shellEnv) })),
+  );
 }
 
 // Some invocations ask for behaviour that ficta's routing silently defeats (notably Claude Code's
@@ -208,8 +215,9 @@ if (allowEmpty) process.env.FICTA_ALLOW_EMPTY = "1";
 
 // Per-surface PII gate: this is a launched coding agent, so PII detection is off unless explicitly
 // opted in (see resolveAgentPiiEnabled). Force FICTA_PII_ENABLED to the resolved value before the
-// proxy loads — the engine, discovery/banner, and doctor all read that one var. The forced value
-// flows into the agent's own env via sanitizeAgentEnv, which is fine: the agent never reads it.
+// proxy loads — the engine, discovery/banner, and doctor all read that one var. sanitizeAgentEnv keeps
+// the forced value out of the agent's own env: the agent never reads it, and a nested launch would
+// otherwise mistake it for an explicit shell override (forcing PII — and the Presidio sidecar — on).
 process.env.FICTA_PII_ENABLED = resolveAgentPiiEnabled({
   shellValue: shellPiiEnabled,
   enabled: process.env.FICTA_PII_ENABLED,
@@ -315,7 +323,7 @@ const plan = agent.configureLaunch({
   baseUrl: base,
   args: rest,
   realExecutable: agentPath,
-  env: sanitizeAgentEnv(process.env),
+  env: sanitizeAgentEnv(process.env, shellEnv),
   cwd: process.cwd(),
 });
 
