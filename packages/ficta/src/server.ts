@@ -38,7 +38,7 @@ import {
   type RuntimeTraceCaptureOk,
 } from "@serovaai/ficta-protocol";
 import { type Context, Hono } from "hono";
-import { loadConfig, resolveTarget, upstreamPolicyIssue } from "./config.js";
+import { type Config, loadConfig, resolveTarget, upstreamPolicyIssue } from "./config.js";
 import { configPosture } from "./config-posture.js";
 import { createFictaControlRouter } from "./control-plane.js";
 import { detectorFailClosed } from "./engine/detection-policy.js";
@@ -132,781 +132,1049 @@ export async function startProxy(opts: StartProxyOptions = {}): Promise<ProxyHan
   // (cli.ts → startProxy). A bare-library engine with no sink wired stays silent by design.
   setEngineWarnSink((fields, message) => log.warn(fields, message));
   const cfg = loadConfig();
-  const configEditLocks = proxyConfigLockedFields();
   const engine: RedactionEngine = new ProtectionEngine({ plugins: opts.plugins ?? defaultRedactionPlugins });
   const stats = new ProtectionStats(protectionStatsPath, { captureDir: currentRunDir });
   const protectionTickets = new Map<string, ProtectionTicket>();
-  const egressProofs = new Map<string, EgressProof>();
-  const defaultScopeKey = normalizeScopeKey(opts.defaultScopeKey);
-  let runtimeTraceCaptureEnabled = false;
+  const state: ProxyState = {
+    cfg,
+    configEditLocks: proxyConfigLockedFields(),
+    engine,
+    stats,
+    protectionTickets,
+    egressProofs: new Map<string, EgressProof>(),
+    defaultScopeKey: normalizeScopeKey(opts.defaultScopeKey),
+    runtimeTraceCapture: { enabled: false },
+    controlHandler: createControlHandler(engine, stats, protectionTickets),
+  };
   const app = new Hono<{ Bindings: HttpBindings }>();
-  const controlHandler = new OpenAPIHandler(
+  app.all("*", (c) => handleProxyRequest(state, c));
+  return listen(app, state, opts);
+}
+
+/** Long-lived state shared by every request and control route of one proxy instance. */
+interface ProxyState {
+  cfg: Config;
+  configEditLocks: ReturnType<typeof proxyConfigLockedFields>;
+  engine: RedactionEngine;
+  stats: ProtectionStats;
+  protectionTickets: Map<string, ProtectionTicket>;
+  egressProofs: Map<string, EgressProof>;
+  /** Trusted process-owned scope for a dedicated single-agent proxy (see StartProxyOptions). */
+  defaultScopeKey: string | undefined;
+  /** Toggled at runtime by a loopback administrator through FICTA_TRACE_CAPTURE_PATH. */
+  runtimeTraceCapture: { enabled: boolean };
+  controlHandler: ReturnType<typeof createControlHandler>;
+}
+
+type ProxyContext = Context<{ Bindings: HttpBindings }>;
+
+/**
+ * Per-request state for one provider-bound request, fixed once the request has been admitted past
+ * the control plane and the registry gate. Every pipeline phase reads from here and reports into
+ * `traceRedactions` / `egressEvidence`; the phases themselves stay free of shared mutable state.
+ */
+interface RequestContext {
+  state: ProxyState;
+  c: ProxyContext;
+  url: URL;
+  method: string;
+  wire: Wire;
+  /** Redaction active for this request: the engine holds values, or a protection ticket was presented. */
+  protect: boolean;
+  scopeKey: string | undefined;
+  scope: RequestScope;
+  egressEvidence: EgressEvidence | undefined;
+  traceRedactions: ProtectionTraceRedaction[];
+  traceCapture: ReturnType<typeof traceCaptureDecisionFrom>;
+  captureRawBodies: boolean;
+  captureTraceAudit: boolean;
+  restoreHighlightOptions: Parameters<RequestScope["restoreText"]>[1];
+  requestedProtectionTicket: string | undefined;
+  preparedProtectionTicket: ProtectionTicket | undefined;
+}
+
+/** Where a request is going once the query string has been screened. */
+interface UpstreamRoute {
+  target: string;
+  route: string;
+}
+
+/** The screened request body plus the request id and model label the response phase logs against. */
+interface PreparedRequest {
+  bodyToSend: string | undefined;
+  n: number;
+  requestModel: string;
+}
+
+function createControlHandler(engine: RedactionEngine, stats: ProtectionStats, tickets: Map<string, ProtectionTicket>) {
+  return new OpenAPIHandler(
     createFictaControlRouter({
       status: () => protectionStatus(engine, stats),
       protectionPreview: (input, context) =>
-        protectionPreview(engine, protectionTickets, context.remoteAddress, context.scopeKey, input),
+        protectionPreview(engine, tickets, context.remoteAddress, context.scopeKey, input),
     }),
     { customErrorResponseBodyEncoder: encodeFictaControlError },
   );
+}
 
-  app.all("*", async (c) => {
-    const url = new URL(c.req.url);
-    const method = c.req.method;
-    // Belt-and-braces with the socket-level "upgrade" listener below: refuse WebSocket upgrade
-    // attempts locally instead of forwarding a doomed (but authenticated) GET upstream. Clients
-    // with an HTTP fallback (e.g. Pi's Codex transport) retry over SSE immediately.
-    if (c.req.raw.headers.get("upgrade")?.toLowerCase() === "websocket") {
-      return refusedWebSocketUpgradeResponse(c, url.pathname);
+/**
+ * The request pipeline. Each phase either produces the next phase's input or short-circuits with a
+ * `Response` (a control-plane answer, a refusal, or a fail-closed block); the orchestrator only
+ * sequences them. Phase order is load-bearing — see the comments on each phase for what it assumes
+ * has already happened.
+ */
+async function handleProxyRequest(state: ProxyState, c: ProxyContext): Promise<Response> {
+  const url = new URL(c.req.url);
+  const method = c.req.method;
+  // Belt-and-braces with the socket-level "upgrade" listener in listen(): refuse WebSocket upgrade
+  // attempts locally instead of forwarding a doomed (but authenticated) GET upstream. Clients
+  // with an HTTP fallback (e.g. Pi's Codex transport) retry over SSE immediately.
+  if (c.req.raw.headers.get("upgrade")?.toLowerCase() === "websocket") {
+    return refusedWebSocketUpgradeResponse(c, url.pathname);
+  }
+  const control = await handleControlRoute(state, c, url, method);
+  if (control) return control;
+  const registryBlock = registryGateResponse(state, c, url, method);
+  if (registryBlock) return registryBlock;
+
+  const req = beginProtectedRequest(state, c, url, method);
+  if (req instanceof Response) return req;
+
+  const query = await redactQuerySurface(req);
+  if (query instanceof Response) return query;
+
+  const routed = resolveUpstream(req, query.searchToSend, query.queryRedaction);
+  if (routed instanceof Response) return routed;
+
+  const headers = upstreamRequestHeaders(c.req.raw.headers);
+  const prepared = await prepareRequestBody(req, routed, headers, query.queryRedaction);
+  if (prepared instanceof Response) return prepared;
+
+  const headerBlock = await redactHeaderSurface(req, routed, headers, prepared);
+  if (headerBlock) return headerBlock;
+
+  const forwarded = await forwardUpstream(req, routed, headers, prepared);
+  if (forwarded instanceof Response) return forwarded;
+
+  return restoreUpstreamResponse(req, prepared, forwarded.upstream);
+}
+
+/**
+ * Ficta's own endpoints: the oRPC control plane, stats, egress proof, trace-capture and config
+ * administration, and live registry reload. Returns undefined for anything provider-bound. These
+ * stay reachable even when the registry gate below is closed, so an operator can inspect status
+ * and publish/fix the managed registry without restarting the proxy.
+ */
+async function handleControlRoute(
+  state: ProxyState,
+  c: ProxyContext,
+  url: URL,
+  method: string,
+): Promise<Response | undefined> {
+  const { stats, egressProofs, controlHandler } = state;
+  const controlMethod = FICTA_CONTROL_METHODS.get(url.pathname);
+  if (controlMethod) {
+    const allowed = method === controlMethod.method || (method === "HEAD" && controlMethod.allowHead);
+    if (!allowed) {
+      return c.json({ error: { type: "method_not_allowed", message: controlMethod.message } }, 405);
     }
-    const controlMethod = FICTA_CONTROL_METHODS.get(url.pathname);
-    if (controlMethod) {
-      const allowed = method === controlMethod.method || (method === "HEAD" && controlMethod.allowHead);
-      if (!allowed) {
-        return c.json({ error: { type: "method_not_allowed", message: controlMethod.message } }, 405);
-      }
-      const request = method === "HEAD" ? new Request(c.req.raw, { method: "GET" }) : c.req.raw;
-      const result = await controlHandler.handle(request, {
-        context: {
-          remoteAddress: c.env.incoming.socket.remoteAddress,
-          scopeKey: scopeKeyFrom(c),
-        },
-      });
-      if (result.matched) {
-        return c.newResponse(method === "HEAD" ? null : result.response.body, result.response);
-      }
-      return c.json({ error: { type: "not_found", message: "Ficta control route was not found." } }, 404);
+    const request = method === "HEAD" ? new Request(c.req.raw, { method: "GET" }) : c.req.raw;
+    const result = await controlHandler.handle(request, {
+      context: {
+        remoteAddress: c.env.incoming.socket.remoteAddress,
+        scopeKey: scopeKeyFrom(c),
+      },
+    });
+    if (result.matched) {
+      return c.newResponse(method === "HEAD" ? null : result.response.body, result.response);
     }
-    if (url.pathname === FICTA_PROTECTION_STATS_PATH) return c.json(protectionStatsResponse(stats, url));
-    if (url.pathname === FICTA_EGRESS_PROOF_PATH) {
-      if (method !== "GET")
-        return c.json({ error: { type: "method_not_allowed", message: "Use GET for egress proof." } }, 405);
-      if (!isLoopbackAddress(c.env.incoming.socket.remoteAddress)) {
-        return c.json({ error: { type: "forbidden", message: "Egress proof is loopback-only." } }, 403);
-      }
-      const scopeKey = scopeKeyFrom(c);
-      const eventId = egressEventIdFrom(c);
-      if (!scopeKey || !eventId) {
-        return c.json(
-          { error: { type: "invalid_request", message: "A trusted scope and egress event id are required." } },
-          400,
-        );
-      }
-      const proof = egressProofs.get(egressProofKey(scopeKey, eventId));
-      if (!proof) return c.json({ error: { type: "not_found", message: "Egress proof is not available yet." } }, 404);
-      return c.json({ ok: true, service: "ficta", proof });
+    return c.json({ error: { type: "not_found", message: "Ficta control route was not found." } }, 404);
+  }
+  if (url.pathname === FICTA_PROTECTION_STATS_PATH) return c.json(protectionStatsResponse(stats, url));
+  if (url.pathname === FICTA_EGRESS_PROOF_PATH) {
+    if (method !== "GET")
+      return c.json({ error: { type: "method_not_allowed", message: "Use GET for egress proof." } }, 405);
+    if (!isLoopbackAddress(c.env.incoming.socket.remoteAddress)) {
+      return c.json({ error: { type: "forbidden", message: "Egress proof is loopback-only." } }, 403);
     }
-    if (url.pathname === FICTA_TRACE_CAPTURE_PATH) {
-      if (!isLoopbackAddress(c.env.incoming.socket.remoteAddress)) {
-        return c.json(
-          {
-            ok: false,
-            service: "ficta",
-            status: "forbidden",
-            message: "Runtime trace capture can be administered only from loopback clients.",
-          } satisfies RuntimeTraceCaptureError,
-          403,
-        );
-      }
-      if (method === "GET") {
-        return c.json({
-          ok: true,
-          service: "ficta",
-          traceCapture: { enabled: runtimeTraceCaptureEnabled },
-        } satisfies RuntimeTraceCaptureOk);
-      }
-      if (method === "PATCH") {
-        let patch: unknown;
-        try {
-          patch = await c.req.json();
-        } catch {
-          patch = undefined;
-        }
-        if (!isRuntimeTraceCapturePatch(patch)) {
-          return c.json(
-            {
-              ok: false,
-              service: "ficta",
-              status: "invalid_patch",
-              message: "Trace capture patch must contain only an enabled boolean.",
-            } satisfies RuntimeTraceCaptureError,
-            400,
-          );
-        }
-        runtimeTraceCaptureEnabled = patch.enabled;
-        const traceCapture = { enabled: runtimeTraceCaptureEnabled };
-        log.warn(
-          { traceCaptureEnabled: traceCapture.enabled },
-          traceCapture.enabled
-            ? "Sensitive runtime trace capture enabled by a server administrator"
-            : "Sensitive runtime trace capture disabled by a server administrator",
-        );
-        return c.json({ ok: true, service: "ficta", traceCapture } satisfies RuntimeTraceCaptureOk);
-      }
-      return c.json({ error: { type: "method_not_allowed", message: "Use GET or PATCH for trace capture." } }, 405);
-    }
-    // Values-free config posture (see ConfigPosture). Kept separate from FICTA_STATUS_PATH, which the
-    // gateway's non-admin protection widget polls: transport config (upstreams, host/port, log dir)
-    // is admin-facing, and the gateway gates its fetch server-side. The proxy itself stays
-    // auth-free and loopback-bound; this endpoint adds no secrets to expose.
-    if (url.pathname === FICTA_CONFIG_PATH) {
-      if (method === "GET") {
-        const response: ProxyConfigOk = {
-          ok: true,
-          service: "ficta",
-          config: configPosture(cfg, process.env, { traceCapture: { enabled: runtimeTraceCaptureEnabled } }),
-          edit: proxyConfigEditState(cfg, configEditLocks),
-        };
-        return c.json(response);
-      }
-      if (method === "PATCH") {
-        const remoteAddress = c.env.incoming.socket.remoteAddress;
-        if (!isLoopbackAddress(remoteAddress)) {
-          return c.json(
-            {
-              ok: false,
-              service: "ficta",
-              status: "forbidden",
-              message: "Proxy config edits are accepted only from loopback clients.",
-            } satisfies ProxyConfigPatchError,
-            403,
-          );
-        }
-        let patch: unknown;
-        try {
-          patch = await c.req.json();
-        } catch {
-          return c.json(
-            {
-              ok: false,
-              service: "ficta",
-              status: "invalid_patch",
-              message: "Config patch must be valid JSON.",
-            } satisfies ProxyConfigPatchError,
-            400,
-          );
-        }
-        const result = applyProxyConfigPatch(cfg, patch, configEditLocks);
-        return c.json(result, result.ok ? 200 : result.status === "locked" ? 409 : 400);
-      }
-      return c.json({ error: { type: "method_not_allowed", message: "Use GET or PATCH for proxy config." } }, 405);
-    }
-    // Live registry reload: re-read the env-configured managed registry file(s) and register any NEW
-    // values into the running engine (the gateway's "Publish to proxy" action). The request body is
-    // never read — no paths or values are accepted from the caller; reload can only re-load what the
-    // operator already configured via FICTA_REGISTRY_MANAGED_FILE_PATHS. Deletions apply on restart
-    // (see ProtectionEngine.reloadRegistryValues). Response carries counts only, never values.
-    if (url.pathname === FICTA_REGISTRY_RELOAD_PATH) {
-      if (method !== "POST") {
-        return c.json({ error: { type: "method_not_allowed", message: "Use POST for registry reload." } }, 405);
-      }
-      const remoteAddress = c.env.incoming.socket.remoteAddress;
-      if (!isLoopbackAddress(remoteAddress)) {
-        return c.json(
-          {
-            ok: false,
-            service: "ficta",
-            status: "forbidden",
-            message: "Registry reload is accepted only from loopback clients.",
-          } satisfies RegistryReloadError,
-          403,
-        );
-      }
-      if (!engine.reloadRegistryValues) {
-        return c.json(
-          {
-            ok: false,
-            service: "ficta",
-            status: "unsupported",
-            message: "This engine has no reloadable registry.",
-          } satisfies RegistryReloadError,
-          501,
-        );
-      }
-      // Explicit cache bust before reloading: the stat-based cache key catches ordinary file edits, but
-      // a rewrite landing with an identical {mtimeMs, size} fingerprint would otherwise be missed.
-      resetManagedRegistryFilePluginCache();
-      let reloaded: ReturnType<NonNullable<typeof engine.reloadRegistryValues>>;
-      try {
-        reloaded = engine.reloadRegistryValues();
-      } catch (error) {
-        retainManagedRegistryFilePluginCacheForCurrentFiles();
-        log.warn({ error }, "registry reload rejected invalid source data; retaining the active registry");
-        return c.json(
-          {
-            ok: false,
-            service: "ficta",
-            status: "invalid_registry",
-            message: error instanceof Error ? error.message : "Managed registry validation failed.",
-          } satisfies RegistryReloadError,
-          409,
-        );
-      }
-      // Counts-only source health and revision acknowledgement; managed registry responses do not expose values.
-      const expectedRevision = c.req.header(FICTA_REGISTRY_REVISION_HEADER)?.trim();
-      const { revisions, ...managed } = managedRegistryLoadCounts();
-      const revision = expectedRevision && revisions.includes(expectedRevision) ? expectedRevision : undefined;
-      log.info(
-        {
-          added: reloaded.added,
-          total: reloaded.total,
-          restartRequired: reloaded.restartRequired,
-          ...managed,
-          revisionConfirmed: revision !== undefined,
-        },
-        `🔄 registry reload: +${reloaded.added} value(s), ${reloaded.total} total`,
+    const scopeKey = scopeKeyFrom(c);
+    const eventId = egressEventIdFrom(c);
+    if (!scopeKey || !eventId) {
+      return c.json(
+        { error: { type: "invalid_request", message: "A trusted scope and egress event id are required." } },
+        400,
       );
-      const response: RegistryReloadOk = {
-        ok: true,
+    }
+    const proof = egressProofs.get(egressProofKey(scopeKey, eventId));
+    if (!proof) return c.json({ error: { type: "not_found", message: "Egress proof is not available yet." } }, 404);
+    return c.json({ ok: true, service: "ficta", proof });
+  }
+  if (url.pathname === FICTA_TRACE_CAPTURE_PATH) return handleTraceCaptureRoute(state, c, method);
+  if (url.pathname === FICTA_CONFIG_PATH) return handleConfigRoute(state, c, method);
+  if (url.pathname === FICTA_REGISTRY_RELOAD_PATH) return handleRegistryReloadRoute(state, c, method);
+  return undefined;
+}
+
+/**
+ * Loopback-only runtime toggle for sensitive trace capture (GET reads, PATCH sets).
+ */
+async function handleTraceCaptureRoute(state: ProxyState, c: ProxyContext, method: string): Promise<Response> {
+  const { runtimeTraceCapture } = state;
+  if (!isLoopbackAddress(c.env.incoming.socket.remoteAddress)) {
+    return c.json(
+      {
+        ok: false,
         service: "ficta",
-        registry: { ...reloaded, ...managed, ...(revision ? { revision } : {}) },
-      };
-      return c.json(response);
+        status: "forbidden",
+        message: "Runtime trace capture can be administered only from loopback clients.",
+      } satisfies RuntimeTraceCaptureError,
+      403,
+    );
+  }
+  if (method === "GET") {
+    return c.json({
+      ok: true,
+      service: "ficta",
+      traceCapture: { enabled: runtimeTraceCapture.enabled },
+    } satisfies RuntimeTraceCaptureOk);
+  }
+  if (method === "PATCH") {
+    let patch: unknown;
+    try {
+      patch = await c.req.json();
+    } catch {
+      patch = undefined;
     }
-
-    // Strict registry mode is a runtime egress invariant, not only an agent-launch preflight. Keep
-    // control-plane endpoints above reachable so an operator can inspect status and publish/fix the
-    // managed registry without restarting the proxy; only provider-bound traffic is paused.
-    const registry = registryProtectionStatus(engine);
-    if (registry.required && registry.status !== "ready") {
-      log.warn(
-        { method, path: url.pathname, registryStatus: registry.status },
-        "Provider request blocked because the required protected registry is not ready",
+    if (!isRuntimeTraceCapturePatch(patch)) {
+      return c.json(
+        {
+          ok: false,
+          service: "ficta",
+          status: "invalid_patch",
+          message: "Trace capture patch must contain only an enabled boolean.",
+        } satisfies RuntimeTraceCaptureError,
+        400,
       );
+    }
+    runtimeTraceCapture.enabled = patch.enabled;
+    const traceCapture = { enabled: runtimeTraceCapture.enabled };
+    log.warn(
+      { traceCaptureEnabled: traceCapture.enabled },
+      traceCapture.enabled
+        ? "Sensitive runtime trace capture enabled by a server administrator"
+        : "Sensitive runtime trace capture disabled by a server administrator",
+    );
+    return c.json({ ok: true, service: "ficta", traceCapture } satisfies RuntimeTraceCaptureOk);
+  }
+  return c.json({ error: { type: "method_not_allowed", message: "Use GET or PATCH for trace capture." } }, 405);
+}
+
+/**
+ * Config posture (GET) and loopback-only config edits (PATCH).
+ *  Values-free config posture (see ConfigPosture). Kept separate from FICTA_STATUS_PATH, which the
+ *  gateway's non-admin protection widget polls: transport config (upstreams, host/port, log dir)
+ *  is admin-facing, and the gateway gates its fetch server-side. The proxy itself stays
+ *  auth-free and loopback-bound; this endpoint adds no secrets to expose.
+ */
+async function handleConfigRoute(state: ProxyState, c: ProxyContext, method: string): Promise<Response> {
+  const { cfg, configEditLocks, runtimeTraceCapture } = state;
+  if (method === "GET") {
+    const response: ProxyConfigOk = {
+      ok: true,
+      service: "ficta",
+      config: configPosture(cfg, process.env, { traceCapture: { enabled: runtimeTraceCapture.enabled } }),
+      edit: proxyConfigEditState(cfg, configEditLocks),
+    };
+    return c.json(response);
+  }
+  if (method === "PATCH") {
+    const remoteAddress = c.env.incoming.socket.remoteAddress;
+    if (!isLoopbackAddress(remoteAddress)) {
+      return c.json(
+        {
+          ok: false,
+          service: "ficta",
+          status: "forbidden",
+          message: "Proxy config edits are accepted only from loopback clients.",
+        } satisfies ProxyConfigPatchError,
+        403,
+      );
+    }
+    let patch: unknown;
+    try {
+      patch = await c.req.json();
+    } catch {
+      return c.json(
+        {
+          ok: false,
+          service: "ficta",
+          status: "invalid_patch",
+          message: "Config patch must be valid JSON.",
+        } satisfies ProxyConfigPatchError,
+        400,
+      );
+    }
+    const result = applyProxyConfigPatch(cfg, patch, configEditLocks);
+    return c.json(result, result.ok ? 200 : result.status === "locked" ? 409 : 400);
+  }
+  return c.json({ error: { type: "method_not_allowed", message: "Use GET or PATCH for proxy config." } }, 405);
+}
+
+/**
+ * Loopback-only live reload of the managed protected registry (POST).
+ *  Live registry reload: re-read the env-configured managed registry file(s) and register any NEW
+ *  values into the running engine (the gateway's "Publish to proxy" action). The request body is
+ *  never read — no paths or values are accepted from the caller; reload can only re-load what the
+ *  operator already configured via FICTA_REGISTRY_MANAGED_FILE_PATHS. Deletions apply on restart
+ *  (see ProtectionEngine.reloadRegistryValues). Response carries counts only, never values.
+ */
+async function handleRegistryReloadRoute(state: ProxyState, c: ProxyContext, method: string): Promise<Response> {
+  const { engine } = state;
+  if (method !== "POST") {
+    return c.json({ error: { type: "method_not_allowed", message: "Use POST for registry reload." } }, 405);
+  }
+  const remoteAddress = c.env.incoming.socket.remoteAddress;
+  if (!isLoopbackAddress(remoteAddress)) {
+    return c.json(
+      {
+        ok: false,
+        service: "ficta",
+        status: "forbidden",
+        message: "Registry reload is accepted only from loopback clients.",
+      } satisfies RegistryReloadError,
+      403,
+    );
+  }
+  if (!engine.reloadRegistryValues) {
+    return c.json(
+      {
+        ok: false,
+        service: "ficta",
+        status: "unsupported",
+        message: "This engine has no reloadable registry.",
+      } satisfies RegistryReloadError,
+      501,
+    );
+  }
+  // Explicit cache bust before reloading: the stat-based cache key catches ordinary file edits, but
+  // a rewrite landing with an identical {mtimeMs, size} fingerprint would otherwise be missed.
+  resetManagedRegistryFilePluginCache();
+  let reloaded: ReturnType<NonNullable<typeof engine.reloadRegistryValues>>;
+  try {
+    reloaded = engine.reloadRegistryValues();
+  } catch (error) {
+    retainManagedRegistryFilePluginCacheForCurrentFiles();
+    log.warn({ error }, "registry reload rejected invalid source data; retaining the active registry");
+    return c.json(
+      {
+        ok: false,
+        service: "ficta",
+        status: "invalid_registry",
+        message: error instanceof Error ? error.message : "Managed registry validation failed.",
+      } satisfies RegistryReloadError,
+      409,
+    );
+  }
+  // Counts-only source health and revision acknowledgement; managed registry responses do not expose values.
+  const expectedRevision = c.req.header(FICTA_REGISTRY_REVISION_HEADER)?.trim();
+  const { revisions, ...managed } = managedRegistryLoadCounts();
+  const revision = expectedRevision && revisions.includes(expectedRevision) ? expectedRevision : undefined;
+  log.info(
+    {
+      added: reloaded.added,
+      total: reloaded.total,
+      restartRequired: reloaded.restartRequired,
+      ...managed,
+      revisionConfirmed: revision !== undefined,
+    },
+    `🔄 registry reload: +${reloaded.added} value(s), ${reloaded.total} total`,
+  );
+  const response: RegistryReloadOk = {
+    ok: true,
+    service: "ficta",
+    registry: { ...reloaded, ...managed, ...(revision ? { revision } : {}) },
+  };
+  return c.json(response);
+}
+
+/**
+ * Strict registry mode is a runtime egress invariant, not only an agent-launch preflight: while the
+ * required protected registry is not ready, provider-bound traffic is paused with a 503. Runs after
+ * the control routes so operators keep their status and reload endpoints.
+ */
+function registryGateResponse(state: ProxyState, c: ProxyContext, url: URL, method: string): Response | undefined {
+  const registry = registryProtectionStatus(state.engine);
+  if (!registry.required || registry.status === "ready") return undefined;
+  log.warn(
+    { method, path: url.pathname, registryStatus: registry.status },
+    "Provider request blocked because the required protected registry is not ready",
+  );
+  return c.json(
+    {
+      error: {
+        type: "ficta_registry_unavailable",
+        message: registry.message,
+      },
+    },
+    503,
+  );
+}
+
+/**
+ * Admit a provider-bound request: decide whether it is protected, open its detected-value scope,
+ * start egress evidence, and validate any protection ticket it presents. Protect every outbound
+ * request body, query string, and non-auth header by default — provider/client paths change, and
+ * an "unknown" route can still carry conversation/tool content; exact-match redaction is safe.
+ */
+function beginProtectedRequest(
+  state: ProxyState,
+  c: ProxyContext,
+  url: URL,
+  method: string,
+): RequestContext | Response {
+  const { cfg, engine, protectionTickets, egressProofs } = state;
+  const requestedProtectionTicket = c.req.header(FICTA_PROTECTION_TICKET_HEADER)?.trim();
+  const protect = engine.protecting || Boolean(requestedProtectionTicket);
+  const wire = wireOf(url.pathname);
+  const traceCapture = traceCaptureDecisionFrom(c, state.runtimeTraceCapture.enabled, cfg.traceAudit);
+  const restoreHighlightMarkers =
+    c.req.header(FICTA_RESTORE_HIGHLIGHT_HEADER) === "1"
+      ? {
+          start: FICTA_RESTORE_HIGHLIGHT_START,
+          origin: FICTA_RESTORE_HIGHLIGHT_ORIGIN,
+          metadata: FICTA_RESTORE_HIGHLIGHT_METADATA,
+          end: FICTA_RESTORE_HIGHLIGHT_END,
+        }
+      : undefined;
+
+  // One scope per request: registered secrets (the permanent layer) are shared, while detected
+  // PII is consulted only within the request's scope. Without a scope key the scope is dropped
+  // when the handler returns, so detected values are bounded and can never be restored into
+  // another request's response. A trusted caller may pin a persistent per-thread detected vault
+  // via the internal scope header (see scopeKeyFrom); isolation then holds across keys instead.
+  // A launched coding agent gets a process-owned scope: its loopback proxy serves exactly one
+  // child process, so detected values may safely survive model requests and hidden compaction
+  // calls for that agent's lifetime. Standalone/web callers still supply an explicit trusted key.
+  const scopeKey = state.defaultScopeKey ?? scopeKeyFrom(c);
+  const scope = engine.beginRequest(scopeKey);
+  const egressEvidence = createEgressEvidence({
+    scopeKey,
+    eventId: egressEventIdFrom(c),
+    protectedRequest: protect,
+    proofs: egressProofs,
+  });
+  let preparedProtectionTicket: ProtectionTicket | undefined;
+  if (requestedProtectionTicket) {
+    const prepared = protectionTickets.get(requestedProtectionTicket);
+    if (!prepared || prepared.expiresAt <= Date.now() || prepared.scopeKey !== scopeKey) {
+      if (prepared?.expiresAt !== undefined && prepared.expiresAt <= Date.now()) {
+        protectionTickets.delete(requestedProtectionTicket);
+      }
       return c.json(
         {
           error: {
-            type: "ficta_registry_unavailable",
-            message: registry.message,
+            type: "ficta_protection_preview_stale",
+            message: "Protection preview expired or does not belong to this chat. Preview again before sending.",
           },
         },
-        503,
+        409,
       );
     }
-
-    // Protect every outbound request body, query string, and non-auth header by default.
-    // Provider/client paths change, and an "unknown" route can still carry conversation/tool
-    // content; exact-match redaction is safe.
-    const requestedProtectionTicket = c.req.header(FICTA_PROTECTION_TICKET_HEADER)?.trim();
-    const protect = engine.protecting || Boolean(requestedProtectionTicket);
-    const wire = wireOf(url.pathname);
-    const traceCapture = traceCaptureDecisionFrom(c, runtimeTraceCaptureEnabled, cfg.traceAudit);
-    const captureRawBodies = traceCapture.bodyLogged;
-    const captureTraceAudit = traceCapture.valueAuditLogged;
-    const restoreHighlightMarkers =
-      c.req.header(FICTA_RESTORE_HIGHLIGHT_HEADER) === "1"
-        ? {
-            start: FICTA_RESTORE_HIGHLIGHT_START,
-            origin: FICTA_RESTORE_HIGHLIGHT_ORIGIN,
-            metadata: FICTA_RESTORE_HIGHLIGHT_METADATA,
-            end: FICTA_RESTORE_HIGHLIGHT_END,
-          }
-        : undefined;
-    const restoreHighlightOptions = restoreHighlightMarkers ? { markers: restoreHighlightMarkers } : undefined;
-
-    // One scope per request: registered secrets (the permanent layer) are shared, while detected
-    // PII is consulted only within the request's scope. Without a scope key the scope is dropped
-    // when the handler returns, so detected values are bounded and can never be restored into
-    // another request's response. A trusted caller may pin a persistent per-thread detected vault
-    // via the internal scope header (see scopeKeyFrom); isolation then holds across keys instead.
-    // A launched coding agent gets a process-owned scope: its loopback proxy serves exactly one
-    // child process, so detected values may safely survive model requests and hidden compaction
-    // calls for that agent's lifetime. Standalone/web callers still supply an explicit trusted key.
-    const scopeKey = defaultScopeKey ?? scopeKeyFrom(c);
-    const scope = engine.beginRequest(scopeKey);
-    const egressEvidence = createEgressEvidence({
-      scopeKey,
-      eventId: egressEventIdFrom(c),
-      protectedRequest: protect,
-      proofs: egressProofs,
-    });
-    let preparedProtectionTicket: ProtectionTicket | undefined;
-    if (requestedProtectionTicket) {
-      const prepared = protectionTickets.get(requestedProtectionTicket);
-      if (!prepared || prepared.expiresAt <= Date.now() || prepared.scopeKey !== scopeKey) {
-        if (prepared?.expiresAt !== undefined && prepared.expiresAt <= Date.now()) {
-          protectionTickets.delete(requestedProtectionTicket);
-        }
-        return c.json(
-          {
-            error: {
-              type: "ficta_protection_preview_stale",
-              message: "Protection preview expired or does not belong to this chat. Preview again before sending.",
-            },
-          },
-          409,
-        );
-      }
-      if (method === "GET" || method === "HEAD") {
-        return c.json(
-          { error: { type: "ficta_protection_preview_stale", message: "Protection tickets require a request body." } },
-          409,
-        );
-      }
-      preparedProtectionTicket = prepared;
+    if (method === "GET" || method === "HEAD") {
+      return c.json(
+        { error: { type: "ficta_protection_preview_stale", message: "Protection tickets require a request body." } },
+        409,
+      );
     }
-    const traceRedactions: ProtectionTraceRedaction[] = [];
+    preparedProtectionTicket = prepared;
+  }
+  return {
+    state,
+    c,
+    url,
+    method,
+    wire,
+    protect,
+    scopeKey,
+    scope,
+    egressEvidence,
+    traceRedactions: [],
+    traceCapture,
+    captureRawBodies: traceCapture.bodyLogged,
+    captureTraceAudit: traceCapture.valueAuditLogged,
+    restoreHighlightOptions: restoreHighlightMarkers ? { markers: restoreHighlightMarkers } : undefined,
+    requestedProtectionTicket,
+    preparedProtectionTicket,
+  };
+}
 
-    let searchToSend = url.search;
-    let queryRedaction: SurfaceRedaction | undefined;
-    if (protect && searchToSend) {
-      let redactedQuery: QueryRedaction;
-      try {
-        redactedQuery = await redactQueryString(scope, url, captureTraceAudit);
-      } catch (err) {
-        if (err instanceof DetectorUnavailableError) {
-          const n = logRequest({
-            method,
-            path: url.pathname,
-            body: "",
-            target: "<blocked>",
-            route: "blocked",
-            captureRawBodies,
-            traceCapture,
-          });
-          recordDetectorUnavailable(stats, scope, traceRedactions, {
-            evidence: egressEvidence,
-            requestId: n,
-            method,
-            path: url.pathname,
-            wire,
-            route: "blocked",
-            surface: "query string",
-            captureTraceAudit,
-          });
-          return blockedDetectionResponse(c, err.plugin, n);
-        }
-        throw err;
-      }
-      const { search: redactedSearch, ...redaction } = redactedQuery;
-      queryRedaction = redaction;
-      if (redaction.leaks > 0 && cfg.failClosed) {
-        const n = logRequest({
-          method,
-          path: url.pathname,
-          body: "",
-          target: "<blocked>",
-          route: "blocked",
-          captureRawBodies,
-          traceCapture,
-        });
-        recordProtection(stats, scope, traceRedactions, {
-          evidence: egressEvidence,
-          requestId: n,
-          method,
-          path: url.pathname,
-          wire,
-          surface: "query string",
-          redaction,
-          blocked: true,
-        });
-        writeProtectionTraceAudit(n, traceRedactions, scope, "blocked", captureTraceAudit);
-        return blockedLeakResponse(c, "query string", redaction.leaks, n, redaction.leakHits);
-      }
-      if (redaction.count > 0) searchToSend = redactedSearch;
-    }
+/** Screen the query string. Blocked outcomes log a request id of their own since no body was read yet. */
+async function redactQuerySurface(
+  req: RequestContext,
+): Promise<{ searchToSend: string; queryRedaction: SurfaceRedaction | undefined } | Response> {
+  const { c, url, method, wire, scope, protect, egressEvidence, traceRedactions, traceCapture } = req;
+  const { cfg, stats } = req.state;
+  const { captureRawBodies, captureTraceAudit } = req;
+  let searchToSend = url.search;
+  let queryRedaction: SurfaceRedaction | undefined;
+  if (!protect || !searchToSend) return { searchToSend, queryRedaction };
 
-    const { url: target, note: route } = resolveTarget(cfg, url.pathname, searchToSend, c.req.raw.headers);
-    const upstreamIssue = upstreamPolicyIssue(cfg, target);
-    if (upstreamIssue) {
+  let redactedQuery: QueryRedaction;
+  try {
+    redactedQuery = await redactQueryString(scope, url, captureTraceAudit);
+  } catch (err) {
+    if (err instanceof DetectorUnavailableError) {
       const n = logRequest({
         method,
         path: url.pathname,
         body: "",
         target: "<blocked>",
-        route,
+        route: "blocked",
         captureRawBodies,
         traceCapture,
       });
-      if (queryRedaction) {
-        recordProtection(stats, scope, traceRedactions, {
-          evidence: egressEvidence,
-          requestId: n,
-          method,
-          path: url.pathname,
-          wire,
-          route,
-          surface: "query string",
-          redaction: queryRedaction,
-          blocked: false,
-        });
-      }
-      writeProtectionTraceAudit(n, traceRedactions, scope, "blocked", captureTraceAudit);
-      egressEvidence?.finish("blocked");
-      return c.json({ error: { type: "ficta_upstream_policy", message: upstreamIssue } }, 403);
-    }
-
-    const headers = new Headers(c.req.raw.headers);
-    headers.delete("host");
-    headers.delete("content-length");
-    headers.delete("accept-encoding");
-    // Every x-ficta-* header is internal control metadata (scope routing, egress audit, trace
-    // capture, restore highlighting, protection tickets, retired selectors) — sweep the whole
-    // prefix so no current or future control header can ever reach the upstream vendor.
-    for (const name of Array.from(headers.keys())) {
-      if (name.startsWith("x-ficta-")) headers.delete(name);
-    }
-
-    let bodyToSend: string | undefined;
-    let n: number;
-    let requestModel = "unknown";
-
-    if (method !== "GET" && method !== "HEAD") {
-      // Decode a compressed request body (e.g. Pi zstd-compresses its Codex-backend POSTs) so
-      // redaction screens the real text — the alternative is screening mojibake and forwarding a
-      // corrupted body. Undecodable bodies are refused outright: opaque bytes cannot be screened.
-      let bodyText: string;
-      const raw = await readBoundedRequestBody(c.req.raw);
-      if (raw === null) return refusedRequestTooLargeResponse(c, method, url.pathname);
-      try {
-        const decodedBody = decodeRequestBody(raw, headers.get("content-encoding"));
-        // The upstream request carries the decoded body, so the coding header must not survive.
-        if (decodedBody.decoded) headers.delete("content-encoding");
-        bodyText = new TextDecoder().decode(decodedBody.body);
-      } catch (err) {
-        if (err instanceof RequestBodyDecodeError) return refusedRequestEncodingResponse(c, err, method, url.pathname);
-        throw err;
-      }
-      if (requestedProtectionTicket && preparedProtectionTicket) {
-        const stillCurrent = protectionTickets.get(requestedProtectionTicket);
-        if (
-          stillCurrent !== preparedProtectionTicket ||
-          preparedProtectionTicket.expiresAt <= Date.now() ||
-          !requestContainsReviewedText(bodyText, preparedProtectionTicket.textSha256)
-        ) {
-          if (stillCurrent === preparedProtectionTicket) protectionTickets.delete(requestedProtectionTicket);
-          return c.json(
-            {
-              error: {
-                type: "ficta_protection_preview_stale",
-                message: "The outbound message no longer matches the protection preview. Preview again before sending.",
-              },
-            },
-            409,
-          );
-        }
-        // Consume atomically before any detector/upstream await. Concurrent replay sees a missing ticket.
-        protectionTickets.delete(requestedProtectionTicket);
-        scope.registerProtectedValues(preparedProtectionTicket.protectedValues.map(userProtectedValue));
-      }
-      const originalModel = requestModelFromBody(bodyText);
-      n = logRequest({ method, path: url.pathname, body: bodyText, target, route, captureRawBodies, traceCapture });
-
-      if (protect) {
-        let redaction: Awaited<ReturnType<typeof scope.redactBodyDetailed>>;
-        try {
-          redaction = await scope.redactBodyDetailed(bodyText, {
-            path: url.pathname,
-            traceValues: captureTraceAudit,
-          });
-        } catch (err) {
-          // A fail-closed detector (e.g. Presidio required but unreachable) refuses the request rather
-          // than forwarding data it could not screen. The raw body has not left the process.
-          if (err instanceof DetectorUnavailableError) {
-            recordDetectorUnavailable(stats, scope, traceRedactions, {
-              evidence: egressEvidence,
-              requestId: n,
-              method,
-              path: url.pathname,
-              wire,
-              route,
-              model: safeRequestModel(scope, originalModel, undefined),
-              surface: "body",
-              captureTraceAudit,
-            });
-            return blockedDetectionResponse(c, err.plugin, n);
-          }
-          if (err instanceof RedactionInvariantError) return blockedInvariantResponse(c, err.reason, n);
-          throw err;
-        }
-        const redacted = redaction.body;
-        requestModel = safeRequestModel(scope, originalModel, requestModelFromBody(redacted));
-        if (queryRedaction) {
-          recordProtection(stats, scope, traceRedactions, {
-            evidence: egressEvidence,
-            requestId: n,
-            method,
-            path: url.pathname,
-            wire,
-            route,
-            model: requestModel,
-            surface: "query string",
-            redaction: queryRedaction,
-            blocked: false,
-          });
-        }
-        if (redaction.leaks > 0 && cfg.failClosed) {
-          recordProtection(stats, scope, traceRedactions, {
-            evidence: egressEvidence,
-            requestId: n,
-            method,
-            path: url.pathname,
-            wire,
-            route,
-            model: requestModel,
-            surface: "body",
-            redaction,
-            blocked: true,
-          });
-          writeProtectionTraceAudit(n, traceRedactions, scope, "blocked", captureTraceAudit);
-          return blockedLeakResponse(c, "body", redaction.leaks, n, redaction.leakHits);
-        }
-        if (redaction.count > 0 || redaction.leaks > 0) {
-          recordProtection(stats, scope, traceRedactions, {
-            evidence: egressEvidence,
-            requestId: n,
-            method,
-            path: url.pathname,
-            wire,
-            route,
-            model: requestModel,
-            surface: "body",
-            redaction,
-            blocked: false,
-          });
-          if (redaction.count > 0) {
-            const warn = redaction.leaks > 0 ? `  ⚠ ${redaction.leaks} LEAKED (fail-open)` : "";
-            const ambiguity =
-              redaction.ambiguousEntityLinks > 0 ? `; ${redaction.ambiguousEntityLinks} ambiguous entity link(s)` : "";
-            const fields = {
-              reqId: n,
-              kept: redaction.count,
-              leaked: redaction.leaks,
-              ambiguousEntityLinks: redaction.ambiguousEntityLinks,
-              surface: "body",
-            };
-            const msg = `🔒 kept ${redaction.count} body value(s) out of the model${warn}${ambiguity}`;
-            if (redaction.leaks > 0) log.warn(fields, msg);
-            else log.info(fields, msg);
-          }
-        }
-        bodyToSend = redacted;
-        // Tell the model to preserve the surrogate literals verbatim (opt-in). Runs after the fail-closed
-        // leak gate and only adds surrogate tokens the proxy already minted, so it introduces no new leak.
-        if (cfg.preserveLiterals) {
-          const surrogates = scope.mintedSurrogatesIn(redacted);
-          if (surrogates.length > 0) bodyToSend = withPreservationInstruction(redacted, wire, surrogates);
-        }
-        if (captureRawBodies) writeCaptureFile(`req-${String(n).padStart(4, "0")}.sent.json`, bodyToSend);
-      } else {
-        bodyToSend = bodyText;
-      }
-    } else {
-      n = logRequest({ method, path: url.pathname, body: "", target, route, captureRawBodies, traceCapture });
-      if (queryRedaction) {
-        recordProtection(stats, scope, traceRedactions, {
-          evidence: egressEvidence,
-          requestId: n,
-          method,
-          path: url.pathname,
-          wire,
-          route,
-          surface: "query string",
-          redaction: queryRedaction,
-          blocked: false,
-        });
-      }
-    }
-
-    if (protect) {
-      let redaction: SurfaceRedaction;
-      try {
-        redaction = await redactNonAuthHeaders(scope, headers, captureTraceAudit);
-      } catch (err) {
-        if (err instanceof DetectorUnavailableError) {
-          recordDetectorUnavailable(stats, scope, traceRedactions, {
-            evidence: egressEvidence,
-            requestId: n,
-            method,
-            path: url.pathname,
-            wire,
-            route,
-            model: requestModel,
-            surface: "non-auth headers",
-            captureTraceAudit,
-          });
-          return blockedDetectionResponse(c, err.plugin, n);
-        }
-        throw err;
-      }
-      if (redaction.leaks > 0 && cfg.failClosed) {
-        recordProtection(stats, scope, traceRedactions, {
-          evidence: egressEvidence,
-          requestId: n,
-          method,
-          path: url.pathname,
-          wire,
-          route,
-          model: requestModel,
-          surface: "non-auth headers",
-          redaction,
-          blocked: true,
-        });
-        writeProtectionTraceAudit(n, traceRedactions, scope, "blocked", captureTraceAudit);
-        return blockedLeakResponse(c, "headers", redaction.leaks, n, redaction.leakHits);
-      }
-      if (redaction.count > 0 || redaction.leaks > 0) {
-        recordProtection(stats, scope, traceRedactions, {
-          evidence: egressEvidence,
-          requestId: n,
-          method,
-          path: url.pathname,
-          wire,
-          route,
-          model: requestModel,
-          surface: "non-auth headers",
-          redaction,
-          blocked: false,
-        });
-        if (redaction.count > 0) {
-          const warn = redaction.leaks > 0 ? `  ⚠ ${redaction.leaks} LEAKED (fail-open)` : "";
-          const fields = { reqId: n, kept: redaction.count, leaked: redaction.leaks, surface: "non-auth headers" };
-          const msg = `🔒 kept ${redaction.count} non-auth header value(s) out of the model${warn}`;
-          if (redaction.leaks > 0) log.warn(fields, msg);
-          else log.info(fields, msg);
-        }
-      }
-    }
-
-    let upstreamRes: Response;
-    try {
-      upstreamRes = await fetch(target, { method, headers, body: bodyToSend });
-    } catch (err) {
-      const diagnostic = upstreamErrorDiagnostic(err);
-      const message = formatUpstreamError(diagnostic);
-      log.error({ reqId: n, err: diagnostic }, `✗ upstream fetch failed: ${message}`);
-      writeProtectionTraceAudit(n, traceRedactions, scope, "upstream-error", captureTraceAudit);
-      egressEvidence?.finish("upstream_error", requestModel);
-      return c.json({ error: { type: "ficta_upstream_error", message, diagnostic } }, 502);
-    }
-    egressEvidence?.finish("forwarded", requestModel);
-
-    const resHeaders = new Headers(upstreamRes.headers);
-    resHeaders.delete("content-encoding");
-    resHeaders.delete("content-length");
-    // We always re-frame the body (stream restore or buffered JSON restore), so the upstream's
-    // framing header must not survive: a buffered restore sets Content-Length, which is illegal
-    // alongside a forwarded Transfer-Encoding: chunked.
-    resHeaders.delete("transfer-encoding");
-    const contentType = resHeaders.get("content-type") ?? "";
-    // Some upstreams stream SSE with no content-type header — notably the ChatGPT/Codex backend
-    // (`/backend-api/codex/responses`). When the type is missing but the request is a known model
-    // wire, the response is that wire's event stream, so restore it instead of passing surrogates
-    // through verbatim (which would leak FICTA_ placeholders into the agent's output).
-    const treatAsEventStream = isEventStreamContentType(contentType) || (contentType === "" && wire !== "unknown");
-    const restoreResponse = protect && (isRestorableContentType(contentType) || treatAsEventStream);
-
-    // Symmetric with the `🔒 … kept N` egress line: report how many distinct values were restored
-    // back into this response. Restore is a streaming rewrite, so for streamed bodies this fires from
-    // the tap's flush once the stream closes (i.e. after the `← #N` line); for buffered bodies it
-    // fires inline the moment restore has run. Zero restores (the common case) stay quiet.
-    const logRestore = () => {
-      const restored = scope.restoredCount;
-      if (restored > 0) {
-        log.info({ reqId: n, restored }, `♻️ restored ${restored} value(s) in response`);
-      }
-      // A registered/detected value the model tried to place into a tool-call argument was held
-      // back (a placeholder went to the tool instead of the real secret). Surfacing it turns a
-      // silent exfil attempt into an operator-visible signal. See FICTA_RESTORE_INTO_TOOLS.
-      const withheld = scope.withheldFromToolsCount;
-      if (withheld > 0) {
-        log.warn({ reqId: n, withheld }, `🛡️ withheld ${withheld} value(s) from tool-call arguments`);
-      }
-      // The complement of the line above: values that DID go into a tool-call argument. These restore
-      // one JSON context deeper than the body, so they are the ones an escaping bug can corrupt —
-      // worth its own line rather than being folded into the `restored` total.
-      const restoredIntoTools = scope.restoredIntoToolsCount;
-      if (restoredIntoTools > 0) {
-        log.info({ reqId: n, restoredIntoTools }, `🔧 restored ${restoredIntoTools} value(s) into tool-call arguments`);
-      }
-      // A surrogate-shaped token with no dictionary mapping survived restore — the model mutated,
-      // truncated, or invented it, and the client received it as-is. Restore correctly refused to
-      // guess (exact-match only); surfacing the count turns silent token debris into an operator
-      // signal. Observe-only: response bytes are unchanged.
-      const residuals = scope.residualSurrogateCount;
-      if (residuals > 0) {
-        log.warn({ reqId: n, residuals }, `⚠️ ${residuals} unrestored surrogate token(s) left in response`);
-      }
-      // Persist the counts so they are visible beyond this log line (protection-stats.json, /__ficta/status).
-      stats.recordRestore({
-        restoredValues: restored,
-        withheldFromToolsValues: withheld,
-        residualSurrogateValues: residuals,
-      });
-      // Per-response sidecar: protection-stats.json only aggregates, so it cannot say WHICH response
-      // restored into a tool call. This pairs the counts with res-NNNN.meta.json's wire and path.
-      writeRestoreMeta(n, {
-        restoredValues: restored,
-        restoredIntoToolsValues: restoredIntoTools,
-        withheldFromToolsValues: withheld,
-        residualSurrogateValues: residuals,
-      });
-      writeProtectionTraceAudit(n, traceRedactions, scope, "completed", captureTraceAudit);
-    };
-
-    if (upstreamRes.body) {
-      const [toClient, toLog] = upstreamRes.body.tee();
-      void logResponse({
-        n,
+      recordDetectorUnavailable(stats, scope, traceRedactions, {
+        evidence: egressEvidence,
+        requestId: n,
+        method,
         path: url.pathname,
-        status: upstreamRes.status,
-        contentType,
-        stream: toLog,
-        captureRawBodies,
+        wire,
+        route: "blocked",
+        surface: "query string",
+        captureTraceAudit,
       });
-      if (!restoreResponse) {
-        writeProtectionTraceAudit(n, traceRedactions, scope, "not-restored", captureTraceAudit);
-        return new Response(toClient, { status: upstreamRes.status, headers: resHeaders });
-      }
-      if (treatAsEventStream) {
-        // The per-wire adapter reassembles surrogates split across SSE events; an unrecognized wire
-        // uses the NOOP adapter, which still restores whole surrogates in each event JSON-safely
-        // (see Vault.restoreSseRecord). Cross-event reassembly needs a known wire schema, so it is
-        // intentionally not attempted here.
-        return new Response(
-          toClient
-            .pipeThrough(scope.restoreEventStream(wire, restoreHighlightOptions))
-            .pipeThrough(restoredBodyTap(n, logRestore, captureRawBodies)),
-          {
-            status: upstreamRes.status,
-            headers: resHeaders,
+      return blockedDetectionResponse(c, err.plugin, n);
+    }
+    throw err;
+  }
+  const { search: redactedSearch, ...redaction } = redactedQuery;
+  queryRedaction = redaction;
+  if (redaction.leaks > 0 && cfg.failClosed) {
+    const n = logRequest({
+      method,
+      path: url.pathname,
+      body: "",
+      target: "<blocked>",
+      route: "blocked",
+      captureRawBodies,
+      traceCapture,
+    });
+    recordProtection(stats, scope, traceRedactions, {
+      evidence: egressEvidence,
+      requestId: n,
+      method,
+      path: url.pathname,
+      wire,
+      surface: "query string",
+      redaction,
+      blocked: true,
+    });
+    writeProtectionTraceAudit(n, traceRedactions, scope, "blocked", captureTraceAudit);
+    return blockedLeakResponse(c, "query string", redaction.leaks, n, redaction.leakHits);
+  }
+  if (redaction.count > 0) searchToSend = redactedSearch;
+  return { searchToSend, queryRedaction };
+}
+
+/** Pick the upstream for this path and refuse targets the upstream policy does not allow. */
+function resolveUpstream(
+  req: RequestContext,
+  searchToSend: string,
+  queryRedaction: SurfaceRedaction | undefined,
+): UpstreamRoute | Response {
+  const { c, url, method, wire, scope, egressEvidence, traceRedactions, traceCapture } = req;
+  const { cfg, stats } = req.state;
+  const { url: target, note: route } = resolveTarget(cfg, url.pathname, searchToSend, c.req.raw.headers);
+  const upstreamIssue = upstreamPolicyIssue(cfg, target);
+  if (!upstreamIssue) return { target, route };
+
+  const n = logRequest({
+    method,
+    path: url.pathname,
+    body: "",
+    target: "<blocked>",
+    route,
+    captureRawBodies: req.captureRawBodies,
+    traceCapture,
+  });
+  if (queryRedaction) {
+    recordProtection(stats, scope, traceRedactions, {
+      evidence: egressEvidence,
+      requestId: n,
+      method,
+      path: url.pathname,
+      wire,
+      route,
+      surface: "query string",
+      redaction: queryRedaction,
+      blocked: false,
+    });
+  }
+  writeProtectionTraceAudit(n, traceRedactions, scope, "blocked", req.captureTraceAudit);
+  egressEvidence?.finish("blocked");
+  return c.json({ error: { type: "ficta_upstream_policy", message: upstreamIssue } }, 403);
+}
+
+/** Copy the inbound headers for the upstream hop, dropping hop-by-hop framing and all Ficta control metadata. */
+function upstreamRequestHeaders(inbound: Headers): Headers {
+  const headers = new Headers(inbound);
+  headers.delete("host");
+  headers.delete("content-length");
+  headers.delete("accept-encoding");
+  // Every x-ficta-* header is internal control metadata (scope routing, egress audit, trace
+  // capture, restore highlighting, protection tickets, retired selectors) — sweep the whole
+  // prefix so no current or future control header can ever reach the upstream vendor.
+  for (const name of Array.from(headers.keys())) {
+    if (name.startsWith("x-ficta-")) headers.delete(name);
+  }
+  return headers;
+}
+
+/**
+ * Read, decode, and screen the request body (or, for bodiless methods, just log the request).
+ * Assigns the request id `n` that every later log line and stats record refers to.
+ */
+async function prepareRequestBody(
+  req: RequestContext,
+  routed: UpstreamRoute,
+  headers: Headers,
+  queryRedaction: SurfaceRedaction | undefined,
+): Promise<PreparedRequest | Response> {
+  const { url, method, wire, scope, egressEvidence, traceRedactions, traceCapture, captureRawBodies } = req;
+  const { stats } = req.state;
+  const { target, route } = routed;
+
+  if (method === "GET" || method === "HEAD") {
+    const n = logRequest({ method, path: url.pathname, body: "", target, route, captureRawBodies, traceCapture });
+    if (queryRedaction) {
+      recordProtection(stats, scope, traceRedactions, {
+        evidence: egressEvidence,
+        requestId: n,
+        method,
+        path: url.pathname,
+        wire,
+        route,
+        surface: "query string",
+        redaction: queryRedaction,
+        blocked: false,
+      });
+    }
+    return { bodyToSend: undefined, n, requestModel: "unknown" };
+  }
+
+  const bodyText = await readRequestBody(req, headers);
+  if (bodyText instanceof Response) return bodyText;
+  const originalModel = requestModelFromBody(bodyText);
+  const n = logRequest({ method, path: url.pathname, body: bodyText, target, route, captureRawBodies, traceCapture });
+  if (!req.protect) return { bodyToSend: bodyText, n, requestModel: "unknown" };
+  return redactBodySurface(req, routed, bodyText, n, originalModel, queryRedaction);
+}
+
+/**
+ * Decode a compressed request body (e.g. Pi zstd-compresses its Codex-backend POSTs) so redaction
+ * screens the real text — the alternative is screening mojibake and forwarding a corrupted body.
+ * Undecodable bodies are refused outright: opaque bytes cannot be screened. Also consumes the
+ * protection ticket, if any, once the body is known to match the reviewed text.
+ */
+async function readRequestBody(req: RequestContext, headers: Headers): Promise<string | Response> {
+  const { c, url, method, scope, requestedProtectionTicket, preparedProtectionTicket } = req;
+  const { protectionTickets } = req.state;
+  const raw = await readBoundedRequestBody(c.req.raw);
+  if (raw === null) return refusedRequestTooLargeResponse(c, method, url.pathname);
+  let bodyText: string;
+  try {
+    const decodedBody = decodeRequestBody(raw, headers.get("content-encoding"));
+    // The upstream request carries the decoded body, so the coding header must not survive.
+    if (decodedBody.decoded) headers.delete("content-encoding");
+    bodyText = new TextDecoder().decode(decodedBody.body);
+  } catch (err) {
+    if (err instanceof RequestBodyDecodeError) return refusedRequestEncodingResponse(c, err, method, url.pathname);
+    throw err;
+  }
+  if (requestedProtectionTicket && preparedProtectionTicket) {
+    const stillCurrent = protectionTickets.get(requestedProtectionTicket);
+    if (
+      stillCurrent !== preparedProtectionTicket ||
+      preparedProtectionTicket.expiresAt <= Date.now() ||
+      !requestContainsReviewedText(bodyText, preparedProtectionTicket.textSha256)
+    ) {
+      if (stillCurrent === preparedProtectionTicket) protectionTickets.delete(requestedProtectionTicket);
+      return c.json(
+        {
+          error: {
+            type: "ficta_protection_preview_stale",
+            message: "The outbound message no longer matches the protection preview. Preview again before sending.",
           },
-        );
-      }
-      if (isJsonContentType(contentType)) {
-        // Buffer + JSON-aware restore so a restored value with JSON-special chars stays escaped.
-        // Non-streaming JSON bodies are bounded, so giving up streaming here costs nothing.
-        const text = await new Response(toClient).text();
-        const restored = restoreBufferedBody(scope, wire, contentType, text, restoreHighlightOptions);
-        logRestore();
-        writeRestoredBody(n, restored, captureRawBodies);
-        return new Response(restored, {
-          status: upstreamRes.status,
-          headers: resHeaders,
-        });
-      }
+        },
+        409,
+      );
+    }
+    // Consume atomically before any detector/upstream await. Concurrent replay sees a missing ticket.
+    protectionTickets.delete(requestedProtectionTicket);
+    scope.registerProtectedValues(preparedProtectionTicket.protectedValues.map(userProtectedValue));
+  }
+  return bodyText;
+}
+
+/** Redact the body, apply the fail-closed leak gate, and append the surrogate-preservation instruction. */
+async function redactBodySurface(
+  req: RequestContext,
+  routed: UpstreamRoute,
+  bodyText: string,
+  n: number,
+  originalModel: string | undefined,
+  queryRedaction: SurfaceRedaction | undefined,
+): Promise<PreparedRequest | Response> {
+  const { c, url, method, wire, scope, egressEvidence, traceRedactions, captureRawBodies, captureTraceAudit } = req;
+  const { cfg, stats } = req.state;
+  const { route } = routed;
+  let redaction: Awaited<ReturnType<typeof scope.redactBodyDetailed>>;
+  try {
+    redaction = await scope.redactBodyDetailed(bodyText, {
+      path: url.pathname,
+      traceValues: captureTraceAudit,
+    });
+  } catch (err) {
+    // A fail-closed detector (e.g. Presidio required but unreachable) refuses the request rather
+    // than forwarding data it could not screen. The raw body has not left the process.
+    if (err instanceof DetectorUnavailableError) {
+      recordDetectorUnavailable(stats, scope, traceRedactions, {
+        evidence: egressEvidence,
+        requestId: n,
+        method,
+        path: url.pathname,
+        wire,
+        route,
+        model: safeRequestModel(scope, originalModel, undefined),
+        surface: "body",
+        captureTraceAudit,
+      });
+      return blockedDetectionResponse(c, err.plugin, n);
+    }
+    if (err instanceof RedactionInvariantError) return blockedInvariantResponse(c, err.reason, n);
+    throw err;
+  }
+  const redacted = redaction.body;
+  const requestModel = safeRequestModel(scope, originalModel, requestModelFromBody(redacted));
+  if (queryRedaction) {
+    recordProtection(stats, scope, traceRedactions, {
+      evidence: egressEvidence,
+      requestId: n,
+      method,
+      path: url.pathname,
+      wire,
+      route,
+      model: requestModel,
+      surface: "query string",
+      redaction: queryRedaction,
+      blocked: false,
+    });
+  }
+  if (redaction.leaks > 0 && cfg.failClosed) {
+    recordProtection(stats, scope, traceRedactions, {
+      evidence: egressEvidence,
+      requestId: n,
+      method,
+      path: url.pathname,
+      wire,
+      route,
+      model: requestModel,
+      surface: "body",
+      redaction,
+      blocked: true,
+    });
+    writeProtectionTraceAudit(n, traceRedactions, scope, "blocked", captureTraceAudit);
+    return blockedLeakResponse(c, "body", redaction.leaks, n, redaction.leakHits);
+  }
+  if (redaction.count > 0 || redaction.leaks > 0) {
+    recordProtection(stats, scope, traceRedactions, {
+      evidence: egressEvidence,
+      requestId: n,
+      method,
+      path: url.pathname,
+      wire,
+      route,
+      model: requestModel,
+      surface: "body",
+      redaction,
+      blocked: false,
+    });
+    if (redaction.count > 0) {
+      const warn = redaction.leaks > 0 ? `  ⚠ ${redaction.leaks} LEAKED (fail-open)` : "";
+      const ambiguity =
+        redaction.ambiguousEntityLinks > 0 ? `; ${redaction.ambiguousEntityLinks} ambiguous entity link(s)` : "";
+      const fields = {
+        reqId: n,
+        kept: redaction.count,
+        leaked: redaction.leaks,
+        ambiguousEntityLinks: redaction.ambiguousEntityLinks,
+        surface: "body",
+      };
+      const msg = `🔒 kept ${redaction.count} body value(s) out of the model${warn}${ambiguity}`;
+      if (redaction.leaks > 0) log.warn(fields, msg);
+      else log.info(fields, msg);
+    }
+  }
+  let bodyToSend = redacted;
+  // Tell the model to preserve the surrogate literals verbatim (opt-in). Runs after the fail-closed
+  // leak gate and only adds surrogate tokens the proxy already minted, so it introduces no new leak.
+  if (cfg.preserveLiterals) {
+    const surrogates = scope.mintedSurrogatesIn(redacted);
+    if (surrogates.length > 0) bodyToSend = withPreservationInstruction(redacted, wire, surrogates);
+  }
+  if (captureRawBodies) writeCaptureFile(`req-${String(n).padStart(4, "0")}.sent.json`, bodyToSend);
+  return { bodyToSend, n, requestModel };
+}
+
+/** Screen the non-auth request headers in place. Runs after the body so its stats carry the model label. */
+async function redactHeaderSurface(
+  req: RequestContext,
+  routed: UpstreamRoute,
+  headers: Headers,
+  prepared: PreparedRequest,
+): Promise<Response | undefined> {
+  if (!req.protect) return undefined;
+  const { c, url, method, wire, scope, egressEvidence, traceRedactions, captureTraceAudit } = req;
+  const { cfg, stats } = req.state;
+  const { route } = routed;
+  const { n, requestModel } = prepared;
+  let redaction: SurfaceRedaction;
+  try {
+    redaction = await redactNonAuthHeaders(scope, headers, captureTraceAudit);
+  } catch (err) {
+    if (err instanceof DetectorUnavailableError) {
+      recordDetectorUnavailable(stats, scope, traceRedactions, {
+        evidence: egressEvidence,
+        requestId: n,
+        method,
+        path: url.pathname,
+        wire,
+        route,
+        model: requestModel,
+        surface: "non-auth headers",
+        captureTraceAudit,
+      });
+      return blockedDetectionResponse(c, err.plugin, n);
+    }
+    throw err;
+  }
+  if (redaction.leaks > 0 && cfg.failClosed) {
+    recordProtection(stats, scope, traceRedactions, {
+      evidence: egressEvidence,
+      requestId: n,
+      method,
+      path: url.pathname,
+      wire,
+      route,
+      model: requestModel,
+      surface: "non-auth headers",
+      redaction,
+      blocked: true,
+    });
+    writeProtectionTraceAudit(n, traceRedactions, scope, "blocked", captureTraceAudit);
+    return blockedLeakResponse(c, "headers", redaction.leaks, n, redaction.leakHits);
+  }
+  if (redaction.count > 0 || redaction.leaks > 0) {
+    recordProtection(stats, scope, traceRedactions, {
+      evidence: egressEvidence,
+      requestId: n,
+      method,
+      path: url.pathname,
+      wire,
+      route,
+      model: requestModel,
+      surface: "non-auth headers",
+      redaction,
+      blocked: false,
+    });
+    if (redaction.count > 0) {
+      const warn = redaction.leaks > 0 ? `  ⚠ ${redaction.leaks} LEAKED (fail-open)` : "";
+      const fields = { reqId: n, kept: redaction.count, leaked: redaction.leaks, surface: "non-auth headers" };
+      const msg = `🔒 kept ${redaction.count} non-auth header value(s) out of the model${warn}`;
+      if (redaction.leaks > 0) log.warn(fields, msg);
+      else log.info(fields, msg);
+    }
+  }
+  return undefined;
+}
+
+/** Send the screened request upstream. A transport failure is reported as a 502 with a sanitized diagnostic. */
+async function forwardUpstream(
+  req: RequestContext,
+  routed: UpstreamRoute,
+  headers: Headers,
+  prepared: PreparedRequest,
+): Promise<{ upstream: Response } | Response> {
+  const { c, method, scope, egressEvidence, traceRedactions, captureTraceAudit } = req;
+  const { n, requestModel, bodyToSend } = prepared;
+  let upstream: Response;
+  try {
+    upstream = await fetch(routed.target, { method, headers, body: bodyToSend });
+  } catch (err) {
+    const diagnostic = upstreamErrorDiagnostic(err);
+    const message = formatUpstreamError(diagnostic);
+    log.error({ reqId: n, err: diagnostic }, `✗ upstream fetch failed: ${message}`);
+    writeProtectionTraceAudit(n, traceRedactions, scope, "upstream-error", captureTraceAudit);
+    egressEvidence?.finish("upstream_error", requestModel);
+    return c.json({ error: { type: "ficta_upstream_error", message, diagnostic } }, 502);
+  }
+  egressEvidence?.finish("forwarded", requestModel);
+  return { upstream };
+}
+
+/**
+ * Re-frame the upstream response and restore surrogates on the way back: streamed SSE through the
+ * per-wire adapter, JSON buffered for escape-safe restore, anything else as a plain text stream.
+ * Non-restorable content types pass through untouched.
+ */
+async function restoreUpstreamResponse(
+  req: RequestContext,
+  prepared: PreparedRequest,
+  upstreamRes: Response,
+): Promise<Response> {
+  const { url, wire, scope, protect, traceRedactions, captureRawBodies, captureTraceAudit, restoreHighlightOptions } =
+    req;
+  const { n } = prepared;
+  const resHeaders = new Headers(upstreamRes.headers);
+  resHeaders.delete("content-encoding");
+  resHeaders.delete("content-length");
+  // We always re-frame the body (stream restore or buffered JSON restore), so the upstream's
+  // framing header must not survive: a buffered restore sets Content-Length, which is illegal
+  // alongside a forwarded Transfer-Encoding: chunked.
+  resHeaders.delete("transfer-encoding");
+  const contentType = resHeaders.get("content-type") ?? "";
+  // Some upstreams stream SSE with no content-type header — notably the ChatGPT/Codex backend
+  // (`/backend-api/codex/responses`). When the type is missing but the request is a known model
+  // wire, the response is that wire's event stream, so restore it instead of passing surrogates
+  // through verbatim (which would leak FICTA_ placeholders into the agent's output).
+  const treatAsEventStream = isEventStreamContentType(contentType) || (contentType === "" && wire !== "unknown");
+  const restoreResponse = protect && (isRestorableContentType(contentType) || treatAsEventStream);
+  const logRestore = () => recordRestoreOutcome(req, n);
+
+  if (upstreamRes.body) {
+    const [toClient, toLog] = upstreamRes.body.tee();
+    void logResponse({
+      n,
+      path: url.pathname,
+      status: upstreamRes.status,
+      contentType,
+      stream: toLog,
+      captureRawBodies,
+    });
+    if (!restoreResponse) {
+      writeProtectionTraceAudit(n, traceRedactions, scope, "not-restored", captureTraceAudit);
+      return new Response(toClient, { status: upstreamRes.status, headers: resHeaders });
+    }
+    if (treatAsEventStream) {
+      // The per-wire adapter reassembles surrogates split across SSE events; an unrecognized wire
+      // uses the NOOP adapter, which still restores whole surrogates in each event JSON-safely
+      // (see Vault.restoreSseRecord). Cross-event reassembly needs a known wire schema, so it is
+      // intentionally not attempted here.
       return new Response(
-        toClient.pipeThrough(scope.restoreStream()).pipeThrough(restoredBodyTap(n, logRestore, captureRawBodies)),
+        toClient
+          .pipeThrough(scope.restoreEventStream(wire, restoreHighlightOptions))
+          .pipeThrough(restoredBodyTap(n, logRestore, captureRawBodies)),
         {
           status: upstreamRes.status,
           headers: resHeaders,
         },
       );
     }
-
-    const body = await upstreamRes.text();
-    void logResponse({ n, path: url.pathname, status: upstreamRes.status, contentType, body, captureRawBodies });
-    const restoredBody = restoreResponse
-      ? restoreBufferedBody(scope, wire, contentType, body, restoreHighlightOptions)
-      : body;
-    if (restoreResponse) {
+    if (isJsonContentType(contentType)) {
+      // Buffer + JSON-aware restore so a restored value with JSON-special chars stays escaped.
+      // Non-streaming JSON bodies are bounded, so giving up streaming here costs nothing.
+      const text = await new Response(toClient).text();
+      const restored = restoreBufferedBody(scope, wire, contentType, text, restoreHighlightOptions);
       logRestore();
-      writeRestoredBody(n, restoredBody, captureRawBodies);
-    } else {
-      writeProtectionTraceAudit(n, traceRedactions, scope, "not-restored", captureTraceAudit);
+      writeRestoredBody(n, restored, captureRawBodies);
+      return new Response(restored, {
+        status: upstreamRes.status,
+        headers: resHeaders,
+      });
     }
-    return new Response(restoredBody, { status: upstreamRes.status, headers: resHeaders });
-  });
+    return new Response(
+      toClient.pipeThrough(scope.restoreStream()).pipeThrough(restoredBodyTap(n, logRestore, captureRawBodies)),
+      {
+        status: upstreamRes.status,
+        headers: resHeaders,
+      },
+    );
+  }
 
+  const body = await upstreamRes.text();
+  void logResponse({ n, path: url.pathname, status: upstreamRes.status, contentType, body, captureRawBodies });
+  const restoredBody = restoreResponse
+    ? restoreBufferedBody(scope, wire, contentType, body, restoreHighlightOptions)
+    : body;
+  if (restoreResponse) {
+    logRestore();
+    writeRestoredBody(n, restoredBody, captureRawBodies);
+  } else {
+    writeProtectionTraceAudit(n, traceRedactions, scope, "not-restored", captureTraceAudit);
+  }
+  return new Response(restoredBody, { status: upstreamRes.status, headers: resHeaders });
+}
+
+/**
+ * Symmetric with the `🔒 … kept N` egress line: report how many distinct values were restored back
+ * into this response, persist the counts, and close the request's trace audit. Restore is a
+ * streaming rewrite, so for streamed bodies this fires from the tap's flush once the stream closes
+ * (i.e. after the `← #N` line); for buffered bodies it fires inline the moment restore has run.
+ * Zero restores (the common case) stay quiet.
+ */
+function recordRestoreOutcome(req: RequestContext, n: number): void {
+  const { scope, traceRedactions, captureTraceAudit } = req;
+  const { stats } = req.state;
+  const restored = scope.restoredCount;
+  if (restored > 0) {
+    log.info({ reqId: n, restored }, `♻️ restored ${restored} value(s) in response`);
+  }
+  // A registered/detected value the model tried to place into a tool-call argument was held
+  // back (a placeholder went to the tool instead of the real secret). Surfacing it turns a
+  // silent exfil attempt into an operator-visible signal. See FICTA_RESTORE_INTO_TOOLS.
+  const withheld = scope.withheldFromToolsCount;
+  if (withheld > 0) {
+    log.warn({ reqId: n, withheld }, `🛡️ withheld ${withheld} value(s) from tool-call arguments`);
+  }
+  // The complement of the line above: values that DID go into a tool-call argument. These restore
+  // one JSON context deeper than the body, so they are the ones an escaping bug can corrupt —
+  // worth its own line rather than being folded into the `restored` total.
+  const restoredIntoTools = scope.restoredIntoToolsCount;
+  if (restoredIntoTools > 0) {
+    log.info({ reqId: n, restoredIntoTools }, `🔧 restored ${restoredIntoTools} value(s) into tool-call arguments`);
+  }
+  // A surrogate-shaped token with no dictionary mapping survived restore — the model mutated,
+  // truncated, or invented it, and the client received it as-is. Restore correctly refused to
+  // guess (exact-match only); surfacing the count turns silent token debris into an operator
+  // signal. Observe-only: response bytes are unchanged.
+  const residuals = scope.residualSurrogateCount;
+  if (residuals > 0) {
+    log.warn({ reqId: n, residuals }, `⚠️ ${residuals} unrestored surrogate token(s) left in response`);
+  }
+  // Persist the counts so they are visible beyond this log line (protection-stats.json, /__ficta/status).
+  stats.recordRestore({
+    restoredValues: restored,
+    withheldFromToolsValues: withheld,
+    residualSurrogateValues: residuals,
+  });
+  // Per-response sidecar: protection-stats.json only aggregates, so it cannot say WHICH response
+  // restored into a tool call. This pairs the counts with res-NNNN.meta.json's wire and path.
+  writeRestoreMeta(n, {
+    restoredValues: restored,
+    restoredIntoToolsValues: restoredIntoTools,
+    withheldFromToolsValues: withheld,
+    residualSurrogateValues: residuals,
+  });
+  writeProtectionTraceAudit(n, traceRedactions, scope, "completed", captureTraceAudit);
+}
+
+/** Bind the server, log the startup banner, refuse WebSocket upgrades at the socket, and build the handle. */
+function listen(
+  app: Hono<{ Bindings: HttpBindings }>,
+  state: ProxyState,
+  opts: StartProxyOptions,
+): Promise<ProxyHandle> {
+  const { cfg, engine, stats } = state;
   const bindHost = opts.host ?? cfg.host;
   // Clients dial in over loopback even when we bind a wildcard host, so the copy-paste instructions
   // should say 127.0.0.1, not 0.0.0.0/::. Only substitute for wildcard binds; a specific LAN IP is
