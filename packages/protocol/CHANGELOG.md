@@ -1,5 +1,13 @@
 # @serovaai/ficta-protocol
 
+## 0.3.0
+
+### Patch Changes
+
+- [`ef4f682`](https://github.com/SerovaAI/ficta/commit/ef4f6828037221f3448c0f4088657922f5285424) Thanks [@steflsd](https://github.com/steflsd)! - Preserve exact surrogate literals by default, with an explicit opt-out.
+
+- [`b87273c`](https://github.com/SerovaAI/ficta/commit/b87273cb732351bf0e648091f5e10d91f1847f78) Thanks [@steflsd](https://github.com/steflsd)! - Fix Claude Code sessions stalling on `429 Error · Retrying` once a tool result is redacted. The surrogate-preservation instruction is now appended to an Anthropic `system` prompt instead of prepended: api.anthropic.com rejects Claude Code subscription requests whose first system block is not the client's billing header, and prepending also invalidated the cached system prefix on every redacted turn. Launched agents now inherit only the shell's own `FICTA_*` variables, not ficta's merged runtime settings, so a nested `claude` launch honours `pii.agents = false` instead of treating the inherited `FICTA_PII_ENABLED=1` as an explicit override and requiring the Presidio sidecar.
+
 ## 0.2.3
 
 ## 0.2.2

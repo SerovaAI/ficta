@@ -1,6 +1,6 @@
 {
   "name": "@serovaai/ficta-protocol",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "private": false,
   "description": "Shared wire contracts for the Ficta proxy control plane",
   "homepage": "https://ficta.sh",
