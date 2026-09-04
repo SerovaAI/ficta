@@ -1,3 +1,4 @@
 # Cloudflare / wrangler local state + build output.
 .wrangler/
 dist/
+.tanstack

@@ -1,7 +1,7 @@
 name: CI and Release
 
 # One workflow owns verification, secret scanning, and Changesets releases.
-# Keep it at `.github/workflows/publish.yml`: npm trusted publishing binds both
+# Keep it at `.github/workflows/publish.yml`: npm trusted publishing binds all three
 # published packages to this filename and the `npm-publish` environment.
 # Publishing uses OIDC; do not add NODE_AUTH_TOKEN or NPM_TOKEN because even an
 # empty token makes npm/pnpm skip trusted publishing.
@@ -102,11 +102,15 @@ jobs:
 
       - name: Create Release PR or Publish
         id: changesets
-        uses: changesets/action@v1
+        # v2 is required with @changesets/cli 3.x: v1 detected published packages by parsing
+        # `New tag:` lines from stdout, which the 3.x CLI no longer prints, so v1 published to
+        # npm but silently skipped pushing git tags and creating GitHub releases (0.3.0 had to
+        # be tagged by hand). v2 reads the CLI's CHANGESETS_OUTPUT file instead.
+        uses: changesets/action@v2
         with:
-          publish: pnpm release
-        env:
+          publish-script: pnpm release
           # The built-in token prevents the generated PR update from automatically
           # executing another CI cycle. Merging that PR still triggers this workflow.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        env:
           NPM_CONFIG_PROVENANCE: "true"
