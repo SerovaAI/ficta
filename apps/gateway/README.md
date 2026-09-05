@@ -105,6 +105,11 @@ contextual identity policy runs inside the analyzer.
 For a law-firm, medical, finance, or other regulated-team POC using real sensitive data, treat this
 as an operator-owned internal system, not a hosted SaaS default.
 
+The transcript-revision migration (`0014`) preserves existing messages and changes their database key.
+Stop older Gateway processes before starting upgraded instances against the same database; older
+processes cannot write using the new key. Gateway applies the migration on startup. Refresh existing
+browser tabs after upgrading so saves include the transcript revision.
+
 Minimum production-like posture:
 
 - Run the gateway and ficta proxy inside the firm's network boundary.

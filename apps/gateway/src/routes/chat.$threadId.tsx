@@ -29,6 +29,7 @@ function ThreadPage() {
       key={threadId}
       threadId={threadId}
       initialMessages={thread.messages.map(storedToUi)}
+      initialRevision={thread.thread.revision ?? 0}
       initialThreadModelSettings={thread.thread.modelSettings}
       initialThreadTraceEnabled={thread.thread.traceEnabled}
       userSettings={userSettings}

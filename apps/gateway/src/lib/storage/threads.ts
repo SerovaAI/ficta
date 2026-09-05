@@ -74,6 +74,8 @@ function validateStart(input: unknown): {
 }
 
 function validateSnapshot(input: unknown): {
+  expectedRevision: number;
+  traceEnabled: boolean;
   threadId: string;
   messages: StoredMessage[];
   modelSettings?: ThreadModelSettings;
@@ -81,9 +83,14 @@ function validateSnapshot(input: unknown): {
   const i = asObject(input);
   if (typeof i.threadId !== "string" || !i.threadId) throw new Error("invalid threadId");
   if (!Array.isArray(i.messages)) throw new Error("invalid messages");
+  if (!Number.isSafeInteger(i.expectedRevision) || (i.expectedRevision as number) < 0)
+    throw new Error("invalid transcript revision");
+  if (i.traceEnabled !== undefined && typeof i.traceEnabled !== "boolean") throw new Error("invalid traceEnabled");
   return {
     threadId: i.threadId,
     messages: i.messages.map(toStoredMessage),
+    expectedRevision: i.expectedRevision as number,
+    traceEnabled: i.traceEnabled === true,
     modelSettings: optionalThreadModelSettings(i),
   };
 }
@@ -141,9 +148,19 @@ export const startThread = createServerFn({ method: "POST" })
 
 export const saveThread = createServerFn({ method: "POST" })
   .validator(validateSnapshot)
-  .handler(async ({ data }): Promise<void> => {
-    const { userId, orgId } = await requireScope();
-    await (await getStorage()).saveThreadSnapshot(userId, orgId, data.threadId, data.messages, data.modelSettings);
+  .handler(async ({ data }): Promise<number> => {
+    const auth = await requireAuthState();
+    const scope = scopeFromAuth(auth);
+    if (!scope) throw new Error("unauthorized");
+    return (await getStorage()).saveThreadSnapshot(
+      scope.userId,
+      scope.orgId,
+      data.threadId,
+      data.messages,
+      data.expectedRevision,
+      data.modelSettings,
+      data.traceEnabled && isAdmin(auth),
+    );
   });
 
 export const setThreadModelSettings = createServerFn({ method: "POST" })

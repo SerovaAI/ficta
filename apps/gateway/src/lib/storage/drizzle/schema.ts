@@ -140,6 +140,7 @@ export const threads = pgTable(
     title: text("title").notNull().default("New chat"),
     modelSettings: jsonb("model_settings").$type<ThreadModelSettings>(),
     traceEnabled: boolean("trace_enabled").notNull().default(false),
+    revision: integer("revision").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -175,7 +176,7 @@ export const threadProtectedValues = pgTable(
 export const messages = pgTable(
   "messages",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     threadId: text("thread_id")
       .notNull()
       .references(() => threads.id, { onDelete: "cascade" }),
@@ -184,7 +185,7 @@ export const messages = pgTable(
     orderIdx: integer("order_idx").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("messages_thread_idx").on(t.threadId, t.orderIdx)],
+  (t) => [primaryKey({ columns: [t.threadId, t.id] }), index("messages_thread_idx").on(t.threadId, t.orderIdx)],
 );
 
 /**

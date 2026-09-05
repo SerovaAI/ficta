@@ -238,6 +238,8 @@ export function resolveSuggestedPrompts(instance: InstanceSettings): string[] {
 
 /** A thread as shown in a history list — no messages, cheap to list. */
 export interface ThreadSummary {
+  /** Transcript revision; absent only in optimistic sidebar entries. */
+  revision?: number;
   id: string;
   title: string;
   /** Undefined on legacy chats until their model controls are next saved. */

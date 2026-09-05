@@ -22,6 +22,18 @@ beforeAll(async () => {
   store = await getStorage();
 });
 
+// Fixtures intentionally save the current revision; concurrency tests below pass explicit stale revisions.
+async function saveCurrentSnapshot(
+  userId: string,
+  orgId: string,
+  threadId: string,
+  messages: StoredMessage[],
+  modelSettings?: ThreadModelSettings,
+) {
+  const loaded = await store.getThread(userId, orgId, threadId);
+  return store.saveThreadSnapshot(userId, orgId, threadId, messages, loaded?.thread.revision ?? 0, modelSettings);
+}
+
 const textMessage = (id: string, role: StoredMessage["role"], text: string): StoredMessage => ({
   id,
   role,
@@ -440,7 +452,7 @@ describe("threads + messages", () => {
       await store.addThreadProtectedValues("preview-owner", "org-preview", "draft-thread", ["Project Copper Kite"]),
     ).toEqual(["Northstar account 47", "Project Copper Kite"]);
 
-    await store.saveThreadSnapshot("preview-owner", "org-preview", "draft-thread", [
+    await saveCurrentSnapshot("preview-owner", "org-preview", "draft-thread", [
       textMessage("preview-message", "user", "Review Project Copper Kite"),
     ]);
     await store.deleteThread("preview-owner", "org-preview", "draft-thread");
@@ -464,7 +476,7 @@ describe("threads + messages", () => {
       textMessage("m1", "user", "How do I redact secrets?"),
       textMessage("m2", "assistant", "Like so."),
     ];
-    await store.saveThreadSnapshot("owner", ORG, "t1", messages, miniSettings);
+    await saveCurrentSnapshot("owner", ORG, "t1", messages, miniSettings);
 
     const loaded = await store.getThread("owner", ORG, "t1");
     expect(loaded?.thread.title).toBe("How do I redact secrets?");
@@ -490,7 +502,7 @@ describe("threads + messages", () => {
         ].join("\n"),
       ),
     ];
-    await store.saveThreadSnapshot("owner", ORG, "t-attachment-request", messages);
+    await saveCurrentSnapshot("owner", ORG, "t-attachment-request", messages);
 
     const loaded = await store.getThread("owner", ORG, "t-attachment-request");
     expect(loaded?.thread.title).toBe("Can you review these release notes?");
@@ -511,7 +523,7 @@ describe("threads + messages", () => {
         ].join("\n"),
       ),
     ];
-    await store.saveThreadSnapshot("owner", ORG, "t-attachment-only", messages);
+    await saveCurrentSnapshot("owner", ORG, "t-attachment-only", messages);
 
     const loaded = await store.getThread("owner", ORG, "t-attachment-only");
     expect(loaded?.thread.title).toBe("Review Attached Text File");
@@ -535,19 +547,19 @@ describe("threads + messages", () => {
         ].join("\n"),
       ),
     ];
-    await store.saveThreadSnapshot("owner", ORG, "t-attachment-marker", messages);
+    await saveCurrentSnapshot("owner", ORG, "t-attachment-marker", messages);
 
     const loaded = await store.getThread("owner", ORG, "t-attachment-marker");
     expect(loaded?.thread.title).toBe("Review Attached Text File");
   });
 
   it("snapshot-upsert drops messages no longer present (regenerate) and preserves order", async () => {
-    await store.saveThreadSnapshot("owner", ORG, "t2", [
+    await saveCurrentSnapshot("owner", ORG, "t2", [
       textMessage("a", "user", "hi"),
       textMessage("b", "assistant", "first answer"),
     ]);
     // Regenerate: the trailing assistant message is replaced with a new id.
-    await store.saveThreadSnapshot("owner", ORG, "t2", [
+    await saveCurrentSnapshot("owner", ORG, "t2", [
       textMessage("a", "user", "hi"),
       textMessage("c", "assistant", "second answer"),
     ]);
@@ -557,40 +569,38 @@ describe("threads + messages", () => {
   });
 
   it("lists threads for a user, most-recently-updated first", async () => {
-    await store.saveThreadSnapshot("lister", ORG, "old", [textMessage("x", "user", "old")]);
-    await store.saveThreadSnapshot("lister", ORG, "new", [textMessage("y", "user", "new")]);
+    await saveCurrentSnapshot("lister", ORG, "old", [textMessage("x", "user", "old")]);
+    await saveCurrentSnapshot("lister", ORG, "new", [textMessage("y", "user", "new")]);
     const list = await store.listThreads("lister", ORG);
     expect(list[0]?.id).toBe("new");
     expect(list.map((t) => t.id)).toContain("old");
   });
 
   it("isolates threads by user", async () => {
-    await store.saveThreadSnapshot("alice", ORG, "secret", [textMessage("s", "user", "mine")]);
+    await saveCurrentSnapshot("alice", ORG, "secret", [textMessage("s", "user", "mine")]);
     expect(await store.getThreadOwner("secret")).toEqual({ userId: "alice", orgId: ORG, deleted: false });
     expect(await store.getThread("mallory", ORG, "secret")).toBeNull();
     await expect(
-      store.saveThreadSnapshot("mallory", ORG, "secret", [textMessage("s2", "user", "hijack")]),
+      saveCurrentSnapshot("mallory", ORG, "secret", [textMessage("s2", "user", "hijack")]),
     ).rejects.toThrow();
   });
 
   it("isolates a user's threads across workspaces", async () => {
     // Same user, two workspaces: a thread created in one is invisible from the other, and listThreads is
     // partitioned by org.
-    await store.saveThreadSnapshot("multi", "org-a", "ta", [textMessage("pa", "user", "in A")]);
-    await store.saveThreadSnapshot("multi", "org-b", "tb", [textMessage("pb", "user", "in B")]);
+    await saveCurrentSnapshot("multi", "org-a", "ta", [textMessage("pa", "user", "in A")]);
+    await saveCurrentSnapshot("multi", "org-b", "tb", [textMessage("pb", "user", "in B")]);
 
     expect(await store.getThread("multi", "org-b", "ta")).toBeNull();
     expect((await store.listThreads("multi", "org-a")).map((t) => t.id)).toEqual(["ta"]);
     expect((await store.listThreads("multi", "org-b")).map((t) => t.id)).toEqual(["tb"]);
 
     // A snapshot for the same thread id but the wrong workspace must not hijack it.
-    await expect(
-      store.saveThreadSnapshot("multi", "org-b", "ta", [textMessage("x", "user", "hijack")]),
-    ).rejects.toThrow();
+    await expect(saveCurrentSnapshot("multi", "org-b", "ta", [textMessage("x", "user", "hijack")])).rejects.toThrow();
   });
 
   it("persists per-thread trace capture and isolates it by user/workspace", async () => {
-    await store.saveThreadSnapshot("trace-owner", "org-trace", "trace-thread", [textMessage("m", "user", "trace")]);
+    await saveCurrentSnapshot("trace-owner", "org-trace", "trace-thread", [textMessage("m", "user", "trace")]);
 
     expect((await store.getThread("trace-owner", "org-trace", "trace-thread"))?.thread.traceEnabled).toBe(false);
     await store.setThreadTraceEnabled("trace-owner", "org-trace", "trace-thread", true);
@@ -620,7 +630,7 @@ describe("threads + messages", () => {
     expect(updated?.thread.updatedAt).toBe(updatedAt);
 
     // A response finishing after the picker save may carry the older controls captured at send time.
-    await store.saveThreadSnapshot(
+    await saveCurrentSnapshot(
       "model-owner",
       "org-model",
       "model-thread",
@@ -653,7 +663,7 @@ describe("threads + messages", () => {
   });
 
   it("loads legacy threads without model settings", async () => {
-    await store.saveThreadSnapshot("legacy-owner", "org-legacy", "legacy-thread", [textMessage("m", "user", "legacy")]);
+    await saveCurrentSnapshot("legacy-owner", "org-legacy", "legacy-thread", [textMessage("m", "user", "legacy")]);
 
     expect((await store.getThread("legacy-owner", "org-legacy", "legacy-thread"))?.thread.modelSettings).toBe(
       undefined,
@@ -667,7 +677,7 @@ describe("threads + messages", () => {
   });
 
   it("renames and deletes", async () => {
-    await store.saveThreadSnapshot("owner", ORG, "t3", [textMessage("z", "user", "original")]);
+    await saveCurrentSnapshot("owner", ORG, "t3", [textMessage("z", "user", "original")]);
     await store.addThreadProtectedValues("owner", ORG, "t3", ["Hard Delete Client"]);
     await store.renameThread("owner", ORG, "t3", "Renamed");
     expect((await store.getThread("owner", ORG, "t3"))?.thread.title).toBe("Renamed");
@@ -711,7 +721,7 @@ describe("deleted-thread recovery", () => {
     };
     const userMessage = textMessage("recovery-user", "user", "privileged transcript");
     userMessage.parts.push(attachmentPart);
-    await store.saveThreadSnapshot(userId, orgId, "recoverable", [
+    await saveCurrentSnapshot(userId, orgId, "recoverable", [
       userMessage,
       textMessage("recovery-assistant", "assistant", "privileged response"),
     ]);
@@ -721,8 +731,8 @@ describe("deleted-thread recovery", () => {
     expect(await store.getThread(userId, orgId, "recoverable")).toBeNull();
     expect(await store.listThreads(userId, orgId)).toEqual([]);
     await expect(
-      store.saveThreadSnapshot(userId, orgId, "recoverable", [textMessage("late", "user", "late write")]),
-    ).rejects.toThrow("thread not found");
+      saveCurrentSnapshot(userId, orgId, "recoverable", [textMessage("late", "user", "late write")]),
+    ).rejects.toThrow("Chat changed or is unavailable");
     await expect(store.listThreadProtectedValues(userId, orgId, "recoverable")).rejects.toThrow("thread not found");
     await expect(store.getThreadEgressReceipt(userId, orgId, "recoverable")).rejects.toThrow("thread not found");
 
@@ -773,7 +783,7 @@ describe("deleted-thread recovery", () => {
       deletedThreadRecoveryDays: 10,
       recordsAuditRetentionDays: 20,
     });
-    await store.saveThreadSnapshot("owner", orgId, "prospective", [textMessage("p1", "user", "policy")]);
+    await saveCurrentSnapshot("owner", orgId, "prospective", [textMessage("p1", "user", "policy")]);
     await store.deleteThread("owner", orgId, "prospective");
     const originalPurgeAfter = (await store.listRetainedThreads(orgId))[0]?.purgeAfter;
 
@@ -793,7 +803,7 @@ describe("deleted-thread recovery", () => {
   it("seals records access when the recovery window lapses, even before the sweep runs", async () => {
     const orgId = "org-lapsed-access";
     await store.patchInstanceSettings(orgId, { deletedThreadRecoveryDays: 1, recordsAuditRetentionDays: 30 });
-    await store.saveThreadSnapshot("owner", orgId, "lapsed", [textMessage("l1", "user", "lapsed")]);
+    await saveCurrentSnapshot("owner", orgId, "lapsed", [textMessage("l1", "user", "lapsed")]);
     await store.deleteThread("owner", orgId, "lapsed");
     expect(await store.listRetainedThreads(orgId)).toHaveLength(1);
 
@@ -816,11 +826,11 @@ describe("deleted-thread recovery", () => {
       deletedThreadRecoveryDays: 1,
       recordsAuditRetentionDays: 30,
     });
-    await store.saveThreadSnapshot(userId, orgId, "due-thread", [textMessage("due", "user", "due")]);
+    await saveCurrentSnapshot(userId, orgId, "due-thread", [textMessage("due", "user", "due")]);
     await store.addThreadProtectedValues(userId, orgId, "due-thread", ["Due Client"]);
     await store.deleteThread(userId, orgId, "due-thread");
     await store.patchInstanceSettings(orgId, { deletedThreadRecoveryDays: 3 });
-    await store.saveThreadSnapshot(userId, orgId, "not-due-thread", [textMessage("not-due", "user", "not due")]);
+    await saveCurrentSnapshot(userId, orgId, "not-due-thread", [textMessage("not-due", "user", "not due")]);
     await store.deleteThread(userId, orgId, "not-due-thread");
 
     const future = new Date(Date.now() + 2 * 24 * 60 * 60 * 1_000);
@@ -846,7 +856,7 @@ describe("deleted-thread recovery", () => {
       deletedThreadRecoveryDays: 1,
       recordsAuditRetentionDays: 30,
     });
-    await store.saveThreadSnapshot("owner", orgId, "disabled-policy-thread", [
+    await saveCurrentSnapshot("owner", orgId, "disabled-policy-thread", [
       textMessage("disabled", "user", "retained before disable"),
     ]);
     await store.deleteThread("owner", orgId, "disabled-policy-thread");
@@ -869,7 +879,7 @@ describe("deleted-thread recovery", () => {
     const occurredAt = new Date();
     await store.patchInstanceSettings(orgId, { recordsAuditRetentionDays: 1 }, "records");
     expect(await store.listRecordsAuditEvents(orgId)).toEqual([expect.objectContaining({ action: "policy_changed" })]);
-    await store.saveThreadSnapshot("owner", orgId, "expired-evidence", [textMessage("evidence", "user", "audit")]);
+    await saveCurrentSnapshot("owner", orgId, "expired-evidence", [textMessage("evidence", "user", "audit")]);
     await store.appendThreadEgressEvent("owner", orgId, "expired-evidence", {
       eventId: "expired-egress-event",
       at: occurredAt.toISOString(),
@@ -889,4 +899,72 @@ describe("deleted-thread recovery", () => {
     expect(await store.listRecordsAuditEvents(orgId)).toEqual([]);
     expect((await store.getThreadEgressReceipt("owner", orgId, "expired-evidence")).events).toEqual([]);
   });
+});
+
+describe("transcript revisions and message identity", () => {
+  it("keeps colliding message IDs separate across users, workspaces, and threads", async () => {
+    const original = textMessage("shared-message-id", "user", "original");
+    const changed = textMessage("shared-message-id", "assistant", "changed");
+    await store.startThread("identity-a", "identity-org-a", "identity-thread-a", original);
+    await store.startThread("identity-b", "identity-org-b", "identity-thread-b", changed);
+    await store.saveThreadSnapshot("identity-b", "identity-org-b", "identity-thread-b", [changed], 1);
+    await store.saveThreadSnapshot("identity-a", "identity-org-a", "identity-thread-c", [changed], 0);
+    const first = await store.getThread("identity-a", "identity-org-a", "identity-thread-a");
+    expect(first?.messages[0]?.parts).toEqual(original.parts);
+    expect(first?.messages[0]?.role).toBe("user");
+    expect((await store.getThread("identity-b", "identity-org-b", "identity-thread-b"))?.messages[0]?.parts).toEqual(
+      changed.parts,
+    );
+    expect((await store.getThread("identity-a", "identity-org-a", "identity-thread-c"))?.messages[0]?.parts).toEqual(
+      changed.parts,
+    );
+  });
+
+  it("rejects an older tab without deleting a newer turn or changing the revision", async () => {
+    const initial = [textMessage("revision-user", "user", "question")];
+    const revision = await store.saveThreadSnapshot("revision-user", ORG, "revision-thread", initial, 0);
+    const newer = [...initial, textMessage("revision-answer", "assistant", "answer")];
+    expect(await store.saveThreadSnapshot("revision-user", ORG, "revision-thread", newer, revision)).toBe(revision + 1);
+    await expect(store.saveThreadSnapshot("revision-user", ORG, "revision-thread", initial, revision)).rejects.toThrow(
+      "Chat changed",
+    );
+    const loaded = await store.getThread("revision-user", ORG, "revision-thread");
+    expect(loaded?.thread.revision).toBe(revision + 1);
+    expect(loaded?.messages.map((message) => message.id)).toEqual(newer.map((message) => message.id));
+  });
+
+  it("allows only one concurrent save from the same revision, including first creation", async () => {
+    for (const existing of [false, true]) {
+      const threadId = `concurrent-transcript-${existing}`;
+      const revision = existing ? await store.saveThreadSnapshot("concurrent-user", ORG, threadId, [], 0) : 0;
+      const attempts = await Promise.allSettled([
+        store.saveThreadSnapshot("concurrent-user", ORG, threadId, [textMessage("one", "user", "one")], revision),
+        store.saveThreadSnapshot("concurrent-user", ORG, threadId, [textMessage("two", "user", "two")], revision),
+      ]);
+      expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1);
+      expect(attempts.filter((attempt) => attempt.status === "rejected")).toHaveLength(1);
+      expect((await store.getThread("concurrent-user", ORG, threadId))?.thread.revision).toBe(revision + 1);
+    }
+  });
+
+  it("does not let a delayed starter rewrite an already saved transcript", async () => {
+    const current = textMessage("starter-message", "user", "current text");
+    await store.saveThreadSnapshot("starter-user", ORG, "starter-thread", [current], 0);
+    await store.startThread("starter-user", ORG, "starter-thread", textMessage("starter-message", "user", "old text"));
+    const loaded = await store.getThread("starter-user", ORG, "starter-thread");
+    expect(loaded?.thread.revision).toBe(1);
+    expect(loaded?.messages[0]?.parts).toEqual(current.parts);
+  });
+});
+
+it("rolls back the revision and transcript together when a message write fails", async () => {
+  const original = textMessage("rollback-message", "user", "keep this");
+  const revision = await store.saveThreadSnapshot("rollback-user", ORG, "rollback-thread", [original], 0);
+  const invalid: StoredMessage = { id: "bad-json", role: "assistant", parts: [1n] };
+  await expect(
+    store.saveThreadSnapshot("rollback-user", ORG, "rollback-thread", [invalid], revision),
+  ).rejects.toThrow();
+  const loaded = await store.getThread("rollback-user", ORG, "rollback-thread");
+  expect(loaded?.thread.revision).toBe(revision);
+  expect(loaded?.messages[0]?.parts).toEqual(original.parts);
 });

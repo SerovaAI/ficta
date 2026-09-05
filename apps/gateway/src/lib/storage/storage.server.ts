@@ -118,7 +118,7 @@ export interface Storage {
   /** Ownership probe used only by authenticated API boundaries; missing means a new draft id is available.
    * `deleted` marks a retained (soft-deleted) thread, whose id must stay reserved but unusable. */
   getThreadOwner(threadId: string): Promise<{ userId: string; orgId: string; deleted: boolean } | null>;
-  /** Creates the thread if missing and upserts the initial user message without deleting later messages. */
+  /** Creates the thread with its initial message; a delayed starter never rewrites an existing transcript. */
   startThread(
     userId: string,
     orgId: string,
@@ -127,14 +127,16 @@ export interface Storage {
     traceEnabled?: boolean,
     modelSettings?: ThreadModelSettings,
   ): Promise<void>;
-  /** Creates the thread if missing (including initial model settings), then snapshot-upserts messages. */
+  /** Atomically replaces a transcript only at the expected revision and returns its new revision. */
   saveThreadSnapshot(
     userId: string,
     orgId: string,
     threadId: string,
     messages: StoredMessage[],
+    expectedRevision: number,
     modelSettings?: ThreadModelSettings,
-  ): Promise<void>;
+    traceEnabled?: boolean,
+  ): Promise<number>;
   /** Persists composer model controls without reordering the chat in history. */
   setThreadModelSettings(
     userId: string,

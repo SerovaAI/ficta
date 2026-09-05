@@ -737,23 +737,26 @@ export function createStorage(): Storage {
 
     async getThread(userId, orgId, threadId) {
       const db = await getDb();
-      const [thread] = await db
-        .select()
-        .from(threads)
-        .where(
-          and(
-            eq(threads.id, threadId),
-            eq(threads.userId, userId),
-            eq(threads.orgId, orgId),
-            isNull(threads.deletedAt),
-          ),
-        );
-      if (!thread) return null;
-      const rows = await db.select().from(messages).where(eq(messages.threadId, threadId)).orderBy(messages.orderIdx);
-      return {
-        thread: toThreadSummary(thread),
-        messages: rows.map(toStoredMessage),
-      };
+      return db.transaction(async (tx) => {
+        const [thread] = await tx
+          .select()
+          .from(threads)
+          .where(
+            and(
+              eq(threads.id, threadId),
+              eq(threads.userId, userId),
+              eq(threads.orgId, orgId),
+              isNull(threads.deletedAt),
+            ),
+          )
+          .for("share");
+        if (!thread) return null;
+        const rows = await tx.select().from(messages).where(eq(messages.threadId, threadId)).orderBy(messages.orderIdx);
+        return {
+          thread: toThreadSummary(thread),
+          messages: rows.map(toStoredMessage),
+        };
+      });
     },
 
     async getThreadOwner(threadId) {
@@ -791,11 +794,14 @@ export function createStorage(): Storage {
               .set({ modelSettings })
               .where(and(eq(threads.id, threadId), isNull(threads.modelSettings)));
           }
+          // A delayed starter must never rewrite an existing transcript.
+          return;
         } else {
           await tx.insert(threads).values({
             id: threadId,
             userId,
             orgId,
+            revision: 1,
             title: deriveTitle([message]),
             traceEnabled,
             modelSettings,
@@ -806,31 +812,47 @@ export function createStorage(): Storage {
           .insert(messages)
           .values({ id: message.id, threadId, role: message.role, parts: message.parts, orderIdx: 0 })
           .onConflictDoUpdate({
-            target: messages.id,
+            target: [messages.threadId, messages.id],
             set: { parts: message.parts, orderIdx: 0, role: message.role },
           });
       });
     },
 
-    async saveThreadSnapshot(userId, orgId, threadId, snapshot, modelSettings) {
+    async saveThreadSnapshot(userId, orgId, threadId, snapshot, expectedRevision, modelSettings, traceEnabled = false) {
+      if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0)
+        throw new Error("invalid transcript revision");
       const db = await getDb();
-      await db.transaction(async (tx) => {
-        const [existing] = await tx.select().from(threads).where(eq(threads.id, threadId));
-        if (existing) {
-          // A thread id is client-generated; refuse to write into someone else's thread or workspace.
-          if (existing.userId !== userId || existing.orgId !== orgId) throw new Error("thread not found");
-          // Model settings are creation-only here. Picker changes use setThreadModelSettings, so a lagging
-          // transcript snapshot cannot overwrite a newer selection. The deleted check rides on the update
-          // itself so a deletion committed after the read above cannot slip writes into a retained transcript.
-          const touched = await tx
-            .update(threads)
-            .set({ updatedAt: new Date() })
-            .where(and(eq(threads.id, threadId), isNull(threads.deletedAt)))
-            .returning();
-          if (touched.length === 0) throw new Error("thread not found");
-        } else {
-          await tx.insert(threads).values({ id: threadId, userId, orgId, title: deriveTitle(snapshot), modelSettings });
+      return db.transaction(async (tx) => {
+        // A missing row is only creatable from revision zero. Conflict handling also serializes
+        // simultaneous first saves before the compare-and-swap below.
+        if (expectedRevision === 0) {
+          await tx
+            .insert(threads)
+            .values({
+              id: threadId,
+              userId,
+              orgId,
+              title: deriveTitle(snapshot),
+              modelSettings,
+              traceEnabled,
+            })
+            .onConflictDoNothing({ target: threads.id });
         }
+        const touched = await tx
+          .update(threads)
+          .set({ updatedAt: new Date(), revision: sql`${threads.revision} + 1` })
+          .where(
+            and(
+              eq(threads.id, threadId),
+              eq(threads.userId, userId),
+              eq(threads.orgId, orgId),
+              isNull(threads.deletedAt),
+              eq(threads.revision, expectedRevision),
+            ),
+          )
+          .returning();
+        if (touched.length === 0)
+          throw new Error("Chat changed or is unavailable. Copy your unsaved text before reloading.");
 
         // Snapshot semantics: the incoming list is the whole truth. Drop rows it no longer contains
         // (covers a client-side regenerate that replaces the trailing assistant message), upsert the rest.
@@ -848,10 +870,11 @@ export function createStorage(): Storage {
             .insert(messages)
             .values({ id: m.id, threadId, role: m.role, parts: m.parts, orderIdx })
             .onConflictDoUpdate({
-              target: messages.id,
+              target: [messages.threadId, messages.id],
               set: { parts: m.parts, orderIdx, role: m.role },
             });
         }
+        return touched[0]!.revision;
       });
     },
 
@@ -1171,6 +1194,7 @@ function toThreadSummary(row: {
   title: string;
   modelSettings: ThreadModelSettings | null;
   traceEnabled: boolean;
+  revision: number;
   createdAt: Date;
   updatedAt: Date;
 }): ThreadSummary {
@@ -1179,6 +1203,7 @@ function toThreadSummary(row: {
     title: row.title,
     ...(row.modelSettings ? { modelSettings: row.modelSettings } : {}),
     traceEnabled: row.traceEnabled,
+    revision: row.revision,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

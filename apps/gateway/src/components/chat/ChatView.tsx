@@ -1,7 +1,7 @@
 import { fetchServerSentEvents, type UIMessage, useChat } from "@tanstack/ai-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CreateWorkspaceDialog } from "@/components/onboarding/CreateWorkspaceDialog";
 import { AdminSettingsDialog, type AdminSettingsTarget } from "@/components/settings/AdminSettingsDialog";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
@@ -60,8 +60,9 @@ import { reportRestoreValidation } from "@/lib/restore-validation";
 import { uiToStored } from "@/lib/storage/messages";
 import { suggestProtectedRegistryEntries } from "@/lib/storage/protected-registry";
 import { invalidateThreads, threadKeys } from "@/lib/storage/threadQueries";
-import { saveThread, setThreadModelSettings, setThreadTraceEnabled, startThread } from "@/lib/storage/threads";
-import type { ThreadModelSettings, ThreadSummary, UserSettings } from "@/lib/storage/types";
+import { saveThread, setThreadModelSettings, setThreadTraceEnabled } from "@/lib/storage/threads";
+import { createTranscriptSaver } from "@/lib/storage/transcript-saver";
+import type { StoredMessage, ThreadModelSettings, ThreadSummary, UserSettings } from "@/lib/storage/types";
 import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
 import { resolveThreadModelSettings, toThreadModelSettings } from "@/lib/thread-model-settings";
 import { deriveThreadTitleFromText } from "@/lib/thread-title";
@@ -98,12 +99,14 @@ export function ChatView({
   userSettings,
   threadId,
   initialMessages,
+  initialRevision = 0,
   initialThreadModelSettings,
   initialThreadTraceEnabled,
 }: {
   userSettings?: UserSettings;
   threadId?: string;
   initialMessages?: UIMessage[];
+  initialRevision?: number;
   initialThreadModelSettings?: ThreadModelSettings;
   initialThreadTraceEnabled?: boolean;
 } = {}) {
@@ -163,6 +166,23 @@ export function ChatView({
     traceAudit: false,
   });
   const [saveWarning, setSaveWarning] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const pendingSaves = useRef(0);
+  const [transcriptSaver] = useState(() =>
+    createTranscriptSaver(
+      initialRevision,
+      (
+        data: {
+          threadId: string;
+          messages: StoredMessage[];
+          modelSettings: ThreadModelSettings;
+          traceEnabled: boolean;
+        },
+        expectedRevision,
+      ) => saveThread({ data: { ...data, expectedRevision } }),
+    ),
+  );
+  const lastSnapshot = useRef(JSON.stringify((initialMessages ?? []).map(uiToStored)));
   const [modelSettingsSaveWarning, setModelSettingsSaveWarning] = useState(false);
   const modelSettingsSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const modelSettingsSaveSequence = useRef(0);
@@ -195,6 +215,7 @@ export function ChatView({
     [],
   );
 
+  const messagesRef = useRef<UIMessage[]>(initialMessages ?? []);
   const { messages, sendMessage, isLoading, error, stop, reload, clear, setMessages } = useChat({
     connection: chatConnection,
     forwardedProps,
@@ -207,7 +228,6 @@ export function ChatView({
   });
 
   // Latest messages for the fire-and-forget save (onFinish fires outside React's render).
-  const messagesRef = useRef<UIMessage[]>(messages);
   messagesRef.current = messages;
   const urlSynced = useRef(false);
   const startingThread = useRef(false);
@@ -352,57 +372,89 @@ export function ChatView({
       });
   }, [activeThreadId, admin, queryClient, threadTraceEnabled, traceCapture]);
 
-  const syncNewThreadUrl = () => {
+  const syncNewThreadUrl = useCallback(() => {
     if (threadId || urlSynced.current) return;
     // Reflect the new thread without a navigation, which would re-run the loader and remount this component
     // mid-session. A reload then lands on the thread route.
     window.history.replaceState(null, "", `/chat/${tid}`);
     urlSynced.current = true;
     setActiveThreadId(tid);
-  };
+  }, [threadId, tid]);
 
-  const persistSnapshot = async (snapshot: UIMessage[]) => {
-    if (snapshot.length === 0) return;
-    const persistable = prepareMessagesForPersistence(snapshot);
-    queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) =>
-      upsertThreadSummary(current, tid, persistable, modelSettingsRef.current),
-    );
-    try {
-      await saveThread({ data: { threadId: tid, messages: persistable.map(uiToStored) } });
-      void invalidateThreads(queryClient);
-      setSaveWarning(false);
-    } catch (err) {
-      console.warn("Failed to save chat thread", err);
-      // Persistence is best-effort — a failed save must never break the live chat — but it shouldn't be
-      // silent either: a user whose history quietly stops saving deserves to know.
-      setSaveWarning(true);
-    }
-  };
+  const persistSnapshot = useCallback(
+    async (snapshot: UIMessage[]) => {
+      if (snapshot.length === 0) return;
+      const persistable = prepareMessagesForPersistence(snapshot);
+      const stored = persistable.map(uiToStored);
+      const serialized = JSON.stringify(stored);
+      if (serialized === lastSnapshot.current) return;
+      lastSnapshot.current = serialized;
+      queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) =>
+        upsertThreadSummary(current, tid, persistable, modelSettingsRef.current),
+      );
 
-  const startThreadNow = (message: UIMessage, modelSettings: ThreadModelSettings) => {
-    const snapshot = [...messagesRef.current, message];
-    // Show the new chat in the sidebar immediately, but don't touch URL/router or active-thread state while
-    // the first stream is starting; those visible navigation updates can disturb TanStack AI's first response.
-    queryClient.setQueryData<ThreadSummary[]>(threadKeys.all, (current) =>
-      upsertThreadSummary(current, tid, snapshot, modelSettings),
-    );
-    void startThread({
-      data: {
-        threadId: tid,
-        message: uiToStored(message),
-        traceEnabled: threadTraceEnabled,
-        modelSettings,
-      },
-    }).catch((err) => {
-      console.warn("Failed to start chat thread", err);
-    });
-  };
+      pendingSaves.current++;
+      try {
+        await transcriptSaver({
+          threadId: tid,
+          messages: stored,
+          modelSettings: modelSettingsRef.current,
+          traceEnabled: threadTraceEnabled,
+        });
+        void invalidateThreads(queryClient);
+        setSaveWarning(false);
+        setSaveError("");
+      } catch (err) {
+        console.warn("Failed to save chat thread", err);
+        // Persistence is best-effort — a failed save must never break the live chat — but it shouldn't be
+        // silent either: a user whose history quietly stops saving deserves to know.
+        setSaveWarning(true);
+        setSaveError(
+          "This chat could not be saved. It may have changed in another tab. Copy your unsaved text before reloading.",
+        );
+      } finally {
+        pendingSaves.current--;
+      }
+    },
+    [prepareMessagesForPersistence, queryClient, threadTraceEnabled, tid, transcriptSaver],
+  );
 
   const persist = (finishedMessage?: UIMessage) => {
     const snapshot = snapshotWithFinishedMessage(messagesRef.current, finishedMessage);
     syncNewThreadUrl();
     void persistSnapshot(snapshot);
   };
+
+  // Stop/error do not call onFinish. Save the committed React snapshot when the client becomes idle,
+  // including a user turn whose request failed before the first response chunk.
+  useEffect(() => {
+    if (!isLoading && messages.length > 0) {
+      syncNewThreadUrl();
+      void persistSnapshot(messages);
+    }
+  }, [isLoading, messages, persistSnapshot, syncNewThreadUrl]);
+
+  const persistLatest = useRef(() => {
+    void persistSnapshot(messagesRef.current);
+  });
+  persistLatest.current = () => {
+    void persistSnapshot(messagesRef.current);
+  };
+  const hasUnsavedWork = useRef(false);
+  hasUnsavedWork.current = isLoading || saveWarning;
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasUnsavedWork.current && pendingSaves.current === 0) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", beforeUnload);
+      // SPA navigation can happen before onFinish. Queue the latest partial transcript.
+      persistLatest.current();
+    };
+  }, []);
 
   // Whether the current protection posture allows sending, blocks it, or needs a one-time acknowledgement.
   const posture = sendPosture(protectionStatus);
@@ -416,8 +468,6 @@ export function ChatView({
   ) => {
     if (!content.trim() || isLoading || isExtracting || startingThread.current) return;
     const outgoingMessage = userMessage(content, annotations);
-    const startedMessage = messagesRef.current.length === 0 ? outgoingMessage : undefined;
-    const requestModelSettings = modelSettingsRef.current;
     setInput("");
     setAttachments([]);
     setUploadWarning(undefined);
@@ -432,7 +482,12 @@ export function ChatView({
     // `sendMessage()` awaits TanStack AI's internal onResponse hook before it starts `connection.send()`.
     // A microtask can still run inside that gap, so schedule thread/sidebar/URL work as a macrotask to avoid
     // perturbing the first stream startup path.
-    if (startedMessage) setTimeout(() => startThreadNow(startedMessage, requestModelSettings), 0);
+    setTimeout(() => {
+      const latest = messagesRef.current;
+      void persistSnapshot(
+        latest.some((message) => message.id === outgoingMessage.id) ? latest : [...latest, outgoingMessage],
+      );
+    }, 0);
     void sendPromise.finally(() => {
       if (pendingProtectionTicket.current === protectionTicket) pendingProtectionTicket.current = undefined;
       startingThread.current = false;
@@ -880,6 +935,7 @@ export function ChatView({
 
           {saveWarning || modelSettingsSaveWarning ? (
             <SaveWarningNotice
+              message={saveError || undefined}
               onDismiss={() => {
                 setSaveWarning(false);
                 setModelSettingsSaveWarning(false);
@@ -902,7 +958,10 @@ export function ChatView({
               setProtectionReviewError("");
             }}
             onSubmit={() => send(input)}
-            onStop={stop}
+            onStop={() => {
+              stop();
+              persist();
+            }}
             isLoading={isLoading}
             isExtracting={isExtracting}
             isCheckingProtection={checkingProtection}
@@ -963,7 +1022,7 @@ export function ChatView({
   );
 }
 
-function SaveWarningNotice({ onDismiss }: { onDismiss: () => void }) {
+function SaveWarningNotice({ onDismiss, message }: { onDismiss: () => void; message?: string }) {
   return (
     <div className="pb-2">
       <div className="mx-auto w-full max-w-3xl px-4">
@@ -973,7 +1032,7 @@ function SaveWarningNotice({ onDismiss }: { onDismiss: () => void }) {
         >
           <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
           <p className="min-w-0 flex-1">
-            This chat isn&apos;t being saved to your history right now. Your conversation is still here.
+            {message ?? "This chat isn't being saved to your history right now. Your conversation is still here."}
           </p>
           <button
             type="button"
