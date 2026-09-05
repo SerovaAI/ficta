@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ProtectionEngine } from "../src/engine/engine.js";
 import { DetectorUnavailableError } from "../src/engine/redaction-engine.js";
 import type { DetectorPlugin } from "../src/plugins/index.js";
@@ -202,6 +202,30 @@ describe("surrogate self-collision: detected values that match inside token text
 });
 
 describe("keyed scopes persist detected PII across a thread's requests", () => {
+  it("expires a returning idle scope without breaking an already-open request", async () => {
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    try {
+      const engine = new ProtectionEngine({ plugins: [emailDetector] });
+      const original = engine.beginRequest("idle-thread");
+      const body = JSON.stringify({ content: EMAIL });
+      const first = await original.redactBodyDetailed(body);
+      const token = first.body.match(SURROGATE)?.[0] ?? "";
+      expect(token).toBeTruthy();
+
+      clock.mockReturnValue(now + 31 * 60_000);
+      const expired = engine.beginRequest("idle-thread");
+      expect(expired.restoreText(token)).toBe(token);
+      expect(original.restoreText(token)).toBe(EMAIL);
+      const redetected = await expired.redactBodyDetailed(body);
+      expect(redetected.count).toBe(1);
+      expect(redetected.body).toBe(first.body);
+      expect(expired.restoreText(token)).toBe(EMAIL);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("a value detected on turn 1 stays redacted on turn 2 even when the detector misses it", async () => {
     // Detector only fires when the marker is present — simulating Presidio detecting a value in one
     // request's context but missing it in another's.

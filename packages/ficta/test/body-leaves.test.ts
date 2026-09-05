@@ -1,7 +1,27 @@
 import { describe, expect, it } from "vitest";
+import { ProtectionEngine } from "../src/engine/engine.js";
 import { type BodyLeaf, visitBodyLeaves } from "../src/engine/vault.js";
 
 describe("visitBodyLeaves", () => {
+  it("preserves prototype-named JSON properties while redacting and restoring", async () => {
+    const secret = "test-secret-value-12345";
+    const body = `{"__proto__":{"content":"keep me"},"content":"${secret}"}`;
+    const engine = new ProtectionEngine({ plugins: [], values: [{ value: secret }] });
+    const redacted = await engine.redactBodyDetailed(body);
+    expect(redacted.count).toBe(1);
+    expect(redacted.body).not.toContain(secret);
+    expect(Object.hasOwn(JSON.parse(redacted.body), "__proto__")).toBe(true);
+    expect(JSON.parse(redacted.body).__proto__).toEqual({ content: "keep me" });
+    expect(engine.restoreJson(redacted.body)).toBe(body);
+  });
+
+  it("can rewrite an ordinary key to __proto__ without invoking a setter", () => {
+    const mapped = visitBodyLeaves({ field: { keep: true } }, (leaf) =>
+      leaf.text === "field" ? "__proto__" : undefined,
+    );
+    expect(JSON.stringify(mapped)).toBe('{"__proto__":{"keep":true}}');
+  });
+
   it("visits keys and values once in deterministic structural order with paths", () => {
     const parsed = {
       messages: [{ role: "user", content: "hello" }],

@@ -29,6 +29,38 @@ async function redactWithDetector(body: string) {
 }
 
 describe("structural secret-json-value detection", () => {
+  it("detects changed values and reused values under cached keys across keyed requests", async () => {
+    const previous = process.env.FICTA_SECRET_SHAPES_ENABLED;
+    process.env.FICTA_SECRET_SHAPES_ENABLED = "1";
+    try {
+      const engine = new ProtectionEngine({ plugins: [secretShapesPlugin] });
+      const redact = (body: unknown) =>
+        engine.beginRequest("structural-cache").redactBodyDetailed(JSON.stringify(body));
+      const first = await redact({ api_token: SECRET_A, note: SECRET_B });
+      expect(first.body).not.toContain(SECRET_A);
+      expect(first.body).toContain(SECRET_B);
+
+      // Both the key and value have been seen, but never in this relationship.
+      const moved = await redact({ api_token: SECRET_B });
+      expect(moved.count).toBe(1);
+      expect(moved.leaks).toBe(0);
+      expect(moved.body).not.toContain(SECRET_B);
+      expect(engine.beginRequest("structural-cache").restoreJson(moved.body)).toBe(
+        JSON.stringify({ api_token: SECRET_B }),
+      );
+
+      const changedValue = ["Ab1", "Cd2", "Ef3", "Gh4", "Ij5kL"].join("-");
+      const changed = await redact({ api_token: changedValue });
+      expect(changed.body).not.toContain(changedValue);
+      expect(engine.beginRequest("structural-cache").restoreJson(changed.body)).toBe(
+        JSON.stringify({ api_token: changedValue }),
+      );
+    } finally {
+      if (previous === undefined) delete process.env.FICTA_SECRET_SHAPES_ENABLED;
+      else process.env.FICTA_SECRET_SHAPES_ENABLED = previous;
+    }
+  });
+
   it("pairs a secret-ish key with its own string value", () => {
     const found = detectSecretShapeLeaves(bodyLeavesOf({ api_token: SECRET_A }));
     expect(found.map((value) => value.value)).toEqual([SECRET_A]);

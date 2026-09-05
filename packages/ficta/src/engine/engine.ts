@@ -289,6 +289,8 @@ export class ProtectionEngine implements RedactionEngine {
 
   private keyedScopeState(key: string): KeyedScopeState {
     const now = Date.now();
+    // Expire idle state before a returning key can refresh its timestamp.
+    this.evictKeyedScopes(now);
     const existing = this.keyedScopes.get(key);
     if (existing) this.keyedScopes.delete(key); // re-insert below so map order stays least-recently-used-first
     const state = existing ?? {
@@ -424,7 +426,7 @@ class ProtectionRequestScope implements RequestScope {
     const hashes = seen ? document.leaves.map((leaf) => leafHash(leaf.text)) : [];
     const freshLeaves = seen ? document.leaves.filter((_, i) => !seen.has(hashes[i] ?? "")) : document.leaves;
     const freshContentLeaves = freshLeaves.filter((leaf) => leaf.kind !== "key");
-    const detection = await this.detectBodyValues(freshContentLeaves, freshLeaves, {
+    const detection = await this.detectBodyValues(freshContentLeaves, freshLeaves, document.leaves, {
       ...detectCtx,
       surface: "body",
     });
@@ -736,6 +738,7 @@ class ProtectionRequestScope implements RequestScope {
   private async detectBodyValues(
     contentLeaves: readonly BodyLeaf[],
     allLeaves: readonly BodyLeaf[],
+    structuralLeaves: readonly BodyLeaf[],
     ctx: DetectTextContext,
   ): Promise<BodyDetectionPass> {
     let complete = true;
@@ -753,9 +756,9 @@ class ProtectionRequestScope implements RequestScope {
       let structuralDetected: readonly ProtectedValue[] = [];
       try {
         if (text) textDetected = (await plugin.detectText?.(text, ctx)) ?? [];
-        // The structural hook always sees the full leaf view: pairing a key with its own value
-        // needs the object keys that a "content" text view strips out.
-        if (plugin.detectBodyLeaves) structuralDetected = await plugin.detectBodyLeaves(allLeaves, ctx);
+        // Structural detection needs the complete document, including cached keys and values:
+        // an unchanged key can acquire a new value, or a known value can move under a secret key.
+        if (plugin.detectBodyLeaves) structuralDetected = await plugin.detectBodyLeaves(structuralLeaves, ctx);
       } catch (err) {
         if (err instanceof DetectorUnavailableError) {
           const override = plugin.kind === "detector" ? plugin.failClosed?.() : undefined;
@@ -771,7 +774,7 @@ class ProtectionRequestScope implements RequestScope {
         for (const value of admit(candidates, this.policy)) detections.push({ value, leaves, separator: joinedWith });
       };
       record(textDetected, textLeaves, separator);
-      record(structuralDetected, allLeaves, STRUCTURAL_LEAF_BOUNDARY);
+      record(structuralDetected, structuralLeaves, STRUCTURAL_LEAF_BOUNDARY);
     }
     return { complete, detections };
   }

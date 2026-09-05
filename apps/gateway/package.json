@@ -36,7 +36,7 @@
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "drizzle-orm": "^0.45.2",
-    "lucide-react": "1.39.0",
+    "lucide-react": "1.40.0",
     "pg": "^8.23.0",
     "radix-ui": "^1.6.7",
     "react": "^19.2.8",
@@ -50,11 +50,11 @@
     "@types/node": "^26.4.1",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
+    "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "latest",
     "drizzle-kit": "^0.31.10",
     "typescript": "^7.0.2",
     "vite": "latest",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.0"
   }
 }

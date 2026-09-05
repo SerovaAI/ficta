@@ -1723,7 +1723,7 @@ export function visitBodyLeaves(value: unknown, visit: BodyLeafVisitor, rootKind
     }
     if (Array.isArray(current)) return current.map((entry, i) => walk(entry, [...path, i]));
     if (current && typeof current === "object") {
-      const out: Record<string, unknown> = {};
+      const out: Record<string, unknown> = Object.create(null);
       for (const [key, entry] of Object.entries(current)) {
         const entryPath = [...path, key];
         const replacement = visit({ index: index++, kind: "key", path: entryPath, text: key });
