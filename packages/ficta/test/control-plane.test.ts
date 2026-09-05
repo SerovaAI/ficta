@@ -1,12 +1,15 @@
+import { randomUUID } from "node:crypto";
 import {
   createFictaControlClient,
   fictaControlErrorData,
   fictaControlErrorStatus,
   FICTA_CAPABILITIES_PATH,
   FICTA_CONTROL_CAPABILITIES,
+  FICTA_EXTENSION_CAPABILITIES,
   FICTA_CONTROL_PROTOCOL_VERSION,
 } from "@serovaai/ficta-contract";
 import {
+  FICTA_EGRESS_EVENT_HEADER,
   FICTA_HEALTH_PATH,
   FICTA_PROTECTION_PREVIEW_PATH,
   FICTA_SCOPE_HEADER,
@@ -49,10 +52,42 @@ describe("oRPC control plane", () => {
         ok: true,
         service: "ficta",
         protocolVersion: FICTA_CONTROL_PROTOCOL_VERSION,
-        capabilities: [...FICTA_CONTROL_CAPABILITIES],
+        capabilities: [...FICTA_CONTROL_CAPABILITIES, ...FICTA_EXTENSION_CAPABILITIES],
       });
       await expect(client.health()).resolves.toEqual({ ok: true, service: "ficta" });
       expect(isProtectionStatusOk(await client.status())).toBe(true);
+      expect((await client.protectionStats({ limit: 1 })).stats.events).toEqual([]);
+      expect((await client.config()).ok).toBe(true);
+      expect((await client.traceCapture()).traceCapture.enabled).toBe(false);
+      expect((await client.updateTraceCapture({ enabled: false })).traceCapture.enabled).toBe(false);
+      expect((await client.registryReload()).ok).toBe(true);
+      await expect(client.egressProof()).rejects.toMatchObject({ status: 400 });
+      await expect(client.updateTraceCapture({ enabled: "bad" } as never)).rejects.toMatchObject({ status: 400 });
+      await expect(client.updateConfig({ failClosed: false })).rejects.toMatchObject({
+        status: 400,
+        data: { status: "disabled" },
+      });
+      const eventId = randomUUID();
+      const proofClient = createFictaControlClient({
+        baseUrl,
+        headers: {
+          [FICTA_SCOPE_HEADER]: "contract-test",
+          [FICTA_EGRESS_EVENT_HEADER]: eventId,
+        },
+      });
+      await expect(proofClient.egressProof()).rejects.toMatchObject({ status: 404 });
+      await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          [FICTA_SCOPE_HEADER]: "contract-test",
+          [FICTA_EGRESS_EVENT_HEADER]: eventId,
+        },
+        body: JSON.stringify({ model: "test", messages: [{ role: "user", content: "test" }] }),
+      });
+      expect((await proofClient.egressProof()).proof).toMatchObject({ eventId, outcome: "upstream_error" });
+      const wrongStatsMethod = await fetch(`${baseUrl}/__ficta/protection-stats`, { method: "POST" });
+      expect(wrongStatsMethod.status).toBe(405);
 
       const preview = await client.protectionPreview({
         text: "Review Project Juniper",

@@ -1,5 +1,6 @@
+import { protectionTicketSchema } from "@serovaai/ficta-contract";
 import { randomUUID } from "node:crypto";
-import { FICTA_PROTECTION_PREVIEW_PATH, FICTA_SCOPE_HEADER, isProtectionPreviewOk } from "@serovaai/ficta-protocol";
+import { FICTA_SCOPE_HEADER } from "@serovaai/ficta-protocol";
 import { chat, toServerSentEventsResponse } from "@tanstack/ai";
 import { createFileRoute } from "@tanstack/react-router";
 import { scopeFromAuth } from "../../lib/auth/guards.server";
@@ -19,7 +20,7 @@ import {
 import { type ProtectionReviewMode, protectionReviewRequiresPreview } from "../../lib/protection-review-mode";
 import { recordProtectionStatsTrend } from "../../lib/protection-stats.server";
 import { MissingKeyError, ProviderKeyDecryptionError, resolveProviderApiKey } from "../../lib/provider-keys.server";
-import { proxyBaseUrl } from "../../lib/proxy-base.server";
+import { gatewayFictaControlClient } from "../../lib/ficta-control-client.server";
 import { stripProtectionDisplayMetadata } from "../../lib/restore-highlights";
 import { getStorage } from "../../lib/storage/storage.server";
 import { isModelAllowed } from "../../lib/storage/types";
@@ -113,6 +114,9 @@ export const Route = createFileRoute("/api/chat")({
             requestedTraceEnabled,
             admin: isAdmin(auth),
           });
+          await gatewayFictaControlClient({ requiredCapability: "restore-highlights" });
+          if (egressEventId) await gatewayFictaControlClient({ requiredCapability: "egress-proof" });
+          if (traceEnabled) await gatewayFictaControlClient({ requiredCapability: "trace-capture" });
           stream = chat({
             adapter: createModelAdapter({
               provider,
@@ -178,30 +182,26 @@ export function modelOptionsForProvider(provider: Provider, reasoningEffort: Rea
   return provider === "openai" ? { reasoning: { effort: reasoningEffort }, store: false as const } : undefined;
 }
 
-function cleanProtectionTicket(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const ticket = value.trim();
-  return /^[0-9a-f-]{20,80}$/i.test(ticket) ? ticket : undefined;
+export function cleanProtectionTicket(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  // Tickets are opaque HTTP header values. Never infer the engine's token format or silently drop one.
+  const parsed = protectionTicketSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new Error("invalid protection ticket");
+  }
+  return parsed.data;
 }
 
-async function prepareStoredThreadProtection(
+export async function prepareStoredThreadProtection(
   fictaScope: string,
   currentUserText: string,
   protectedValues: string[],
 ): Promise<string> {
-  const response = await fetch(`${proxyBaseUrl()}${FICTA_PROTECTION_PREVIEW_PATH}`, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-      [FICTA_SCOPE_HEADER]: fictaScope,
-    },
-    body: JSON.stringify({ text: currentUserText, protectedValues }),
+  const client = await gatewayFictaControlClient({
+    requiredCapability: "protection-preview",
+    headers: { [FICTA_SCOPE_HEADER]: fictaScope },
   });
-  const json = (await response.json()) as unknown;
-  if (!response.ok || !isProtectionPreviewOk(json)) {
-    throw new Error("stored chat protections could not be prepared; review protection and try again");
-  }
+  const json = await client.protectionPreview({ text: currentUserText, protectedValues });
   return json.ticket;
 }
 

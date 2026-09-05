@@ -4,7 +4,7 @@ Language-neutral HTTP contract for building a frontend or operator integration f
 protection engine. The package includes a generated OpenAPI 3.1.1 document; TypeScript users also get
 the source oRPC contract and Zod schemas, a fetch-based client, and shared error decoding.
 
-This package covers the Ficta **control plane** only. OpenAI- and Anthropic-compatible model traffic
+This package covers the Ficta **control plane**, optional evidence/operator HTTP interfaces, and constants for opt-in restore highlighting. OpenAI- and Anthropic-compatible model traffic
 continues to use the providers' native wire formats through the proxy and is intentionally not
 wrapped in oRPC.
 
@@ -80,3 +80,12 @@ ignore unrecognized names when `protocolVersion` remains compatible.
 ## License
 
 MIT — see [`LICENSE`](./LICENSE).
+
+## Optional interfaces
+
+Discover `protection-stats`, `egress-proof`, `config`, `trace-capture`, `registry-reload`, and
+`restore-highlights` before using them. The client includes statistics, request receipts, config
+read/update, trace read/update, and registry reload procedures; OpenAPI describes the same HTTP
+interfaces and required headers. `fictaExtensionContract` can be implemented separately from the
+small `fictaControlContract`. Successful client responses are validated at runtime. See the
+frontend integration guide for access boundaries, persistence responsibilities, and highlight framing.

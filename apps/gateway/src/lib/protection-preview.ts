@@ -1,4 +1,5 @@
-import { isProtectionPreviewOk, type ProtectionPreviewFinding } from "@serovaai/ficta-protocol";
+import { protectionPreviewSchema } from "@serovaai/ficta-contract";
+import { type ProtectionPreviewFinding } from "@serovaai/ficta-protocol";
 
 export interface GatewayProtectionPreview {
   ticket: string;
@@ -24,19 +25,18 @@ export async function previewProtection(input: {
   });
   const json = (await response.json()) as unknown;
   if (!response.ok) throw new Error(readMessage(json) ?? `Protection preview failed (HTTP ${response.status}).`);
-  if (!isProtectionPreviewOk(json) || !hasProtectedValues(json)) {
+  if (!hasProtectedValues(json)) {
     throw new Error("The protection preview response was not understood.");
   }
+  const { protectedValues: _values, ...preview } = json;
+  const parsed = protectionPreviewSchema.parse(preview);
   return {
-    ticket: json.ticket,
-    textSha256: json.textSha256,
-    redactedText: json.redactedText,
-    findings: json.findings,
+    ...parsed,
     protectedValues: json.protectedValues,
   };
 }
 
-function hasProtectedValues(value: unknown): value is { protectedValues: string[] } {
+function hasProtectedValues(value: unknown): value is Record<string, unknown> & { protectedValues: string[] } {
   return (
     typeof value === "object" &&
     value !== null &&

@@ -9,7 +9,7 @@ import {
   FICTA_STATUS_PATH,
 } from "@serovaai/ficta-protocol";
 import { format } from "oxfmt";
-import { fictaControlContract } from "../dist/contract.js";
+import { fictaClientContract } from "../dist/client.js";
 import {
   PROTECTION_PREVIEW_TEXT_MAX_BYTES,
   PROTECTION_PREVIEW_VALUES_MAX_BYTES,
@@ -29,7 +29,7 @@ JSON_SCHEMA_INPUT_REGISTRY.add(protectionPreviewProtectedValuesSchema, {
 
 const outputUrl = new URL("../openapi/ficta-control-plane.openapi.json", import.meta.url);
 const generator = new OpenAPIGenerator({ schemaConverters: [new ZodToJsonSchemaConverter()] });
-const specification = await generator.generate(fictaControlContract, {
+const specification = await generator.generate(fictaClientContract, {
   info: {
     title: "Ficta control plane",
     version: "1.0.0",
@@ -46,28 +46,36 @@ const specification = await generator.generate(fictaControlContract, {
     description: "Frontend integration contract, trust boundary, and reviewed-send lifecycle",
     url: "https://github.com/SerovaAI/ficta/blob/main/packages/ficta/docs/control-plane.md",
   },
-  customErrorResponseBodySchema: (_definedErrors, status) => {
-    const previewStatus = {
-      400: "invalid_request",
-      403: "forbidden",
-      422: "invariant",
-      503: "detector_unavailable",
-    }[status];
-    if (!previewStatus) return undefined;
-    return {
-      type: "object",
-      properties: {
-        ok: { const: false },
-        service: { const: "ficta" },
-        status: { const: previewStatus },
-        message: { type: "string" },
-      },
-      required: ["ok", "service", "status", "message"],
-      additionalProperties: false,
-    };
-  },
+  customErrorResponseBodySchema: (definedErrors) => (definedErrors.length === 1 ? definedErrors[0][3] : undefined),
 });
 addTrustedScopeParameter(specification);
+addHeader(
+  "/__ficta/egress-proof",
+  "get",
+  "x-ficta-scope",
+  true,
+  { type: "string", minLength: 1, maxLength: FICTA_SCOPE_MAX_LENGTH },
+  "Trusted conversation scope used for the provider request.",
+);
+addHeader(
+  "/__ficta/egress-proof",
+  "get",
+  "x-ficta-egress-event",
+  true,
+  { type: "string", pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F-]{27,64}$" },
+  "Server-generated request correlation id; use a UUID.",
+);
+addHeader(
+  "/__ficta/registry/reload",
+  "post",
+  "x-ficta-registry-revision",
+  false,
+  { type: "string" },
+  "Expected managed-file revision. Success acknowledges it only when that exact revision was loaded.",
+);
+function addHeader(path, method, name, required, schema, description) {
+  specification.paths[path][method].parameters = [{ name, in: "header", required, schema, description }];
+}
 addHeadOperation(
   specification,
   FICTA_HEALTH_PATH,

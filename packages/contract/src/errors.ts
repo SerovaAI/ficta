@@ -1,3 +1,4 @@
+import { operatorErrorSchema, egressErrorSchema } from "./extensions.js";
 import { ORPCError } from "@orpc/client";
 import { protectionPreviewErrorSchema, type FictaProtectionPreviewError } from "./schemas.js";
 
@@ -12,6 +13,10 @@ const previewErrorCodes = {
 export function encodeFictaControlError(error: ORPCError<string, unknown>): unknown {
   const parsed = protectionPreviewErrorSchema.safeParse(error.data);
   if (parsed.success) return parsed.data;
+  const operator = operatorErrorSchema.safeParse(error.data);
+  if (operator.success) return operator.data;
+  const egress = egressErrorSchema.safeParse(error.data);
+  if (egress.success) return egress.data;
   if (error.code === "BAD_REQUEST") {
     return {
       ok: false,
@@ -56,7 +61,24 @@ export function decodeFictaControlError(
   response: { status: number },
 ): ORPCError<string, unknown> | undefined {
   const parsed = protectionPreviewErrorSchema.safeParse(body);
-  if (!parsed.success) return undefined;
+  if (!parsed.success) {
+    const operator = operatorErrorSchema.safeParse(body);
+    const egress = egressErrorSchema.safeParse(body);
+    if (!operator.success && !egress.success) return undefined;
+    const code = (
+      { 400: "BAD_REQUEST", 403: "FORBIDDEN", 404: "NOT_FOUND", 409: "CONFLICT", 501: "NOT_IMPLEMENTED" } as Record<
+        number,
+        string
+      >
+    )[response.status];
+    if (!code) return undefined;
+    return new ORPCError(code, {
+      defined: true,
+      status: response.status,
+      message: operator.success ? operator.data.message : egress.data!.error.message,
+      data: operator.success ? operator.data : egress.data,
+    });
+  }
   return new ORPCError(previewErrorCodes[parsed.data.status], {
     defined: true,
     status: response.status,
@@ -72,5 +94,12 @@ export function fictaControlErrorStatus(error: unknown): number | undefined {
 export function fictaControlErrorData(error: unknown): FictaProtectionPreviewError | undefined {
   if (!(error instanceof ORPCError)) return undefined;
   const parsed = protectionPreviewErrorSchema.safeParse(error.data);
+  return parsed.success ? parsed.data : undefined;
+}
+
+/** Stable operator error body, including config locks and registry validation failures. */
+export function fictaOperatorErrorData(error: unknown) {
+  if (!(error instanceof ORPCError)) return undefined;
+  const parsed = operatorErrorSchema.safeParse(error.data);
   return parsed.success ? parsed.data : undefined;
 }

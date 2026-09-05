@@ -209,6 +209,7 @@ interface PreparedRequest {
 function createControlHandler(engine: RedactionEngine, stats: ProtectionStats, tickets: Map<string, ProtectionTicket>) {
   return new OpenAPIHandler(
     createFictaControlRouter({
+      registryReloadAvailable: !!engine.reloadRegistryValues,
       status: () => protectionStatus(engine, stats),
       protectionPreview: (input, context) =>
         protectionPreview(engine, tickets, context.remoteAddress, context.scopeKey, input),
@@ -290,7 +291,11 @@ async function handleControlRoute(
     }
     return c.json({ error: { type: "not_found", message: "Ficta control route was not found." } }, 404);
   }
-  if (url.pathname === FICTA_PROTECTION_STATS_PATH) return c.json(protectionStatsResponse(stats, url));
+  if (url.pathname === FICTA_PROTECTION_STATS_PATH) {
+    if (method !== "GET")
+      return c.json({ error: { type: "method_not_allowed", message: "Use GET for protection stats." } }, 405);
+    return c.json(protectionStatsResponse(stats, url));
+  }
   if (url.pathname === FICTA_EGRESS_PROOF_PATH) {
     if (method !== "GET")
       return c.json({ error: { type: "method_not_allowed", message: "Use GET for egress proof." } }, 405);

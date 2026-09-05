@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import {
   capabilitiesSchema,
+  createFictaControlClient,
+  protectionPreviewSchema,
   FICTA_CONTROL_CAPABILITIES,
   FICTA_CONTROL_PROTOCOL_VERSION,
   FICTA_SCOPE_HEADER,
@@ -106,6 +108,11 @@ describe("Ficta control-plane schemas", () => {
       "/__ficta/health",
       "/__ficta/status",
       "/__ficta/protection-preview",
+      "/__ficta/protection-stats",
+      "/__ficta/egress-proof",
+      "/__ficta/config",
+      "/__ficta/trace-capture",
+      "/__ficta/registry/reload",
     ]);
     expect(specification.paths?.["/__ficta/health"]?.head?.responses).toHaveProperty("200");
     expect(specification.paths?.["/__ficta/status"]?.head?.responses).toHaveProperty("200");
@@ -127,5 +134,34 @@ describe("Ficta control-plane schemas", () => {
     expect(previewProperties?.protectedValues).toMatchObject({
       "x-ficta-max-utf8-bytes": PROTECTION_PREVIEW_VALUES_MAX_BYTES,
     });
+  });
+});
+
+const preview = {
+  ok: true,
+  service: "ficta",
+  ticket: "opaque_token.from-another-engine+/=",
+  textSha256: "a".repeat(64),
+  redactedText: "replacement",
+  findings: [{ start: 0, end: 4, surrogate: "replacement", origin: "user", name: "selected", source: "user-selected" }],
+};
+describe("portable response validation", () => {
+  it("accepts opaque tickets and rejects empty tickets and invalid finding spans", () => {
+    expect(protectionPreviewSchema.safeParse(preview).success).toBe(true);
+    for (const ticket of ["", " token ", "token\r\ninjected"]) {
+      expect(protectionPreviewSchema.safeParse({ ...preview, ticket }).success).toBe(false);
+    }
+    for (const end of [0, -1]) {
+      expect(
+        protectionPreviewSchema.safeParse({ ...preview, findings: [{ ...preview.findings[0], end }] }).success,
+      ).toBe(false);
+    }
+  });
+  it("validates responses from external engines at the shared client boundary", async () => {
+    const client = createFictaControlClient({
+      baseUrl: "http://external-engine",
+      fetch: async () => Response.json({ ...preview, ticket: "" }),
+    });
+    await expect(client.protectionPreview({ text: "test" })).rejects.toThrow();
   });
 });

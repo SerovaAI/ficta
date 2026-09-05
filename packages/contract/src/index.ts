@@ -1,4 +1,17 @@
 export {
+  FICTA_CONFIG_PATH,
+  FICTA_EGRESS_EVENT_HEADER,
+  FICTA_EGRESS_PROOF_PATH,
+  FICTA_PROTECTION_STATS_PATH,
+  FICTA_REGISTRY_RELOAD_PATH,
+  FICTA_REGISTRY_REVISION_HEADER,
+  FICTA_TRACE_CAPTURE_PATH,
+  FICTA_TRACE_CAPTURE_HEADER,
+  FICTA_RESTORE_HIGHLIGHT_HEADER,
+  FICTA_RESTORE_HIGHLIGHT_START,
+  FICTA_RESTORE_HIGHLIGHT_END,
+  FICTA_RESTORE_HIGHLIGHT_ORIGIN,
+  FICTA_RESTORE_HIGHLIGHT_METADATA,
   FICTA_HEALTH_PATH,
   FICTA_PROTECTION_PREVIEW_PATH,
   FICTA_PROTECTION_TICKET_HEADER,
@@ -10,6 +23,7 @@ export { fictaControlContract, type FictaControlContract } from "./contract.js";
 export {
   decodeFictaControlError,
   encodeFictaControlError,
+  fictaOperatorErrorData,
   fictaControlErrorData,
   fictaControlErrorStatus,
 } from "./errors.js";
@@ -32,6 +46,7 @@ export {
   protectionPreviewInvalidRequestErrorSchema,
   protectionPreviewInvariantErrorSchema,
   protectionPreviewSchema,
+  protectionTicketSchema,
   protectionStatusSchema,
   registryProtectionStatusSchema,
   type FictaCapabilities,
@@ -41,3 +56,5 @@ export {
   type FictaProtectionPreviewInput,
   type FictaProtectionStatus,
 } from "./schemas.js";
+
+export * from "./extensions.js";

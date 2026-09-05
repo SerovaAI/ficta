@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
+import type { FictaControlClient } from "@serovaai/ficta-contract";
+import { gatewayFictaControlClient } from "@/lib/ficta-control-client.server";
+vi.mock("@/lib/ficta-control-client.server", () => ({ gatewayFictaControlClient: vi.fn() }));
+import { describe, expect, it, vi } from "vitest";
 import {
+  cleanProtectionTicket,
+  prepareStoredThreadProtection,
   latestUserText,
   messagesForModel,
   modelOptionsForProvider,
@@ -105,5 +110,40 @@ describe("modelOptionsForProvider", () => {
 
   it("does not add OpenAI-specific model options to Anthropic requests", () => {
     expect(modelOptionsForProvider("anthropic", "medium")).toBeUndefined();
+  });
+});
+
+describe("opaque protection tickets", () => {
+  it("preserves header-safe tickets from other engines without UUID assumptions", () => {
+    for (const ticket of ["opaque", "token_from.another+engine/with=encoding", "a".repeat(256)]) {
+      expect(cleanProtectionTicket(ticket)).toBe(ticket);
+    }
+    expect(cleanProtectionTicket(undefined)).toBeUndefined();
+  });
+  it("rejects malformed supplied tickets instead of silently sending without review", () => {
+    for (const ticket of [null, 42, "", " token ", "token\r\ninjected: yes"]) {
+      expect(() => cleanProtectionTicket(ticket)).toThrow("invalid protection ticket");
+    }
+  });
+});
+
+describe("stored thread protection", () => {
+  it("negotiates preview capability and preserves the scoped client's opaque ticket", async () => {
+    const protectionPreview = vi.fn().mockResolvedValue({ ticket: "opaque.other-engine/token" });
+    vi.mocked(gatewayFictaControlClient).mockResolvedValueOnce({ protectionPreview } as unknown as FictaControlClient);
+    await expect(prepareStoredThreadProtection("trusted-scope", "exact text", ["text"])).resolves.toBe(
+      "opaque.other-engine/token",
+    );
+    expect(gatewayFictaControlClient).toHaveBeenLastCalledWith({
+      requiredCapability: "protection-preview",
+      headers: { "x-ficta-scope": "trusted-scope" },
+    });
+    expect(protectionPreview).toHaveBeenCalledWith({ text: "exact text", protectedValues: ["text"] });
+  });
+  it("stops when capability negotiation fails", async () => {
+    vi.mocked(gatewayFictaControlClient).mockRejectedValueOnce(new Error("incompatible proxy"));
+    await expect(prepareStoredThreadProtection("trusted-scope", "text", ["text"])).rejects.toThrow(
+      "incompatible proxy",
+    );
   });
 });

@@ -119,7 +119,7 @@ for display. They MUST NOT parse display messages to recover state.
 - The combined unique protected values are limited to 65,536 bytes after trimming and UTF-8
   encoding.
 - Finding `start` and `end` are inclusive/exclusive UTF-16 offsets into the exact submitted `text`,
-  matching JavaScript string indexing.
+  matching JavaScript string indexing. Every finding MUST have `end > start`.
 
 OpenAPI's standard `maxLength` is only a character ceiling. The actual byte constraints are exposed
 as `x-ficta-max-utf8-bytes`; clients MUST enforce those extensions before sending large inputs.
@@ -184,7 +184,7 @@ preview exact text ──▶ render redactedText/findings ──▶ native provi
 5. On `409 ficta_protection_preview_stale`, discard the ticket, preview the current text again, and
    require review again when the product's review policy calls for it.
 
-A ticket is opaque, short-lived, scoped, bound to the SHA-256 of the preview text, and consumed once.
+A ticket is an opaque, non-empty printable ASCII HTTP header value without whitespace. It is short-lived, scoped, bound to the SHA-256 of the preview text, and consumed once.
 Clients MUST NOT inspect it, persist it as conversation state, reuse it, or depend on a particular
 expiry duration. A client MUST treat a ticket as spent once it attaches the ticket to an attempted
 send; a failure is not a promise that the ticket remains usable. After the request body and ticket
@@ -290,6 +290,8 @@ try {
 }
 ```
 
+The supplied client validates every successful response with the published schemas, including non-empty tickets and finding spans with `end > start`. Legacy `@serovaai/ficta-protocol` guards remain available for older consumers; new integrations SHOULD use the contract schemas or client.
+
 The supplied client uses oRPC's OpenAPI transport. `baseUrl` may be a string or `URL`; static request
 headers and a custom `fetch` implementation are optional. oRPC is not required for conformance.
 
@@ -386,3 +388,65 @@ pnpm --filter @serovaai/ficta test
 
 These commands validate the Ficta implementation in this repository; an alternative engine SHOULD
 run equivalent black-box tests against its own deployed base URL.
+
+## Optional evidence and operator interfaces
+
+The following capabilities extend protocol version 1 without requiring a new core profile. Discover
+and require each capability before calling its procedures. The shared client and OpenAPI include
+all these HTTP interfaces. Missing capabilities mean unavailable features, never evidence that a
+request was protected. Gateway requires restore highlighting for chat and egress proof for its
+conversation ledger; operator features require their own capabilities when used.
+
+| Capability           | Client procedures                                   | HTTP interface                        |
+| -------------------- | --------------------------------------------------- | ------------------------------------- |
+| `protection-stats`   | `protectionStats({ limit? })`                       | `GET /__ficta/protection-stats`       |
+| `egress-proof`       | `egressProof()`                                     | `GET /__ficta/egress-proof`           |
+| `config`             | `config()`, `updateConfig(patch)`                   | `GET`, `PATCH /__ficta/config`        |
+| `trace-capture`      | `traceCapture()`, `updateTraceCapture({ enabled })` | `GET`, `PATCH /__ficta/trace-capture` |
+| `registry-reload`    | `registryReload()`                                  | `POST /__ficta/registry/reload`       |
+| `restore-highlights` | Native provider response extension                  | `x-ficta-restore-highlights: 1`       |
+
+Statistics are process-wide, not tenant-scoped. The event limit defaults to 100 and is capped at
+500; events are newest first and totals cover the proxy run. A multi-user server MUST restrict
+process-wide statistics and configuration to authorized operators. Core status remains values-free
+readiness; it is not evidence for any particular send.
+
+For request evidence, generate a UUID on the trusted server and attach `x-ficta-egress-event` and
+`x-ficta-scope` to the provider request. Read proof with those same headers using a scoped client.
+Proof reads are loopback-only. Missing headers produce 400, non-loopback callers receive 403, and
+missing or expired evidence produces 404. The reference proxy retains proofs for approximately
+15 minutes; clients MUST persist receipts they need and MUST NOT interpret a missing receipt as
+successful screening. `survivingValues` covers known values only, not undetected sensitive content.
+
+Configuration PATCH, trace GET/PATCH, and registry reload require loopback callers. The application
+server MUST enforce operator authorization. Config changes report `restartRequired` and locked
+fields; a saved setting does not promise it is active. Trace capture requires the operator's configured
+trace capability, the runtime toggle, and per-request `x-ficta-trace-capture: 1`; enabling a toggle
+alone does not promise a trace file. Trace data may be sensitive and is not a values-free receipt.
+
+Registry reload accepts no paths or values. Publish the managed file through the operator's trusted
+storage workflow, then optionally send `x-ficta-registry-revision`. Verify the response acknowledges
+that exact revision. Missing acknowledgement does not prove publication. Changes/removals may need
+a restart; inspect `restartRequired`. Engines without reload support MUST omit `registry-reload`.
+Operator errors retain `{ ok: false, service: "ficta", status, message, field? }`; the client decodes
+these and exposes `fictaOperatorErrorData`. Config locks return 409, disabled/invalid patches 400,
+invalid registry content 409, and unavailable reload implementations 501.
+
+### Restore highlight framing
+
+After requiring `restore-highlights`, opt in on the native provider request. Eligible restored text
+contains the following framing inside provider text fields (not a separate SSE event):
+
+```text
+START surrogate [ORIGIN origin] METADATA restoredText END
+```
+
+The exact marker strings are exported by `@serovaai/ficta-contract` and `@serovaai/ficta-protocol`:
+`FICTA_RESTORE_HIGHLIGHT_START`, `FICTA_RESTORE_HIGHLIGHT_ORIGIN`,
+`FICTA_RESTORE_HIGHLIGHT_METADATA`, and `FICTA_RESTORE_HIGHLIGHT_END`. Each marker is the matching
+`FICTA_RESTORE_*` name surrounded by U+001E; METADATA uses `FICTA_RESTORE_SURROGATE`.
+Origin is `registry`, `detected`, or `user` when supplied. Treat the surrogate as opaque. Streaming
+clients MUST buffer incomplete markers across chunks, display restored text with their chosen
+annotation, and remove framing before copy, export, or resending history. These annotations describe
+restoration and are not authenticated egress evidence. Clients that do not implement framing MUST
+omit the opt-in header; ordinary native provider responses remain unannotated.

@@ -1,10 +1,12 @@
+import { fictaOperatorErrorData } from "@serovaai/ficta-contract";
+import {
+  gatewayFictaControlClient,
+  fictaControlErrorStatus,
+  GatewayFictaCompatibilityError,
+} from "../ficta-control-client.server";
 import { mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import {
-  FICTA_REGISTRY_RELOAD_PATH,
-  FICTA_REGISTRY_REVISION_HEADER,
-  isRegistryReloadOk,
-} from "@serovaai/ficta-protocol";
+import { FICTA_REGISTRY_REVISION_HEADER, isRegistryReloadOk } from "@serovaai/ficta-protocol";
 import { createServerFn } from "@tanstack/react-start";
 import { requireAdminScope, requireScope } from "@/lib/auth/guards.server";
 import { SerialTaskQueue, writePrivateFileAtomic } from "./private-file.server";
@@ -166,45 +168,32 @@ async function requestProxyRegistryReload(expectedRevision: string): Promise<Pro
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RELOAD_TIMEOUT_MS);
   try {
-    const res = await fetch(`${proxyUrl}${FICTA_REGISTRY_RELOAD_PATH}`, {
-      method: "POST",
-      headers: { accept: "application/json", [FICTA_REGISTRY_REVISION_HEADER]: expectedRevision },
+    const client = await gatewayFictaControlClient({
+      requiredCapability: "registry-reload",
       signal: controller.signal,
+      headers: { [FICTA_REGISTRY_REVISION_HEADER]: expectedRevision },
     });
-    if (res.status === 403) {
-      return {
-        ok: false,
-        status: "forbidden",
-        message: `ficta proxy at ${proxyUrl} refused the reload (loopback-only); restart the proxy to load the file.`,
-      };
-    }
-    if (res.status === 409) {
-      const json = (await res.json()) as unknown;
-      if (
-        typeof json === "object" &&
-        json !== null &&
-        "status" in json &&
-        json.status === "invalid_registry" &&
-        "message" in json &&
-        typeof json.message === "string"
-      ) {
-        return { ok: false, status: "source_error", message: json.message };
-      }
-    }
-    if (!res.ok) {
+    return verifyRegistryReload(
+      await client.registryReload(undefined, { signal: controller.signal }),
+      expectedRevision,
+    );
+  } catch (error) {
+    const body = fictaOperatorErrorData(error);
+    if (body?.status === "invalid_registry") return { ok: false, status: "source_error", message: body.message };
+    if (fictaControlErrorStatus(error) === 403)
+      return { ok: false, status: "forbidden", message: "The proxy refused the reload (loopback-only)." };
+    if (body || error instanceof GatewayFictaCompatibilityError || fictaControlErrorStatus(error) !== undefined) {
       return {
         ok: false,
         status: "bad_response",
-        message: `ficta proxy registry reload returned HTTP ${res.status}; restart the proxy to load the file.`,
+        message:
+          body?.message ?? "The proxy does not support registry reload; update Ficta or restart it to load the file.",
       };
     }
-    const json = (await res.json()) as unknown;
-    return verifyRegistryReload(json, expectedRevision);
-  } catch {
     return {
       ok: false,
       status: "unreachable",
-      message: `ficta proxy is unreachable at ${proxyUrl}; start it (with FICTA_REGISTRY_MANAGED_FILE_PATHS including the exported file) or restart it to load the file.`,
+      message: `ficta proxy is unreachable at ${proxyUrl}; start it or restart it to load the file.`,
     };
   } finally {
     clearTimeout(timer);

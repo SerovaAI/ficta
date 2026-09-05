@@ -1,10 +1,5 @@
-import {
-  FICTA_EGRESS_EVENT_HEADER,
-  FICTA_EGRESS_PROOF_PATH,
-  FICTA_SCOPE_HEADER,
-  isEgressProofOk,
-} from "@serovaai/ficta-protocol";
-import { proxyBaseUrl } from "./proxy-base.server";
+import { FICTA_EGRESS_EVENT_HEADER, FICTA_SCOPE_HEADER } from "@serovaai/ficta-protocol";
+import { gatewayFictaControlClient } from "./ficta-control-client.server";
 import { getStorage } from "./storage/storage.server";
 
 /**
@@ -24,16 +19,10 @@ export async function persistThreadEgressEvidence({
   fictaScope: string;
   eventId: string;
 }): Promise<void> {
-  const response = await fetch(`${proxyBaseUrl()}${FICTA_EGRESS_PROOF_PATH}`, {
-    headers: {
-      accept: "application/json",
-      [FICTA_SCOPE_HEADER]: fictaScope,
-      [FICTA_EGRESS_EVENT_HEADER]: eventId,
-    },
+  const client = await gatewayFictaControlClient({
+    requiredCapability: "egress-proof",
+    headers: { [FICTA_SCOPE_HEADER]: fictaScope, [FICTA_EGRESS_EVENT_HEADER]: eventId },
   });
-  const json = (await response.json()) as unknown;
-  if (!response.ok || !isEgressProofOk(json)) {
-    throw new Error("the proxy did not return a valid egress proof");
-  }
+  const json = await client.egressProof();
   await (await getStorage()).appendThreadEgressEvent(userId, orgId, threadId, json.proof);
 }

@@ -1,12 +1,15 @@
+import { fictaOperatorErrorData } from "@serovaai/ficta-contract";
+import {
+  gatewayFictaControlClient,
+  fictaControlErrorStatus,
+  GatewayFictaCompatibilityError,
+} from "./ficta-control-client.server";
 import {
   EDITABLE_PROXY_CONFIG_KEYS,
   type EditableProxyConfigKey,
   type EditableProxyConfigValues,
-  FICTA_CONFIG_PATH,
-  FICTA_TRACE_CAPTURE_PATH,
   isProxyConfigOk,
   isProxyConfigUpdateOk,
-  isRuntimeTraceCaptureOk,
   normalizePiiBackends,
   normalizeRestoreIntoToolsPolicy,
   PII_BACKEND_NAMES,
@@ -43,20 +46,8 @@ export const fetchProxyConfig = createServerFn({ method: "GET" }).handler(async 
   const timer = setTimeout(() => controller.abort(), CONFIG_TIMEOUT_MS);
 
   try {
-    const res = await fetch(`${proxyUrl}${FICTA_CONFIG_PATH}`, {
-      headers: { accept: "application/json" },
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      return {
-        ok: false,
-        proxyUrl,
-        status: "bad_response",
-        message: `ficta proxy config returned HTTP ${res.status}; restart the proxy to inspect its configuration.`,
-      };
-    }
-
-    const json = (await res.json()) as unknown;
+    const client = await gatewayFictaControlClient({ requiredCapability: "config", signal: controller.signal });
+    const json = await client.config(undefined, { signal: controller.signal });
     if (!isProxyConfigOk(json)) {
       return {
         ok: false,
@@ -67,6 +58,8 @@ export const fetchProxyConfig = createServerFn({ method: "GET" }).handler(async 
     }
     return json;
   } catch (err) {
+    if (err instanceof GatewayFictaCompatibilityError)
+      return { ok: false, proxyUrl, status: "bad_response", message: err.message };
     return {
       ok: false,
       proxyUrl,
@@ -90,21 +83,8 @@ export const updateProxyConfig = createServerFn({ method: "POST" })
     const timer = setTimeout(() => controller.abort(), CONFIG_TIMEOUT_MS);
 
     try {
-      const res = await fetch(`${proxyUrl}${FICTA_CONFIG_PATH}`, {
-        method: "PATCH",
-        headers: { accept: "application/json", "content-type": "application/json" },
-        body: JSON.stringify(data),
-        signal: controller.signal,
-      });
-      const json = (await res.json()) as unknown;
-      if (!res.ok) {
-        return {
-          ok: false,
-          proxyUrl,
-          status: "bad_response",
-          message: proxyUpdateErrorMessage(json, res.status),
-        };
-      }
+      const client = await gatewayFictaControlClient({ requiredCapability: "config", signal: controller.signal });
+      const json = await client.updateConfig(data, { signal: controller.signal });
       if (!isProxyConfigUpdateOk(json)) {
         return {
           ok: false,
@@ -116,6 +96,10 @@ export const updateProxyConfig = createServerFn({ method: "POST" })
       }
       return json;
     } catch (err) {
+      const operator = fictaOperatorErrorData(err);
+      if (operator || err instanceof GatewayFictaCompatibilityError || fictaControlErrorStatus(err) !== undefined) {
+        return { ok: false, proxyUrl, status: "bad_response", message: operator?.message ?? errorMessage(err) };
+      }
       return {
         ok: false,
         proxyUrl,
@@ -144,24 +128,17 @@ export const updateRuntimeTraceCapture = createServerFn({ method: "POST" })
     const timer = setTimeout(() => controller.abort(), CONFIG_TIMEOUT_MS);
 
     try {
-      const res = await fetch(`${proxyUrl}${FICTA_TRACE_CAPTURE_PATH}`, {
-        method: "PATCH",
-        headers: { accept: "application/json", "content-type": "application/json" },
-        body: JSON.stringify(data),
+      const client = await gatewayFictaControlClient({
+        requiredCapability: "trace-capture",
         signal: controller.signal,
       });
-      const json = (await res.json()) as unknown;
-      if (!res.ok || !isRuntimeTraceCaptureOk(json)) {
-        return {
-          ok: false,
-          proxyUrl,
-          status: "bad_response",
-          message:
-            isRecord(json) && typeof json.message === "string" ? json.message : "Could not update trace capture.",
-        };
-      }
+      const json = await client.updateTraceCapture(data, { signal: controller.signal });
       return json;
     } catch (err) {
+      const operator = fictaOperatorErrorData(err);
+      if (operator || err instanceof GatewayFictaCompatibilityError || fictaControlErrorStatus(err) !== undefined) {
+        return { ok: false, proxyUrl, status: "bad_response", message: operator?.message ?? errorMessage(err) };
+      }
       return {
         ok: false,
         proxyUrl,
@@ -214,11 +191,6 @@ function validateEditablePatch(input: unknown): EditableProxyConfigPatch {
     }
   }
   return patch;
-}
-
-function proxyUpdateErrorMessage(value: unknown, status: number): string {
-  if (isRecord(value) && typeof value.message === "string") return value.message;
-  return `ficta proxy config update returned HTTP ${status}.`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

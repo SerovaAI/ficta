@@ -2,12 +2,13 @@ import {
   capabilitiesSchema,
   FICTA_CONTROL_PROTOCOL_VERSION,
   type FictaCapabilities,
+  type FictaExtensionCapability,
   type FictaControlClient,
 } from "@serovaai/ficta-contract";
 
 const CAPABILITIES_CACHE_MS = 60_000;
 
-export type GatewayFictaCapability = "status" | "protection-preview";
+export type GatewayFictaCapability = "status" | "protection-preview" | FictaExtensionCapability;
 
 interface CachedCapabilities {
   expiresAt: number;

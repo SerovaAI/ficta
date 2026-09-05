@@ -110,12 +110,18 @@ export const protectionHitSchema = z
   })
   .strict();
 
-export const protectionPreviewFindingSchema = protectionHitSchema.extend({
-  start: z.number().int().nonnegative().describe("Inclusive UTF-16 offset into the exact preview text."),
-  end: z.number().int().nonnegative().describe("Exclusive UTF-16 offset into the exact preview text."),
-  surrogate: z.string().describe("Opaque replacement rendered in redactedText."),
-  origin: z.enum(["registry", "detected", "user"]).describe("How this protected value entered the preview."),
-});
+export const protectionPreviewFindingSchema = protectionHitSchema
+  .extend({
+    start: z.number().int().nonnegative().describe("Inclusive UTF-16 offset into the exact preview text."),
+    end: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe("Exclusive UTF-16 offset into the exact preview text; must be greater than start."),
+    surrogate: z.string().describe("Opaque replacement rendered in redactedText."),
+    origin: z.enum(["registry", "detected", "user"]).describe("How this protected value entered the preview."),
+  })
+  .refine((finding) => finding.end > finding.start, { message: "Finding end must follow start.", path: ["end"] });
 
 const protectedValueSchema = z
   .string()
@@ -153,11 +159,19 @@ export const protectionPreviewInputSchema = z
     return { text, protectedValues: uniqueValues };
   });
 
+/** Opaque transport-safe value: no token encoding or engine-specific format is implied. */
+export const protectionTicketSchema = z
+  .string()
+  .min(1)
+  .regex(/^[\x21-\x7e]+$/u);
+
 export const protectionPreviewSchema = z
   .object({
     ok: z.literal(true),
     service: z.literal("ficta"),
-    ticket: z.string().describe("Opaque, short-lived, single-use authorization for the reviewed provider send."),
+    ticket: protectionTicketSchema.describe(
+      "Opaque, short-lived, single-use authorization for the reviewed provider send.",
+    ),
     textSha256: z
       .string()
       .regex(/^[0-9a-f]{64}$/u)

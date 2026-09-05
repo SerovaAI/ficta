@@ -1,5 +1,6 @@
 import {
   FICTA_CONTROL_CAPABILITIES,
+  FICTA_EXTENSION_CAPABILITIES,
   FICTA_CONTROL_PROTOCOL_VERSION,
   fictaControlContract,
   type FictaProtectionPreview,
@@ -14,6 +15,7 @@ export interface FictaControlContext {
 }
 
 export interface FictaControlService {
+  registryReloadAvailable?: boolean;
   status: () => Promise<FictaProtectionStatus>;
   protectionPreview: (
     input: { text: string; protectedValues: string[] },
@@ -29,7 +31,10 @@ export function createFictaControlRouter(service: FictaControlService) {
       ok: true,
       service: "ficta",
       protocolVersion: FICTA_CONTROL_PROTOCOL_VERSION,
-      capabilities: [...FICTA_CONTROL_CAPABILITIES],
+      capabilities: [
+        ...FICTA_CONTROL_CAPABILITIES,
+        ...FICTA_EXTENSION_CAPABILITIES.filter((name) => name !== "registry-reload" || service.registryReloadAvailable),
+      ],
     })),
     health: os.health.handler(() => ({ ok: true, service: "ficta" })),
     status: os.status.handler(() => service.status()),

@@ -1,9 +1,5 @@
-import {
-  FICTA_PROTECTION_STATS_PATH,
-  isProtectionStatsOk,
-  type ProtectionStatsOk,
-  type ProtectionStatsSnapshot,
-} from "@serovaai/ficta-protocol";
+import { gatewayFictaControlClient, GatewayFictaCompatibilityError } from "./ficta-control-client.server";
+import { isProtectionStatsOk, type ProtectionStatsOk, type ProtectionStatsSnapshot } from "@serovaai/ficta-protocol";
 import { proxyBaseUrl } from "@/lib/proxy-base.server";
 import type { ProxyCallResult } from "@/lib/proxy-result";
 import { getStorage } from "@/lib/storage/storage.server";
@@ -33,20 +29,11 @@ async function readProtectionStatsFromProxy(proxyUrl: string): Promise<Protectio
   const timer = setTimeout(() => controller.abort(), STATS_TIMEOUT_MS);
 
   try {
-    const res = await fetch(`${proxyUrl}${FICTA_PROTECTION_STATS_PATH}`, {
-      headers: { accept: "application/json" },
+    const client = await gatewayFictaControlClient({
+      requiredCapability: "protection-stats",
       signal: controller.signal,
     });
-    if (!res.ok) {
-      return {
-        ok: false,
-        proxyUrl,
-        status: "bad_response",
-        message: `ficta proxy proof returned HTTP ${res.status}; restart the proxy to inspect redaction proof.`,
-      };
-    }
-
-    const json = (await res.json()) as unknown;
+    const json = await client.protectionStats(undefined, { signal: controller.signal });
     if (!isProtectionStatsOk(json)) {
       return {
         ok: false,
@@ -57,6 +44,8 @@ async function readProtectionStatsFromProxy(proxyUrl: string): Promise<Protectio
     }
     return json;
   } catch (err) {
+    if (err instanceof GatewayFictaCompatibilityError)
+      return { ok: false, proxyUrl, status: "bad_response", message: err.message };
     return {
       ok: false,
       proxyUrl,

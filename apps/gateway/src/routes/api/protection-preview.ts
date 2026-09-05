@@ -1,4 +1,4 @@
-import { FICTA_SCOPE_HEADER, isProtectionPreviewOk, type ProtectionPreviewOk } from "@serovaai/ficta-protocol";
+import { FICTA_SCOPE_HEADER, type ProtectionPreviewOk } from "@serovaai/ficta-protocol";
 import { createFileRoute } from "@tanstack/react-router";
 import { scopeFromAuth } from "../../lib/auth/guards.server";
 import { getActiveProvider } from "../../lib/auth/provider.server";
@@ -62,10 +62,7 @@ export const Route = createFileRoute("/api/protection-preview")({
             },
             requiredCapability: "protection-preview",
           });
-          const json: unknown = await client.protectionPreview({ text: input.text, protectedValues });
-          if (!isProtectionPreviewOk(json)) {
-            return errorResponse(502, "The ficta proxy returned an invalid protection preview.");
-          }
+          const json = await client.protectionPreview({ text: input.text, protectedValues });
           return Response.json({ ...json, protectedValues } satisfies GatewayProtectionPreview);
         } catch (error) {
           if (error instanceof GatewayFictaCompatibilityError) return errorResponse(502, error.message);

@@ -65,3 +65,10 @@ describe("requireGatewayFictaCapability", () => {
     expect(capabilities).toHaveBeenCalledTimes(2);
   });
 });
+
+it("does not call an optional interface when the proxy omits its capability", async () => {
+  const client = clientWithCapabilities(async () => compatibleCapabilities());
+  await expect(
+    requireGatewayFictaCapability(client, "http://ficta-no-operator-profile", "registry-reload"),
+  ).rejects.toThrow('does not advertise the "registry-reload"');
+});
