@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.0
+
+### Minor Changes
+
+- [`3916323`](https://github.com/SerovaAI/ficta/commit/3916323c51e6652e726cdb7ce905b590e0ac9ca5) Thanks [@steflsd](https://github.com/steflsd)! - Publish discoverable evidence and operator interfaces with validated clients and portable preview tickets.
+
+- [`c7f736b`](https://github.com/SerovaAI/ficta/commit/c7f736b92ac24f7ebb2a5b0107fe8cfd3a90178e) Thanks [@steflsd](https://github.com/steflsd)! - Enable secret detection by default for proxies and coding agents, and detect long random-looking bare credentials locally.
+
+### Patch Changes
+
+- [`c409910`](https://github.com/SerovaAI/ficta/commit/c409910ebf96cffad13e64fcc3cffee0488efea2) Thanks [@steflsd](https://github.com/steflsd)! - Preserve structural detection context across requests, expire idle scopes before reuse, and retain prototype-named JSON fields during redaction.
+- Updated dependencies [[`3916323`](https://github.com/SerovaAI/ficta/commit/3916323c51e6652e726cdb7ce905b590e0ac9ca5)]:
+  - @serovaai/ficta-contract@0.2.0
+  - @serovaai/ficta-protocol@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes

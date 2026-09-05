@@ -1,5 +1,16 @@
 # @serovaai/ficta-contract
 
+## 0.2.0
+
+### Minor Changes
+
+- [`3916323`](https://github.com/SerovaAI/ficta/commit/3916323c51e6652e726cdb7ce905b590e0ac9ca5) Thanks [@steflsd](https://github.com/steflsd)! - Publish discoverable evidence and operator interfaces with validated clients and portable preview tickets.
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @serovaai/ficta-protocol@0.4.0
+
 ## 0.1.0
 
 ### Minor Changes
