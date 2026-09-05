@@ -46,7 +46,7 @@ describe("configPosture", () => {
           configuredBackends: ["regex"],
           failureMode: "fail-open",
         },
-        secretShapes: { standalone: false, agents: false },
+        secretShapes: { standalone: true, agents: true },
       },
       transport: {
         host: "127.0.0.1",
@@ -102,7 +102,7 @@ describe("configPosture", () => {
       configuredBackends: ["presidio"],
       failureMode: "fail-closed",
     });
-    expect(posture.detection.secretShapes).toEqual({ standalone: true, agents: false });
+    expect(posture.detection.secretShapes).toEqual({ standalone: true, agents: true });
     expect(posture.transport.allowCustomUpstream).toBe(true);
     expect(posture.transport.logLevel).toBe("trace");
     expect(posture.transport.logBodies).toBe(true);
@@ -113,7 +113,7 @@ describe("configPosture", () => {
   it("gates agent detection on both enabled and agents flags", () => {
     const posture = configPosture(
       cfg(),
-      { FICTA_PII_AGENTS: "1", FICTA_SECRET_SHAPES_AGENTS: "1" },
+      { FICTA_PII_AGENTS: "1", FICTA_SECRET_SHAPES_ENABLED: "0", FICTA_SECRET_SHAPES_AGENTS: "1" },
       {
         globallyDisabled: false,
       },

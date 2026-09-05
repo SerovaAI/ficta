@@ -102,7 +102,7 @@ downstream proxy and the model only ever saw a surrogate.
 ## Notes
 
 - **Detectors are per-surface.** For agent launches, secret-shape and PII detection follow
-  `[secret_shapes].agents` / `[pii].agents` (both default off), so a Presidio outage that blocks the
+  `[secret_shapes].agents` / `[pii].agents` (secret shapes default on; PII defaults off), so a Presidio outage that blocks the
   standalone/web proxy does not block `ficta claude`. Exact registered-value redaction always applies.
 - **The downstream must speak the anthropic wire.** ficta forwards `POST /v1/messages` verbatim; the
   proxy is responsible for translating to its backend (CLIProxyAPI translates Anthropic ⇄ Codex/OpenAI/Gemini).

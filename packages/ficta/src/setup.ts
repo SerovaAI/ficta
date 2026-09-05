@@ -1,7 +1,7 @@
 import { confirm, intro, isCancel, multiselect, note, outro, select, text } from "@clack/prompts";
 import { PII_BACKEND_NAMES, type PiiBackendName } from "@serovaai/ficta-protocol";
 import { defaultLogDir, FICTA_DEFAULTS } from "./defaults.js";
-import { envFlag, parseBoolean } from "./engine/env-flags.js";
+import { envEnabled, envFlag, parseBoolean } from "./engine/env-flags.js";
 import { installShims } from "./install.js";
 import type { RegistrySetupPromptContext, RegistrySetupSource } from "./plugins/index.js";
 import { registrySetupDefaults, registrySetupSources, selectedBackendNames } from "./plugins/index.js";
@@ -129,11 +129,10 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
     }
   }
 
-  // Same surface split as PII: the web/chat gateway benefits from protecting newly pasted secret
-  // shapes, while coding-agent launches can be editing fixtures/docs with example tokens.
+  // Default secret detection on for both surfaces, while preserving explicit opt-outs.
   const secretShapesEnabled = await promptConfirm(
-    "Secret-shape detection (web / standalone proxy): redact pasted API keys, JWTs, private keys, credential URLs, and secret-ish assignments?",
-    process.env.FICTA_SECRET_SHAPES_ENABLED !== "0",
+    "Secret-shape detection (web / standalone proxy): redact pasted API keys, JWTs, private keys, credential URLs, secret-ish assignments, and long random-looking values?",
+    envEnabled(process.env.FICTA_SECRET_SHAPES_ENABLED, true),
   );
   const secretShapeValues: Record<string, string> = {
     FICTA_SECRET_SHAPES_ENABLED: secretShapesEnabled ? "1" : "0",
@@ -141,8 +140,8 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
   };
   if (secretShapesEnabled) {
     const secretShapesAgents = await promptConfirm(
-      "Secret-shape detection: also redact token-shaped values for coding-agent launches (claude/codex/pi)? Off by default.",
-      envFlag(process.env.FICTA_SECRET_SHAPES_AGENTS),
+      "Secret-shape detection: also redact token-shaped values for coding-agent launches (claude/codex/pi)? On by default.",
+      envEnabled(process.env.FICTA_SECRET_SHAPES_AGENTS, true),
     );
     secretShapeValues.FICTA_SECRET_SHAPES_AGENTS = secretShapesAgents ? "1" : "0";
   }

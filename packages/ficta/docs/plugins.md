@@ -96,7 +96,7 @@ the compact output is:
 🔒 ficta ready — 47 protected values (48 loaded before dedupe)
    pi → http://127.0.0.1:59717
    sources: Doppler 34, managed registry 12, .env.local 4, process env 10
-   secret shapes: off
+   secret shapes: on
    pii: off
 ```
 
@@ -155,8 +155,8 @@ project = ""
 timeout_ms = 5000
 
 [secret_shapes]
-enabled = false # set true to redact known token/key shapes before the model
-agents = false  # coding-agent launches — opt in with true
+enabled = true # default: detect secret shapes before the model
+agents = true  # default: also protect coding-agent launches
 
 [pii]
 enabled = false # set true to redact emails, SSNs, and card numbers before the model
@@ -170,10 +170,16 @@ to run until you unset it or provide a real path.
 ## Built-in detector plugin: `secret-shapes`
 
 The `secret-shapes` detector catches newly pasted secret-shaped values that were not present in the
-launch-time registry. It is local and in-process: no network verification, no sidecar, and no
-entropy-only scanning. The initial detector set focuses on high-signal shapes: common API key
+launch-time registry. It is local and in-process: no network verification and no sidecar. The detector set includes common API key
 prefixes, JWTs, PEM private keys, credential URLs with literal userinfo, AWS access key IDs and secret
-assignments such as `API_TOKEN=...`.
+assignments such as `API_TOKEN=...`, plus probabilistic detection of bare opaque values.
+
+Bare opaque detection accepts whole whitespace/quote-delimited values: hexadecimal strings of
+40–512 characters containing both letters and digits with entropy of at least 3.3 bits per character, or strings of 32–512 characters
+using a base64/base64url-like alphabet with lowercase, uppercase, digits, and entropy of at least
+4.5 bits per character. It also recognizes whole JSON text leaves. It does not extract fragments
+from paths, URLs, or dotted identifiers. A bare hash can be indistinguishable from a credential
+and can be protected too. Short, low-entropy, or differently delimited values may be missed.
 
 This layer is **best effort**. It complements, but does not replace, registry exact matching: a value
 loaded from a managed registry file, `.env`, process env, or Doppler gets the stronger
@@ -186,7 +192,7 @@ Most of the shapes above are **value-only** — a vendor-prefixed key (`sk-…`,
 JWT, a PEM block, or a credential URL is caught wherever it appears, regardless of any surrounding
 key. Two patterns instead pair a secret-ish **key** with an adjacent value, and that pairing is
 deliberately conservative, so an _opaque_ value (a random blob with no recognizable vendor shape)
-is missed in these positions:
+can still be missed in these positions if it does not independently match the bare-value checks:
 
 | Shape                                   | Example                                                                       | Why                                                                                                                                                                                                                                              |
 | --------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -215,14 +221,14 @@ Like PII, it has separate web/standalone and agent-launch posture:
 ```toml
 [secret_shapes]
 enabled = true   # web / standalone proxy
-agents = false   # coding-agent launches — opt in with true
+agents = true    # coding-agent launches; set false to opt out
 ```
 
-An unconfigured proxy is off (`FICTA_SECRET_SHAPES_ENABLED=0` by default). `ficta setup` defaults the
-web/standalone toggle to **yes**, because this is the chat use case where users paste ad hoc keys.
-Launched coding agents stay off unless both `[secret_shapes] enabled` and `[secret_shapes] agents` are true,
-because codebases often contain examples and test fixtures with token-shaped strings. For a single
-agent run, an explicit shell `FICTA_SECRET_SHAPES_ENABLED=1` or `0` wins over TOML.
+Secret detection defaults on for both surfaces, including unconfigured launches. Both toggles must
+be true for coding-agent detection. Existing explicit false settings remain respected; upgrading
+does not remove previous opt-outs. Set both settings above to true to enable it in an existing
+configuration. For one agent run, an explicit shell `FICTA_SECRET_SHAPES_ENABLED=1` or `0` wins over
+TOML. All detection remains best effort and does not verify whether credentials are live.
 
 ## Built-in detector plugin: `pii`
 
@@ -240,8 +246,7 @@ came from_, because tokenizing an email inside code you're editing is rarely wha
 redacting it in a web-chat message usually is:
 
 - **Web / standalone proxy** — governed by `[pii] enabled` (`FICTA_PII_ENABLED`). An unconfigured
-  proxy is **off** (`envDefaults: { FICTA_PII_ENABLED: "0" }`) — a raw `ficta` run protects only
-  _registered_ secrets. After `ficta setup` it is **on**: the wizard's first PII prompt defaults to
+  proxy is **off** (`envDefaults: { FICTA_PII_ENABLED: "0" }`) — a raw `ficta` run has PII detection disabled. After `ficta setup` it is **on**: the wizard's first PII prompt defaults to
   **yes** and persists `[pii] enabled = true`, because for the web UI, PII detection is a first-class
   part of the gateway.
 - **Launched coding agents** (`ficta claude|codex|pi`) — **off by default even when `[pii] enabled`
@@ -254,7 +259,7 @@ The persisted policy lives in TOML:
 ```toml
 [pii]
 enabled = true   # web / standalone proxy
-agents = false   # coding-agent launches — opt in with true
+agents = true    # coding-agent launches; set false to opt out
 ```
 
 ### Identity protection boundary

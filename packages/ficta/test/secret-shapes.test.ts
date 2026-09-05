@@ -64,8 +64,10 @@ describe("secret-shape detector", () => {
     }
   });
 
-  it("is disabled by default and active when configured", async () => {
+  it("is active by default and respects explicit opt-out", async () => {
     delete process.env.FICTA_SECRET_SHAPES_ENABLED;
+    expect(await secretShapesPlugin.detectText(OPENAI, { surface: "body" })).not.toEqual([]);
+    process.env.FICTA_SECRET_SHAPES_ENABLED = "0";
     expect(await secretShapesPlugin.detectText(OPENAI, { surface: "body" })).toEqual([]);
     expect(secretShapesPlugin.discover?.()[0]?.status).toBe("disabled");
 
@@ -194,10 +196,12 @@ describe("secret-shape detector", () => {
 });
 
 describe("resolveAgentSecretShapesEnabled", () => {
-  it("is off for agents unless both enabled and agents are true", () => {
-    expect(resolveAgentSecretShapesEnabled({})).toBe(false);
-    expect(resolveAgentSecretShapesEnabled({ enabled: "1" })).toBe(false);
+  it("defaults on for agents and respects either opt-out", () => {
+    expect(resolveAgentSecretShapesEnabled({})).toBe(true);
+    expect(resolveAgentSecretShapesEnabled({ enabled: "1" })).toBe(true);
     expect(resolveAgentSecretShapesEnabled({ enabled: "1", agents: "1" })).toBe(true);
+    expect(resolveAgentSecretShapesEnabled({ enabled: "0" })).toBe(false);
+    expect(resolveAgentSecretShapesEnabled({ agents: "false" })).toBe(false);
   });
 
   it("lets an explicit shell value win", () => {

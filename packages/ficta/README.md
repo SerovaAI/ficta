@@ -64,7 +64,7 @@ every advanced option. The normal POC policy surface is intentionally smaller:
 | ----------------------------- | ----------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | `registry.require`            | `FICTA_REQUIRE_REGISTRY`            | `false`                                                              | Block provider requests and agent launch until values load without registry-source errors. |
 | `registry.managed_file.paths` | `FICTA_REGISTRY_MANAGED_FILE_PATHS` | `.data/protected-registry.json`                                      | Managed registry JSON files for admin-approved business values.                            |
-| `secret_shapes.enabled`       | `FICTA_SECRET_SHAPES_ENABLED`       | unconfigured: `false`; after `ficta setup`: prompted, default `true` | Best-effort request-time detection of known secret shapes for the standalone/web proxy.    |
+| `secret_shapes.enabled`       | `FICTA_SECRET_SHAPES_ENABLED`       | `true`                                                               | Best-effort request-time detection of known secret shapes for the standalone/web proxy.    |
 | `pii.enabled`                 | `FICTA_PII_ENABLED`                 | unconfigured: `false`; after `ficta setup`: prompted, default `true` | Best-effort PII detection for the standalone/web proxy.                                    |
 | `pii.backends`                | `FICTA_PII_BACKENDS`                | `regex`                                                              | PII backend set, e.g. `presidio` or `presidio,openmed`.                                    |
 | `pii.fail_closed`             | `FICTA_PII_FAIL_CLOSED`             | `false`                                                              | PII-specific detector-outage policy; overrides `detection.fail_closed`.                    |
@@ -80,10 +80,12 @@ their own config under `[registry.*]`; see
 **Request-time detectors** are intentionally per-surface. The standalone/web proxy follows
 `secret_shapes.enabled` and `pii.enabled`. A launched coding agent gets those detectors only when both the
 matching `enabled` and `agents` toggles are true, unless you explicitly set `FICTA_SECRET_SHAPES_ENABLED`
-or `FICTA_PII_ENABLED` for that single run.
+or `FICTA_PII_ENABLED` for that single run. Secret detection defaults both toggles to true; PII keeps
+its separate opt-in defaults. Existing explicit false settings remain disabled.
 
 **Secret-shape detection** catches newly pasted values that are not already in the registry, such as
-common API key prefixes, JWTs, PEM private keys, credential URLs, and secret-ish assignments. It is
+common API key prefixes, JWTs, PEM private keys, credential URLs, secret-ish assignments, and
+long random-looking bare values. Bare hashes can also match; short or low-entropy secrets can be missed. It is
 local and pattern-based; it does not verify credentials and does not replace the stronger exact-match
 registry layer.
 

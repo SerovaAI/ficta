@@ -1,4 +1,4 @@
-import { envFlag, parseBoolean } from "../../env-flags.js";
+import { envEnabled, parseBoolean } from "../../env-flags.js";
 import type { BodyLeaf, BodyLeafPath } from "../../vault.js";
 import type { DetectorPlugin, PluginDiscovery, ProtectedValue } from "../types.js";
 
@@ -139,7 +139,7 @@ const SECRET_SHAPE_PATTERNS: readonly SecretShapePattern[] = [
 ];
 
 export function secretShapesEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return envFlag(env[ENV_ENABLED]);
+  return envEnabled(env[ENV_ENABLED], true);
 }
 
 export function resolveAgentSecretShapesEnabled(opts: {
@@ -149,7 +149,7 @@ export function resolveAgentSecretShapesEnabled(opts: {
 }): boolean {
   const explicit = parseBoolean(opts.shellValue);
   if (explicit !== undefined) return explicit;
-  return envFlag(opts.enabled) && envFlag(opts.agents);
+  return envEnabled(opts.enabled, true) && envEnabled(opts.agents, true);
 }
 
 function addCandidate(
@@ -181,6 +181,14 @@ export function detectSecretShapes(text: string, ctx: { header?: string } = {}):
       if (pattern.validate && !pattern.validate(value)) continue;
       addCandidate(out, seen, pattern.category, value, pattern.confidence);
     }
+  }
+
+  // Whole whitespace/quote-delimited candidates only: never extract a digest from a path,
+  // dotted identifier, URL, or a longer value. U+0000 delimits leaves but cannot occur inside a candidate.
+  // eslint-disable-next-line no-control-regex -- U+0000 is the engine structural leaf delimiter.
+  for (const match of text.matchAll(/(?<![^\s\u0000"'`])([A-Za-z0-9_+/-]{32,512}={0,2})(?![^\s\u0000"'`])/g)) {
+    const value = match[1]!;
+    if (isOpaqueSecret(value)) addCandidate(out, seen, "opaque-secret", value, "probabilistic");
   }
 
   const header = ctx.header?.trim();
@@ -245,8 +253,8 @@ export const secretShapesPlugin: DetectorPlugin = {
   description: "Best-effort request-time detection of known secret token shapes",
   config: {
     envDefaults: {
-      [ENV_ENABLED]: "0",
-      [ENV_AGENTS]: "0",
+      [ENV_ENABLED]: "1",
+      [ENV_AGENTS]: "1",
     },
     bindings: [
       { env: ENV_ENABLED, path: ["secret_shapes", "enabled"], kind: "boolean" },
@@ -259,8 +267,8 @@ export const secretShapesPlugin: DetectorPlugin = {
       {
         id: `${PLUGIN_NAME}/detector`,
         label:
-          "Secret-shape detection — best-effort redaction of pasted API keys, JWTs, private keys, and credential URLs (web/standalone proxy; coding-agent launches opt in separately)",
-        defaultEnabled: secretShapesEnabled() || process.env[ENV_ENABLED] !== "0",
+          "Secret-shape detection — best-effort redaction of pasted API keys, JWTs, private keys, opaque values, and credential URLs (on by default for web, standalone proxy, and coding agents)",
+        defaultEnabled: secretShapesEnabled(),
         enabledValues: () => ({ [ENV_ENABLED]: "1" }),
         disabledValues: () => ({ [ENV_ENABLED]: "0" }),
       },
@@ -293,8 +301,25 @@ function discoverSecretShapes(): PluginDiscovery {
     label: "Secret-shape detector",
     status: "active",
     message:
-      "active — matches known API key, token, JWT, private-key, credential-URL, and secret-assignment shapes; tokenized on egress and restored on responses",
+      "active — matches known API key, token, JWT, private-key, credential-URL, secret-assignment, and probabilistic opaque-value shapes; tokenized on egress and restored on responses",
   };
+}
+
+/** Opaque credentials have no unique signature; these checks deliberately remain probabilistic. */
+function isOpaqueSecret(value: string): boolean {
+  if (value.length > MAX_GENERIC_VALUE_LENGTH || isPlaceholder(value) || value.startsWith("FICTA_")) return false;
+  if (isPathShaped(value)) return false;
+  const counts = new Map<string, number>();
+  for (const char of value) counts.set(char, (counts.get(char) ?? 0) + 1);
+  let entropy = 0;
+  for (const count of counts.values()) {
+    const probability = count / value.length;
+    entropy -= probability * Math.log2(probability);
+  }
+  // Hex session credentials overlap with hashes: do not claim that these are verified secrets.
+  if (/^[a-f0-9]{40,512}$/i.test(value)) return /[a-f]/i.test(value) && /\d/.test(value) && entropy >= 3.3;
+  // Require mixed case and digits to avoid long words, snake_case constants, and most identifiers.
+  return /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value) && entropy >= 4.5;
 }
 
 function isLikelySecretValue(raw: string): boolean {

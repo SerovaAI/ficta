@@ -49,7 +49,7 @@ Ficta has three protection layers with different guarantees:
   registry filters and exclusions; redacts covered request bodies, query strings, and non-auth
   headers; fail-closes if a protected value survives redaction in a covered surface; and restores
   placeholders locally on model responses.
-- **Detected secret shapes (best effort):** optionally detects known token/key formats at request
+- **Detected secret shapes (best effort):** detects known token/key formats by default at request
   time, including common API keys, JWTs, private keys, credential URLs, and secret-ish assignments
   such as `API_TOKEN=...`. This catches newly pasted values that were not in env/Doppler, but it is
   pattern-based and does not verify credentials.
@@ -62,11 +62,12 @@ By default, registered-secret discovery loads values from `.env` / `.env.local`,
 config when the Doppler CLI is available, and secret-ish process env names such as `KEY`, `TOKEN`,
 `SECRET`, `PASSWORD`, `AWS`, and `OPENAI`.
 
-PII and secret-shape detector defaults are deliberately per surface: the standalone/web proxy follows
-`[pii] enabled` and `[secret_shapes] enabled`, while launched coding agents keep those detector layers
-off unless the matching `agents` toggle is true (`FICTA_PII_AGENTS` /
-`FICTA_SECRET_SHAPES_AGENTS`) or the effective `FICTA_*_ENABLED` env var is explicitly set for that
-one run.
+Secret-shape detection defaults on for standalone/web proxies and coding-agent launches, including
+best-effort detection of long, random-looking bare values. Explicit `secret_shapes.enabled=false`
+or `secret_shapes.agents=false` settings remain respected; existing opt-outs are not migrated.
+PII detection keeps its separate defaults and requires the agent opt-in. An explicit
+`FICTA_SECRET_SHAPES_ENABLED` / `FICTA_PII_ENABLED` environment override wins for one launch.
+Bare credentials can be indistinguishable from hashes; see the detector documentation for limits.
 
 ### What It Does Not Protect
 
