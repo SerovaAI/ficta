@@ -83,6 +83,8 @@ export type LayerProvenance = "permanent" | "detected";
 
 export class SurrogateTable {
   readonly values: string[] = []; // known values, longest first
+  /** Bumped whenever a match form is admitted, so views can cache their merged value order. */
+  version = 0;
   private readonly matchForms = new Set<string>();
   private readonly wordBoundedForms = new Set<string>();
   readonly toSur = new Map<string, string>();
@@ -169,6 +171,7 @@ export class SurrogateTable {
     this.matchForms.add(value);
     if (item.wordBounded) this.wordBoundedForms.add(value);
     this.values.push(value);
+    this.version++;
     return true;
   }
 
@@ -318,9 +321,19 @@ export abstract class VaultView {
     return this.layers.some((layer) => layer.toVal.size > 0);
   }
 
-  /** Known raw values across all layers, longest first (a longer value redacts before a substring). */
+  /** Merged value order plus the layer versions it was computed from (see {@link orderedValues}). */
+  private orderedValuesCache?: { versions: string; values: readonly string[] };
+
+  /**
+   * Known raw values across all layers, longest first (a longer value redacts before a substring).
+   * The merge is cached against the layers' version counters: it is consulted on every redact, leak
+   * scan, and metadata-safety check, and re-sorting thousands of detected values per call dominated
+   * request latency in hash-heavy keyed scopes.
+   */
   private orderedValues(): readonly string[] {
     if (this.layers.length === 1) return this.layers[0].values; // already sorted, no merge needed
+    const versions = this.layers.map((layer) => layer.version).join(",");
+    if (this.orderedValuesCache?.versions === versions) return this.orderedValuesCache.values;
     const seen = new Set<string>();
     const out: string[] = [];
     for (const layer of this.layers) {
@@ -331,6 +344,7 @@ export abstract class VaultView {
       }
     }
     out.sort((a, b) => b.length - a.length);
+    this.orderedValuesCache = { versions, values: out };
     return out;
   }
 
@@ -434,8 +448,8 @@ export abstract class VaultView {
 
   /**
    * Redact known values in a raw string and report which raw values matched. `preservePaths` keeps a
-   * value embedded in a filesystem-path-like token untouched (the default, used for the query
-   * surface); the engine passes false for headers/body so a secret inside a slash-path is redacted.
+   * value embedded in a filesystem-path-like token untouched (the default, used for the query and
+   * body surfaces); the proxy passes false for headers so a secret inside a slash-path is redacted.
    */
   redactTextDetailed(text: string, preservePaths = true): { text: string; count: number; values: string[] } {
     if (!this.hasValues || !text) return { text, count: 0, values: [] };
@@ -1572,7 +1586,7 @@ function isInsidePathLikeToken(
   needle?: string,
   preservePaths = true,
 ): boolean {
-  // preservePaths is the per-surface policy (the engine passes false for header/body so a registered
+  // preservePaths is the per-surface policy (the proxy passes false for headers so a registered
   // value embedded in a slash-path there is still redacted); redactPathsEnabled() is the global
   // FICTA_REDACT_PATHS override. Either one being off means "do not treat this as a path to skip".
   if (!preservePaths || redactPathsEnabled()) return false;
@@ -1634,8 +1648,7 @@ function isAssignmentValue(text: string, tokenStart: number): boolean {
 }
 
 function isShellPathArgument(text: string, tokenStart: number): boolean {
-  const before = text.slice(0, tokenStart);
-  const segment = before.slice(lastShellSeparatorIndex(before) + 1).replace(/["'`]+$/g, "");
+  const segment = text.slice(lastShellSeparatorIndex(text, tokenStart) + 1, tokenStart).replace(/["'`]+$/g, "");
 
   // Bare directory names are path-like when they are the path operand of common directory-changing
   // forms. This prevents cwd/project names such as "eu-central-1-prod" from becoming unusable
@@ -1649,8 +1662,14 @@ function isShellPathArgument(text: string, tokenStart: number): boolean {
   return false;
 }
 
-function lastShellSeparatorIndex(value: string): number {
-  return Math.max(value.lastIndexOf("\n"), value.lastIndexOf(";"), value.lastIndexOf("|"), value.lastIndexOf("&"));
+/** Index of the last shell command separator before `end`, or -1. Scans backwards so the cost is the
+ *  current line, not the whole leaf — this runs once per candidate match in large tool results. */
+function lastShellSeparatorIndex(text: string, end: number): number {
+  for (let i = end - 1; i >= 0; i--) {
+    const ch = text[i];
+    if (ch === "\n" || ch === ";" || ch === "|" || ch === "&") return i;
+  }
+  return -1;
 }
 
 function trimPathPunctuation(value: string): string {

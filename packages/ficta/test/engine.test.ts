@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ProtectionEngine } from "../src/engine/engine.js";
+import { DetectorUnavailableError } from "../src/engine/redaction-engine.js";
 import { type DetectorPlugin, dopplerPlugin, type RegistrySourcePlugin } from "../src/plugins/index.js";
 
 const SECRET = "test-secret-value-12345";
@@ -264,7 +265,42 @@ describe("protection engine plugins", () => {
       ambiguousEntityLinks: 0,
       hits: [],
       leakHits: [],
+      skippedDetectors: ["throwing-detector"],
     });
+  });
+
+  it("blocks on a detector crash under fail-closed detection, not only on a signalled outage", async () => {
+    // A bug in a detector is still "this request was not screened". Under fail-closed the crash
+    // must block like a DetectorUnavailableError would — a user who asked for fail-closed must not
+    // have it silently downgraded to fail-open by an unexpected exception type.
+    const crashing: DetectorPlugin = {
+      kind: "detector",
+      name: "crashing-detector",
+      detectText: () => {
+        throw new TypeError("boom");
+      },
+      failClosed: () => true,
+    };
+    const engine = new ProtectionEngine({ plugins: [crashing] });
+    const body = JSON.stringify({ content: SECRET });
+    await expect(engine.redactBodyDetailed(body)).rejects.toBeInstanceOf(DetectorUnavailableError);
+    await expect(engine.redactTextDetailed(SECRET)).rejects.toBeInstanceOf(DetectorUnavailableError);
+    await expect(engine.redactBodyDetailed(body)).rejects.toMatchObject({ plugin: "crashing-detector" });
+
+    const saved = process.env.FICTA_FAIL_CLOSED_DETECTION;
+    process.env.FICTA_FAIL_CLOSED_DETECTION = "1";
+    try {
+      const global = new ProtectionEngine({ plugins: [{ ...crashing, failClosed: () => undefined }] });
+      await expect(global.redactBodyDetailed(body)).rejects.toBeInstanceOf(DetectorUnavailableError);
+    } finally {
+      if (saved === undefined) delete process.env.FICTA_FAIL_CLOSED_DETECTION;
+      else process.env.FICTA_FAIL_CLOSED_DETECTION = saved;
+    }
+
+    // Fail-open: the crash is reported on the details instead of hidden.
+    const open = new ProtectionEngine({ plugins: [{ ...crashing, failClosed: () => false }] });
+    expect((await open.redactBodyDetailed(body)).skippedDetectors).toEqual(["crashing-detector"]);
+    expect((await open.redactTextDetailed(SECRET)).skippedDetectors).toEqual(["crashing-detector"]);
   });
 
   it("supports request-time detector plugins for future PII-style values", async () => {

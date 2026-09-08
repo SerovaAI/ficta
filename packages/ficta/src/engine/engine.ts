@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { detectorFailClosed } from "./detection-policy.js";
+import { engineWarn } from "./diagnostics.js";
 import { type EntityLinkAnchorIndex, entityLinkAnchorIndex, linkDetectedEntityClaims } from "./entity-linker.js";
 import { expandEntities, expansionSpans } from "./expander.js";
 import {
@@ -91,6 +92,8 @@ interface BodyDocument {
 interface DetectionPass {
   readonly complete: boolean;
   readonly values: readonly ProtectedValue[];
+  /** Detectors that did not run to completion on this pass (fail-open outages or crashes). */
+  readonly skipped: readonly string[];
 }
 
 interface BodyDetectedValue {
@@ -113,6 +116,8 @@ const STRUCTURAL_LEAF_BOUNDARY = "\u0000";
 interface BodyDetectionPass {
   readonly complete: boolean;
   readonly detections: readonly BodyDetectedValue[];
+  /** Detectors that did not run to completion on this pass (fail-open outages or crashes). */
+  readonly skipped: readonly string[];
 }
 
 /**
@@ -375,6 +380,13 @@ class ProtectionRequestScope implements RequestScope {
     registryClaims: EntityClaim[];
     anchorIndex: EntityLinkAnchorIndex;
   };
+  /**
+   * Memo for {@link safeMetadataField}: label → sanitized label. Hit metadata repeats the same few
+   * labels across thousands of detected values, and each check scans every known value. Cleared at
+   * the start of each details build (after that request's registrations), so it never outlives the
+   * value set it was computed against.
+   */
+  private readonly safeFieldMemo = new Map<string, string>();
 
   constructor(
     private readonly plugins: readonly RedactionPlugin[],
@@ -576,6 +588,7 @@ class ProtectionRequestScope implements RequestScope {
     }
 
     const redactedBody = renderBodyDocument(document, replacements);
+    this.safeFieldMemo.clear(); // every registration for this request is done; hit labels are checked below
     const leakValues = this.vault.leakValues(redactedBody);
     const leakValueSet = new Set(leakValues);
     const leakOwners = entityOwners(allClaims);
@@ -597,6 +610,7 @@ class ProtectionRequestScope implements RequestScope {
       leakHits: this.hitsForOwnedValues(leakValues, leakOwners),
       ambiguousEntityLinks: ambiguityDiagnostics.length,
     };
+    if (detection.skipped.length > 0) details.skippedDetectors = [...detection.skipped];
     if (traceValues) {
       if (found.size > 0) details.traceValues = this.traceValuesForOwnedValues(found, owners, renderedSurrogates);
       if (leakValues.length > 0) details.traceLeakValues = this.traceValuesForOwnedValues(leakValues, leakOwners);
@@ -630,11 +644,12 @@ class ProtectionRequestScope implements RequestScope {
     // preservePaths defaults true (the query surface keeps real paths like redirect_uri intact); the
     // proxy passes false for headers so a secret inside a slash-path is redacted, not preserved.
     const { surface = "header", preservePaths = true, traceValues, ...rest } = ctx;
-    await this.registerDetectedValues(text, {
+    const skippedDetectors = await this.registerDetectedValues(text, {
       ...rest,
       surface,
     });
     const redacted = this.vault.redactTextDetailed(text, preservePaths);
+    this.safeFieldMemo.clear(); // detection registered above; hit labels are checked below
     const leakValues = this.vault.leakValues(redacted.text, preservePaths);
     const details: TextRedactionDetails = {
       text: redacted.text,
@@ -643,6 +658,7 @@ class ProtectionRequestScope implements RequestScope {
       hits: this.hitsFor(redacted.values),
       leakHits: this.hitsFor(leakValues),
     };
+    if (skippedDetectors.length > 0) details.skippedDetectors = skippedDetectors;
     if (traceValues) {
       if (redacted.values.length > 0) details.traceValues = this.traceValuesFor(redacted.values);
       if (leakValues.length > 0) details.traceLeakValues = this.traceValuesFor(leakValues);
@@ -698,17 +714,17 @@ class ProtectionRequestScope implements RequestScope {
     return this.vault.surrogatesIn(text);
   }
 
-  /** Returns true when every detector ran (nothing was skipped by a fail-open outage or crash). */
-  private async registerDetectedValues(text: string, ctx: DetectTextContext): Promise<boolean> {
+  /** Returns the detectors that did not run (skipped by a fail-open outage or crash); empty when all ran. */
+  private async registerDetectedValues(text: string, ctx: DetectTextContext): Promise<string[]> {
     const detection = await this.detectValues(text, ctx);
     for (const value of detection.values) remember(this.detectedMetadata, value);
     this.vault.register(detection.values);
-    return detection.complete;
+    return [...detection.skipped];
   }
 
   private async detectValues(text: string, ctx: DetectTextContext): Promise<DetectionPass> {
-    if (!text) return { complete: true, values: [] };
-    let complete = true;
+    if (!text) return { complete: true, values: [], skipped: [] };
+    const skipped: string[] = [];
     const values: ProtectedValue[] = [];
     for (const plugin of this.plugins) {
       let detected: readonly ProtectedValue[];
@@ -719,20 +735,15 @@ class ProtectionRequestScope implements RequestScope {
         // detector only *signals* a backend outage (DetectorUnavailableError); core owns the policy:
         // resolve the detector's own fail-closed override against the global default and either block
         // (re-raise → server.ts refuses to forward) or skip detection for this request (continue).
-        if (err instanceof DetectorUnavailableError) {
-          const override = plugin.kind === "detector" ? plugin.failClosed?.() : undefined;
-          if (detectorFailClosed(override)) throw err;
-          complete = false;
-          continue;
-        }
-        complete = false;
+        detectorOutage(plugin, err);
+        skipped.push(plugin.name);
         continue;
       }
       if (detected.length === 0) continue;
       const candidates = detected.map((value) => ({ ...value, plugin: value.plugin ?? plugin.name }));
       values.push(...admit(candidates, this.policy));
     }
-    return { complete, values };
+    return { complete: skipped.length === 0, values, skipped };
   }
 
   private async detectBodyValues(
@@ -741,7 +752,7 @@ class ProtectionRequestScope implements RequestScope {
     structuralLeaves: readonly BodyLeaf[],
     ctx: DetectTextContext,
   ): Promise<BodyDetectionPass> {
-    let complete = true;
+    const skipped: string[] = [];
     const detections: BodyDetectedValue[] = [];
     for (const plugin of this.plugins) {
       // NLP detectors opt into content-only leaves so protocol/object keys never contaminate spans.
@@ -760,13 +771,8 @@ class ProtectionRequestScope implements RequestScope {
         // an unchanged key can acquire a new value, or a known value can move under a secret key.
         if (plugin.detectBodyLeaves) structuralDetected = await plugin.detectBodyLeaves(structuralLeaves, ctx);
       } catch (err) {
-        if (err instanceof DetectorUnavailableError) {
-          const override = plugin.kind === "detector" ? plugin.failClosed?.() : undefined;
-          if (detectorFailClosed(override)) throw err;
-          complete = false;
-          continue;
-        }
-        complete = false;
+        detectorOutage(plugin, err);
+        skipped.push(plugin.name);
         continue;
       }
       const record = (detected: readonly ProtectedValue[], leaves: readonly BodyLeaf[], joinedWith: string) => {
@@ -776,7 +782,7 @@ class ProtectionRequestScope implements RequestScope {
       record(textDetected, textLeaves, separator);
       record(structuralDetected, structuralLeaves, STRUCTURAL_LEAF_BOUNDARY);
     }
-    return { complete, detections };
+    return { complete: skipped.length === 0, detections, skipped };
   }
 
   /** Stored metadata fallback for header/query redaction and later response restore traces. */
@@ -862,7 +868,11 @@ class ProtectionRequestScope implements RequestScope {
   private safeMetadataField(value: string | undefined, fallback: string): string {
     const text = value?.trim();
     if (!text) return fallback;
-    return this.containsProtectedValue(text) ? fallback : text;
+    const memo = this.safeFieldMemo.get(text);
+    if (memo !== undefined) return memo;
+    const safe = this.containsProtectedValue(text) ? fallback : text;
+    this.safeFieldMemo.set(text, safe);
+    return safe;
   }
 }
 
@@ -1083,6 +1093,31 @@ function resolvedAmbiguityDiagnostics(
     diagnostics.push(diagnostic);
   }
   return diagnostics.sort((a, b) => a.leaf - b.leaf || a.start - b.start || a.end - b.end);
+}
+
+/**
+ * Resolve a detector throw against the fail-closed policy. Under fail-closed ANY throw blocks the
+ * request — a crash is as much "this request was not screened" as a signalled backend outage, and a
+ * user who asked for fail-closed must not have it silently downgraded by a bug in the detector. The
+ * sanctioned outage signal is re-raised as-is; anything else is wrapped so the proxy's existing
+ * blocked-detection response applies. Under fail-open the failure is logged (values-free) and the
+ * caller skips the detector for this request.
+ */
+function detectorOutage(plugin: RedactionPlugin, err: unknown): void {
+  const override = plugin.kind === "detector" ? plugin.failClosed?.() : undefined;
+  const unavailable = err instanceof DetectorUnavailableError;
+  if (detectorFailClosed(override)) {
+    if (unavailable) throw err;
+    const wrapped = new DetectorUnavailableError(plugin.name, "detector threw");
+    wrapped.cause = err;
+    throw wrapped;
+  }
+  if (!unavailable) {
+    engineWarn(
+      { plugin: plugin.name, error: err instanceof Error ? err.name : typeof err },
+      "detector threw; forwarding this request without its detections (fail-open)",
+    );
+  }
 }
 
 /** Drop named candidates excluded by an enforced (trusted) registry-policy rule. */

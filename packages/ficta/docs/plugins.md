@@ -171,8 +171,9 @@ to run until you unset it or provide a real path.
 
 The `secret-shapes` detector catches newly pasted secret-shaped values that were not present in the
 launch-time registry. It is local and in-process: no network verification and no sidecar. The detector set includes common API key
-prefixes, JWTs, PEM private keys, credential URLs with literal userinfo, AWS access key IDs and secret
-assignments such as `API_TOKEN=...`, plus probabilistic detection of bare opaque values.
+prefixes, JWTs, PEM private keys, credential URLs with literal userinfo, Google OAuth access tokens,
+AWS access key IDs and secret assignments such as `API_TOKEN=...`, plus probabilistic detection of
+bare opaque values.
 
 Bare opaque detection accepts whole whitespace/quote-delimited values: hexadecimal strings of
 40–512 characters containing both letters and digits with entropy of at least 3.3 bits per character, or strings of 32–512 characters

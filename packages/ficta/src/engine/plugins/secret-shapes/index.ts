@@ -13,6 +13,13 @@ interface SecretShapePattern {
   regex: RegExp;
   confidence: ProtectedValue["confidence"];
   validate?: (value: string) => boolean;
+  /**
+   * Which part of a candidate the placeholder filter (`isPlaceholder`) inspects. Defaults to the
+   * whole value; a structural shape can narrow it (a credential URL to its password) or opt out
+   * (a PEM block), so a real secret is not skipped because its hostname or base64 body happens to
+   * contain a word like "your" or "xxx".
+   */
+  placeholderText?: (value: string) => string;
 }
 
 const MAX_GENERIC_VALUE_LENGTH = 512;
@@ -29,10 +36,15 @@ const SECRET_SHAPE_PATTERNS: readonly SecretShapePattern[] = [
     regex: /-----\s*BEGIN[ A-Z0-9_-]*PRIVATE KEY\s*-----[\s\S]{32,8192}?-----\s*END[ A-Z0-9_-]*PRIVATE KEY\s*-----/gi,
     confidence: "high",
     validate: (value) => value.length <= MAX_PRIVATE_KEY_LENGTH,
+    // A PEM body is base64: a substring like "xxx" or "Your" is noise, not a placeholder marker.
+    placeholderText: () => "",
   },
   {
     category: "jwt",
-    regex: /\b([A-Za-z0-9_-]{12,}={0,2}\.[A-Za-z0-9_-]{12,}={0,2}\.[A-Za-z0-9_-]{12,})\b/g,
+    // Anchored on a character outside the token alphabet rather than `\b`: `-` is a non-word char,
+    // so `\b` let a match start at every `-` inside one long base64url run, and each start scanned
+    // to the end of the run (quadratic on a large blob). One start per run keeps it linear.
+    regex: /(?<![A-Za-z0-9_.-])([A-Za-z0-9_-]{12,}={0,2}\.[A-Za-z0-9_-]{12,}={0,2}\.[A-Za-z0-9_-]{12,})\b/g,
     confidence: "high",
     validate: isJwt,
   },
@@ -97,6 +109,11 @@ const SECRET_SHAPE_PATTERNS: readonly SecretShapePattern[] = [
     confidence: "high",
   },
   {
+    category: "google-oauth-token",
+    regex: /\b(ya29\.[A-Za-z0-9_-]{50,})(?![A-Za-z0-9_-])/g,
+    confidence: "high",
+  },
+  {
     category: "aws-access-key-id",
     regex: /\b((?:AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16})\b/g,
     confidence: "high",
@@ -108,9 +125,16 @@ const SECRET_SHAPE_PATTERNS: readonly SecretShapePattern[] = [
   },
   {
     category: "credential-url",
-    regex: /\b([a-z][a-z0-9+.-]*:\/\/[^\s"'<>:]+:[^\s"'<>@]+@[^\s"'<>]+)\b/gi,
+    // The scheme run is bounded ({1,31}): an unbounded `[a-z0-9+.-]*` before `://` rescans to the end
+    // of every dotted identifier run from each word boundary inside it (quadratic on large listings).
+    // Userinfo cannot contain `/` (RFC 3986), so excluding it stops `http://localhost:3000/@vite/client`
+    // from reading as user `localhost`, password `3000/`. U+0000 is the engine's leaf boundary: without
+    // it the tail class swallows the next leaf and the candidate is rejected as straddling two leaves.
+    // eslint-disable-next-line no-control-regex -- U+0000 is the engine structural leaf delimiter.
+    regex: /\b([a-z][a-z0-9+.-]{1,31}:\/\/[^\s\u0000"'<>:/]+:[^\s\u0000"'<>@/]+@[^\s\u0000"'<>]+)\b/gi,
     confidence: "high",
     validate: isLiteralCredentialUrl,
+    placeholderText: (value) => credentialUrlPassword(value) ?? value,
   },
   {
     category: "secret-assignment",
@@ -120,8 +144,13 @@ const SECRET_SHAPE_PATTERNS: readonly SecretShapePattern[] = [
     // detectSecretShapeLeaves; this covers a JSON config an agent reads into a tool result.
     // The URI alternative deliberately retains template braces/parentheses so validation sees the
     // whole credential URL rather than a misleading `scheme://user:$` prefix.
+    // The key runs are bounded ({0,64}) because an unbounded `[...]*` on both sides of the word
+    // alternation backtracks quadratically over long dotted/dashed identifier runs. The value classes
+    // exclude U+0000 (the engine's leaf boundary) so an unquoted value that ends its leaf is captured
+    // as-is instead of swallowing the next leaf and being rejected as straddling two leaves.
     regex:
-      /\b([A-Za-z][A-Za-z0-9_.-]*(?:api[_-]?key|token|secret|password|passwd|pwd|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]*)\b["'`]?\s*[:=]\s*["'`]?((?:[a-z][a-z0-9+.-]*:\/\/[^\s"'`,;<>]+|[^\s"'`,;{}<>()[\]]+))["'`]?/gi,
+      // eslint-disable-next-line no-control-regex -- U+0000 is the engine structural leaf delimiter.
+      /\b([A-Za-z][A-Za-z0-9_.-]{0,64}(?:api[_-]?key|token|secret|password|passwd|pwd|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]{0,64})\b["'`]?\s*[:=]\s*["'`]?((?:[a-z][a-z0-9+.-]{1,31}:\/\/[^\s\u0000"'`,;<>]+|[^\s\u0000"'`,;{}<>()[\]]+))["'`]?/gi,
     confidence: "probabilistic",
     validate: isLikelySecretValue,
   },
@@ -132,11 +161,19 @@ const SECRET_SHAPE_PATTERNS: readonly SecretShapePattern[] = [
     // matches key\nvalue lines *inside* one multi-line string leaf and on plain-text surfaces.
     category: "secret-json-value",
     regex:
-      /\b([A-Za-z][A-Za-z0-9_.-]*(?:api[_-]?key|token|secret|password|passwd|pwd|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]*)\b\s*\n\s*["'`]?((?:[a-z][a-z0-9+.-]*:\/\/[^\s"'`,;<>]+|[^\s"'`,;{}<>()[\]]+))["'`]?/gi,
+      // eslint-disable-next-line no-control-regex -- U+0000 is the engine structural leaf delimiter.
+      /\b([A-Za-z][A-Za-z0-9_.-]{0,64}(?:api[_-]?key|token|secret|password|passwd|pwd|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]{0,64})\b\s*\n\s*["'`]?((?:[a-z][a-z0-9+.-]{1,31}:\/\/[^\s\u0000"'`,;<>]+|[^\s\u0000"'`,;{}<>()[\]]+))["'`]?/gi,
     confidence: "probabilistic",
     validate: isLikelySecretValue,
   },
 ];
+
+/**
+ * The structurally-anchored shapes (vendor prefixes, JWT, PEM, credential URL): a value matching one
+ * of these is a secret regardless of the key it sits under. The two probabilistic key/value pairing
+ * patterns are excluded — they are the callers of this check, not evidence for it.
+ */
+const KNOWN_SHAPE_PATTERNS = SECRET_SHAPE_PATTERNS.filter((pattern) => pattern.confidence === "high");
 
 export function secretShapesEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return envEnabled(env[ENV_ENABLED], true);
@@ -158,9 +195,10 @@ function addCandidate(
   category: string,
   raw: string,
   confidence: ProtectedValue["confidence"],
+  placeholderText: (value: string) => string = (value) => value,
 ): void {
   const value = trimCandidate(raw);
-  if (!value || seen.has(value) || isPlaceholder(value) || value.startsWith("FICTA_")) return;
+  if (!value || seen.has(value) || isPlaceholder(placeholderText(value)) || value.startsWith("FICTA_")) return;
   // A candidate containing the engine's structural leaf boundary (U+0000) straddles two JSON
   // leaves — by construction never one real value, so registering it could only corrupt requests.
   if (value.includes("\u0000")) return;
@@ -179,7 +217,7 @@ export function detectSecretShapes(text: string, ctx: { header?: string } = {}):
       const value = match[2] ?? match[1] ?? match[0];
       if (!value) continue;
       if (pattern.validate && !pattern.validate(value)) continue;
-      addCandidate(out, seen, pattern.category, value, pattern.confidence);
+      addCandidate(out, seen, pattern.category, value, pattern.confidence, pattern.placeholderText);
     }
   }
 
@@ -319,7 +357,10 @@ function isOpaqueSecret(value: string): boolean {
   // Hex session credentials overlap with hashes: do not claim that these are verified secrets.
   if (/^[a-f0-9]{40,512}$/i.test(value)) return /[a-f]/i.test(value) && /\d/.test(value) && entropy >= 3.3;
   // Require mixed case and digits to avoid long words, snake_case constants, and most identifiers.
-  return /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value) && entropy >= 4.5;
+  // The entropy bar scales with length below 40 chars: a 32-char value has at most 32 distinct
+  // characters (5 bits), and a flat 4.5-bit bar rejected a third of genuinely random 32-char tokens.
+  const threshold = Math.min(4.5, 0.85 * Math.log2(value.length));
+  return /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value) && entropy >= threshold;
 }
 
 function isLikelySecretValue(raw: string): boolean {
@@ -327,7 +368,7 @@ function isLikelySecretValue(raw: string): boolean {
   if (value.length < 12 || value.length > MAX_GENERIC_VALUE_LENGTH) return false;
   if (isPlaceholder(value)) return false;
   if (credentialUrlPassword(value) !== undefined) return isLiteralCredentialUrl(value);
-  if (SECRET_SHAPE_PATTERNS.slice(1, -2).some((pattern) => matchesValidatedShape(value, pattern))) return true;
+  if (KNOWN_SHAPE_PATTERNS.some((pattern) => matchesValidatedShape(value, pattern))) return true;
   if (/^(?:true|false|null|undefined|none|password|secret|token|example|changeme)$/i.test(value)) return false;
   // Filesystem paths, not secrets. Must come after the credential-URL and known-shape checks above
   // so a credential URL (which contains slashes) still wins. Without this, the separator-less
@@ -366,7 +407,7 @@ function isLiteralCredentialUrl(value: string): boolean {
 }
 
 function credentialUrlPassword(value: string): string | undefined {
-  return /^[a-z][a-z0-9+.-]*:\/\/[^\s"'<>:]+:([^\s"'<>@]+)@[^\s"'<>]+$/i.exec(value)?.[1];
+  return /^[a-z][a-z0-9+.-]{1,31}:\/\/[^\s"'<>:/]+:([^\s"'<>@/]+)@[^\s"'<>]+$/i.exec(value)?.[1];
 }
 
 function isCredentialTemplate(value: string): boolean {

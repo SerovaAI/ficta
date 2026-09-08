@@ -273,6 +273,8 @@ export interface BodyRedactionDetails extends BodyRedactionResult {
   leakHits: ProtectionHit[];
   /** Ambiguous inferred entity mentions that remained protected through the literal path. */
   ambiguousEntityLinks: number;
+  /** Detectors that did not run on this request under fail-open (outage or crash); absent when all ran. */
+  skippedDetectors?: string[];
   traceValues?: ProtectionTraceValue[];
   traceLeakValues?: ProtectionTraceValue[];
   traceOccurrences?: ProtectionTraceOccurrence[];
@@ -284,6 +286,8 @@ export interface TextRedactionDetails extends TextRedactionResult {
   hits: ProtectionHit[];
   /** Safe metadata, one entry per distinct surviving known value (labels may repeat). */
   leakHits: ProtectionHit[];
+  /** Detectors that did not run on this request under fail-open (outage or crash); absent when all ran. */
+  skippedDetectors?: string[];
   traceValues?: ProtectionTraceValue[];
   traceLeakValues?: ProtectionTraceValue[];
 }

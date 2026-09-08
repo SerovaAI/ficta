@@ -54,6 +54,18 @@ describe("opaque secret detection", () => {
     }
   });
 
+  it("scales the entropy bar with length so genuinely random 32-char tokens are not rejected", () => {
+    // 32 chars over 21 distinct symbols: entropy 4.31 bits — below the old flat 4.5-bit bar, which
+    // rejected about a third of random 32-char alphanumeric tokens, and above the scaled bar (4.25).
+    const doubled = "aBcDeFgH123";
+    const singles = "kLmNoPqR45";
+    const value = doubled + singles + doubled;
+    expect(value).toHaveLength(32);
+    expect(detectSecretShapes(value)).toContainEqual(expect.objectContaining({ name: "opaque-secret", value }));
+    // Longer values keep the full bar: a repetitive 60-char pattern is still not a secret.
+    expect(detectSecretShapes("aB3".repeat(20))).toEqual([]);
+  });
+
   it("treats a bare random-looking digest as ambiguous rather than claiming verification", () => {
     expect(detectSecretShapes(HEX)[0]?.confidence).toBe("probabilistic");
   });
