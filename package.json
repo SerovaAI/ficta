@@ -35,17 +35,17 @@
     "knip": "knip"
   },
   "devDependencies": {
-    "@changesets/changelog-github": "^1.0.0",
-    "@changesets/cli": "^3.0.1",
-    "@types/node": "^26.4.1",
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.2",
+    "@types/node": "^26.5.0",
     "knip": "^6.34.0",
-    "oxfmt": "^0.66.0",
-    "oxlint": "^1.81.0",
+    "oxfmt": "^0.67.0",
+    "oxlint": "^1.82.0",
     "turbo": "^2.10.12",
     "typescript": "^7.0.2"
   },
   "engines": {
     "node": ">=22.13"
   },
-  "packageManager": "pnpm@11.25.0"
+  "packageManager": "pnpm@12.3.4"
 }

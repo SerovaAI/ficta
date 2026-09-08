@@ -53,8 +53,8 @@
   "devDependencies": {
     "@orpc/openapi": "1.15.0",
     "@orpc/zod": "1.15.0",
-    "@types/node": "^26.4.1",
-    "oxfmt": "^0.66.0",
+    "@types/node": "^26.5.0",
+    "oxfmt": "^0.67.0",
     "typescript": "^7.0.2",
     "vitest": "^5.0.0"
   },
