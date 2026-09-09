@@ -381,12 +381,12 @@ class ProtectionRequestScope implements RequestScope {
     anchorIndex: EntityLinkAnchorIndex;
   };
   /**
-   * Memo for {@link safeMetadataField}: label → sanitized label. Hit metadata repeats the same few
+   * Memo for {@link safeMetadataField}: label → contains a protected value. Hit metadata repeats the same few
    * labels across thousands of detected values, and each check scans every known value. Cleared at
    * the start of each details build (after that request's registrations), so it never outlives the
    * value set it was computed against.
    */
-  private readonly safeFieldMemo = new Map<string, string>();
+  private readonly safeFieldMemo = new Map<string, boolean>();
 
   constructor(
     private readonly plugins: readonly RedactionPlugin[],
@@ -868,11 +868,12 @@ class ProtectionRequestScope implements RequestScope {
   private safeMetadataField(value: string | undefined, fallback: string): string {
     const text = value?.trim();
     if (!text) return fallback;
-    const memo = this.safeFieldMemo.get(text);
-    if (memo !== undefined) return memo;
-    const safe = this.containsProtectedValue(text) ? fallback : text;
-    this.safeFieldMemo.set(text, safe);
-    return safe;
+    let containsProtected = this.safeFieldMemo.get(text);
+    if (containsProtected === undefined) {
+      containsProtected = this.containsProtectedValue(text);
+      this.safeFieldMemo.set(text, containsProtected);
+    }
+    return containsProtected ? fallback : text;
   }
 }
 

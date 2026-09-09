@@ -12,3 +12,4 @@ Secret-shape detector and engine fixes from a core-engine review:
 - Detection is linear on large identifier or base64url blobs (bounded key/scheme runs, anchored JWT start); a 100 KB run previously took seconds.
 - Under fail-closed detection (`FICTA_FAIL_CLOSED_DETECTION` or a detector's own `fail_closed`), any detector exception now blocks the request, not only a signalled backend outage; under fail-open the skipped detector is logged and reported as `skippedDetectors` on the redaction details.
 - Keyed-scope requests carrying thousands of detected values (a lockfile's worth of hashes) are several times faster: merged value order and expansion patterns are cached, hit-label safety checks are memoised, and the shell-path check no longer rescans the whole leaf per match.
+- Cached metadata safety checks preserve the separate name, source, and plugin fallback labels when those fields contain the same protected text.
