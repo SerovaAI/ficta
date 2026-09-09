@@ -209,3 +209,79 @@ describe("resolveAgentSecretShapesEnabled", () => {
     expect(resolveAgentSecretShapesEnabled({ shellValue: "0", enabled: "1", agents: "1" })).toBe(false);
   });
 });
+
+describe("secret-shape detector regressions (engine review)", () => {
+  const schemeSeparator = [":", "//"].join("");
+  const password = ["hunter2", "hunter2", "!!"].join(""); // 16 chars, mixed classes, not opaque-shaped
+  const credentialUrl = `postgresql${schemeSeparator}deploy:${password}@db.internal.test/app`;
+
+  async function bodyCount(messages: unknown[]): Promise<number> {
+    const engine = new ProtectionEngine({ plugins: [secretShapesPlugin] });
+    return (await engine.beginRequest().redactBodyDetailed(JSON.stringify({ messages }))).count;
+  }
+
+  it("captures an unquoted assignment or credential URL that ends a body leaf", async () => {
+    // The structural body view joins leaves with U+0000. The value classes used to run across that
+    // boundary into the next leaf, and the straddling candidate was then (correctly) rejected — so a
+    // pasted `KEY=value` was detected only when its message happened to be the last leaf in the body.
+    const trailing = { role: "assistant", content: "ok" };
+    expect(await bodyCount([{ role: "user", content: `API_TOKEN=${password}` }])).toBe(1);
+    expect(await bodyCount([{ role: "user", content: `API_TOKEN=${password}` }, trailing])).toBe(1);
+    expect(await bodyCount([{ role: "user", content: credentialUrl }])).toBe(1);
+    expect(await bodyCount([{ role: "user", content: credentialUrl }, trailing])).toBe(1);
+  });
+
+  it("does not read a dev-server path after a port as URL userinfo", () => {
+    // `host:port/@scope/...` parsed as user `host`, password `port/`, host `scope/...`. Userinfo
+    // cannot contain `/` (RFC 3986); Vite (`/@vite/client`, `/@fs/`) and scoped-package URLs hit this.
+    const urls = [
+      `http${schemeSeparator}localhost:3000/@vite/client`,
+      `http${schemeSeparator}localhost:5173/@react-refresh`,
+      `http${schemeSeparator}127.0.0.1:8080/@fs/Users/dev/app/src/main.ts`,
+    ];
+    for (const url of urls) expect(detectSecretShapes(`GET ${url} 200`)).toEqual([]);
+  });
+
+  it("applies the placeholder filter to the credential, not to a host or PEM body", () => {
+    // A hostname like `db.yourcompany.test` or `db.example.com` is not a placeholder credential.
+    for (const host of ["db.yourcompany.test", "db.example.com"]) {
+      const url = `postgresql${schemeSeparator}deploy:s3cr3tP4ss99@${host}/app`;
+      expect(detectSecretShapes(url).map((value) => value.name)).toContain("credential-url");
+    }
+    // A password that IS a placeholder is still skipped.
+    expect(detectSecretShapes(`postgresql${schemeSeparator}deploy:changeme-now-99@db.internal.test/app`)).toEqual([]);
+
+    // A PEM body is base64; "xxx" or "Your" inside it is noise, not a docs placeholder. Built from
+    // pieces so the fixture never looks like a key to the detector on the way through a proxy.
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const armor = (kind: string) => `-----${kind} PRIVATE KEY-----`;
+    for (const marker of ["xxx", "Your", "Sample"]) {
+      const lines = [alphabet, alphabet.slice(0, 20) + marker + alphabet.slice(20 + marker.length), alphabet];
+      const pem = [armor("BEGIN"), ...lines, armor("END")].join("\n");
+      expect(detectSecretShapes(pem).map((value) => value.name)).toContain("private-key");
+    }
+  });
+
+  it("detects Google OAuth access tokens", () => {
+    const token = `ya29.a0Af${"AbCd1234".repeat(12)}`;
+    expect(detectSecretShapes(`access_token=${token}`)).toEqual([
+      expect.objectContaining({ name: "google-oauth-token", value: token, confidence: "high" }),
+    ]);
+  });
+
+  it("stays linear on long identifier and base64url runs", () => {
+    // Unbounded key/scheme runs and a `\b`-anchored JWT start made detection quadratic on a single
+    // large dotted-identifier or base64url blob (seconds per 100 KB); a tool result can carry one.
+    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+    let ident = "";
+    let b64url = "";
+    for (let i = 0; i < 100_000; i++) {
+      ident += i % 7 === 0 ? "." : alphabet[(i * 31) % alphabet.length];
+      b64url += i % 64 === 0 ? "-" : alphabet[(i * 17) % alphabet.length]!.toUpperCase();
+    }
+    const started = performance.now();
+    expect(detectSecretShapes(ident)).toEqual([]);
+    expect(detectSecretShapes(b64url)).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+});

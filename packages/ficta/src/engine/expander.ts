@@ -20,7 +20,7 @@ export interface ExpansionSpan {
  */
 export function expansionSpans(text: string, value: string, opts: ExpansionOptions = {}): ExpansionSpan[] {
   if (!text || !value) return [];
-  const re = new RegExp(flexiblePatternSource(value), opts.caseInsensitive ? "gi" : "g");
+  const re = expansionPattern(value, opts.caseInsensitive ? "gi" : "g");
   const spans: ExpansionSpan[] = [];
   for (let match = re.exec(text); match !== null; match = re.exec(text)) {
     const surface = match[0];
@@ -42,6 +42,13 @@ export function expansionSpans(text: string, value: string, opts: ExpansionOptio
 export function expandEntities(leaves: readonly string[], claims: readonly EntityClaim[]): Occurrence[] {
   const occurrences: Occurrence[] = [];
   const seen = new Set<string>();
+  // Every claim is scanned against every leaf, so with thousands of detected values in a keyed scope
+  // (a lockfile's worth of hashes) this loop dominates request latency. A plain substring precheck
+  // over the leaf — lowercased once per leaf for case-insensitive forms — skips the regex for the
+  // overwhelming majority of (claim, leaf) pairs that cannot match. Restricted to ASCII,
+  // whitespace-free forms, where `includes` and the regex agree exactly on presence.
+  const lowered: (string | undefined)[] = Array.from({ length: leaves.length });
+  const loweredLeaf = (leaf: number, text: string): string => (lowered[leaf] ??= text.toLowerCase());
 
   for (const claim of claims) {
     if (!claim.mention.protectionEligible) continue;
@@ -51,9 +58,12 @@ export function expandEntities(leaves: readonly string[], claims: readonly Entit
       // Registered opaque/digit-bearing forms retain exact-case matching. Detected values retain
       // their existing case expansion because the detector has already admitted the entity.
       const caseInsensitive = claim.mention.resolverAuthority === "detected" || isCaseExpandable(form.value);
+      const precheck = isAsciiWithoutWhitespace(form.value);
+      const needle = caseInsensitive ? form.value.toLowerCase() : form.value;
       for (let leaf = 0; leaf < leaves.length; leaf++) {
         const text = leaves[leaf];
         if (text === undefined) continue;
+        if (precheck && !(caseInsensitive ? loweredLeaf(leaf, text) : text).includes(needle)) continue;
         for (const span of expansionSpans(text, form.value, {
           caseInsensitive,
           wordBounded: form.boundary === "token",
@@ -109,6 +119,31 @@ export function isCaseExpandable(value: string): boolean {
 export function isLowercaseSingleWord(value: string): boolean {
   const trimmed = value.trim();
   return !/\s/u.test(trimmed) && /\p{L}/u.test(trimmed) && trimmed === trimmed.toLowerCase();
+}
+
+// One compiled pattern per (value, flags), shared across the per-leaf scans of one request and across
+// requests in a keyed scope. Global regexes carry lastIndex state, so it is reset on every lookup.
+const EXPANSION_PATTERN_CACHE_LIMIT = 4096;
+const expansionPatternCache = new Map<string, RegExp>();
+
+function expansionPattern(value: string, flags: "g" | "gi"): RegExp {
+  const key = `${flags}\0${value}`;
+  let pattern = expansionPatternCache.get(key);
+  if (pattern === undefined) {
+    pattern = new RegExp(flexiblePatternSource(value), flags);
+    if (expansionPatternCache.size >= EXPANSION_PATTERN_CACHE_LIMIT) {
+      const oldest = expansionPatternCache.keys().next().value; // Map preserves insertion order
+      if (oldest !== undefined) expansionPatternCache.delete(oldest);
+    }
+    expansionPatternCache.set(key, pattern);
+  }
+  pattern.lastIndex = 0;
+  return pattern;
+}
+
+function isAsciiWithoutWhitespace(value: string): boolean {
+  // eslint-disable-next-line no-control-regex -- deliberately bounds the precheck to 7-bit ASCII.
+  return /^[\x21-\x7e]+$/.test(value);
 }
 
 /** Shared pattern source used by both expansion and the existing vault matcher. */
