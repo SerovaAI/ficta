@@ -23,6 +23,16 @@ FICTA_GATEWAY_KEY_ENCRYPTION_SECRET=...
 Generate it with `openssl rand -base64 32`. No other environment setting is required when Gateway,
 the proxy, and the sidecars use their local defaults.
 
+Optionally, a hosted second opinion can mark lines in pre-send review that may still name a party
+or state a commercial term. It is advisory and fail-open, and it sends detected spans and their
+lines to TypeSafe; read the "Optional second-opinion service" section of the
+[PII threat model](./threat-model-pii.md) before setting the key. The key makes the feature
+available; an admin then turns it on under Admin settings → Second opinion:
+
+```dotenv
+TYPESAFE_API_KEY...
+```
+
 ## Proxy policy
 
 Run `ficta setup`, then make the following the effective policy in `~/.ficta/config.toml`:

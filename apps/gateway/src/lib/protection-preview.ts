@@ -1,5 +1,6 @@
 import { protectionPreviewSchema } from "@serovaai/ficta-contract";
 import { type ProtectionPreviewFinding } from "@serovaai/ficta-protocol";
+import { isSecondOpinion, type SecondOpinion } from "./second-opinion";
 
 export interface GatewayProtectionPreview {
   ticket: string;
@@ -7,6 +8,8 @@ export interface GatewayProtectionPreview {
   redactedText: string;
   findings: ProtectionPreviewFinding[];
   protectedValues: string[];
+  /** Advisory only; present when the operator enabled the second-opinion service. */
+  secondOpinion?: SecondOpinion;
 }
 
 export async function previewProtection(input: {
@@ -28,11 +31,13 @@ export async function previewProtection(input: {
   if (!hasProtectedValues(json)) {
     throw new Error("The protection preview response was not understood.");
   }
-  const { protectedValues: _values, ...preview } = json;
+  // Gateway-only fields are stripped before the strict contract parse and re-attached after it.
+  const { protectedValues: _values, secondOpinion, ...preview } = json;
   const parsed = protectionPreviewSchema.parse(preview);
   return {
     ...parsed,
     protectedValues: json.protectedValues,
+    ...(isSecondOpinion(secondOpinion) ? { secondOpinion } : {}),
   };
 }
 

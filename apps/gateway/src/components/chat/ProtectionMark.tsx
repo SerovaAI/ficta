@@ -8,11 +8,14 @@ export function ProtectionMark({
   origin,
   direction,
   displayMode = "values",
+  note,
 }: {
   children: ReactNode;
   origin: ProtectionPreviewOrigin;
   direction: ProtectionHighlightDirection;
   displayMode?: RestoreHighlightDisplayMode;
+  /** Advisory second-opinion label for a detected finding; the value stays protected either way. */
+  note?: string;
 }) {
   const { tooltipLabel, explanation, borderClass } = protectionHighlightPresentation(origin, direction);
 
@@ -32,6 +35,7 @@ export function ProtectionMark({
       <TooltipContent className="max-w-64" sideOffset={6}>
         <span className="block font-medium">{tooltipLabel}</span>
         <span className="mt-0.5 block opacity-80">{explanation}</span>
+        {note ? <span className="mt-0.5 block opacity-80">Second opinion: {note}.</span> : null}
       </TooltipContent>
     </Tooltip>
   );

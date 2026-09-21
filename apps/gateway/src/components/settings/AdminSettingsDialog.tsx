@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { isAdmin } from "@/lib/auth/types";
 import { useAuthState } from "@/lib/auth/useAuthState";
+import { useSecondOpinionAvailability } from "@/lib/second-opinion-availability";
 import { useInstanceSettings } from "@/lib/storage/useInstanceSettings";
 import { cn } from "@/lib/utils";
 import { AdminSettingsForm } from "./AdminSettingsForm";
@@ -37,6 +38,7 @@ export function AdminSettingsDialog({
 }) {
   const auth = useAuthState();
   const instanceSettings = useInstanceSettings();
+  const secondOpinion = useSecondOpinionAvailability();
   const admin = isAdmin(auth);
   const [section, setSection] = useState<AdminSection>("general");
   const [pendingFocusTarget, setPendingFocusTarget] = useState<AdminSettingsTarget>();
@@ -85,7 +87,9 @@ export function AdminSettingsDialog({
           </header>
 
           <div className="min-h-0 overflow-y-auto px-6 py-1">
-            {section === "general" ? <AdminSettingsForm settings={instanceSettings} /> : null}
+            {section === "general" ? (
+              <AdminSettingsForm settings={instanceSettings} secondOpinion={secondOpinion} />
+            ) : null}
             {section === "retention" ? <RetentionSettingsSection settings={instanceSettings} /> : null}
             {section === "keys" ? <ProviderKeysSection /> : null}
             {section === "registry" ? <ProtectedRegistrySection /> : null}

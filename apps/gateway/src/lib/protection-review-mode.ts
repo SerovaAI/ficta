@@ -27,9 +27,17 @@ export function protectionReviewRequiresPreview(mode: ProtectionReviewMode): boo
   return mode !== "off";
 }
 
-export function protectionPreviewOutcome(mode: ProtectionReviewMode, findingCount: number): "send" | "review" {
+/**
+ * Adaptive review interrupts only when there is something to look at: a protected finding, or a line
+ * the optional second opinion flagged as possibly unprotected.
+ */
+export function protectionPreviewOutcome(
+  mode: ProtectionReviewMode,
+  findingCount: number,
+  flaggedLineCount = 0,
+): "send" | "review" {
   if (mode === "off") return "send";
-  return mode === "adaptive" && findingCount === 0 ? "send" : "review";
+  return mode === "adaptive" && findingCount === 0 && flaggedLineCount === 0 ? "send" : "review";
 }
 
 export function protectionReviewModeLabel(mode: ProtectionReviewMode): string {

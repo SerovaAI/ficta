@@ -79,7 +79,7 @@ services:
 
   openmed:
     profiles: ["openmed"]
-    image: ${OPENMED_IMAGE:-ghcr.io/maziyarpanahi/openmed:latest}
+    image: ${OPENMED_IMAGE:-ghcr.io/maziyarpanahi/openmed:v2.5.0@sha256:1847d2454f88ef9db234eada2ef6308950a13f5ed8d108caabc13281e84d707b}
     ports:
       - "127.0.0.1:5004:8080"
     environment:

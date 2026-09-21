@@ -1,4 +1,4 @@
-ARG PRESIDIO_ANALYZER_IMAGE=ghcr.io/data-privacy-stack/presidio-analyzer@sha256:330c78c144eca0c554e4cf12ab7c05a21872dca63fe6f93d67f08741de30b62f
+ARG PRESIDIO_ANALYZER_IMAGE=ghcr.io/data-privacy-stack/presidio-analyzer:2.2.364@sha256:ae8f6f111ac2f04e3fec552f7f80edd0dcbfa2dd69ee1b9e030475be31669885
 FROM ${PRESIDIO_ANALYZER_IMAGE}
 
 ARG INSTALL_GLINER=0
@@ -17,5 +17,13 @@ COPY --chown=1001:1001 --chmod=755 entrypoint.sh /app/ficta-presidio-entrypoint.
 # the SA-legal reference profile; override per deployment. Empty string = locale-agnostic only.
 ENV FICTA_PRESIDIO_SUPPORTED_COUNTRIES="za,us,mu"
 
+# Verify the entrypoint runtime exists in the pinned upstream image.
 USER 1001
+RUN python -m gunicorn --version
 ENTRYPOINT ["/app/ficta-presidio-entrypoint.sh"]
+
+# Recorded by sidecars:update to skip builds when inputs are unchanged.
+ARG FICTA_SIDECAR_FINGERPRINT
+LABEL ai.serova.ficta.sidecar-inputs=$FICTA_SIDECAR_FINGERPRINT
+ARG FICTA_SIDECAR_BASE_DIGEST
+LABEL ai.serova.ficta.sidecar-base-digest=$FICTA_SIDECAR_BASE_DIGEST

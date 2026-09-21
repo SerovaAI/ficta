@@ -29,3 +29,6 @@ apps/gateway/.impeccable
 # canonical internal docs belong in private SerovaAI/ficta-internal
 notes/
 .impeccable
+
+# TypeSafe bench response cache (bench-only; never shipped)
+packages/ficta/bench/.jev-cache/

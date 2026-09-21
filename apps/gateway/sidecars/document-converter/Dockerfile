@@ -35,3 +35,9 @@ ENV CONVERTER_BACKEND=markitdown
 ENV RENDER_BACKEND=pandoc
 EXPOSE 5003
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5003"]
+
+# Recorded by sidecars:update to skip builds when inputs are unchanged.
+ARG FICTA_SIDECAR_FINGERPRINT
+LABEL ai.serova.ficta.sidecar-inputs=$FICTA_SIDECAR_FINGERPRINT
+ARG FICTA_SIDECAR_BASE_DIGEST
+LABEL ai.serova.ficta.sidecar-base-digest=$FICTA_SIDECAR_BASE_DIGEST

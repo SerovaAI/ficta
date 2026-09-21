@@ -329,3 +329,65 @@ function validateFixture(fixture: EntityFidelityFixture): void {
     if (!sourceText.includes(fact)) throw new Error(`Document is missing evaluation fact ${JSON.stringify(fact)}`);
   }
 }
+
+/**
+ * Semantic fact grader: asks TypeSafe (Jev) one Noul per fact instead of substring matching. Used
+ * only to log disagreements against `factValueMatches`; the release gate keeps consuming the
+ * string grader until the disagreement log shows Jev is at least as strict. `undefined` when the
+ * judge is unavailable so callers fall back cleanly.
+ */
+export interface FactJudgement {
+  field: string;
+  expected: string;
+  answer: string;
+  stringGrader: boolean;
+  jevProbability: number;
+  jevGrader: boolean;
+  agrees: boolean;
+}
+
+export const JEV_FACT_THRESHOLD = 0.7;
+
+export async function judgeFactsWithJev(
+  ask: (
+    state: Record<string, string>,
+    questions: Record<string, unknown>,
+  ) => Promise<{ answers: Record<string, { noul?: number }> }>,
+  facts: ReadonlyArray<{ field: string; expected: unknown; answer: unknown }>,
+): Promise<FactJudgement[]> {
+  const out: FactJudgement[] = [];
+  for (const fact of facts) {
+    const expected = typeof fact.expected === "string" ? fact.expected : "";
+    const answer = typeof fact.answer === "string" ? fact.answer : "";
+    const stringGrader = factValueMatches(fact.answer, fact.expected);
+    let jevProbability = 0;
+    if (expected && answer) {
+      const { answers } = await ask(
+        { field: fact.field, expected_value: expected, model_answer: answer },
+        {
+          states_value: {
+            type: "noul",
+            instructions:
+              "Does `model_answer` state that the value of `field` is exactly `expected_value`? Extra words around the value are fine; a different number, unit, or a negation is not.",
+            criteria: {
+              true: "The answer affirms the same value, allowing surrounding phrasing.",
+              false: "The answer gives a different value, negates it, or does not state it.",
+            },
+          },
+        },
+      );
+      jevProbability = answers.states_value?.noul ?? 0;
+    }
+    const jevGrader = jevProbability >= JEV_FACT_THRESHOLD;
+    out.push({
+      field: fact.field,
+      expected,
+      answer,
+      stringGrader,
+      jevProbability,
+      jevGrader,
+      agrees: stringGrader === jevGrader,
+    });
+  }
+  return out;
+}

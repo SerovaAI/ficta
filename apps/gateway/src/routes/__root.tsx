@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { fetchAuthState } from "@/lib/auth/auth";
 import { organizationsQueryOptions } from "@/lib/auth/organizationQueries";
 import { fetchIssueReportingAvailability } from "@/lib/issue-reporting";
+import { fetchSecondOpinionAvailability } from "@/lib/second-opinion-availability";
 import { fetchInstanceSettings } from "@/lib/storage/settings";
 import styles from "@/styles.css?url";
 
@@ -36,8 +37,12 @@ export const Route = createRootRouteWithContext<RouterContext>()({
     if (auth.requiresAuth && organizationReady) {
       void context.queryClient.prefetchQuery(organizationsQueryOptions);
     }
-    const [instance, issueReporting] = await Promise.all([fetchInstanceSettings(), fetchIssueReportingAvailability()]);
-    return { auth, instance, issueReporting };
+    const [instance, issueReporting, secondOpinion] = await Promise.all([
+      fetchInstanceSettings(),
+      fetchIssueReportingAvailability(),
+      fetchSecondOpinionAvailability(),
+    ]);
+    return { auth, instance, issueReporting, secondOpinion };
   },
   head: () => ({
     meta: [

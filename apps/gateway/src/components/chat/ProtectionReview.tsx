@@ -12,7 +12,12 @@ import {
   protectionSelectionCandidate,
   validateProtectionValue,
 } from "@/lib/protection-review-value";
-import { previewFindingsToAnnotations, protectionTextSegments } from "@/lib/restore-highlights";
+import {
+  previewFindingsToAnnotations,
+  type ProtectionHighlightAnnotation,
+  protectionTextSegments,
+} from "@/lib/restore-highlights";
+import { flaggedLineCount, type SecondOpinion, secondOpinionKindLabel } from "@/lib/second-opinion";
 import { cn } from "@/lib/utils";
 import { ProtectionMark } from "./ProtectionMark";
 
@@ -20,6 +25,11 @@ type ReviewMode = "values" | "model";
 
 export const PROTECTION_REVIEW_SCOPE_COPY =
   "Automatic protection covers identity and attribution, not every confidential business term.";
+export const PROTECTION_REVIEW_SECOND_OPINION_COPY =
+  "A second opinion flagged lines that may still name a party or state a commercial term. Select the exact value to protect it; nothing is protected automatically.";
+export const PROTECTION_REVIEW_SECOND_OPINION_LEGEND = "Second opinion · check this line";
+export const PROTECTION_REVIEW_SECOND_OPINION_LINE_TITLE =
+  "Second opinion: this line may name a party or state a commercial term that is not protected.";
 export const PROTECTION_REVIEW_ADD_COPY =
   "Highlight text above to copy or protect it, or type an amount, project name, code, or clause below.";
 export const PROTECTION_REVIEW_SUGGESTION_COPY =
@@ -63,6 +73,7 @@ export function ProtectionReview({
   const [copyStatus, setCopyStatus] = useState<"idle" | "error">("idle");
   const counts = useMemo(() => findingCounts(preview.findings), [preview.findings]);
   const findingTotal = counts.registry + counts.detected + counts.user;
+  const flaggedLines = flaggedLineCount(preview.secondOpinion);
   const automaticValues = useMemo(() => automaticProtectionValues(text, preview.findings), [preview.findings, text]);
 
   useEffect(() => {
@@ -193,26 +204,44 @@ export function ProtectionReview({
       <div className="px-3 py-3 sm:px-4">
         {mode === "values" ? (
           <div id="protection-values-panel" role="tabpanel">
-            {findingTotal > 0 ? (
+            {findingTotal > 0 || flaggedLines > 0 ? (
               <>
                 <fieldset className="mb-3 flex flex-wrap gap-x-4 gap-y-2 border-0 p-0 text-xs">
                   <legend className="sr-only">Protection legend</legend>
-                  <Legend label="Registry · Exact" count={counts.registry} className="border-emerald-600" />
-                  <Legend
-                    label="Detected identity · best effort"
-                    count={counts.detected}
-                    className="border-emerald-600 border-dashed"
-                  />
-                  <Legend
-                    label="You protected · Exact in this chat"
-                    count={counts.user}
-                    className="border-foreground"
-                  />
+                  {findingTotal > 0 ? (
+                    <>
+                      <Legend label="Registry · Exact" count={counts.registry} className="border-emerald-600" />
+                      <Legend
+                        label="Detected identity · best effort"
+                        count={counts.detected}
+                        className="border-emerald-600 border-dashed"
+                      />
+                      <Legend
+                        label="You protected · Exact in this chat"
+                        count={counts.user}
+                        className="border-foreground"
+                      />
+                    </>
+                  ) : null}
+                  {flaggedLines > 0 ? (
+                    <Legend
+                      label={PROTECTION_REVIEW_SECOND_OPINION_LEGEND}
+                      count={flaggedLines}
+                      className="border-sky-200 bg-sky-100 dark:border-sky-900 dark:bg-sky-950/50"
+                    />
+                  ) : null}
                 </fieldset>
-                <p className="mb-3 text-muted-foreground text-xs">
-                  All highlighted text will be replaced before sending. Solid lines are exact matches; dashed lines are
-                  detector matches.
-                </p>
+                {findingTotal > 0 ? (
+                  <p className="mb-3 text-muted-foreground text-xs">
+                    All highlighted text will be replaced before sending. Solid lines are exact matches; dashed lines
+                    are detector matches.
+                  </p>
+                ) : null}
+                {flaggedLines > 0 ? (
+                  <p className="mb-3 text-muted-foreground text-xs" role="status">
+                    {PROTECTION_REVIEW_SECOND_OPINION_COPY}
+                  </p>
+                ) : null}
               </>
             ) : (
               <p className="mb-3 text-muted-foreground text-xs" role="status">
@@ -227,7 +256,7 @@ export function ProtectionReview({
               // Focus enables keyboard selection capture in review text.
               tabIndex={0}
             >
-              <HighlightedText text={text} findings={preview.findings} />
+              <HighlightedText text={text} findings={preview.findings} secondOpinion={preview.secondOpinion} />
             </article>
           </div>
         ) : (
@@ -447,22 +476,96 @@ function Legend({ label, count, className }: { label: string; count: number; cla
   );
 }
 
-function HighlightedText({ text, findings }: { text: string; findings: ProtectionPreviewFinding[] }) {
+function HighlightedText({
+  text,
+  findings,
+  secondOpinion,
+}: {
+  text: string;
+  findings: ProtectionPreviewFinding[];
+  secondOpinion?: SecondOpinion;
+}) {
   const annotations = previewFindingsToAnnotations(text, findings);
+  const notes = secondOpinionNotes(findings, secondOpinion);
+  const flagged = secondOpinion?.status === "ok" ? [...secondOpinion.lines].sort((a, b) => a.start - b.start) : [];
+  if (flagged.length === 0) return highlightedSegments(text, annotations, notes, "");
+
+  // Flagged lines are wrapped so the user sees where to look. Authoritative highlights are clipped to
+  // each chunk; a finding that crosses a chunk boundary renders as two marks over the same value.
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  for (const line of flagged) {
+    if (line.end < cursor) continue;
+    const start = Math.max(line.start, cursor);
+    if (start > cursor) nodes.push(...highlightedChunk(text, annotations, notes, cursor, start));
+    nodes.push(
+      <span
+        key={`flag:${line.line}`}
+        className="box-decoration-clone rounded-[3px] bg-sky-100/80 px-0.5 dark:bg-sky-950/50"
+        title={PROTECTION_REVIEW_SECOND_OPINION_LINE_TITLE}
+        data-second-opinion="line"
+      >
+        {highlightedChunk(text, annotations, notes, start, line.end)}
+      </span>,
+    );
+    cursor = line.end;
+  }
+  if (cursor < text.length) nodes.push(...highlightedChunk(text, annotations, notes, cursor, text.length));
+  return nodes;
+}
+
+function highlightedChunk(
+  text: string,
+  annotations: readonly ProtectionHighlightAnnotation[],
+  notes: ReadonlyMap<string, string>,
+  from: number,
+  to: number,
+): ReactNode[] {
+  const clipped = annotations
+    .filter((annotation) => annotation.start < to && annotation.end > from)
+    .map((annotation) => ({
+      ...annotation,
+      start: Math.max(annotation.start, from) - from,
+      end: Math.min(annotation.end, to) - from,
+    }));
+  return highlightedSegments(text.slice(from, to), clipped, notes, `${from}:`);
+}
+
+function highlightedSegments(
+  text: string,
+  annotations: readonly ProtectionHighlightAnnotation[],
+  notes: ReadonlyMap<string, string>,
+  keyPrefix: string,
+): ReactNode[] {
   return protectionTextSegments(text, annotations).map((segment, index) =>
     segment.annotation ? (
       <ProtectionMark
-        key={`${segment.annotation.start}:${segment.annotation.end}:${segment.annotation.origin}`}
+        key={`${keyPrefix}${segment.annotation.start}:${segment.annotation.end}:${segment.annotation.origin}`}
         direction="redacted"
         origin={segment.annotation.origin}
+        note={segment.annotation.origin === "detected" ? notes.get(segment.annotation.surrogate) : undefined}
       >
         {segment.text}
       </ProtectionMark>
     ) : (
       // Plain segments are stable between authoritative findings.
-      <span key={index}>{segment.text}</span>
+      <span key={`${keyPrefix}${index}`}>{segment.text}</span>
     ),
   );
+}
+
+/** Advisory kind per detected surrogate. Keyed by surrogate so clipped marks still find their note. */
+function secondOpinionNotes(
+  findings: readonly ProtectionPreviewFinding[],
+  secondOpinion: SecondOpinion | undefined,
+): Map<string, string> {
+  const notes = new Map<string, string>();
+  if (secondOpinion?.status !== "ok") return notes;
+  for (const label of secondOpinion.findings) {
+    const finding = findings.find((item) => item.start === label.start && item.end === label.end);
+    if (finding?.origin === "detected") notes.set(finding.surrogate, secondOpinionKindLabel(label.kind));
+  }
+  return notes;
 }
 
 function ModelText({ text }: { text: string }) {

@@ -65,6 +65,10 @@ export function validateInstancePatch(input: unknown): Partial<InstanceSettings>
     if (!isProtectionReviewMode(i.protectionReviewMinimum)) throw new Error("invalid protectionReviewMinimum");
     patch.protectionReviewMinimum = i.protectionReviewMinimum;
   }
+  if ("secondOpinionEnabled" in i) {
+    if (typeof i.secondOpinionEnabled !== "boolean") throw new Error("invalid secondOpinionEnabled");
+    patch.secondOpinionEnabled = i.secondOpinionEnabled;
+  }
   if ("deletedThreadRecoveryDays" in i) {
     patch.deletedThreadRecoveryDays = retentionDays(i.deletedThreadRecoveryDays, "deletedThreadRecoveryDays");
   }

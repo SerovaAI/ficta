@@ -2,7 +2,9 @@ import { type EntityFidelityScores, evaluateEntityFidelityGate } from "./entity-
 import {
   characterizeRenderedFixture,
   entityIdForToken,
+  type FactJudgement,
   factValueMatches,
+  judgeFactsWithJev,
   loadEntityFidelityFixture,
   type RenderedFixture,
   renderEntityFidelityFixture,
@@ -11,6 +13,7 @@ import {
   surrogateLikeTokens,
   tokenForSurface,
 } from "./entity-surrogate-fidelity-lib.js";
+import { createJevJudge, estimateUsd, type JevJudge } from "./jev-judge.js";
 
 interface ProviderTarget {
   provider: "openai" | "anthropic";
@@ -25,6 +28,7 @@ interface Options {
   targets: ProviderTarget[];
   runs: number;
   requirePass: boolean;
+  jevFacts: boolean;
   help: boolean;
 }
 
@@ -39,6 +43,7 @@ interface ScoreResult {
   identityExact: Record<string, boolean>;
   entityAttribution: Record<string, boolean>;
   factExact: Record<string, boolean>;
+  factJudgements?: FactJudgement[];
   expectedTokenCount: number;
   exactListedTokenCount: number;
   unknownTokens: string[];
@@ -86,6 +91,7 @@ const rendered = options.styles.map((style) => renderEntityFidelityFixture(fixtu
 const offline = rendered.map((item) => characterizeRenderedFixture(fixture, item));
 
 for (const target of options.targets) assertApiKey(target.provider);
+const jev = options.jevFacts ? createJevJudge() : undefined;
 const live: LiveResult[] = [];
 for (const target of options.targets) {
   for (const item of rendered) {
@@ -104,7 +110,7 @@ for (const target of options.targets) {
           live.push({
             ...context,
             fragmentCount: result.fragmentCount,
-            ...scoreResponse(item, expected, result.response),
+            ...(await scoreResponse(item, expected, result.response, jev)),
           });
         } catch (error) {
           live.push({ ...context, error: errorMessage(error) });
@@ -124,6 +130,26 @@ const report = {
   offline,
   live,
   gate,
+  jevFactGrader: jev
+    ? {
+        model: jev.model,
+        disagreements: live.flatMap((result) =>
+          "factJudgements" in result && result.factJudgements
+            ? result.factJudgements
+                .filter((judgement) => !judgement.agrees)
+                .map((judgement) => ({
+                  provider: result.provider,
+                  model: result.model,
+                  style: result.style,
+                  transport: result.transport,
+                  run: result.run,
+                  ...judgement,
+                }))
+            : [],
+        ),
+        usage: { ...jev.usage, estimatedUsd: estimateUsd(jev.usage) },
+      }
+    : undefined,
 };
 console.log(JSON.stringify(report, null, 2));
 if (options.requirePass && gate?.passed !== true) {
@@ -164,7 +190,12 @@ function evaluationPrompt(
   };
 }
 
-function scoreResponse(renderedFixture: RenderedFixture, expected: ExpectedAnswer, response: string): ScoreResult {
+async function scoreResponse(
+  renderedFixture: RenderedFixture,
+  expected: ExpectedAnswer,
+  response: string,
+  jev?: JevJudge,
+): Promise<ScoreResult> {
   const answer = parseModelAnswer(response);
   const identityFields = ["client_token", "counterparty_token", "supplier_duty_token", "notice_sender_token"] as const;
   const factFields = ["damages_cap", "cure_period", "interest_rate", "notice_date", "arbitration_duration"] as const;
@@ -183,6 +214,13 @@ function scoreResponse(renderedFixture: RenderedFixture, expected: ExpectedAnswe
   const factExact = Object.fromEntries(
     factFields.map((field) => [field, factValueMatches(answer?.[field], expected[field])]),
   );
+  // Optional semantic second opinion; logged, never gated on, so Jev cannot loosen the release bar.
+  const factJudgements = jev
+    ? await judgeFactsWithJev(
+        (state, questions) => jev.ask(state, questions as never),
+        factFields.map((field) => ({ field, expected: expected[field], answer: answer?.[field] })),
+      )
+    : undefined;
   const expectedTokens = new Set(
     renderedFixture.mappings
       .filter((mapping) => renderedFixture.text.includes(mapping.token))
@@ -206,6 +244,7 @@ function scoreResponse(renderedFixture: RenderedFixture, expected: ExpectedAnswe
     identityExact,
     entityAttribution,
     factExact,
+    ...(factJudgements ? { factJudgements } : {}),
     expectedTokenCount: expectedTokens.size,
     exactListedTokenCount: exactListedTokens.size,
     unknownTokens: [...unknownTokens],
@@ -455,6 +494,7 @@ function parseOptions(args: string[]): Options {
   let runsExplicit = false;
   let requirePass = false;
   let liveMatrix = false;
+  let jevFacts = false;
   let help = false;
 
   for (const arg of args) {
@@ -465,6 +505,10 @@ function parseOptions(args: string[]): Options {
     }
     if (arg === "--require-pass") {
       requirePass = true;
+      continue;
+    }
+    if (arg === "--jev-facts") {
+      jevFacts = true;
       continue;
     }
     if (arg === "--live-matrix") {
@@ -511,6 +555,7 @@ function parseOptions(args: string[]): Options {
       targets: [],
       runs,
       requirePass: false,
+      jevFacts,
       help: true,
     };
   }
@@ -523,7 +568,7 @@ function parseOptions(args: string[]): Options {
     if (!runsExplicit) runs = parseRuns(process.env.FICTA_MATRIX_RUNS?.trim() || "3", "FICTA_MATRIX_RUNS");
   }
   if (requirePass && targets.length === 0) throw new Error("--require-pass requires at least one live provider model");
-  return { styles: selectedStyles, transports: selectedTransports, targets, runs, requirePass, help };
+  return { styles: selectedStyles, transports: selectedTransports, targets, runs, requirePass, jevFacts, help };
 }
 
 function requiredValue(arg: string): string {
@@ -582,6 +627,7 @@ Options:
   --transports=buffered,stream,tool    Compare a subset (default: all)
   --runs=1                              Runs per provider/style, from 1 to 20 (default: 1)
   --require-pass                        Exit non-zero unless every live score passes the strict gate
+  --jev-facts                           Also grade facts with TypeSafe (needs TYPESAFE_API_KEY); logged, not gated
   --live-matrix                         Read both models from FICTA_MATRIX_* and require a strict pass
   --help                               Show this help
 

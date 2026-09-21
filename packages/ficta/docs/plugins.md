@@ -334,6 +334,23 @@ such as South African IDs, document identifiers, and Mauritius phones.
   POC box. After pulling recognizer code or Presidio configuration changes, rerun `pnpm sidecars` so
   the local `ficta-presidio:dev` image is rebuilt and the analyzer is recreated; a plain Compose
   `up` can reuse the stale local image.
+- **`pnpm sidecars:check`** compares Presidio's pinned base digest with the latest stable upstream release tag and the
+  converter's recorded Python base with its registry tag (falling back to the local base cache
+  for older images). Add `--openmed` to include OpenMed.
+  It requires Docker/Buildx and registry access; available updates are informational, errors fail.
+  **`pnpm check`** starts with this image check in advisory mode: available updates are reported,
+  and Docker/registry failures warn without failing the checks. It never updates or restarts
+  sidecars; ordinary lint/test failures still fail. **`pnpm check:with-sidecars`** is an alias.
+- **`pnpm sidecars:update`** upgrades the Presidio version tag and digest after a successful build.
+  It skips builds when recorded source/build inputs and base digests match, uses Docker caching for
+  changed images, and lets Compose reuse unchanged containers while applying configuration changes.
+  Older images without input metadata need one cached build. Use `--force` for uncached builds,
+  refreshed converter dependencies, and forced container recreation. Health checks gate completion.
+  Add `--openmed` to upgrade the default OpenMed tag/digest and recreate it too; explicit
+  `OPENMED_IMAGE` overrides are pulled as configured.
+  Stop `pnpm dev` first if it owns the ports. Review the changed pin, run detector regressions, and
+  add a changeset before committing. Fixed Pandoc, optional GLiNER/torch, and model versions remain
+  unchanged; checks cover image digests, not those dependencies or running-container versions.
 - **Root `pnpm dev`** auto-manages the sidecars for whichever backends `FICTA_PII_BACKENDS`
   selects (force per-sidecar with `FICTA_PII_PRESIDIO_MANAGED` /
   `FICTA_PII_OPENMED_MANAGED`). It reuses anything already healthy at the configured URL — including
@@ -431,7 +448,7 @@ docker run --rm -p 5004:8080 \
   -e OPENMED_SERVICE_KEEP_ALIVE=10m \
   -e OPENMED_TORCH_ATTENTION_BACKEND=eager \
   -v openmed-hf-cache:/root/.cache/huggingface \
-  ghcr.io/maziyarpanahi/openmed:latest
+  ghcr.io/maziyarpanahi/openmed:v2.5.0@sha256:1847d2454f88ef9db234eada2ef6308950a13f5ed8d108caabc13281e84d707b
 curl http://127.0.0.1:5004/health   # ok once ready
 ```
 

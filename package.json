@@ -6,7 +6,7 @@
   "scripts": {
     "//turbo": "Turbo-managed: cached, parallel across all packages. See turbo.json",
     "build": "turbo run build",
-    "check": "pnpm check:static && turbo run check",
+    "check": "node scripts/sidecars.mjs check --advisory && pnpm check:static && pnpm check:sidecar-scripts && turbo run check",
     "check:static": "oxlint . && oxfmt --check .",
     "check:entity-fidelity-live": "pnpm --filter @serovaai/ficta check:entity-fidelity-live",
     "typecheck": "turbo run typecheck",
@@ -32,20 +32,24 @@
     "//release": "Releases are managed by Changesets. Author notes with `pnpm changeset`; CI (.github/workflows/publish.yml) opens a Version PR and, on merge, runs `release` to publish @serovaai/ficta + @serovaai/ficta-protocol together via npm OIDC.",
     "changeset": "changeset",
     "release": "changeset publish",
-    "knip": "knip"
+    "knip": "knip",
+    "sidecars:check": "node scripts/sidecars.mjs check",
+    "sidecars:update": "node scripts/sidecars.mjs update",
+    "check:with-sidecars": "pnpm check",
+    "check:sidecar-scripts": "node --test scripts/sidecars.test.mjs"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^1.0.1",
     "@changesets/cli": "^3.0.3",
-    "@types/node": "^26.6.1",
-    "knip": "^6.36.0",
+    "@types/node": "^26.6.2",
+    "knip": "^6.37.0",
     "oxfmt": "^0.68.0",
     "oxlint": "^1.83.0",
-    "turbo": "^2.10.13",
+    "turbo": "^2.11.2",
     "typescript": "^7.0.2"
   },
   "engines": {
     "node": ">=22.13"
   },
-  "packageManager": "pnpm@12.3.4"
+  "packageManager": "pnpm@12.5.1"
 }

@@ -29,7 +29,8 @@ const DEFAULT_DOC_CONVERTER_STARTUP_TIMEOUT_MS = 120_000;
 const DEFAULT_OPENMED_URL = "http://127.0.0.1:5004";
 // Upstream's published multi-arch service image; override FICTA_PII_OPENMED_IMAGE for a pinned tag
 // or a locally built (patched) image.
-const DEFAULT_OPENMED_IMAGE = "ghcr.io/maziyarpanahi/openmed:latest";
+const DEFAULT_OPENMED_IMAGE =
+  "ghcr.io/maziyarpanahi/openmed:v2.5.0@sha256:1847d2454f88ef9db234eada2ef6308950a13f5ed8d108caabc13281e84d707b";
 // The OpenMed REST service's own default PII model — preloaded so a cold container is ready before
 // the first request instead of eating the recognizer's per-request budget.
 const DEFAULT_OPENMED_MODEL = "OpenMed/OpenMed-PII-SuperClinical-Small-44M-v1";

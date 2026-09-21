@@ -29,6 +29,12 @@ describe("protection review modes", () => {
     expect(protectionPreviewOutcome("always", 3)).toBe("review");
   });
 
+  it("treats a second-opinion flagged line like a finding in Adaptive", () => {
+    expect(protectionPreviewOutcome("adaptive", 0, 0)).toBe("send");
+    expect(protectionPreviewOutcome("adaptive", 0, 1)).toBe("review");
+    expect(protectionPreviewOutcome("off", 0, 5)).toBe("send");
+  });
+
   it("validates only supported setting values", () => {
     expect(isProtectionReviewMode("off")).toBe(true);
     expect(isProtectionReviewMode("adaptive")).toBe(true);

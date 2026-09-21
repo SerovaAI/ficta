@@ -3,6 +3,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { scopeFromAuth } from "../../lib/auth/guards.server";
 import { getActiveProvider } from "../../lib/auth/provider.server";
 import { fictaScopeFor } from "../../lib/ficta-scope.server";
+import type { SecondOpinion } from "../../lib/second-opinion";
+import { assessProtectionPreview, secondOpinionConfig } from "../../lib/second-opinion.server";
 import {
   fictaControlErrorData,
   fictaControlErrorStatus,
@@ -63,7 +65,11 @@ export const Route = createFileRoute("/api/protection-preview")({
             requiredCapability: "protection-preview",
           });
           const json = await client.protectionPreview({ text: input.text, protectedValues });
-          return Response.json({ ...json, protectedValues } satisfies GatewayProtectionPreview);
+          const config = secondOpinionConfig(process.env, await storage.getInstanceSettings(orgId));
+          const secondOpinion = config
+            ? await assessProtectionPreview({ text: input.text, findings: json.findings }, config)
+            : undefined;
+          return Response.json({ ...json, protectedValues, secondOpinion } satisfies GatewayProtectionPreview);
         } catch (error) {
           if (error instanceof GatewayFictaCompatibilityError) return errorResponse(502, error.message);
           const status = fictaControlErrorStatus(error);
@@ -88,6 +94,8 @@ interface PreviewInput {
 export interface GatewayProtectionPreview extends ProtectionPreviewOk {
   /** Chat-scoped selections already remembered by Gateway. */
   protectedValues: string[];
+  /** Advisory judgement from the optional second-opinion service; absent when not configured. */
+  secondOpinion?: SecondOpinion;
 }
 
 function validateInput(value: unknown): PreviewInput {

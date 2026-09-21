@@ -34,6 +34,8 @@ export interface InstanceSettings {
   suggestedPrompts?: string[];
   /** Lowest protection-review mode a chat may use. Undefined means no administrator-enforced minimum. */
   protectionReviewMinimum?: ProtectionReviewMode;
+  /** Admin opt-in to the TypeSafe second opinion in pre-send review. Effective only with a server key. */
+  secondOpinionEnabled?: boolean;
   /** Opt-in live-database recovery window for user-deleted chats. Undefined preserves hard deletion. */
   deletedThreadRecoveryDays?: number;
   /** Retention window for values-free records and egress audit evidence. Required with recovery. */

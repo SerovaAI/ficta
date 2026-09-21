@@ -25,6 +25,35 @@ that scope.
   any content outside those spans. If the gateway is run as a third-party hosted service, this threat
   model does not hold — that operator sees plaintext before redaction.
 
+### Optional second-opinion service
+
+An operator may make a hosted judgement service (TypeSafe, model Jev) available as a pre-send second
+opinion by setting a `TYPESAFE_API_KEY` on the gateway. A workspace admin then turns it on
+under Admin settings, or the operator pins it with `FICTA_GATEWAY_SECOND_OPINION=on|off`. It is off
+by default and cannot be enabled without the key. When on, it changes the trust boundary in one
+specific way:
+
+- **What is sent.** For each message under review, the gateway sends the message text line by line
+  with **every protected span already replaced by its placeholder**, plus each **detected** span
+  together with its line. Registered values are never sent: they are substituted before the request
+  is built. User-selected values are substituted too. Only detector-found spans travel as text,
+  because a placeholder cannot be judged from context.
+- **What comes back.** An advisory label per detected span (credential, content hash, organisation,
+  legal term, and so on) and a probability per line that it still names a party or states a
+  commercial term. The gateway never changes what the proxy redacts on this basis; it marks lines
+  for the user to look at and appends the label to the finding's tooltip. Selecting a value from a
+  marked line goes through the same explicit path as any other user selection.
+- **Failure posture.** Fail open. A timeout, error, missing key, or oversized message yields no
+  second opinion and the review proceeds exactly as without the feature.
+- **Vendor terms.** TypeSafe is a hosted API with no self-hosted option. Its published policy is
+  not to train on customer data; zero data retention is an enterprise arrangement. Its data
+  processing agreement names no fixed retention window, hosting region, or certification. Treat it
+  as a subprocessor that receives detected spans and their surrounding lines, and confirm those
+  terms fit the firm's obligations before enabling it.
+- **Adversarial input.** The service does not treat message text as hostile; instructions embedded
+  in a document could shift its answers. Because its output is advisory and a person confirms every
+  selection, the failure mode is a missed hint, not a changed redaction.
+
 ## Two layers, two strengths
 
 **Strong (inherited from the base threat model):** the firm's **registered values** — a loaded
@@ -72,7 +101,8 @@ and do not turn organization detection into an exact guarantee.
 missed. That phrase receives exact-match, registry-strength treatment inside the user's current chat and is
 re-applied on later sends from Gateway's private thread storage. This improves the request the user actually
 reviewed; it does not make PII detection complete, infer other missed phrases, or silently promote the value to
-organization-wide policy. Workspace promotion remains an admin-reviewed Protected Registry action.
+organization-wide policy. Workspace promotion remains an admin-reviewed Protected Registry action. The optional
+second-opinion service can point at a line worth checking, but the selection itself is still the user's.
 
 ## Fail-closed does not rescue missed PII
 

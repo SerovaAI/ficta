@@ -18,6 +18,7 @@ import {
   type ProtectionReviewMode,
   protectionReviewModeLabel,
 } from "@/lib/protection-review-mode";
+import type { SecondOpinionAvailability } from "@/lib/second-opinion";
 import { updateInstanceSettings } from "@/lib/storage/settings";
 import {
   type InstanceSettings,
@@ -75,8 +76,18 @@ function refreshRouteData(router: ReturnType<typeof useRouter>) {
  * Instance-wide settings, editable by admins. Rows autosave like ChatGPT/Claude settings: text changes
  * debounce, checkbox changes save immediately, and there is no form-level Save button.
  */
-export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) {
+export function AdminSettingsForm({
+  settings,
+  secondOpinion = { available: false },
+}: {
+  settings: InstanceSettings;
+  /** Server-resolved availability of the TypeSafe second opinion; the row is hidden without a key. */
+  secondOpinion?: SecondOpinionAvailability;
+}) {
   const router = useRouter();
+  const [secondOpinionStatus, setSecondOpinionStatus] = useState<SaveStatus>("idle");
+  const [secondOpinionEnabled, setSecondOpinionEnabledState] = useState(settings.secondOpinionEnabled === true);
+  const secondOpinionSavePending = useRef(false);
   const [name, setName] = useState(settings.instanceName ?? "");
   const [checked, setChecked] = useState<Set<string>>(() => checkedFromSettings(settings));
   const [promptDrafts, setPromptDrafts] = useState<PromptDraft[]>(() => promptDraftsFromSettings(settings));
@@ -111,6 +122,28 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
   useEffect(() => {
     setReviewMinimumState(settings.protectionReviewMinimum ?? "off");
   }, [settings.protectionReviewMinimum]);
+
+  useEffect(() => {
+    setSecondOpinionEnabledState(settings.secondOpinionEnabled === true);
+  }, [settings.secondOpinionEnabled]);
+
+  const setSecondOpinionEnabled = async (enabled: boolean) => {
+    if (secondOpinionSavePending.current || enabled === secondOpinionEnabled) return;
+    const previous = secondOpinionEnabled;
+    secondOpinionSavePending.current = true;
+    setSecondOpinionEnabledState(enabled);
+    setSecondOpinionStatus("saving");
+    try {
+      await updateInstanceSettings({ data: { secondOpinionEnabled: enabled } });
+      refreshRouteData(router);
+      setSecondOpinionStatus("idle");
+    } catch {
+      setSecondOpinionEnabledState(previous);
+      setSecondOpinionStatus("error");
+    } finally {
+      secondOpinionSavePending.current = false;
+    }
+  };
 
   useEffect(() => {
     const next = promptDraftsFromSettings(settings);
@@ -309,6 +342,28 @@ export function AdminSettingsForm({ settings }: { settings: InstanceSettings }) 
         </div>
       </SettingRow>
 
+      {secondOpinion.available ? (
+        <SettingRow label="Second opinion" description={SECOND_OPINION_SETTING_DESCRIPTION}>
+          <div className="space-y-1">
+            <label className="flex items-start gap-2 text-sm">
+              <Checkbox
+                id="second-opinion-enabled"
+                checked={secondOpinion.pinned ? secondOpinion.pinned === "on" : secondOpinionEnabled}
+                disabled={Boolean(secondOpinion.pinned) || secondOpinionStatus === "saving"}
+                onCheckedChange={(state) => void setSecondOpinionEnabled(state === true)}
+              />
+              <span>
+                <span className="font-medium">{SECOND_OPINION_SETTING_LABEL}</span>
+                <span className="mt-0.5 block text-muted-foreground text-xs">
+                  {secondOpinion.pinned ? secondOpinionPinnedNote(secondOpinion.pinned) : SECOND_OPINION_SETTING_NOTE}
+                </span>
+              </span>
+            </label>
+            <InlineStatus status={secondOpinionStatus} error="Couldn't save the second-opinion setting." />
+          </div>
+        </SettingRow>
+      ) : null}
+
       <SettingRow label="Suggested prompts" description="Shown as quick-start buttons on a new empty chat.">
         <div className="w-full max-w-md space-y-2">
           {promptDrafts.map((prompt, index) => (
@@ -388,6 +443,18 @@ function ReviewMinimumPicker({
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+export const SECOND_OPINION_SETTING_LABEL = "Mark lines to check in pre-send review";
+export const SECOND_OPINION_SETTING_DESCRIPTION =
+  "Ask TypeSafe for a second opinion on each reviewed message. Advisory only: it never changes what is redacted.";
+export const SECOND_OPINION_SETTING_NOTE =
+  "Sends detected spans and their lines to TypeSafe; registered values never leave. See the PII threat model.";
+
+export function secondOpinionPinnedNote(pinned: "on" | "off"): string {
+  return pinned === "on"
+    ? "Turned on by the server environment (FICTA_GATEWAY_SECOND_OPINION=on)."
+    : "Turned off by the server environment (FICTA_GATEWAY_SECOND_OPINION=off).";
 }
 
 function minimumModeDescription(mode: ProtectionReviewMode): string {

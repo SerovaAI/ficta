@@ -48,6 +48,7 @@ import {
   protectionReviewRequiresPreview,
 } from "@/lib/protection-review-mode";
 import { automaticProtectionValues, protectionValueCoverage } from "@/lib/protection-review-value";
+import { flaggedLineCount } from "@/lib/second-opinion";
 import { type ProtectionStatus, requiredRegistryBlock } from "@/lib/protection-status";
 import { fetchProxyConfig } from "@/lib/proxy-config";
 import {
@@ -537,7 +538,13 @@ export function ChatView({
         signal: request.controller.signal,
       });
       if (!protectionPreviewIsCurrent(request.generation)) return;
-      if (protectionPreviewOutcome(effectiveReviewMode, preview.findings.length) === "send") {
+      if (
+        protectionPreviewOutcome(
+          effectiveReviewMode,
+          preview.findings.length,
+          flaggedLineCount(preview.secondOpinion),
+        ) === "send"
+      ) {
         dispatchProtectionPreview(content, preview, action);
         return;
       }
