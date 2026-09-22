@@ -43,8 +43,8 @@
     "@changesets/cli": "^3.0.3",
     "@types/node": "^26.6.2",
     "knip": "^6.37.0",
-    "oxfmt": "^0.68.0",
-    "oxlint": "^1.83.0",
+    "oxfmt": "^0.70.0",
+    "oxlint": "^1.85.0",
     "turbo": "^2.11.2",
     "typescript": "^7.0.2"
   },
