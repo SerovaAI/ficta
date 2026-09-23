@@ -129,7 +129,8 @@ export function initialSelection(candidates: readonly ReviewCandidate[]): string
 function hintFor(candidate: ReviewCandidate): string | undefined {
   const parts: string[] = [];
   if (likelyNonSecret(candidate) && candidate.classification?.reason) {
-    parts.push(`probably not a secret — ${candidate.classification.reason}`);
+    // A suggested untick looks identical to a saved exclusion in the picker, so say it is pending.
+    parts.push(`suggested — not excluded until you submit; probably not a secret — ${candidate.classification.reason}`);
   }
   if (candidate.state === "user-excluded") parts.push("currently excluded");
   if (candidate.state === "stale-excluded") parts.push("excluded; not currently discovered");
@@ -155,7 +156,8 @@ export async function promptReviewSelection(candidates: readonly ReviewCandidate
   const autoDeselected = items.filter(likelyNonSecret).length;
   if (autoDeselected > 0) {
     note(
-      `${autoDeselected} name(s) look like non-secrets and start unchecked — re-check any you still want redacted.`,
+      `${autoDeselected} name(s) look like non-secrets and start unchecked — re-check any you still want redacted. ` +
+        "Nothing is excluded until you submit with Enter.",
       "Suggested",
     );
   }
@@ -181,7 +183,12 @@ export async function promptReviewSelection(candidates: readonly ReviewCandidate
     required: false,
     selectableGroups: false,
   });
-  if (isCancel(result)) return undefined;
+  if (isCancel(result)) {
+    if (autoDeselected > 0) {
+      note(`${autoDeselected} suggested exclusion(s) were not saved — those names are still redacted.`, "Not saved");
+    }
+    return undefined;
+  }
   return new Set(result as string[]);
 }
 
