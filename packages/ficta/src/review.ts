@@ -1,5 +1,6 @@
 // `ficta review` (and a setup step) let the user decide what gets redacted by reviewing the
-// discovered protected NAMES — never values. Deselecting a name adds it to registry.exclude_names.
+// discovered protected NAMES — never values. Deselecting a name excludes it: by default for the current
+// project only (~/.ficta/projects.json), or for every project with --global (registry.exclude_names).
 // The default posture stays "redact everything discovered"; this is the opt-out surface.
 //
 // Values ARE read once, in-memory, to compute a heuristic classification (see classify-env.ts) that
@@ -7,7 +8,15 @@
 // literals: no value text is ever stored on a candidate, rendered, or included in a hint.
 import { groupMultiselect, intro, isCancel, note, outro } from "@clack/prompts";
 import { classifyEnvCandidate, type EnvClassification } from "./classify-env.js";
-import { loadPluginRegistry, type PluginRegistrySnapshot, USER_EXCLUSION_PLUGIN } from "./plugins/index.js";
+import {
+  loadPluginRegistry,
+  type PluginRegistrySnapshot,
+  USER_EXCLUSION_PLUGIN,
+  USER_EXCLUSION_RULE_ID,
+  USER_PROJECT_EXCLUSION_RULE_ID,
+  type UserExclusionScope,
+} from "./plugins/index.js";
+import { projectRoot, projectsFilePath, writeProjectExcludeNames } from "./project-config.js";
 import { configPath, readUserConfig, writeUserConfig } from "./user-config.js";
 
 export type ReviewCandidateState = "protected" | "user-excluded" | "plugin-excluded" | "stale-excluded";
@@ -18,7 +27,7 @@ export interface ReviewCandidate {
   /** Sources the name was seen in (e.g. env-file, process-env, doppler). Empty for stale entries. */
   sources: string[];
   state: ReviewCandidateState;
-  /** For plugin-excluded: the plugin whose policy drops it. */
+  /** For plugin-excluded: the plugin whose policy drops it, or the user list of the other scope. */
   excludedBy?: string;
   /**
    * Heuristic verdict for protected candidates only. Fixed safe strings — never value text. Drives the
@@ -29,9 +38,20 @@ export interface ReviewCandidate {
 
 const STALE_GROUP = "not currently discovered";
 
-/** Names in the user's own exclusion list, per the snapshot's merged policy (valid names only). */
-function userExcludeNames(snapshot: PluginRegistrySnapshot): string[] {
-  const rule = snapshot.registryPolicy.exclusions.find((r) => r.plugin === USER_EXCLUSION_PLUGIN);
+function scopeRuleId(scope: UserExclusionScope): string {
+  return scope === "project" ? USER_PROJECT_EXCLUSION_RULE_ID : USER_EXCLUSION_RULE_ID;
+}
+
+/** How the review labels the user's list it is NOT editing (shown as fixed, like a provider rule). */
+function otherScopeLabel(scope: UserExclusionScope): string {
+  return scope === "project"
+    ? "global config; edit with ficta review --global"
+    : "project config; edit with ficta review";
+}
+
+/** Names in the user's exclusion list for `scope`, per the snapshot's merged policy (valid names only). */
+function userExcludeNames(snapshot: PluginRegistrySnapshot, scope: UserExclusionScope): string[] {
+  const rule = snapshot.registryPolicy.exclusions.find((r) => r.id === scopeRuleId(scope));
   return rule ? [...rule.names] : [];
 }
 
@@ -40,9 +60,13 @@ function userExcludeNames(snapshot: PluginRegistrySnapshot): string[] {
  * protected candidates, the literal value(s) — only to compute a fixed-enum `classification` (values
  * are never stored on the candidate or rendered). Each name lands in exactly one state — a
  * currently-protected name is in `snapshot.values`; an excluded name is in `policyExcludedValues` (or,
- * if it matched no source, is "stale").
+ * if it matched no source, is "stale"). Only the user list for `scope` is editable; the other scope's
+ * list is shown as fixed, like a provider rule.
  */
-export function collectReviewCandidates(snapshot: PluginRegistrySnapshot): ReviewCandidate[] {
+export function collectReviewCandidates(
+  snapshot: PluginRegistrySnapshot,
+  scope: UserExclusionScope = "global",
+): ReviewCandidate[] {
   const byName = new Map<string, ReviewCandidate>();
   const valuesByName = new Map<string, string[]>();
 
@@ -64,16 +88,18 @@ export function collectReviewCandidates(snapshot: PluginRegistrySnapshot): Revie
 
   const userExcluded = new Set<string>();
   for (const dropped of snapshot.policyExcludedValues) {
-    if (dropped.rule.plugin === USER_EXCLUSION_PLUGIN) {
+    if (dropped.rule.id === scopeRuleId(scope)) {
       userExcluded.add(dropped.name);
       mergeSource(dropped.name, dropped.source, "user-excluded");
+    } else if (dropped.rule.plugin === USER_EXCLUSION_PLUGIN) {
+      mergeSource(dropped.name, dropped.source, "plugin-excluded", otherScopeLabel(scope));
     } else {
       mergeSource(dropped.name, dropped.source, "plugin-excluded", dropped.rule.plugin);
     }
   }
 
   // Excluded names that matched no loaded source: kept so the user can see and un-exclude them.
-  for (const name of userExcludeNames(snapshot)) {
+  for (const name of userExcludeNames(snapshot, scope)) {
     if (!byName.has(name)) byName.set(name, { name, sources: [], state: "stale-excluded" });
   }
 
@@ -146,7 +172,7 @@ export async function promptReviewSelection(candidates: readonly ReviewCandidate
   const pluginExcluded = candidates.filter((c) => c.state === "plugin-excluded");
   if (pluginExcluded.length > 0) {
     const names = pluginExcluded.map((c) => `${c.name} (${c.excludedBy})`).join(", ");
-    note(`Excluded by a provider policy (not selectable): ${names}`, "Provider exclusions");
+    note(`Excluded by a provider policy or your other exclusion list (not selectable): ${names}`, "Fixed exclusions");
   }
 
   const items = toggleable(candidates);
@@ -193,25 +219,31 @@ export async function promptReviewSelection(candidates: readonly ReviewCandidate
 }
 
 /**
- * Load the registry with the current process env, run the review, and return the new
- * FICTA_REGISTRY_EXCLUDE_NAMES value: a comma-joined string, "" to clear the key, or undefined when
- * the user cancelled or there was nothing to review.
+ * Load the registry with the current process env, run the review for `scope`, and return that scope's
+ * new exclude-names value: a comma-joined string, "" to clear it, or undefined when the user
+ * cancelled or there was nothing to review.
  */
-export async function reviewExcludeNamesInteractively(): Promise<string | undefined> {
+export async function reviewExcludeNamesInteractively(
+  scope: UserExclusionScope = "global",
+): Promise<string | undefined> {
   const snapshot = loadPluginRegistry();
-  const candidates = collectReviewCandidates(snapshot);
+  const candidates = collectReviewCandidates(snapshot, scope);
   if (toggleable(candidates).length === 0) {
     note("No protected names discovered yet — nothing to review.", "Redaction review");
     return undefined;
   }
   const selected = await promptReviewSelection(candidates);
   if (selected === undefined) return undefined;
-  const next = nextExcludeNames(candidates, selected, userExcludeNames(snapshot));
+  const next = nextExcludeNames(candidates, selected, userExcludeNames(snapshot, scope));
   return next.length > 0 ? next.join(",") : "";
 }
 
-/** Standalone `ficta review`: review discovered names and persist exclude_names to the config file. */
-export async function runReview(): Promise<void> {
+/**
+ * Standalone `ficta review`: review discovered names and persist the exclusions — for the current
+ * project (~/.ficta/projects.json) by default, or for every project with `--global` (config.toml).
+ */
+export async function runReview(opts: { global?: boolean } = {}): Promise<void> {
+  const scope: UserExclusionScope = opts.global ? "global" : "project";
   const path = configPath();
   if (!path) {
     note(
@@ -222,29 +254,35 @@ export async function runReview(): Promise<void> {
     process.exit(2);
   }
 
-  intro("ficta review");
-  const result = await reviewExcludeNamesInteractively();
+  const root = projectRoot();
+  intro(scope === "project" ? `ficta review — project ${root}` : "ficta review --global");
+  const result = await reviewExcludeNamesInteractively(scope);
   if (result === undefined) {
     outro("no changes");
     return;
   }
 
-  const values = readUserConfig(path);
-  if (result === "") {
-    delete values.FICTA_REGISTRY_EXCLUDE_NAMES;
-    delete process.env.FICTA_REGISTRY_EXCLUDE_NAMES;
+  const envKey = scope === "project" ? "FICTA_REGISTRY_PROJECT_EXCLUDE_NAMES" : "FICTA_REGISTRY_EXCLUDE_NAMES";
+  if (scope === "project") {
+    const projectsPath = projectsFilePath(path) as string;
+    writeProjectExcludeNames(projectsPath, root, result);
+    note(`${projectsPath}\nproject: ${root}`, "Wrote project exclusions");
   } else {
-    values.FICTA_REGISTRY_EXCLUDE_NAMES = result;
-    process.env.FICTA_REGISTRY_EXCLUDE_NAMES = result;
+    const values = readUserConfig(path);
+    if (result === "") delete values.FICTA_REGISTRY_EXCLUDE_NAMES;
+    else values.FICTA_REGISTRY_EXCLUDE_NAMES = result;
+    writeUserConfig(values, path);
+    note(path, "Wrote config");
   }
-  writeUserConfig(values, path);
-  note(path, "Wrote config");
+  if (result === "") delete process.env[envKey];
+  else process.env[envKey] = result;
 
   const count = result === "" ? 0 : result.split(",").length;
+  const where = scope === "project" ? "in this project" : "in every project";
   note(
     count === 0
-      ? "no names excluded — all discovered values are protected"
-      : `${count} name(s) excluded from protection`,
+      ? `no names excluded ${where} — all discovered values are protected`
+      : `${count} name(s) excluded from protection ${where}`,
     "Redaction review",
   );
   outro("ficta review complete");

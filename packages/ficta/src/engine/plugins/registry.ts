@@ -156,11 +156,16 @@ export function loadPluginRegistry(
   // The user's own exclusion list is a trusted rule (see parseUserExclusionRule); prepend it so an
   // overlapping name is attributed to the user rather than a plugin. It flows through the returned
   // registryPolicy to both enforcement seams (load filter here + request-time admit() in engine.ts).
+  // The current project's list is a second user rule that adds to the global one; a name in both is
+  // attributed to the global rule, which comes first.
   const userExclusion = parseUserExclusionRule(process.env.FICTA_REGISTRY_EXCLUDE_NAMES);
+  const projectExclusion = parseUserExclusionRule(process.env.FICTA_REGISTRY_PROJECT_EXCLUDE_NAMES, "project");
   const pluginPolicy = buildRegistryPolicy(plugins, trusted);
-  const registryPolicy: RegistryPolicy = userExclusion.rule
-    ? { exclusions: [userExclusion.rule, ...pluginPolicy.exclusions] }
-    : pluginPolicy;
+  const userRules = [userExclusion.rule, projectExclusion.rule].filter(
+    (rule): rule is EffectiveRegistryExclusionRule => rule !== undefined,
+  );
+  const registryPolicy: RegistryPolicy =
+    userRules.length > 0 ? { exclusions: [...userRules, ...pluginPolicy.exclusions] } : pluginPolicy;
   const values: ProtectedValue[] = [];
   const records: ProtectionRecord[] = [];
   const pluginNames: string[] = [];
@@ -178,6 +183,15 @@ export function loadPluginRegistry(
       label: "registry.exclude_names",
       status: "available",
       message: `ignoring invalid name(s): ${userExclusion.invalidNames.join(", ")}`,
+    });
+  }
+  if (projectExclusion.invalidNames.length > 0) {
+    discoveries.push({
+      id: "user-config/project-exclude-names",
+      plugin: USER_EXCLUSION_PLUGIN,
+      label: "project exclude_names",
+      status: "available",
+      message: `ignoring invalid name(s): ${projectExclusion.invalidNames.join(", ")}`,
     });
   }
 

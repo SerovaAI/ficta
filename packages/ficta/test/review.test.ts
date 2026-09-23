@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EffectiveRegistryExclusionRule, PluginRegistrySnapshot } from "../src/plugins/index.js";
-import { USER_EXCLUSION_PLUGIN, USER_EXCLUSION_RULE_ID } from "../src/plugins/index.js";
+import { USER_EXCLUSION_PLUGIN, USER_EXCLUSION_RULE_ID, USER_PROJECT_EXCLUSION_RULE_ID } from "../src/plugins/index.js";
 import { collectReviewCandidates, initialSelection, nextExcludeNames, type ReviewCandidate } from "../src/review.js";
 
 function userRule(names: string[]): EffectiveRegistryExclusionRule {
@@ -65,6 +65,31 @@ describe("collectReviewCandidates", () => {
     // In the user list but matched no source → stale.
     expect(byName.get("GONE")?.state).toBe("stale-excluded");
     expect(byName.get("GONE")?.sources).toEqual([]);
+  });
+});
+
+describe("collectReviewCandidates — scopes", () => {
+  it("edits only the reviewed scope's list and shows the other user list as fixed", () => {
+    const globalRule = userRule(["GLOBAL_OFF"]);
+    const projectRule = { ...userRule(["PROJECT_OFF", "PROJECT_GONE"]), id: USER_PROJECT_EXCLUSION_RULE_ID };
+    const snap = snapshot({
+      registryPolicy: { exclusions: [globalRule, projectRule] },
+      policyExcludedValues: [
+        { name: "GLOBAL_OFF", source: "doppler", plugin: "doppler-registry", rule: globalRule },
+        { name: "PROJECT_OFF", source: "env-file", plugin: "known-env-values", rule: projectRule },
+      ],
+    });
+
+    const project = new Map(collectReviewCandidates(snap, "project").map((c) => [c.name, c]));
+    expect(project.get("PROJECT_OFF")?.state).toBe("user-excluded");
+    expect(project.get("PROJECT_GONE")?.state).toBe("stale-excluded");
+    expect(project.get("GLOBAL_OFF")?.state).toBe("plugin-excluded");
+    expect(project.get("GLOBAL_OFF")?.excludedBy).toContain("--global");
+
+    const global = new Map(collectReviewCandidates(snap, "global").map((c) => [c.name, c]));
+    expect(global.get("GLOBAL_OFF")?.state).toBe("user-excluded");
+    expect(global.get("PROJECT_OFF")?.state).toBe("plugin-excluded");
+    expect(global.has("PROJECT_GONE")).toBe(false);
   });
 });
 

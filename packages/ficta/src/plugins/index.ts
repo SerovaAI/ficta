@@ -61,13 +61,14 @@ export {
   selectedBackendName,
   selectedBackendNames,
 } from "../engine/plugins/pii/registry.js";
-export type { UserExclusionParse } from "../engine/plugins/policy.js";
+export type { UserExclusionParse, UserExclusionScope } from "../engine/plugins/policy.js";
 export {
   buildRegistryPolicy,
   parseUserExclusionRule,
   protectedValueExcludedBy,
   USER_EXCLUSION_PLUGIN,
   USER_EXCLUSION_RULE_ID,
+  USER_PROJECT_EXCLUSION_RULE_ID,
 } from "../engine/plugins/policy.js";
 export { type PluginRegistrySnapshot, validatePluginBoundaries } from "../engine/plugins/registry.js";
 export {

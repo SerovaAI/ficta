@@ -18,6 +18,7 @@ import {
   resetPluginCachesForTests,
   USER_EXCLUSION_PLUGIN,
   USER_EXCLUSION_RULE_ID,
+  USER_PROJECT_EXCLUSION_RULE_ID,
   validatePluginBoundaries,
 } from "../src/plugins/index.js";
 import { renderStartupBanner } from "../src/startup-banner.js";
@@ -30,6 +31,7 @@ const ENV_KEYS = [
   "FICTA_REGISTRY_MANAGED_FILE_PATHS",
   "FICTA_REGISTRY_MIN_LEN",
   "FICTA_REGISTRY_EXCLUDE_NAMES",
+  "FICTA_REGISTRY_PROJECT_EXCLUDE_NAMES",
   "FICTA_REGISTRY_PROCESS_ENV_ENABLED",
   "FICTA_REGISTRY_PROCESS_ENV_MODE",
   "FICTA_REGISTRY_DOPPLER_ENABLED",
@@ -1023,6 +1025,27 @@ describe("user exclusion list", () => {
     expect(snapshot.registryPolicy.exclusions[0]?.id).toBe(USER_EXCLUSION_RULE_ID);
     // Safe metadata only — never the underlying value.
     expect(JSON.stringify(snapshot.policyExcludedValues)).not.toContain("AKIAIOSFODNN7EXAMPLE");
+  });
+
+  it("enforces the project list alongside the global one, attributing overlaps to the global rule", () => {
+    process.env.FICTA_REGISTRY_ENV_FILE_PATHS = "test/fixtures/secrets.env";
+    process.env.FICTA_REGISTRY_MIN_LEN = "6";
+    process.env.FICTA_REGISTRY_EXCLUDE_NAMES = "AWS_KEY";
+    process.env.FICTA_REGISTRY_PROJECT_EXCLUDE_NAMES = "AWS_KEY,GH_TOKEN, bad name";
+
+    const snapshot = loadPluginRegistry();
+
+    expect(snapshot.values.some((v) => v.name === "AWS_KEY" || v.name === "GH_TOKEN")).toBe(false);
+    expect(snapshot.registryPolicy.exclusions.map((rule) => rule.id).slice(0, 2)).toEqual([
+      USER_EXCLUSION_RULE_ID,
+      USER_PROJECT_EXCLUSION_RULE_ID,
+    ]);
+    const byName = new Map(snapshot.policyExcludedValues.map((d) => [d.name, d.rule.id]));
+    expect(byName.get("AWS_KEY")).toBe(USER_EXCLUSION_RULE_ID);
+    expect(byName.get("GH_TOKEN")).toBe(USER_PROJECT_EXCLUSION_RULE_ID);
+    expect(snapshot.discoveries.find((d) => d.id === "user-config/project-exclude-names")?.message).toContain(
+      "bad name",
+    );
   });
 
   it("reports policy exclusions contributed only through structured records", () => {
