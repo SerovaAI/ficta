@@ -1,3 +1,4 @@
+import { projectRoot } from "./project-config.js";
 import { accessSync, constants, existsSync } from "node:fs";
 import { configuredUpstreamPolicyIssues, loadConfig } from "./config.js";
 import { configPosture } from "./config-posture.js";
@@ -33,6 +34,8 @@ export interface DoctorReport {
   config: {
     configPath?: string;
     configExists: boolean;
+    /** Project root the per-project exclusion list is keyed by (see project-config.ts). */
+    projectRoot: string;
     failClosed: boolean;
     logLevel: LogLevel;
     logBodies: boolean;
@@ -152,6 +155,13 @@ export async function collectDoctorReport(opts: DoctorOptions = {}): Promise<Doc
       message: `registry.exclude_names has invalid entries (ignored): ${invalidNames.join(", ")}`,
     });
   }
+  const project = parseUserExclusionRule(process.env.FICTA_REGISTRY_PROJECT_EXCLUDE_NAMES, "project");
+  if (project.invalidNames.length > 0) {
+    issues.push({
+      severity: "warning",
+      message: `project exclude_names has invalid entries (ignored): ${project.invalidNames.join(", ")}`,
+    });
+  }
 
   if (piiEnabled()) {
     const { backends, unknown } = activeBackends();
@@ -192,6 +202,7 @@ export async function collectDoctorReport(opts: DoctorOptions = {}): Promise<Doc
     config: {
       configPath: path,
       configExists: Boolean(path && existsSync(path)),
+      projectRoot: projectRoot(),
       failClosed: posture.protection.failClosed,
       logLevel: posture.transport.logLevel,
       logBodies: posture.transport.logBodies,
@@ -236,6 +247,7 @@ export function renderDoctorReport(report: DoctorReport): string {
   } else {
     lines.push("  - user config: disabled by FICTA_CONFIG_FILE=0");
   }
+  lines.push(`  - project: ${report.config.projectRoot} (ficta review edits this project's exclusions)`);
   lines.push(`  ${report.config.failClosed ? "✓" : "!"} fail-closed: ${report.config.failClosed ? "on" : "OFF"}`);
   lines.push(`  - log level: ${report.config.logLevel}`);
   lines.push("  ✓ raw body logs: off (runtime admin control)");

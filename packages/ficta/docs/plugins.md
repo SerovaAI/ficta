@@ -29,12 +29,14 @@ code bypass the redaction boundary.
   of the normal add-only contract — so core only enforces rules declared by trusted built-in
   plugins, and applies them wherever a named candidate enters protection (registry load and
   request-time detection alike). Rules from untrusted plugins are reported but not enforced.
-  Alongside these plugin-declared rules, core synthesizes one trusted rule (plugin label
-  `user-config`) from the user's own `registry.exclude_names` / `FICTA_REGISTRY_EXCLUDE_NAMES` list —
-  the local user is trusted like a built-in. It is prepended to the effective policy so an overlapping
-  name attributes to the user, and `ficta review` is the interactive editor for it (see below). The
-  review only ever toggles the user's own list; it never duplicates or overrides a plugin-declared
-  rule (plugin-excluded names are shown but not selectable).
+  Alongside these plugin-declared rules, core synthesizes up to two trusted rules (plugin label
+  `user-config`) from the user's own lists — the global `registry.exclude_names` /
+  `FICTA_REGISTRY_EXCLUDE_NAMES`, and the current project's list from `~/.ficta/projects.json` /
+  `FICTA_REGISTRY_PROJECT_EXCLUDE_NAMES`. The local user is trusted like a built-in. Both are
+  prepended to the effective policy (global first) so an overlapping name attributes to the user,
+  and `ficta review` is the interactive editor for them (see below). The review only ever toggles one
+  of the user's own lists; it never duplicates or overrides a plugin-declared rule or the other list
+  (those names are shown but not selectable).
 - **Provider adapter** — provider/wire-format routing and restore support. This is core-owned for
   now; new provider support should be discussed before a large PR.
 - **Addon** — a future packaging term for optional external code that may contain one or more
@@ -707,8 +709,18 @@ password stays checked), while credential-free URLs, filesystem/socket paths, bo
 well-known config names (`AWS_PROFILE`, `LOG_LEVEL`, `*_PROMPT_*`, …) default to unchecked. The
 verdict is a fixed label; no value text is ever stored on a candidate, rendered, or hinted. This only
 changes the prompt's _default_ selection — nothing is persisted until you submit, which is your
-confirmation. Deselecting a name writes it to `registry.exclude_names` /
-`FICTA_REGISTRY_EXCLUDE_NAMES`; re-selecting a previously-excluded name removes it. Excluded names
+confirmation; cancelling reports that the suggested exclusions were not saved.
+
+Exclusions are per project by default, because the names on offer come from the current project's
+`.env` files, Doppler config, and shell. `ficta review` writes the list for the current project —
+the nearest ancestor directory holding `.git`, else the working directory — to
+`~/.ficta/projects.json` (0600, beside `config.toml`), and agent launches from anywhere inside that
+project load it as `FICTA_REGISTRY_PROJECT_EXCLUDE_NAMES`. `ficta review --global` edits
+`registry.exclude_names` / `FICTA_REGISTRY_EXCLUDE_NAMES` in `config.toml` instead, which applies to
+every project. The two lists add together; each review shows the other list's names as fixed. The
+project list is deliberately stored in the user's home directory and never read from a file inside
+the repository, so a cloned or checked-in repository cannot un-protect anything. Re-selecting a
+previously-excluded name removes it from the list being edited. Excluded names
 are enforced at both the registry-load and request-time-detection seams and are listed in the
 startup banner and `ficta doctor`. The older `registry.min_len` filter still applies to unstructured
 env/Doppler registry candidates as a silent default of 8 (short values overmatch normal text), but is

@@ -143,7 +143,7 @@ if (command === "doctor") {
 
 if (command === "review") {
   const { runReview } = await import("./review.js");
-  await runReview();
+  await runReview({ global: args.slice(1).includes("--global") });
   process.exit(0);
 }
 
@@ -360,7 +360,7 @@ function printHelp(exitCode: number): never {
     "Commands:",
     renderHelpRows([
       ["setup", "Configure registry sources in ~/.ficta/config.toml"],
-      ["review", "Review discovered protected names; deselect to exclude from redaction"],
+      ["review [--global]", "Review protected names; deselect to exclude in this project (--global: everywhere)"],
       ["doctor [agent]", "Check config, registry sources, and agent routing"],
       ["install [--force] [--no-shell]", `Install ${supportedAgents.join("/")} shims into ~/.ficta/bin`],
       ["uninstall [--no-shell]", "Remove installed shims"],

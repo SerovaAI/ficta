@@ -66,6 +66,11 @@ export function protectedValueExcludedBy(
 /** Synthetic plugin label for the user's own exclusion list (registry.exclude_names / ficta review). */
 export const USER_EXCLUSION_PLUGIN = "user-config";
 export const USER_EXCLUSION_RULE_ID = "user-exclude-names";
+/** Rule id for the user's per-project list (`~/.ficta/projects.json`, written by `ficta review`). */
+export const USER_PROJECT_EXCLUSION_RULE_ID = "user-project-exclude-names";
+
+/** Which of the user's own lists a rule came from: global config.toml or the current project's entry. */
+export type UserExclusionScope = "global" | "project";
 
 export interface UserExclusionParse {
   /** Enforced rule built from the valid names, or undefined when none are valid. */
@@ -78,9 +83,14 @@ export interface UserExclusionParse {
  * Parse the user's own exclusion list (comma-separated env var names from FICTA_REGISTRY_EXCLUDE_NAMES
  * / [registry] exclude_names) into an enforced, trusted rule. This is the one un-protection channel
  * the local user controls directly; it is gated by the 0600 config file / process env, so core trusts
- * it like a built-in. Invalid entries are separated out rather than silently dropped.
+ * it like a built-in. Invalid entries are separated out rather than silently dropped. The `project`
+ * scope parses the current project's list (FICTA_REGISTRY_PROJECT_EXCLUDE_NAMES, loaded from the
+ * user-local ~/.ficta/projects.json — never from a file inside the repository) into its own rule.
  */
-export function parseUserExclusionRule(raw: string | undefined): UserExclusionParse {
+export function parseUserExclusionRule(
+  raw: string | undefined,
+  scope: UserExclusionScope = "global",
+): UserExclusionParse {
   const seen = new Set<string>();
   const names: string[] = [];
   const invalidNames: string[] = [];
@@ -100,10 +110,13 @@ export function parseUserExclusionRule(raw: string | undefined): UserExclusionPa
     names.length === 0
       ? undefined
       : {
-          id: USER_EXCLUSION_RULE_ID,
+          id: scope === "project" ? USER_PROJECT_EXCLUSION_RULE_ID : USER_EXCLUSION_RULE_ID,
           kind: "env-name" as const,
           names,
-          reason: "excluded by user (ficta review / registry.exclude_names)",
+          reason:
+            scope === "project"
+              ? "excluded by user for this project (ficta review / ~/.ficta/projects.json)"
+              : "excluded by user (ficta review --global / registry.exclude_names)",
           plugin: USER_EXCLUSION_PLUGIN,
           trusted: true,
         };

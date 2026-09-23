@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { parseBoolean } from "./engine/env-flags.js";
 import type { ConfigBinding, ConfigBindingKind, ConfigSection } from "./engine/plugins/types.js";
 import { pluginConfigBindings, pluginConfigSections } from "./plugins/index.js";
+import { projectRoot, projectsFilePath, readProjectExcludeNames } from "./project-config.js";
 
 type TomlScalar = string | number | boolean;
 type TomlValue = TomlScalar | TomlScalar[];
@@ -63,18 +64,40 @@ export function configPath(): string | undefined {
   return setting ? expandHome(setting) : defaultConfigPath();
 }
 
-/** Load ~/.ficta/config.toml into process.env-style runtime settings without overriding explicit env vars. */
+/**
+ * Load ~/.ficta/config.toml into process.env-style runtime settings without overriding explicit env
+ * vars, then the current project's exclusion list from ~/.ficta/projects.json
+ * (FICTA_REGISTRY_PROJECT_EXCLUDE_NAMES).
+ */
 export function loadUserConfig(): void {
   if (loaded) return;
   loaded = true;
 
   const path = configPath();
-  if (!path || !existsSync(path)) return;
+  if (!path) return;
 
-  for (const [key, value] of Object.entries(readUserConfig(path))) {
-    if (process.env[key] === undefined) {
-      process.env[key] = value;
-      loadedConfigEnv.add(key);
+  if (existsSync(path)) {
+    for (const [key, value] of Object.entries(readUserConfig(path))) {
+      if (process.env[key] === undefined) {
+        process.env[key] = value;
+        loadedConfigEnv.add(key);
+      }
+    }
+  }
+
+  const projectsPath = projectsFilePath(path);
+  if (projectsPath && process.env.FICTA_REGISTRY_PROJECT_EXCLUDE_NAMES === undefined) {
+    // An unreadable store only means no project exclusions (everything stays protected), so warn
+    // rather than block every launch; `ficta review` refuses to overwrite it.
+    let names: string | undefined;
+    try {
+      names = readProjectExcludeNames(projectsPath, projectRoot());
+    } catch (error) {
+      process.stderr.write(`${(error as Error).message}; project exclusions ignored\n`);
+    }
+    if (names !== undefined) {
+      process.env.FICTA_REGISTRY_PROJECT_EXCLUDE_NAMES = names;
+      loadedConfigEnv.add("FICTA_REGISTRY_PROJECT_EXCLUDE_NAMES");
     }
   }
 }
