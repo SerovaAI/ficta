@@ -1,5 +1,11 @@
 # @serovaai/ficta-protocol
 
+## 0.4.0
+
+### Patch Changes
+
+- [`6936247`](https://github.com/SerovaAI/ficta/commit/6936247f99455448eaa5b52737d64c7b72961cef) Thanks [@steflsd](https://github.com/steflsd)! - Fix `codex` failing to start under ficta on Codex 0.156+ (`workspace backend must use an HTTPS origin`): ficta no longer overrides `chatgpt_base_url`, so Codex account/plugin/usage housekeeping goes direct while model turns still route through ficta, and wrapped launches now set `analytics.enabled=false` because Codex analytics events carried registered values.
+
 ## 0.3.0
 
 ### Patch Changes
