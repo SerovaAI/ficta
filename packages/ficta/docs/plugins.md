@@ -761,7 +761,8 @@ The `builtin-agent-integrations` plugin currently provides:
   `api.anthropic.com`, so under ficta the flag is a silent no-op (see
   [Remote control](./threat-model.md#remote-control-is-out-of-scope)).
 - `codex` — launches the real Codex executable with temporary `-c` provider overrides; detects
-  ChatGPT/OAuth auth and adds `requires_openai_auth` + `chatgpt_base_url` when needed.
+  ChatGPT/OAuth auth and adds `requires_openai_auth` when needed, and sets `analytics.enabled=false`
+  because Codex housekeeping (including analytics) no longer routes through ficta.
 - `pi` — launches Pi with `PI_CODING_AGENT_DIR` pointed at an ephemeral agent dir that symlinks the
   user's real `auth.json`/`settings.json`/`trust.json`/sessions and swaps in a generated `models.json`
   whose `providers` override the base URLs of the built-in `anthropic` (`<ficta>`), `openai`

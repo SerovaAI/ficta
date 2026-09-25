@@ -39,11 +39,12 @@ export const codexAgent: AgentIntegration = {
       `model_provider="ficta"`,
       `model_providers.ficta.name="ficta"`,
       `model_providers.ficta.base_url="${baseUrl}/v1"`,
+      // chatgpt_base_url can't point at ficta (Codex >=0.156 requires an HTTPS workspace backend), so
+      // its traffic goes direct. Analytics event bodies there can carry registered values; switch
+      // them off. The rest (account/plugin/usage GETs) carries no conversation content.
+      "analytics.enabled=false",
     ];
-    if (codexUsesChatgptAuth(env)) {
-      overrides.push("model_providers.ficta.requires_openai_auth=true");
-      overrides.push(`chatgpt_base_url="${baseUrl}/backend-api/"`);
-    }
+    if (codexUsesChatgptAuth(env)) overrides.push("model_providers.ficta.requires_openai_auth=true");
     return {
       executable: realExecutable,
       args: [...overrides.flatMap((o) => ["-c", o]), ...args],

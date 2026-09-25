@@ -89,6 +89,8 @@ describe("agent integration plugins", () => {
       'model_providers.ficta.name="ficta"',
       "-c",
       `model_providers.ficta.base_url="${BASE}/v1"`,
+      "-c",
+      "analytics.enabled=false",
       "exec",
       "hello",
     ]);
@@ -107,7 +109,8 @@ describe("agent integration plugins", () => {
     });
 
     expect(plan.args).toContain("model_providers.ficta.requires_openai_auth=true");
-    expect(plan.args).toContain(`chatgpt_base_url="${BASE}/backend-api/"`);
+    expect(plan.args.some((a) => a.startsWith("chatgpt_base_url="))).toBe(false);
+    expect(plan.args).toContain("analytics.enabled=false");
   });
 
   it("neutralizes stale persisted Codex ficta routing on FICTA_DISABLE bypass", () => {

@@ -414,8 +414,8 @@ function routeSummary(command: string): string {
   }
   if (command === "codex") {
     return codexUsesChatgptAuth(process.env)
-      ? "injects Codex custom provider + chatgpt_base_url (ChatGPT/OAuth detected)"
-      : "injects Codex custom provider for OpenAI-compatible traffic";
+      ? "injects Codex custom provider with ChatGPT OAuth, disables Codex analytics (ChatGPT/OAuth detected)"
+      : "injects Codex custom provider for OpenAI-compatible traffic, disables Codex analytics";
   }
   if (command === "pi") return "routes Pi via an ephemeral PI_CODING_AGENT_DIR with a models.json base-URL override";
   return "agent integration supplies launch environment";

@@ -51,6 +51,22 @@ traffic through ficta while still using its existing ChatGPT OAuth login.
 
 For API-key Codex, ficta injects the simpler OpenAI-compatible provider override.
 
+Every wrapped launch also sets `analytics.enabled=false` (see [Housekeeping traffic](#housekeeping-traffic)).
+
+## Housekeeping traffic
+
+ficta does **not** override `chatgpt_base_url`. Codex 0.156+ validates it as the "workspace
+backend" and refuses anything but an HTTPS origin, failing TUI startup with
+`account/read failed: workspace backend must use an HTTPS origin without credentials`. The
+loopback proxy is plain HTTP, so this traffic goes straight to `https://chatgpt.com/backend-api/`:
+
+- `wham/{accounts,settings,usage,rate-limit-reset-credits}`, `ps/plugins/*`, `plugins/featured` —
+  account, plugin, and usage GETs with no conversation content;
+- `codex/analytics-events/events` — event POSTs whose bodies **did** carry registered values in
+  practice. ficta disables them with `analytics.enabled=false` on every wrapped launch.
+
+Model turns are unaffected: they use the temporary provider's `base_url`, not `chatgpt_base_url`.
+
 No persistent TOML changes are needed.
 
 ## Proxy routing
@@ -63,7 +79,7 @@ auth mode:
 | `/v1/responses`, `/v1/codex/responses` | yes          | `https://chatgpt.com/backend-api/codex/responses` |
 | `/v1/responses`                        | no (API key) | `https://api.openai.com/v1/responses`             |
 | `/v1/models`                           | yes          | `https://chatgpt.com/backend-api/codex/models`    |
-| `/backend-api/*`                       | —            | `https://chatgpt.com/backend-api/*`               |
+| `/backend-api/*`                       | — (legacy)   | `https://chatgpt.com/backend-api/*`               |
 
 All required auth headers are forwarded untouched, so Codex auth continues to work.
 `FICTA_CHATGPT_UPSTREAM` overrides the ChatGPT host if needed; default is `https://chatgpt.com`.
@@ -99,7 +115,6 @@ body logs off unless debugging.
 - What reaches the model depends on the agent's command. `cat .env` sends values through the model
   channel; ficta redacts registered values before forwarding, but don't use real secrets as an
   onboarding test.
-- Codex is chatty: `/backend-api/{plugins,ps/mcp,codex/analytics-events,wham/usage}` housekeeping
-  may appear on startup; the default `info` level already shows only model turns (raise to
-  `FICTA_LOG_LEVEL=debug` to see this non-model traffic).
+- `/backend-api/*` passthrough remains for clients that still point `chatgpt_base_url` (or Pi's
+  `openai-codex` provider) at ficta; wrapped Codex launches no longer do.
 - `codex exec` needs `--skip-git-repo-check` when the cwd isn't a git repo.
