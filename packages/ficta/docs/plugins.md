@@ -324,9 +324,12 @@ managed ways to run it build `packages/ficta/presidio/Dockerfile` and mount
 `packages/ficta/presidio/default_recognizers.yaml` plus `nlp_engine.za.yaml`. The image is pinned to
 a known Presidio base and registers `FictaSpacyIdentityRecognizer`: raw spaCy NER remains internal to
 Presidio, while contextual admission, international registration numbers, aliases, transaction-table
-organizations, and cue-scoped OCR fields are returned as final candidates. General date recognition
-is disabled; birth-date recognition is context-bound. The registry retains structured recognizers
-such as South African IDs, document identifiers, and Mauritius phones.
+organizations, and cue-scoped OCR fields are returned as final candidates. Single-word names are
+admitted only next to a person cue (an honorific, a family relation, a task owner, an attendee list);
+name fields in pasted JSON records and CSV exports, CIPC registration numbers, and numbered street
+addresses are recognized without NER. General date recognition is disabled; birth-date recognition
+is context-bound. The registry retains structured recognizers such as South African IDs and phones,
+document identifiers, and Mauritius phones.
 
 - **`pnpm sidecars`** (repo root, ↔ `docker-compose.sidecars.yml`) starts the shared sidecar stack
   detached with health-gated `--wait` and `--build`: the Gateway document converter plus Presidio

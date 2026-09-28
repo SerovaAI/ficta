@@ -17,9 +17,10 @@ from presidio_analyzer.predefined_recognizers import GLiNERRecognizer
 
 
 IDENTITY_ENTITIES = ["PERSON", "ORGANIZATION", "DATE_TIME", "LOCATION", "COMPANY_REGISTRATION"]
-DATE_OF_BIRTH_CUE = re.compile(r"\b(?:date of birth|birth date|d\.o\.b\.?|dob|born)\b", re.I)
+DATE_OF_BIRTH_CUE = re.compile(r"\b(?:date[ _]of[ _]birth|birth[ _]date|d\.o\.b\.?|dob|born)\b", re.I)
+# The optional quotes admit JSON exports: "dob":"1990-11-02".
 DOB_FIELD = re.compile(
-    r"\b(?:date of birth|birth date|d\.o\.b\.?|dob|born)\b\s*[:#-]?\s*("
+    r"\b(?:date[ _]of[ _]birth|birth[ _]date|d\.o\.b\.?|dob|born)\b\"?\s*[:#-]?\s*\"?("
     r"(?:\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?[A-Za-z]{3,9}\s+\d{4})|"
     r"(?:[A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})|"
     r"(?:\d{4}[-/]\d{1,2}[-/]\d{1,2})|(?:\d{1,2}[-/]\d{1,2}[-/]\d{2,4})"
@@ -27,7 +28,9 @@ DOB_FIELD = re.compile(
     re.I,
 )
 PERSONAL_ADDRESS_CUE = re.compile(
-    r"\b(?:home|residential|postal|physical|street) address\b|\bresides? at\b", re.I
+    r"\b(?:home|residential|postal|physical|street) address\b|\bresides? at\b|"
+    r"\bresid(?:es|ing|ent)\s+(?:at|in|of)\b|\b(?:liv(?:es|ing)|stay(?:s|ing)|woon)\s+(?:at|in|te)\b",
+    re.I
 )
 PERSON_CUE = re.compile(
     r"\b(?:signed by|signatory|represented by|representative|director|witness|contact person|attorney)\b|"
@@ -38,6 +41,36 @@ ORGANIZATION_CUE = re.compile(
     r"\b(?:company|corporation|organisation|organization|registered|registration|borrower|lender|employer|vendor|customer|party|between)\b|\bfor\s*:",
     re.I,
 )
+
+# A single capitalised name is only admitted next to wording that says it is a person: family
+# relations, direct address, a named task owner, or a matter labelled by surname. spaCy tags many
+# ordinary capitalised words as PERSON, so a bare single word stays rejected.
+SINGLE_NAME_CUE_BEFORE = re.compile(
+    r"(?:\b(?:husband|wife|spouse|son|daughter|child|children|mother|father|brother|sister|"
+    r"ask|tell|cc|ping|dear|hi|hello|thanks|purchasers?|sellers?|follow(?:[ -]?up)? with)\b[:,]?\s*"
+    r"|^[\s\-*•]*)$",
+    re.I,
+)
+# A line that opens with a bare name is only a person when it assigns them a task ("Nomsa pls ...").
+SINGLE_NAME_CUE_AFTER = re.compile(r"^\s+(?:pls|please|to|will|must|should)\b", re.I)
+MATTER_BY_SURNAME = re.compile(r"\bthe\s*$", re.I)
+MATTER_NOUN_AFTER = re.compile(r"^\s+(?:summons|divorce|matter|estate|file|trial|claim|case)\b", re.I)
+HONORIFIC_PERSON = re.compile(
+    r"\b(?:Mr|Mrs|Ms|Mx|Miss|Mnr|Mev|Adv|Dr|Prof)\.?\s+"
+    r"([A-Z][\w'’-]+(?:\s+(?:[A-Z][\w'’-]+|van|der|den|du|de|von|le|la)){0,4})"
+)
+ATTENDEE_LIST = re.compile(r"^\s*(?:present|attendees?|apologies)\s*:\s*([^\r\n]+)$", re.I | re.M)
+JSON_NAME_FIELD = re.compile(r'"(?:full_?|first_?|last_?|client_?|debtor_?|employee_?)?(?:name|surname)"\s*:\s*"([^"\\]{2,80})"', re.I)
+CSV_NAME_HEADER = re.compile(r"^(?:full_?|first_?|last_?|client_?|debtor_?|employee_?|account_?)?(?:name|surname)$", re.I)
+SA_COMPANY_REGISTRATION = re.compile(r"(?<![\d/])(?:19|20)\d{2}/\d{6}/\d{2}(?![\d/])")
+STREET_ADDRESS = re.compile(
+    r"\b\d{1,5}[A-Za-z]?\s+(?:[A-Z][\w'’-]+\s+){1,3}"
+    r"(?:Street|St|Road|Rd|Avenue|Ave|Crescent|Cres|Drive|Lane|Way|Close|Place|Boulevard|Terrace|"
+    r"Straat|Weg|Laan|Rylaan|Singel)\b"
+    r"(?:,\s*[A-Z][\w'’-]+(?:\s+[A-Z][\w'’-]+)?)?"
+)
+NAME_PARTICLES = {"van", "der", "den", "du", "de", "da", "dos", "das", "von", "le", "la", "ten", "ter", "bin"}
+POST_NOMINALS = {"sc", "kc", "qc", "snr", "jnr", "jr", "sr"}
 
 NON_IDENTITY_ROLE_WORDS = {
     "agreement",
@@ -88,12 +121,14 @@ BUSINESS_DESIGNATORS = {
     "corp",
     "corporation",
     "consulting",
+    "engineering",
     "enterprises",
     "finance",
     "foundation",
     "fund",
     "fzco",
     "group",
+    "hoa",
     "holdings",
     "inc",
     "incorporated",
@@ -117,6 +152,7 @@ BUSINESS_DESIGNATORS = {
     "systems",
     "technologies",
     "technology",
+    "trading",
     "trust",
     "ventures",
 }
@@ -185,6 +221,13 @@ class _FictaIdentityMixin:
             words = _words(text[candidate.start : candidate.end])
             if len(words) == 1 and _normalize_word(words[0]) in known_person_words:
                 accepted.append(candidate)
+        if "PERSON" in requested:
+            accepted.extend(_cued_single_names(text, raw, accepted))
+            accepted.extend(_honorific_persons(text))
+            accepted.extend(_attendee_names(text))
+            accepted.extend(_structured_names(text))
+        if "LOCATION" in requested:
+            accepted.extend(_street_addresses(text))
 
         if "COMPANY_REGISTRATION" in requested:
             accepted.extend(_company_registrations(text))
@@ -268,7 +311,7 @@ def _accepts_person(text: str, candidate: Candidate, value: str) -> bool:
         return False
     if PERSON_CUE.search(context):
         return len(words) <= 7
-    return 2 <= len(words) <= 6 and all(_is_name_word(word) for word in words)
+    return 2 <= len(words) <= 6 and _is_person_name(words)
 
 
 def _accepts_organization(text: str, candidate: Candidate, value: str) -> bool:
@@ -310,7 +353,8 @@ def _is_non_identity_phrase(words: list[str]) -> bool:
 
 
 def _company_registrations(text: str) -> list[Candidate]:
-    out: list[Candidate] = []
+    # A CIPC number (YYYY/NNNNNN/NN) is distinctive enough to need no "registration number" cue.
+    out = [Candidate("COMPANY_REGISTRATION", match.start(), match.end(), 0.9) for match in SA_COMPANY_REGISTRATION.finditer(text)]
     for regex in (COMPANY_REGISTRATION, OCR_COMPANY_REGISTRATION):
         for match in regex.finditer(text):
             value = match.group(1).strip()
@@ -323,6 +367,94 @@ def _company_registrations(text: str) -> list[Candidate]:
 
 def _birth_dates(text: str) -> list[Candidate]:
     return [Candidate("DATE_TIME", match.start(1), match.end(1), 0.9) for match in DOB_FIELD.finditer(text)]
+
+
+def _cued_single_names(text: str, raw: Iterable[Candidate], accepted: Iterable[Candidate]) -> list[Candidate]:
+    """Admit single-word NER names (PERSON, or ORGANIZATION mislabels) that sit next to a person cue."""
+    taken = {(candidate.start, candidate.end) for candidate in accepted}
+    out: list[Candidate] = []
+    for candidate in raw:
+        if candidate.entity_type not in {"PERSON", "ORGANIZATION"} or (candidate.start, candidate.end) in taken:
+            continue
+        value = text[candidate.start : candidate.end]
+        words = _words(value)
+        if len(words) != 1 or len(words[0]) < 2 or not _is_name_word(words[0]) or _is_non_identity_phrase(words):
+            continue
+        end = candidate.start + value.index(words[0]) + len(words[0])
+        before = _context_before_on_line(text, candidate.start)
+        after = text[end : end + 40].split("\n", 1)[0]
+        if NON_IDENTITY_FIELD_CUE.search(before):
+            continue
+        person_cue = SINGLE_NAME_CUE_BEFORE.search(before) and (
+            before.strip(" \t-*•") != "" or SINGLE_NAME_CUE_AFTER.match(after)
+        )
+        matter_cue = candidate.entity_type == "PERSON" and MATTER_BY_SURNAME.search(before) and MATTER_NOUN_AFTER.match(after)
+        if person_cue or matter_cue:
+            out.append(Candidate("PERSON", end - len(words[0]), end, candidate.score))
+    return out
+
+
+def _honorific_persons(text: str) -> list[Candidate]:
+    out: list[Candidate] = []
+    for match in HONORIFIC_PERSON.finditer(text):
+        words = list(WORD.finditer(match.group(1)))
+        while words and (_normalize_word(words[-1].group(0)) in POST_NOMINALS | NAME_PARTICLES):
+            words.pop()
+        if not words or _is_non_identity_phrase([word.group(0) for word in words]):
+            continue
+        out.append(Candidate("PERSON", match.start(1) + words[0].start(), match.start(1) + words[-1].end(), 0.85))
+    return out
+
+
+def _attendee_names(text: str) -> list[Candidate]:
+    out: list[Candidate] = []
+    for match in ATTENDEE_LIST.finditer(text):
+        for item in re.finditer(r"(?:(?!\s+(?:and|&)\s+)[^,;])+", match.group(1)):
+            name = re.sub(r"^(?:and|&)\s+", "", item.group(0).strip())
+            words = _words(name)
+            if 1 <= len(words) <= 4 and _is_person_name(words) and not _is_non_identity_phrase(words):
+                start = match.start(1) + item.start() + item.group(0).index(name)
+                out.append(Candidate("PERSON", start, start + len(name), 0.85))
+    return out
+
+
+def _structured_names(text: str) -> list[Candidate]:
+    """Name fields in pasted JSON records and CSV exports, where NER sees no sentence context."""
+    fields: list[tuple[int, str]] = [(match.start(1), match.group(1)) for match in JSON_NAME_FIELD.finditer(text)]
+    offset = 0
+    name_columns: list[int] = []
+    column_count = 0
+    delimiter = ","
+    for line_with_end in text.splitlines(keepends=True):
+        line = line_with_end.rstrip("\r\n")
+        cells = line.split(delimiter)
+        if len(cells) >= 3 and any(CSV_NAME_HEADER.match(cell.strip()) for cell in cells):
+            name_columns = [index for index, cell in enumerate(cells) if CSV_NAME_HEADER.match(cell.strip())]
+            column_count = len(cells)
+        elif name_columns and len(cells) == column_count:
+            position = offset
+            for index, cell in enumerate(cells):
+                if index in name_columns:
+                    fields.append((position + len(cell) - len(cell.lstrip()), cell.strip()))
+                position += len(cell) + len(delimiter)
+        else:
+            name_columns = []
+        offset += len(line_with_end)
+
+    out: list[Candidate] = []
+    for start, value in fields:
+        words = _words(value)
+        if not words or len(words) > 8:
+            continue
+        if _normalize_word(words[-1]) in BUSINESS_DESIGNATORS or any(_normalize_word(word) in LEGAL_ENTITY_DESIGNATORS for word in words):
+            out.append(Candidate("ORGANIZATION", start, start + len(value), 0.85))
+        elif len(words) <= 5 and _is_person_name(words):
+            out.append(Candidate("PERSON", start, start + len(value), 0.85))
+    return out
+
+
+def _street_addresses(text: str) -> list[Candidate]:
+    return [Candidate("LOCATION", match.start(), match.end(), 0.85) for match in STREET_ADDRESS.finditer(text)]
 
 
 def _designator_organizations(text: str) -> list[Candidate]:
@@ -487,6 +619,18 @@ def _is_name_word(word: str) -> bool:
         return True
     letters = "".join(character for character in word if character.isalpha())
     return bool(letters) and (letters.isupper() or letters[0].isupper())
+
+
+def _is_person_name(words: list[str]) -> bool:
+    """Capitalised name words, allowing lowercase surname particles inside (van der Merwe, du Plessis)."""
+    if not words:
+        return False
+    first, last = _normalize_word(words[0]), _normalize_word(words[-1])
+    if first in NAME_PARTICLES and not _is_name_word(words[0]):
+        return False
+    if last in NAME_PARTICLES:
+        return False
+    return all(_is_name_word(word) or _normalize_word(word) in NAME_PARTICLES for word in words)
 
 
 def _dedupe(candidates: Iterable[Candidate]) -> list[Candidate]:
