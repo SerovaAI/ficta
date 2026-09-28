@@ -1,0 +1,599 @@
+[
+  {
+    "name": "teams-chat-settlement-log",
+    "text": "[09:14] Thandeka Mthembu: morning all, has anyone heard from Pieter Oosthuizen re the Nkosi Logistics settlement?\n[09:16] Ravi Govender: yes, he says his client will pay R 450 000 by Friday. His cell changed to 082 614 3390 btw\n[09:17] Thandeka Mthembu: ok. Remind me, the Plaintiff's ID is 8704125124080 right?\n[09:18] Ravi Govender: correct. I'll draft the Settlement Agreement, governed by the law of South Africa. Pieter asked that we also copy thandi.nkosi@nkosilogistics.co.za\n[09:20] Thandeka Mthembu: noted, will send before the pre-trial on 14 October",
+    "expected": [
+      {
+        "value": "Thandeka Mthembu",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Pieter Oosthuizen",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Pieter",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Nkosi Logistics",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Ravi Govender",
+        "entity": "PERSON"
+      },
+      {
+        "value": "082 614 3390",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "8704125124080",
+        "entity": "ZA_ID_NUMBER"
+      },
+      {
+        "value": "thandi.nkosi@nkosilogistics.co.za",
+        "entity": "EMAIL_ADDRESS"
+      }
+    ],
+    "mustRemainVisible": [
+      "Plaintiff",
+      "Settlement Agreement",
+      "R 450 000",
+      "Friday",
+      "South Africa",
+      "14 October",
+      "pre-trial"
+    ]
+  },
+  {
+    "name": "court-roll-unopposed-motions",
+    "text": "GAUTENG DIVISION OF THE HIGH COURT, JOHANNESBURG\nUNOPPOSED MOTION ROLL: TUESDAY 3 NOVEMBER 2026\nBefore: Acting Judge\n1. Lindiwe Dube v Sunbird Property Holdings (Pty) Ltd: application in terms of section 18 of the Superior Courts Act. Counsel: Adv. M. Botha.\n2. Mooirivier Heritage Trust v Johannes Ferreira and another: rescission of judgment. First Respondent resides at 17 Kiepersol Street, Nelspruit.\n3. In re: Estate Late Moses Radebe: directions sought from the Master of the High Court.\nMatters not called by 11h30 will be struck from the roll.",
+    "expected": [
+      {
+        "value": "Lindiwe Dube",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Sunbird Property Holdings (Pty) Ltd",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "M. Botha",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Mooirivier Heritage Trust",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Johannes Ferreira",
+        "entity": "PERSON"
+      },
+      {
+        "value": "17 Kiepersol Street, Nelspruit",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "Moses Radebe",
+        "entity": "PERSON"
+      }
+    ],
+    "mustRemainVisible": [
+      "GAUTENG DIVISION OF THE HIGH COURT",
+      "JOHANNESBURG",
+      "UNOPPOSED MOTION ROLL",
+      "TUESDAY 3 NOVEMBER 2026",
+      "Acting Judge",
+      "section 18",
+      "Superior Courts Act",
+      "First Respondent",
+      "Master of the High Court",
+      "11h30"
+    ]
+  },
+  {
+    "name": "estate-will-revision-instruction",
+    "text": "Instruction from client, Mrs Nomvula Khumalo (ID 6501190317082, born 19 January 1965), residing at 42 Protea Avenue, Durban North. She wishes to revise her will as follows: her son Sipho Khumalo inherits the house; her daughter Zanele receives the Toyota Corolla; the residue goes to the Khumalo Family Trust. The executor is to be Marius van der Merwe of Van der Merwe & Pillay Attorneys. Testamentary guardian for her grandson Lwazi (a minor) is her sister-in-law Busisiwe. The Testatrix wants a clause excluding any inheritance from community of property. Please check the formalities in section 2(1)(a) of the Wills Act before we draft.",
+    "expected": [
+      {
+        "value": "Nomvula Khumalo",
+        "entity": "PERSON"
+      },
+      {
+        "value": "6501190317082",
+        "entity": "ZA_ID_NUMBER"
+      },
+      {
+        "value": "19 January 1965",
+        "entity": "DATE_TIME"
+      },
+      {
+        "value": "42 Protea Avenue, Durban North",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "Sipho Khumalo",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Zanele",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Khumalo Family Trust",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Marius van der Merwe",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Van der Merwe & Pillay Attorneys",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Lwazi",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Busisiwe",
+        "entity": "PERSON"
+      }
+    ],
+    "mustRemainVisible": [
+      "Testatrix",
+      "Toyota Corolla",
+      "executor",
+      "community of property",
+      "section 2(1)(a)",
+      "Wills Act",
+      "Testamentary guardian"
+    ]
+  },
+  {
+    "name": "lease-schedule-particulars",
+    "text": "SCHEDULE 1: LEASE PARTICULARS\n1.1 Landlord: Maroela Park Investments (Pty) Ltd (Reg. No. 2014/187345/07)\n1.2 Tenant: Kagiso Molefe, ID 9108235842087\n1.3 Tenant's domicilium: Unit 5, Acacia Mews, 88 Kestrel Road, Craighall\n1.4 Premises: Shop 12, Rosebank Mall\n1.5 Commencement Date: 1 December 2026\n1.6 Monthly Rental: R 18 500, escalating at 8% per annum\n1.7 Deposit: two months' rental\n1.8 Rental payable into account 62845519037, branch code 250655\n1.9 Governing law: Republic of South Africa",
+    "expected": [
+      {
+        "value": "Maroela Park Investments (Pty) Ltd",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "2014/187345/07",
+        "entity": "COMPANY_REGISTRATION"
+      },
+      {
+        "value": "Kagiso Molefe",
+        "entity": "PERSON"
+      },
+      {
+        "value": "9108235842087",
+        "entity": "ZA_ID_NUMBER"
+      },
+      {
+        "value": "Unit 5, Acacia Mews, 88 Kestrel Road, Craighall",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "62845519037",
+        "entity": "ACCOUNT_NUMBER"
+      }
+    ],
+    "mustRemainVisible": [
+      "SCHEDULE 1",
+      "LEASE PARTICULARS",
+      "Landlord",
+      "Tenant",
+      "Premises",
+      "Shop 12, Rosebank Mall",
+      "Commencement Date",
+      "1 December 2026",
+      "R 18 500",
+      "8% per annum",
+      "two months' rental",
+      "Republic of South Africa"
+    ]
+  },
+  {
+    "name": "personal-injury-intake-form",
+    "text": "PERSONAL INJURY INTAKE: RAF CLAIM\nFull name: Bongani Zwane\nDate of birth: 07/03/1978\nContact: 073 902 4418 / bongani.zwane78@gmail.com\nHome address: 9 Mimosa Close, Mthatha\nDescribe the accident in your own words: I was a passenger in a taxi driven by a guy called Lucky. On the Monday after Easter we hit a truck on the N2 near Butterworth. The truck belonged to Ndlovu Haulage. My back still hurts and Dr Fatima Essop at the clinic says I need an MRI.\nPrevious claims against the Road Accident Fund? No\nEmployer: Umzi Cement Works",
+    "expected": [
+      {
+        "value": "Bongani Zwane",
+        "entity": "PERSON"
+      },
+      {
+        "value": "07/03/1978",
+        "entity": "DATE_TIME"
+      },
+      {
+        "value": "073 902 4418",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "bongani.zwane78@gmail.com",
+        "entity": "EMAIL_ADDRESS"
+      },
+      {
+        "value": "9 Mimosa Close, Mthatha",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "Lucky",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Ndlovu Haulage",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Fatima Essop",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Umzi Cement Works",
+        "entity": "ORGANIZATION"
+      }
+    ],
+    "mustRemainVisible": [
+      "PERSONAL INJURY INTAKE",
+      "Date of birth",
+      "Monday",
+      "Easter",
+      "N2",
+      "Butterworth",
+      "Road Accident Fund",
+      "MRI"
+    ]
+  },
+  {
+    "name": "email-with-signature-and-disclaimer",
+    "text": "Subject: RE: Mahlangu / Cape Harbour Fisheries: draft heads of argument\n\nHi Chen,\n\nAttached are the draft heads. Please check paragraph 14 on the Labour Relations Act point and the reference to the CCMA award of 12 May 2026. Our client Mr Mahlangu confirmed he is available for consultation on Wednesday. Opposing attorneys are Da Silva Incorporated.\n\nRegards\nAnnelie Pretorius\nSenior Associate\nM: +27 83 551 7026\nE: annelie@pretorius-venter.co.za\n\nSent from my iPhone\n\nThis email and any attachments are confidential and may be privileged. If you are not the intended recipient, please notify the sender and delete it. The Firm accepts no liability for any loss arising from viruses.",
+    "expected": [
+      {
+        "value": "Mahlangu",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Cape Harbour Fisheries",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Chen",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Da Silva Incorporated",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Annelie Pretorius",
+        "entity": "PERSON"
+      },
+      {
+        "value": "+27 83 551 7026",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "annelie@pretorius-venter.co.za",
+        "entity": "EMAIL_ADDRESS"
+      }
+    ],
+    "mustRemainVisible": [
+      "heads of argument",
+      "paragraph 14",
+      "Labour Relations Act",
+      "CCMA",
+      "12 May 2026",
+      "Wednesday",
+      "Senior Associate",
+      "iPhone",
+      "The Firm"
+    ]
+  },
+  {
+    "name": "debtor-spreadsheet-tsv-paste",
+    "text": "Debtor\tID Number\tCell\tAccount No\tBalance\tStatus\nLerato Mokoena\t9507140463089\t071 338 2051\t4081 2279 6630\tR 12 480,00\tSummons issued\nFrancois du Plessis\t7811305276084\t084 207 9913\t4081 5502 1147\tR 3 915,50\tPaid up\nMei Ling Wong\t0303050891082\t061 774 0326\t4081 9936 0458\tR 27 002,10\tSection 129 notice sent\nTotal\t\t\t\tR 43 397,60\t",
+    "expected": [
+      {
+        "value": "Lerato Mokoena",
+        "entity": "PERSON"
+      },
+      {
+        "value": "9507140463089",
+        "entity": "ZA_ID_NUMBER"
+      },
+      {
+        "value": "071 338 2051",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "4081 2279 6630",
+        "entity": "ACCOUNT_NUMBER"
+      },
+      {
+        "value": "Francois du Plessis",
+        "entity": "PERSON"
+      },
+      {
+        "value": "7811305276084",
+        "entity": "ZA_ID_NUMBER"
+      },
+      {
+        "value": "084 207 9913",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "4081 5502 1147",
+        "entity": "ACCOUNT_NUMBER"
+      },
+      {
+        "value": "Mei Ling Wong",
+        "entity": "PERSON"
+      },
+      {
+        "value": "0303050891082",
+        "entity": "ZA_ID_NUMBER"
+      },
+      {
+        "value": "061 774 0326",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "4081 9936 0458",
+        "entity": "ACCOUNT_NUMBER"
+      }
+    ],
+    "mustRemainVisible": [
+      "Debtor",
+      "ID Number",
+      "Balance",
+      "Status",
+      "R 12 480,00",
+      "R 3 915,50",
+      "R 27 002,10",
+      "R 43 397,60",
+      "Summons issued",
+      "Paid up",
+      "Section 129",
+      "Total"
+    ]
+  },
+  {
+    "name": "voice-note-transcript-lowercase",
+    "text": "ok so just a quick one for the file um i spoke to sizwe ngcobo this morning he's the brother of the deceased and he says the policy was with amandla mutual not the one we thought and there was a thirty day grace period on the premiums so it might not have lapsed and he wants us to phone his wife nosipho on 079 486 1152 because he's working night shifts the whole of march um also tell precious to diarise the hearing for the ninth and check the prescription act point before friday thanks",
+    "expected": [
+      {
+        "value": "sizwe ngcobo",
+        "entity": "PERSON"
+      },
+      {
+        "value": "amandla mutual",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "nosipho",
+        "entity": "PERSON"
+      },
+      {
+        "value": "079 486 1152",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "precious",
+        "entity": "PERSON"
+      }
+    ],
+    "mustRemainVisible": [
+      "the deceased",
+      "grace period",
+      "thirty day",
+      "night shifts",
+      "march",
+      "prescription act",
+      "friday"
+    ]
+  },
+  {
+    "name": "cv-summary-labour-referral",
+    "text": "CV SUMMARY for unfair dismissal referral\nName: Tshepo Letsholo\nDOB: 1990-06-21\nEmail: tletsholo@outlook.com | Tel: 018 345 8871\nAddress: 311 Mokgosi Street, Mahikeng\nEmployment history:\n- 2019 to 2025: Warehouse Supervisor, Kalahari Cold Chain (Pty) Ltd (dismissed March 2025 for alleged misconduct)\n- 2015 to 2019: Stock Controller, Baobab Retail Group\nReference: former manager Heinrich Swanepoel\nQualifications: National Senior Certificate; Diploma in Logistics\nClaim: automatically unfair dismissal under section 187 of the Labour Relations Act; referral to the Bargaining Council within 30 days.",
+    "expected": [
+      {
+        "value": "Tshepo Letsholo",
+        "entity": "PERSON"
+      },
+      {
+        "value": "1990-06-21",
+        "entity": "DATE_TIME"
+      },
+      {
+        "value": "tletsholo@outlook.com",
+        "entity": "EMAIL_ADDRESS"
+      },
+      {
+        "value": "018 345 8871",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "311 Mokgosi Street, Mahikeng",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "Kalahari Cold Chain (Pty) Ltd",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Baobab Retail Group",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Heinrich Swanepoel",
+        "entity": "PERSON"
+      }
+    ],
+    "mustRemainVisible": [
+      "CV SUMMARY",
+      "Warehouse Supervisor",
+      "Stock Controller",
+      "March 2025",
+      "National Senior Certificate",
+      "Diploma in Logistics",
+      "section 187",
+      "Labour Relations Act",
+      "Bargaining Council",
+      "30 days"
+    ]
+  },
+  {
+    "name": "debt-collection-sms-template",
+    "text": "Template: FINAL DEMAND SMS\nFields: {debtor_name}=Ayanda Sithole; {creditor}=Ubuntu Home Loans; {amount}=R 6 240; {ref}=ACC 5500 7712 0943; {callback}=0861 223 344\n\nRendered: Dear Ayanda Sithole, your account ACC 5500 7712 0943 with Ubuntu Home Loans is in arrears of R 6 240. Pay within 10 business days to avoid legal action in terms of the National Credit Act. Queries: call 0861 223 344 Mon-Fri. Reply STOP to opt out.",
+    "expected": [
+      {
+        "value": "Ayanda Sithole",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Ubuntu Home Loans",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "5500 7712 0943",
+        "entity": "ACCOUNT_NUMBER"
+      },
+      {
+        "value": "0861 223 344",
+        "entity": "PHONE_NUMBER"
+      }
+    ],
+    "mustRemainVisible": [
+      "FINAL DEMAND SMS",
+      "{debtor_name}",
+      "R 6 240",
+      "10 business days",
+      "National Credit Act",
+      "Mon-Fri",
+      "STOP"
+    ]
+  },
+  {
+    "name": "afrikaans-english-consultation-note",
+    "text": "Konsultasienota: 22 September 2026\nKliënt: Mnr. Gerrit Janse van Rensburg, gebore 11 Augustus 1958, woon op die plaas Rietvlei naby Bethlehem.\nHy sê sy buurman, Petrus \"Piet\" Lombard, het die grensdraad geskuif. Also claims Lombard's company, Vaalrivier Boerdery CC (2003/044871/23), grazes cattle on his side. Kliënt se selnommer: 082 390 6617.\nAdvies: bring 'n aansoek vir 'n interdik in die Vrystaat Afdeling van die Hooggeregshof. Prescription is nie 'n probleem nie. Fooi-ooreenkoms: R 2 800 per uur. Volgende konsultasie Donderdag.",
+    "expected": [
+      {
+        "value": "Gerrit Janse van Rensburg",
+        "entity": "PERSON"
+      },
+      {
+        "value": "11 Augustus 1958",
+        "entity": "DATE_TIME"
+      },
+      {
+        "value": "Rietvlei",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "Bethlehem",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "Petrus",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Piet",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Lombard",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Vaalrivier Boerdery CC",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "2003/044871/23",
+        "entity": "COMPANY_REGISTRATION"
+      },
+      {
+        "value": "082 390 6617",
+        "entity": "PHONE_NUMBER"
+      }
+    ],
+    "mustRemainVisible": [
+      "Konsultasienota",
+      "22 September 2026",
+      "Kliënt",
+      "buurman",
+      "grensdraad",
+      "interdik",
+      "Vrystaat Afdeling van die Hooggeregshof",
+      "Prescription",
+      "R 2 800 per uur",
+      "Donderdag"
+    ]
+  },
+  {
+    "name": "markdown-witness-table",
+    "text": "Witness list for trial (Mabaso v Silverleaf Security Services). Incident occurred on the corner of Long Street and Bree Street.\n\n| # | Witness | Role | Contact | Available |\n|---|---|---|---|---|\n| 1 | Nandi Mabaso | Plaintiff | 066 812 3307 | Monday |\n| 2 | Rui Fernandes | Eyewitness (shop owner) | rui@fernandesdeli.co.za | Tuesday |\n| 3 | Constable K. Mokoena | SAPS investigating officer | via station | Tuesday |\n| 4 | Dr Priya Naidoo | Expert (orthopaedic) | 021 685 4410 | Wednesday |\n| 5 | Silverleaf shift supervisor | Defendant's employee | TBC | TBC |\n\nNotes: paralegal to prepare bundles by 30 April. Trial set down for 9 February 2027 in the Western Cape High Court.",
+    "expected": [
+      {
+        "value": "Mabaso",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Silverleaf Security Services",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Silverleaf",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Nandi Mabaso",
+        "entity": "PERSON"
+      },
+      {
+        "value": "066 812 3307",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "Rui Fernandes",
+        "entity": "PERSON"
+      },
+      {
+        "value": "rui@fernandesdeli.co.za",
+        "entity": "EMAIL_ADDRESS"
+      },
+      {
+        "value": "K. Mokoena",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Priya Naidoo",
+        "entity": "PERSON"
+      },
+      {
+        "value": "021 685 4410",
+        "entity": "PHONE_NUMBER"
+      }
+    ],
+    "mustRemainVisible": [
+      "Long Street",
+      "Bree Street",
+      "Plaintiff",
+      "Eyewitness",
+      "Constable",
+      "SAPS",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Defendant's employee",
+      "TBC",
+      "30 April",
+      "9 February 2027",
+      "Western Cape High Court"
+    ]
+  }
+]

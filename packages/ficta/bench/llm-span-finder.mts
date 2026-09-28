@@ -50,6 +50,7 @@ const FIXTURE_SETS = {
   legal: "./fixtures/pii-legal-identity.json",
   hard: "./fixtures/pii-legal-hard.json",
   blind: "./fixtures/pii-legal-blind.json",
+  holdout: "./fixtures/pii-legal-holdout.json",
 } as const;
 type FixtureSet = keyof typeof FIXTURE_SETS;
 
@@ -311,14 +312,14 @@ function parseOptions(args: string[]) {
   let model = process.env.FICTA_BENCH_LLM_MODEL?.trim() || DEFAULT_MODEL;
   let presidioUrl: string | undefined;
   let think = false;
-  let sets: FixtureSet[] = ["legal", "hard", "blind"];
+  let sets: FixtureSet[] = ["legal", "hard", "blind", "holdout"];
   for (const arg of args) {
     if (arg === "--") continue;
     if (arg === "--help" || arg === "-h") {
       console.log(`Score an LLM as a PII span finder on ficta's labelled legal fixtures
 
   OPENROUTER_API_KEY=... pnpm --filter @serovaai/ficta bench:llm-spans -- [--model=qwen/qwen3.6-35b-a3b]
-    [--base-url=https://openrouter.ai/api/v1] [--presidio-url=http://127.0.0.1:5002] [--sets=legal,hard,blind] [--think]
+    [--base-url=https://openrouter.ai/api/v1] [--presidio-url=http://127.0.0.1:5002] [--sets=legal,hard,blind,holdout] [--think]
 
 --base-url accepts any OpenAI-compatible server (vLLM, Ollama at http://127.0.0.1:11434/v1).
 --think enables the model's reasoning (off by default, to measure the cheap path).

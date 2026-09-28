@@ -210,6 +210,81 @@ class IdentityRecognizerTest(unittest.TestCase):
         self.assertNotIn(("LOCATION", "Seychelles"), found)
         self.assertFalse(any(value == "C a p i t a l S u m" for _, value in found))
 
+    def test_surname_particles_do_not_break_full_names(self):
+        text = "Seller: Marguerite Anne du Plessis. Buyer is Pieter van der Merwe."
+        found = self.finalize(
+            text,
+            [("Marguerite Anne du Plessis", "PERSON"), ("Pieter van der Merwe", "PERSON")],
+        )
+        self.assertIn(("PERSON", "Marguerite Anne du Plessis"), found)
+        self.assertIn(("PERSON", "Pieter van der Merwe"), found)
+
+    def test_single_names_need_a_person_cue(self):
+        text = (
+            "Nomsa pls get the Khumalo summons out. Tell Jacques we won't settle. "
+            "Husband Rajesh pays maintenance for the minor children, Kiara. "
+            "Purchasers: Tendai. Follow up with Wessel.\n"
+            "Victoria raised a query. The Borrower claim is pending. Seller: see annexure."
+        )
+        found = self.finalize(
+            text,
+            [
+                ("Nomsa", "PERSON"),
+                ("Khumalo", "PERSON"),
+                ("Jacques", "PERSON"),
+                ("Rajesh", "PERSON"),
+                ("Kiara", "PERSON"),
+                ("Tendai", "ORGANIZATION"),
+                ("Wessel", "PERSON"),
+                ("Victoria", "PERSON"),
+                ("Borrower", "PERSON"),
+                ("Seller", "PERSON"),
+            ],
+        )
+        for name in ["Nomsa", "Khumalo", "Jacques", "Rajesh", "Kiara", "Tendai", "Wessel"]:
+            self.assertIn(("PERSON", name), found)
+        for visible in ["Victoria", "Borrower", "Seller"]:
+            self.assertFalse(any(value == visible for _, value in found), visible)
+
+    def test_honorifics_attendee_lists_and_structured_fields(self):
+        text = "\n".join(
+            [
+                "Present: Lerato, Marco, Busi and Ashwin",
+                "Adv. Bongani Zulu SC will argue. Mrs Hlongwane called.",
+                "client_ref,debtor_name,cell,balance",
+                "DBT-1,Fatima Essop,061 447 9902,R 3 900.00",
+                "DBT-2,Umhlanga Glass & Aluminium (Pty) Ltd,031 566 2280,R 88 102.75",
+                'Record: {"matter":"LIT-2026-0387","client":{"name":"Oluwaseun Adeyemi","dob":"1990-11-02"}}',
+                "Please sort these by balance, then draft notices, and send them.",
+            ]
+        )
+        found = self.finalize(text, [])
+        for expected in [
+            ("PERSON", "Lerato"),
+            ("PERSON", "Marco"),
+            ("PERSON", "Busi"),
+            ("PERSON", "Ashwin"),
+            ("PERSON", "Bongani Zulu"),
+            ("PERSON", "Hlongwane"),
+            ("PERSON", "Fatima Essop"),
+            ("ORGANIZATION", "Umhlanga Glass & Aluminium (Pty) Ltd"),
+            ("PERSON", "Oluwaseun Adeyemi"),
+            ("DATE_TIME", "1990-11-02"),
+        ]:
+            self.assertIn(expected, found)
+        self.assertFalse(any(value in {"LIT-2026-0387", "R 3 900.00", "Please sort these by balance"} for _, value in found))
+
+    def test_registration_numbers_and_street_addresses_need_their_shape(self):
+        text = (
+            "Check CIPC for Bright Morning Trading 2019/447812/07. Case 12345/2024 is pending. "
+            "Delivered to 17 Protea Crescent, Somerset West. The office on Victoria Road is closed."
+        )
+        found = self.finalize(text, [])
+        self.assertIn(("COMPANY_REGISTRATION", "2019/447812/07"), found)
+        self.assertIn(("ORGANIZATION", "Bright Morning Trading"), found)
+        self.assertIn(("LOCATION", "17 Protea Crescent, Somerset West"), found)
+        self.assertFalse(any(value in {"12345/2024", "Victoria Road"} for _, value in found))
+
 
 if __name__ == "__main__":
     unittest.main()

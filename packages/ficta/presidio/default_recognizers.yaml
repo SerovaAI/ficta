@@ -254,6 +254,29 @@ recognizers:
         regex: "(?<!\\d)\\+230(?:[ .-]?\\d){8}\\b"
         score: 0.85
 
+  # Presidio's PhoneRecognizer has no ZA region by default, and with one it scores South African
+  # numbers at 0.4, below ficta's threshold. International (+27) and grouped national numbers
+  # (083 902 4417) are phone-shaped enough to admit alone; an ungrouped 10-digit run could be an
+  # account number, so it needs nearby phone wording (English or Afrikaans) to pass.
+  - name: FictaSouthAfricaPhoneRecognizer
+    supported_languages:
+      - language: en
+        context: [phone, telephone, tel, cell, cellphone, mobile, contact, call, whatsapp, sel, selfoon, foon]
+    type: custom
+    enabled: true
+    country_code: za
+    supported_entity: PHONE_NUMBER
+    patterns:
+      - name: South African international telephone number
+        regex: "(?<![\\d+])\\+27[ .-]?(?:\\(0\\)[ .-]?)?[1-8]\\d(?:[ .-]?\\d){7}(?!\\d)"
+        score: 0.85
+      - name: Grouped South African national telephone number
+        regex: "(?<![\\d/])0[1-8]\\d[ .-]\\d{3}[ .-]\\d{4}(?![\\d/])"
+        score: 0.7
+      - name: Ungrouped South African national telephone number
+        regex: "(?<![\\d/])0[1-8]\\d{8}(?![\\d/])"
+        score: 0.4
+
   # Municipal/utility account numbers (e.g. City of Johannesburg tax invoices) are bare 9-11 digit
   # runs with no checksum, so the base score stays below ficta's 0.5 threshold and only the context
   # enhancer (nearby "account"/"rekening" wording) can promote a match. Deliberately locale-agnostic
