@@ -32,3 +32,4 @@ notes/
 
 # TypeSafe bench response cache (bench-only; never shipped)
 packages/ficta/bench/.jev-cache/
+packages/ficta/bench/.llm-cache/

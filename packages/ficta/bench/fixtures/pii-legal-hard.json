@@ -1,0 +1,162 @@
+[
+  {
+    "name": "headings-and-defined-terms",
+    "text": "CONFIDENTIALITY AND NON-DISCLOSURE\n\n1. DEFINITIONS\n\"Company\" means Kestrel Ridge Mining (Pty) Ltd. \"Board\" means the board of directors of the Company. \"Disclosing Party\" and \"Receiving Party\" have the meanings in clause 4.\n\n2. GOVERNING LAW\nThe Parties submit to the High Court of South Africa. Schedule 3 (Escrow) applies.",
+    "expected": [
+      {
+        "value": "Kestrel Ridge Mining (Pty) Ltd",
+        "entity": "ORGANIZATION"
+      }
+    ],
+    "mustRemainVisible": [
+      "CONFIDENTIALITY AND NON-DISCLOSURE",
+      "DEFINITIONS",
+      "Company",
+      "Board",
+      "Disclosing Party",
+      "Receiving Party",
+      "GOVERNING LAW",
+      "Parties",
+      "High Court of South Africa",
+      "Schedule 3",
+      "Escrow"
+    ]
+  },
+  {
+    "name": "single-use-short-alias",
+    "text": "This agreement is between Wattlebrook Holdings Limited (\"Wattlebrook\") and the Lender. Notices to Wattlebrook go to the registered office.",
+    "expected": [
+      {
+        "value": "Wattlebrook Holdings Limited",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Wattlebrook",
+        "entity": "ORGANIZATION"
+      }
+    ],
+    "mustRemainVisible": ["Lender", "registered office"]
+  },
+  {
+    "name": "alias-only-mention",
+    "text": "Please ask Zanele whether Umhlali signed the side letter before Friday.",
+    "expected": [
+      {
+        "value": "Zanele",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Umhlali",
+        "entity": "ORGANIZATION"
+      }
+    ],
+    "mustRemainVisible": ["side letter", "Friday"]
+  },
+  {
+    "name": "headerless-table-rows",
+    "text": "| Thandiwe Nkosi | 8001015009087 | Durban | R 250 000 |\n| Pieter van der Merwe | 7503125082087 | Stellenbosch | R 90 000 |",
+    "expected": [
+      {
+        "value": "Thandiwe Nkosi",
+        "entity": "PERSON"
+      },
+      {
+        "value": "8001015009087",
+        "entity": "ZA_ID_NUMBER"
+      },
+      {
+        "value": "Durban",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "Pieter van der Merwe",
+        "entity": "PERSON"
+      },
+      {
+        "value": "7503125082087",
+        "entity": "ZA_ID_NUMBER"
+      },
+      {
+        "value": "Stellenbosch",
+        "entity": "LOCATION"
+      }
+    ],
+    "mustRemainVisible": ["R 250 000", "R 90 000"]
+  },
+  {
+    "name": "signature-block-caps-and-initials",
+    "text": "SIGNED at JOHANNESBURG on this 3rd day of March.\nFor and on behalf of ORCHARD LANE LOGISTICS CC\n________________\nNAME: M.J. DLAMINI\nCAPACITY: Director, who warrants authority",
+    "expected": [
+      {
+        "value": "ORCHARD LANE LOGISTICS CC",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "M.J. DLAMINI",
+        "entity": "PERSON"
+      }
+    ],
+    "mustRemainVisible": ["SIGNED", "NAME", "CAPACITY", "Director", "3rd day of March"]
+  },
+  {
+    "name": "lowercase-chat-message",
+    "text": "can you redraft the letter to sipho mthembu at greenfield dairies? he's worried the claim against his late father's estate in pietermaritzburg will be struck out",
+    "expected": [
+      {
+        "value": "sipho mthembu",
+        "entity": "PERSON"
+      },
+      {
+        "value": "greenfield dairies",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "pietermaritzburg",
+        "entity": "LOCATION"
+      }
+    ],
+    "mustRemainVisible": ["letter", "claim", "estate", "struck out"]
+  },
+  {
+    "name": "common-noun-looking-names",
+    "text": "Our client, Mr Rose Hope, instructs us that Grace Faith Baker transferred the Hope Street property to Summit Trust. The Summit, a restaurant, is not a party.",
+    "expected": [
+      {
+        "value": "Rose Hope",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Grace Faith Baker",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Summit Trust",
+        "entity": "ORGANIZATION"
+      }
+    ],
+    "mustRemainVisible": ["client", "Hope Street", "The Summit", "restaurant", "party"]
+  },
+  {
+    "name": "email-and-matter-context",
+    "text": "Forwarding from naledi.khumalo@baobabpartners.co.za: re the Khumalo divorce, Adv. Bongani Zulu SC will argue on the 14th. Opposing attorneys are Fenwick Grey Inc.",
+    "expected": [
+      {
+        "value": "naledi.khumalo@baobabpartners.co.za",
+        "entity": "EMAIL_ADDRESS"
+      },
+      {
+        "value": "Khumalo",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Bongani Zulu",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Fenwick Grey Inc",
+        "entity": "ORGANIZATION"
+      }
+    ],
+    "mustRemainVisible": ["divorce", "SC", "14th", "Opposing attorneys"]
+  }
+]

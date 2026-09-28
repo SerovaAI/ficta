@@ -1,0 +1,529 @@
+[
+  {
+    "name": "forwarded-email-thread-with-signature",
+    "text": "From: Thandeka Mokoena <thandeka.mokoena@vukanilaw.co.za>\nSent: 14 August 2026 09:12\nTo: Litigation Team\nSubject: FW: Pretorius / Sable Crest Logistics - security for costs\n\nHi all, see below from the client. Can someone draft a response by Friday?\n\n---------- Forwarded message ----------\nFrom: Dirk Pretorius <dirk@sablecrest.co.za>\nDear Ms Mokoena, the Respondent has still not paid the R 480 000 into trust. Please advise whether we should approach the High Court under Rule 47.\nRegards\nDirk Pretorius | Director\nSable Crest Logistics (Pty) Ltd\nCell: 082 614 3390",
+    "expected": [
+      {
+        "value": "Thandeka Mokoena",
+        "entity": "PERSON"
+      },
+      {
+        "value": "thandeka.mokoena@vukanilaw.co.za",
+        "entity": "EMAIL_ADDRESS"
+      },
+      {
+        "value": "Mokoena",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Pretorius",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Dirk Pretorius",
+        "entity": "PERSON"
+      },
+      {
+        "value": "dirk@sablecrest.co.za",
+        "entity": "EMAIL_ADDRESS"
+      },
+      {
+        "value": "Sable Crest Logistics",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Sable Crest Logistics (Pty) Ltd",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "082 614 3390",
+        "entity": "PHONE_NUMBER"
+      }
+    ],
+    "mustRemainVisible": [
+      "Litigation Team",
+      "security for costs",
+      "Respondent",
+      "R 480 000",
+      "High Court",
+      "Rule 47",
+      "Director",
+      "Friday"
+    ]
+  },
+  {
+    "name": "whatsapp-partner-instruction",
+    "text": "Nomsa pls get the Khumalo summons out today. Sipho K's cell is 073 555 0192 if the sheriff needs him. Claim is R212k plus interest at 11,75% from 1 March. Tell Jacques we're not settling below 150. Also check CIPC for Bright Morning Trading 2019/447812/07 - I think it's deregistered. Thx",
+    "expected": [
+      {
+        "value": "Nomsa",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Khumalo",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Sipho K",
+        "entity": "PERSON"
+      },
+      {
+        "value": "073 555 0192",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "Jacques",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Bright Morning Trading",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "2019/447812/07",
+        "entity": "COMPANY_REGISTRATION"
+      }
+    ],
+    "mustRemainVisible": ["summons", "sheriff", "R212k", "11,75%", "CIPC", "deregistered"]
+  },
+  {
+    "name": "letter-of-demand-drafting-instructions",
+    "text": "Instructions for letter of demand: Our client, Amberleigh Dairy Farms CC, supplied goods on open account to Mr Lwazi Ndlovu of 17 Protea Crescent, Somerset West. The debtor's ID number is 8506125123081. Outstanding balance is R 63 418,20. Demand payment within 10 days, failing which we will issue summons in the Magistrate's Court. Mention that section 129 of the National Credit Act does not apply because this is a business credit agreement concluded on 3 February 2025. Sign off as Amberleigh's attorneys of record.",
+    "expected": [
+      {
+        "value": "Amberleigh Dairy Farms CC",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Amberleigh",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Lwazi Ndlovu",
+        "entity": "PERSON"
+      },
+      {
+        "value": "17 Protea Crescent, Somerset West",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "8506125123081",
+        "entity": "ZA_ID_NUMBER"
+      }
+    ],
+    "mustRemainVisible": [
+      "letter of demand",
+      "debtor",
+      "R 63 418,20",
+      "10 days",
+      "Magistrate's Court",
+      "section 129",
+      "National Credit Act",
+      "3 February 2025"
+    ]
+  },
+  {
+    "name": "particulars-of-claim-extract",
+    "text": "IN THE HIGH COURT OF SOUTH AFRICA\nGAUTENG DIVISION, PRETORIA\nIn the matter between:\nREFILWE DOROTHY MASHABA    Plaintiff\nand\nKESTREL RIDGE PROPERTY HOLDINGS (PTY) LTD    Defendant\nPARTICULARS OF CLAIM\n1. The Plaintiff is an adult female teacher residing at 4 Leeu Street, Lydenburg.\n2. The Defendant is a private company with registration number 2011/009364/07, duly incorporated in terms of the company laws of the Republic of South Africa.\n3. On or about 22 June 2024 and at Pretoria, the Plaintiff and the Defendant, represented by Mr Hennie Botha, concluded a written lease agreement (\"the Lease\").",
+    "expected": [
+      {
+        "value": "REFILWE DOROTHY MASHABA",
+        "entity": "PERSON"
+      },
+      {
+        "value": "KESTREL RIDGE PROPERTY HOLDINGS (PTY) LTD",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "4 Leeu Street, Lydenburg",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "2011/009364/07",
+        "entity": "COMPANY_REGISTRATION"
+      },
+      {
+        "value": "Hennie Botha",
+        "entity": "PERSON"
+      }
+    ],
+    "mustRemainVisible": [
+      "HIGH COURT OF SOUTH AFRICA",
+      "GAUTENG DIVISION, PRETORIA",
+      "Plaintiff",
+      "Defendant",
+      "PARTICULARS OF CLAIM",
+      "Republic of South Africa",
+      "22 June 2024",
+      "the Lease"
+    ]
+  },
+  {
+    "name": "debtors-csv-paste",
+    "text": "client_ref,debtor_name,id_or_reg,cell,email,balance\nDBT-0412,Pieter van der Merwe,7203195087088,083 902 4417,pvdmerwe@webmail.co.za,R 12 450.00\nDBT-0413,Umhlanga Glass & Aluminium (Pty) Ltd,2016/238104/07,031 566 2280,accounts@umhlangaglass.co.za,R 88 102.75\nDBT-0414,Fatima Essop,8809250412083,061 447 9902,fatima.essop77@gmail.com,R 3 900.00\nPlease sort these by balance and draft section 129 notices for the individuals only. The company must get a normal letter of demand.",
+    "expected": [
+      {
+        "value": "Pieter van der Merwe",
+        "entity": "PERSON"
+      },
+      {
+        "value": "7203195087088",
+        "entity": "ZA_ID_NUMBER"
+      },
+      {
+        "value": "083 902 4417",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "pvdmerwe@webmail.co.za",
+        "entity": "EMAIL_ADDRESS"
+      },
+      {
+        "value": "Umhlanga Glass & Aluminium (Pty) Ltd",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "2016/238104/07",
+        "entity": "COMPANY_REGISTRATION"
+      },
+      {
+        "value": "031 566 2280",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "accounts@umhlangaglass.co.za",
+        "entity": "EMAIL_ADDRESS"
+      },
+      {
+        "value": "Fatima Essop",
+        "entity": "PERSON"
+      },
+      {
+        "value": "8809250412083",
+        "entity": "ZA_ID_NUMBER"
+      },
+      {
+        "value": "061 447 9902",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "fatima.essop77@gmail.com",
+        "entity": "EMAIL_ADDRESS"
+      }
+    ],
+    "mustRemainVisible": ["debtor_name", "balance", "R 12 450.00", "R 88 102.75", "R 3 900.00", "section 129"]
+  },
+  {
+    "name": "ocr-noisy-scanned-affidavit",
+    "text": "AFFIDAVlT\nI, the undersigned,\nJOHANNES PETRUS C0ETZEE\ndo hereby make oath and state that:\n1. I am an adult rnale farmer with identity number 5801075201083 and I reside at Plaas Rietvlei, Ventersdorp district.\n2. The facts herein are within my persona1 knowledge and are true and correct.\n3. I was ernployed by Graanvallei Boerdery (Edms) Bpk as farm manager until the end of 2023.\nSIGNED and SWORN before me at KLERKSDORP, the deponent having acknowledged that he knows and understands the contents of this affidavit, in terms of the Justices of the Peace and Commissioners of Oaths Act 16 of 1963.\nCOMMISSIONER OF OATHS\nName: S. M0FOKENG   Capacity: Warrant Officer, SAPS",
+    "expected": [
+      {
+        "value": "JOHANNES PETRUS C0ETZEE",
+        "entity": "PERSON"
+      },
+      {
+        "value": "5801075201083",
+        "entity": "ZA_ID_NUMBER"
+      },
+      {
+        "value": "Plaas Rietvlei, Ventersdorp district",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "Graanvallei Boerdery (Edms) Bpk",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "S. M0FOKENG",
+        "entity": "PERSON"
+      }
+    ],
+    "mustRemainVisible": [
+      "AFFIDAVlT",
+      "deponent",
+      "KLERKSDORP",
+      "Justices of the Peace and Commissioners of Oaths Act 16 of 1963",
+      "COMMISSIONER OF OATHS",
+      "Warrant Officer",
+      "SAPS"
+    ]
+  },
+  {
+    "name": "conveyancing-transfer-note",
+    "text": "Transfer file note: Erf 1187 Hout Bay. Seller: Marguerite Anne du Plessis (born 14 April 1961), currently living at 9 Wilderness Road, Claremont. Purchasers: Tendai and Rudo Chikwanha, married out of community of property. Bond of R 3 250 000 to be registered simultaneously. Seller's net proceeds to be paid into her cheque account 1049553821 on registration. Rates clearance from the City of Cape Town still outstanding. Occupation date per the Deed of Sale is 1 December 2026. Note Victoria Road is closed for roadworks, so collect keys at the agent's office.",
+    "expected": [
+      {
+        "value": "Marguerite Anne du Plessis",
+        "entity": "PERSON"
+      },
+      {
+        "value": "14 April 1961",
+        "entity": "DATE_TIME"
+      },
+      {
+        "value": "9 Wilderness Road, Claremont",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "Tendai",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Rudo Chikwanha",
+        "entity": "PERSON"
+      },
+      {
+        "value": "1049553821",
+        "entity": "ACCOUNT_NUMBER"
+      }
+    ],
+    "mustRemainVisible": [
+      "Seller",
+      "Purchasers",
+      "married out of community of property",
+      "R 3 250 000",
+      "City of Cape Town",
+      "Deed of Sale",
+      "1 December 2026",
+      "Victoria Road"
+    ]
+  },
+  {
+    "name": "divorce-consult-note-children",
+    "text": "Consult note - Naidoo divorce. Client Priya Naidoo (Plaintiff) wants primary residence of the minor children, Kiara (9) and Dev (6). Husband Rajesh works at Oceanview Engineering; his email per client is raj.naidoo@oceanvieweng.co.za. Maintenance claimed R 18 500 pm per child plus medical aid. Kids attend school in Westville, near her mother's home. Family Advocate report requested in terms of the Mediation in Certain Divorce Matters Act. Settlement agreement to be made an order of court. Next consult 12 October.",
+    "expected": [
+      {
+        "value": "Naidoo",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Priya Naidoo",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Kiara",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Dev",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Rajesh",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Oceanview Engineering",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "raj.naidoo@oceanvieweng.co.za",
+        "entity": "EMAIL_ADDRESS"
+      },
+      {
+        "value": "Westville",
+        "entity": "LOCATION"
+      }
+    ],
+    "mustRemainVisible": [
+      "Plaintiff",
+      "minor children",
+      "R 18 500",
+      "Family Advocate",
+      "Mediation in Certain Divorce Matters Act",
+      "Settlement agreement",
+      "12 October"
+    ]
+  },
+  {
+    "name": "labour-dispute-afrikaans-english",
+    "text": "Kort opsomming vir CCMA: Die werknemer, Anneke Swanepoel, is ontslaan deur Karoo Vleisverwerkers (Pty) Ltd na 'n dissiplinêre verhoor. She alleges unfair dismissal under section 186 of the Labour Relations Act. Die voorsitter was Mnr. Gerrit Lombard. Sy woon in Beaufort-Wes en haar sel is 072 318 6654. Salary R14 200 per maand. Con/arb set down for 20 Oktober 2026 in Oudtshoorn. The Employer says she was absent for 3 dae without leave. Swanepoel se ID: 9412030339087.",
+    "expected": [
+      {
+        "value": "Anneke Swanepoel",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Swanepoel",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Karoo Vleisverwerkers (Pty) Ltd",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Gerrit Lombard",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Beaufort-Wes",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "072 318 6654",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "9412030339087",
+        "entity": "ZA_ID_NUMBER"
+      }
+    ],
+    "mustRemainVisible": [
+      "CCMA",
+      "werknemer",
+      "unfair dismissal",
+      "section 186",
+      "Labour Relations Act",
+      "R14 200",
+      "20 Oktober 2026",
+      "Oudtshoorn",
+      "Employer"
+    ]
+  },
+  {
+    "name": "board-resolution",
+    "text": "WRITTEN RESOLUTION OF THE BOARD OF DIRECTORS OF LEOPARDSTONE MINING SUPPLIES (PTY) LTD (Registration number 2008/015577/07) (\"the Company\")\nPassed in terms of section 74 of the Companies Act 71 of 2008.\nRESOLVED THAT:\n1. the Company enter into a loan agreement with Blue Heron Capital Partners (\"the Lender\") for R 25 000 000 at prime plus 2%;\n2. Ms Zanele Dube and Mr Craig Fitzpatrick be authorised to sign all documents on behalf of the Company.\nSigned: ________ Z. Dube   ________ C. Fitzpatrick   ________ Hendrik Venter\nDate: 30 September 2026",
+    "expected": [
+      {
+        "value": "LEOPARDSTONE MINING SUPPLIES (PTY) LTD",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "2008/015577/07",
+        "entity": "COMPANY_REGISTRATION"
+      },
+      {
+        "value": "Blue Heron Capital Partners",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Zanele Dube",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Craig Fitzpatrick",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Z. Dube",
+        "entity": "PERSON"
+      },
+      {
+        "value": "C. Fitzpatrick",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Hendrik Venter",
+        "entity": "PERSON"
+      }
+    ],
+    "mustRemainVisible": [
+      "BOARD OF DIRECTORS",
+      "the Company",
+      "section 74",
+      "Companies Act 71 of 2008",
+      "the Lender",
+      "R 25 000 000",
+      "prime plus 2%",
+      "30 September 2026"
+    ]
+  },
+  {
+    "name": "practice-management-json-record",
+    "text": "Why does this matter show no fee notes? The candidate attorney says she captured time for the last three months but nothing was billed. Here is the record exported from the system, can you spot what is wrong with it:\n{\"matter\":\"LIT-2026-0387\",\"client\":{\"name\":\"Oluwaseun Adeyemi\",\"id_number\":\"9011025746189\",\"dob\":\"1990-11-02\",\"mobile\":\"+27 84 220 7713\",\"email\":\"seun.adeyemi@protonmail.com\",\"address\":\"Unit 12, Seaview Heights, 33 Beach Road, Strand\"},\"opponent\":{\"name\":\"Tygerberg Motor Finance (Pty) Ltd\",\"reg\":\"2014/102938/07\"},\"fee_arrangement\":\"hourly\",\"rate\":\"R 2 850\",\"court\":\"Western Cape Division, Cape Town\",\"status\":\"pleadings closed\",\"fee_notes\":[]}",
+    "expected": [
+      {
+        "value": "Oluwaseun Adeyemi",
+        "entity": "PERSON"
+      },
+      {
+        "value": "9011025746189",
+        "entity": "ZA_ID_NUMBER"
+      },
+      {
+        "value": "1990-11-02",
+        "entity": "DATE_TIME"
+      },
+      {
+        "value": "+27 84 220 7713",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "seun.adeyemi@protonmail.com",
+        "entity": "EMAIL_ADDRESS"
+      },
+      {
+        "value": "Unit 12, Seaview Heights, 33 Beach Road, Strand",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "Tygerberg Motor Finance (Pty) Ltd",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "2014/102938/07",
+        "entity": "COMPANY_REGISTRATION"
+      }
+    ],
+    "mustRemainVisible": [
+      "fee notes",
+      "opponent",
+      "fee_arrangement",
+      "hourly",
+      "R 2 850",
+      "Western Cape Division, Cape Town",
+      "pleadings closed"
+    ]
+  },
+  {
+    "name": "meeting-notes-first-names",
+    "text": "Team meeting 21 Sept - notes\nPresent: Lerato, Marco, Busi, Ashwin\n- Lerato to follow up with Wessel re the Greenvale Estates HOA dispute - he still hasn't signed the mandate.\n- Marco: Mrs Hlongwane called again, wants copies of the adjudicator's order. Send to nhlongwane@mailbox.co.za.\n- Busi to bill Marco's time on the Lewis matter at R1 950/hour and redline the Price Escalation clause.\n- Ashwin: the Community Schemes Ombud Service hearing is on 3 November; bring the Rules.",
+    "expected": [
+      {
+        "value": "Lerato",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Marco",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Busi",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Ashwin",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Wessel",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Greenvale Estates HOA",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Hlongwane",
+        "entity": "PERSON"
+      },
+      {
+        "value": "nhlongwane@mailbox.co.za",
+        "entity": "EMAIL_ADDRESS"
+      },
+      {
+        "value": "Lewis",
+        "entity": "PERSON"
+      }
+    ],
+    "mustRemainVisible": [
+      "Present",
+      "mandate",
+      "R1 950/hour",
+      "Price Escalation",
+      "Community Schemes Ombud Service",
+      "3 November",
+      "the Rules"
+    ]
+  }
+]

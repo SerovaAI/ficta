@@ -70,6 +70,7 @@
     "bench:pii-ner": "tsx bench/pii-ner-benchmark.mts",
     "bench:jev-secret-shapes": "tsx bench/jev-secret-shape-audit.mts",
     "bench:jev-detectors": "tsx bench/jev-detector-benchmark.mts",
+    "bench:llm-spans": "tsx bench/llm-span-finder.mts",
     "bench:e2e": "tsx bench/e2e-bench.mts",
     "typecheck": "tsc --noEmit"
   },
