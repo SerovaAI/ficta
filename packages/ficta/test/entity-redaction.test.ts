@@ -1,12 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { ProtectionEngine } from "../src/engine/engine.js";
 import type { DetectorPlugin, ProtectedValue } from "../src/plugins/index.js";
 
 describe("occurrence-based body redaction", () => {
-  afterEach(() => {
-    delete process.env.FICTA_SURROGATE_STYLE;
-  });
-
   it("lets a registry entity own an inner span and redacts the detector's clipped residual", async () => {
     const registry = "Project Copper Kite";
     const detected = "Project:** Project Copper Kite";
@@ -33,9 +29,9 @@ describe("occurrence-based body redaction", () => {
 
   it("gives the registry permanent provenance on an exact-range tie in both surrogate styles", async () => {
     for (const style of ["opaque", "typed"] as const) {
-      process.env.FICTA_SURROGATE_STYLE = style;
       const value = "Proxima Medical\nSupplies CC";
       const engine = new ProtectionEngine({
+        config: { surrogate: { style } },
         plugins: [spanDetector(value, "organization")],
         values: [
           {
@@ -114,9 +110,9 @@ describe("occurrence-based body redaction", () => {
   it("redacts registered full values inside larger word tokens in every casing", async () => {
     const value = "Copper Kite";
     for (const style of ["opaque", "typed"] as const) {
-      process.env.FICTA_SURROGATE_STYLE = style;
       for (const surface of ["tagCOPPER KITEtag", "tagCopper Kitetag"]) {
         const engine = new ProtectionEngine({
+          config: { surrogate: { style } },
           plugins: [],
           values: [{ name: "PROJECT", value, source: "fixture", kind: "secret", confidence: "exact" }],
         });

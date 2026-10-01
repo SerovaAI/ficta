@@ -1,13 +1,12 @@
 import { detectorFailClosed } from "../../detection-policy.js";
-import { engineWarn } from "../../diagnostics.js";
-import { envFlag, parseBoolean } from "../../env-flags.js";
+import { type EnvSource, envFlag, parseBoolean } from "../../env-flags.js";
 import { expansionSpans } from "../../expander.js";
 import { DetectorUnavailableError } from "../../redaction-engine.js";
-import type { DetectorPlugin, PluginDiscovery, ProtectedValue } from "../types.js";
+import type { DetectorPlugin, PluginDiscovery, PluginRuntime, ProtectedValue } from "../types.js";
 import { type MarkdownDetectionView, normalizeMarkdownForDetection } from "./markdown.js";
-import { OpenmedUnavailableError, openmedConfig } from "./openmed-recognizer.js";
-import { PresidioUnavailableError, presidioConfig, withMergedSpans } from "./presidio-recognizer.js";
-import { activeBackends, ENV_BACKEND, ENV_BACKENDS } from "./registry.js";
+import { OpenmedUnavailableError } from "./openmed-recognizer.js";
+import { PresidioUnavailableError, withMergedSpans } from "./presidio-recognizer.js";
+import { ENV_BACKEND, ENV_BACKENDS, resolveBackends } from "./registry.js";
 
 const PLUGIN_NAME = "pii";
 const ENV_ENABLED = "FICTA_PII_ENABLED";
@@ -23,8 +22,11 @@ const ENV_FAIL_CLOSED = "FICTA_PII_FAIL_CLOSED";
  * detector policy.
  */
 
-/** Exported so `ficta doctor` can gate its presidio reachability check on PII actually being on. */
-export function piiEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+/**
+ * Parse the PII enable flag from env-style settings. The engine itself reads `pii.enabled` from its
+ * config; this is for the host's config adapter and `ficta doctor`.
+ */
+export function piiEnabled(env: EnvSource): boolean {
   return envFlag(env[ENV_ENABLED]);
 }
 
@@ -34,7 +36,7 @@ export function piiEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
  * global `FICTA_FAIL_CLOSED_DETECTION` default. This only reports config — the core enforces it.
  * Independent of `FICTA_FAIL_CLOSED`, which guards *registered* secret leaks.
  */
-export function piiFailClosed(env: NodeJS.ProcessEnv = process.env): boolean | undefined {
+export function piiFailClosed(env: EnvSource): boolean | undefined {
   return parseBoolean(env[ENV_FAIL_CLOSED]);
 }
 
@@ -46,8 +48,8 @@ export function piiFailClosed(env: NodeJS.ProcessEnv = process.env): boolean | u
  *      documented "flip it for a single run" escape hatch. An unparseable value falls through.
  *   2. Otherwise on iff both `[pii] enabled` AND `[pii] agents` are true, so `enabled = false` stays a
  *      single kill switch and `agents = true` alone (with enabled off) is a no-op.
- * The engine and every downstream consumer read `FICTA_PII_ENABLED` at request time, so cli.ts forces
- * that one var from this result before the proxy loads — no per-engine plumbing needed.
+ * cli.ts forces `FICTA_PII_ENABLED` from this result before the proxy builds its engine config, so the
+ * engine and every downstream consumer (doctor, /status) see the same answer.
  */
 export function resolveAgentPiiEnabled(opts: { shellValue?: string; enabled?: string; agents?: string }): boolean {
   const explicit = parseBoolean(opts.shellValue);
@@ -63,19 +65,38 @@ interface RecognizerFailure {
 
 // A recognizer backend being down is best-effort-degraded, not fatal: record the last failure per
 // recognizer (safe metadata only) for discover()/doctor, and throttle the warning per recognizer+reason
-// so a dead sidecar does not spam every request. Never logs values or request text.
-const recognizerFailures = new Map<string, RecognizerFailure>();
-// Epoch-ms of the last warning per recognizer+reason. We re-warn once the interval elapses instead of
-// warning only once forever, so a sidecar that stays down keeps surfacing in logs (and the operator is
-// not misled into thinking a single startup warning was transient).
-const lastWarnedAt = new Map<string, number>();
+// so a dead sidecar does not spam every request. Never logs values or request text. State is kept per
+// engine (keyed by its PluginRuntime), so two engines in one process never share counters or throttles.
+interface PiiRuntimeState {
+  readonly failures: Map<string, RecognizerFailure>;
+  // Epoch-ms of the last warning per recognizer+reason. We re-warn once the interval elapses instead
+  // of warning only once forever, so a sidecar that stays down keeps surfacing in logs (and the
+  // operator is not misled into thinking a single startup warning was transient).
+  readonly lastWarnedAt: Map<string, number>;
+}
+
+let stateByRuntime = new WeakMap<PluginRuntime, PiiRuntimeState>();
 const RE_WARN_INTERVAL_MS = 5 * 60 * 1000;
 
-function notePiiRecognizerFailure(name: string, err: unknown): { reason: string; detail?: string } {
+function runtimeState(runtime: PluginRuntime): PiiRuntimeState {
+  let state = stateByRuntime.get(runtime);
+  if (!state) {
+    state = { failures: new Map(), lastWarnedAt: new Map() };
+    stateByRuntime.set(runtime, state);
+  }
+  return state;
+}
+
+function notePiiRecognizerFailure(
+  runtime: PluginRuntime,
+  name: string,
+  err: unknown,
+): { reason: string; detail?: string } {
+  const { failures, lastWarnedAt } = runtimeState(runtime);
   const classified = classifyRecognizerFailure(err);
   const { reason, detail } = classified;
-  const count = (recognizerFailures.get(name)?.count ?? 0) + 1;
-  recognizerFailures.set(name, { reason, detail, count });
+  const count = (failures.get(name)?.count ?? 0) + 1;
+  failures.set(name, { reason, detail, count });
 
   const warnKey = `${name}:${reason}`;
   const now = Date.now();
@@ -86,13 +107,13 @@ function notePiiRecognizerFailure(name: string, err: unknown): { reason: string;
 
   const suffix = detail ? ` (${detail})` : "";
   // Neutral wording: the plugin does not know the resolved fail-open/closed policy (core owns that).
-  // The host sink (pino, wired by ficta) gates this at warn; the interval throttle above keeps a dead
-  // sidecar from spamming every request while still re-surfacing an ongoing outage. Re-warns carry the
-  // running failure count. A bare-library engine with no sink wired stays silent (default no-op).
+  // The engine's sink (pino, wired by the ficta proxy) gates this at warn; the interval throttle above
+  // keeps a dead sidecar from spamming every request while still re-surfacing an ongoing outage.
+  // Re-warns carry the running failure count. An engine with no sink stays silent (default no-op).
   const message = firstWarning
     ? `pii backend "${name}" unavailable — ${reason}${suffix}. Run \`ficta doctor\` to diagnose.`
     : `pii backend "${name}" still unavailable — ${reason}${suffix}; ${count} failures since first seen. Run \`ficta doctor\` to diagnose.`;
-  engineWarn({ backend: name, reason, ...(detail ? { detail } : {}), count }, message);
+  runtime.warn({ backend: name, reason, ...(detail ? { detail } : {}), count }, message);
   return classified;
 }
 
@@ -103,14 +124,14 @@ function classifyRecognizerFailure(err: unknown): { reason: string; detail?: str
   return { reason: "error", detail: err instanceof Error ? err.name : undefined };
 }
 
-/** Snapshot of the last recorded failure per recognizer (safe metadata) — for discover()/tests. */
-export function piiRecognizerFailures(): Map<string, RecognizerFailure> {
-  return new Map(recognizerFailures);
+/** Snapshot of one engine's last recorded failure per recognizer (safe metadata) — for discover()/tests. */
+export function piiRecognizerFailures(runtime: PluginRuntime): Map<string, RecognizerFailure> {
+  return new Map(runtimeState(runtime).failures);
 }
 
+/** Forget every engine's recorded failures and warning throttles. */
 export function resetPiiRecognizerStateForTests(): void {
-  recognizerFailures.clear();
-  lastWarnedAt.clear();
+  stateByRuntime = new WeakMap();
 }
 
 /**
@@ -168,23 +189,25 @@ export const piiPlugin: DetectorPlugin = {
     ],
   },
   setup: {
-    registrySources: () => [
+    registrySources: (ctx) => [
       {
         id: `${PLUGIN_NAME}/detector`,
         label:
           "PII detection — best-effort redaction of emails, SSNs, and card numbers for the web/standalone proxy (off by default; coding-agent launches opt in separately via pii.agents)",
-        defaultEnabled: piiEnabled(),
+        defaultEnabled: piiEnabled(ctx.env),
         enabledValues: () => ({ [ENV_ENABLED]: "1" }),
         disabledValues: () => ({ [ENV_ENABLED]: "0" }),
       },
     ],
   },
-  discover: () => [discoverPii()],
+  discover: (runtime) => [discoverPii(runtime)],
   // Exposes the user's per-detector override; the core resolves it against the global default.
-  failClosed: piiFailClosed,
+  failClosed: (runtime) => runtime.config.pii.failClosed,
   async detectText(text, ctx) {
-    if (!text || !piiEnabled()) return [];
-    const { backends } = activeBackends();
+    const { runtime } = ctx;
+    const { pii, detection } = runtime.config;
+    if (!text || !pii.enabled) return [];
+    const { backends } = resolveBackends(pii.backends);
     const values: ProtectedValue[] = [];
     const failures: string[] = [];
 
@@ -204,12 +227,12 @@ export const piiPlugin: DetectorPlugin = {
         const detected = await backend.detect(normalized.text, ctx);
         values.push(...mapNlpOffsets(detected, normalized));
       } catch (err) {
-        const { reason, detail } = notePiiRecognizerFailure(name, err);
+        const { reason, detail } = notePiiRecognizerFailure(runtime, name, err);
         failures.push(`${name}: ${detail ? `${reason} (${detail})` : reason}`);
       }
     }
 
-    if (failures.length > 0 && detectorFailClosed(piiFailClosed())) {
+    if (failures.length > 0 && detectorFailClosed(pii.failClosed, detection.failClosed)) {
       throw new DetectorUnavailableError(PLUGIN_NAME, failures.join("; "));
     }
     return mergeDetectedValues(values);
@@ -230,9 +253,9 @@ function mapNlpOffsets(values: readonly ProtectedValue[], view: MarkdownDetectio
   });
 }
 
-function discoverPii(): PluginDiscovery {
-  const enabled = piiEnabled();
-  if (!enabled) {
+function discoverPii(runtime: PluginRuntime): PluginDiscovery {
+  const { pii, detection } = runtime.config;
+  if (!pii.enabled) {
     return {
       id: `${PLUGIN_NAME}/detector`,
       plugin: PLUGIN_NAME,
@@ -242,13 +265,13 @@ function discoverPii(): PluginDiscovery {
     };
   }
 
-  const { backends, unknown } = activeBackends();
-  const backendLabel = backends.map(({ name }) => backendLabelFor(name)).join(", ");
-  const onFailure = detectorFailClosed(piiFailClosed()) ? "block request" : "skip detection";
+  const { backends, unknown } = resolveBackends(pii.backends);
+  const backendLabel = backends.map(({ name }) => backendLabelFor(name, runtime)).join(", ");
+  const onFailure = detectorFailClosed(pii.failClosed, detection.failClosed) ? "block request" : "skip detection";
 
   const details: string[] = [];
   for (const name of unknown) details.push(`unknown backend "${name}" — skipped`);
-  for (const [failedName, failure] of piiRecognizerFailures()) {
+  for (const [failedName, failure] of piiRecognizerFailures(runtime)) {
     details.push(
       `${failedName}: last request failed — ${failure.reason}${failure.detail ? ` (${failure.detail})` : ""}`,
     );
@@ -266,9 +289,9 @@ function discoverPii(): PluginDiscovery {
   };
 }
 
-function backendLabelFor(name: string): string {
-  if (name === "presidio") return `presidio (${presidioConfig().url})`;
-  if (name === "openmed") return `openmed (${openmedConfig().url})`;
+function backendLabelFor(name: string, runtime: PluginRuntime): string {
+  if (name === "presidio") return `presidio (${runtime.config.pii.presidio.url})`;
+  if (name === "openmed") return `openmed (${runtime.config.pii.openmed.url})`;
   return name;
 }
 

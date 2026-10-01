@@ -5,6 +5,13 @@
  * another. Security-relevant flags must not depend on which parser happened to read them.
  */
 
+/**
+ * A read-only bag of env-style settings (`NAME → value`). Engine helpers that understand ficta's
+ * env-var names take one explicitly; the engine itself never reads `process.env` — the host passes
+ * its environment (or any other source) in.
+ */
+export type EnvSource = Readonly<Record<string, string | undefined>>;
+
 const TRUTHY = new Set(["1", "true", "on", "enabled", "yes"]);
 const FALSY = new Set(["0", "false", "off", "disabled", "no"]);
 

@@ -749,6 +749,11 @@ const emailDetector: FictaPlugin = {
 };
 ```
 
+A detector's settings come from the engine that calls it, not from the process environment: every
+`detectText`/`detectBodyLeaves` context, and `discover()`/`failClosed()`, receive a `runtime` with
+that engine's resolved `EngineConfig` and warn sink. The ficta proxy builds that config from env and
+`config.toml` once at startup, so two engines in one process can run with different settings.
+
 Detector output enters the same vault as registry values, but the protection claim is different:
 
 - registry exact values: **covered by the exact-match fail-closed invariant in covered request surfaces**

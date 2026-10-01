@@ -2,20 +2,15 @@
 //
 // The redaction engine must not depend on the product's pino logger (`logger.ts`) — that keeps the
 // engine's import graph free of pino and the CLI. Detector-domain warnings (e.g. a PII backend being
-// unavailable) go through this injectable sink instead.
+// unavailable) go through a sink injected per engine instance (`new ProtectionEngine({ onWarn })`)
+// and handed to plugins on their `PluginRuntime`.
 //
-// Default is a no-op: a bare-library engine (unit tests, future embedding, the browser-extension
-// reuse path) is silent-but-correct until a host wires a real sink. ficta wires pino once at startup
-// (see `setEngineWarnSink` calls in `cli.ts` / `server.ts`). The signature mirrors pino's
-// `log.warn(fields, message)` so wiring is a one-liner and tests can install a capturing sink.
-type WarnFields = Record<string, unknown>;
+// Default is a no-op: a bare-library engine (unit tests, embedding, the browser-extension reuse path)
+// is silent-but-correct until a host passes a real sink. The ficta proxy passes pino's warn (see
+// `startProxy` in `server.ts`). The signature mirrors pino's `log.warn(fields, message)` so wiring is
+// a one-liner and tests can pass a capturing sink.
+export type WarnFields = Record<string, unknown>;
 
-let sink: (fields: WarnFields, message: string) => void = () => {};
+export type WarnSink = (fields: WarnFields, message: string) => void;
 
-export function setEngineWarnSink(fn: (fields: WarnFields, message: string) => void): void {
-  sink = fn;
-}
-
-export function engineWarn(fields: WarnFields, message: string): void {
-  sink(fields, message);
-}
+export const noopWarnSink: WarnSink = () => {};

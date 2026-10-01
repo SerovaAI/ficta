@@ -2,7 +2,8 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { defaultSurrogateKey, hexSurrogateStrategy } from "../src/engine/surrogate.js";
+import { hexSurrogateStrategy } from "../src/engine/surrogate.js";
+import { engineConfigFromEnv } from "../src/engine-env.js";
 import { startProxy } from "../src/server.js";
 import {
   checkSurrogateKey,
@@ -130,7 +131,7 @@ describe("resolveSurrogateKey precedence", () => {
   it("yields the same surrogates as the same key supplied inline", () => {
     process.env.FICTA_SURROGATE_KEY_FILE = writeKeyFile("surrogate.key", FILE_KEY);
     resolveSurrogateKey(path);
-    const fromFile = hexSurrogateStrategy(defaultSurrogateKey()).mint("jane.doe@example.com");
+    const fromFile = hexSurrogateStrategy(engineConfigFromEnv().surrogate.key).mint("jane.doe@example.com");
     expect(fromFile).toBe(hexSurrogateStrategy(FILE_KEY).mint("jane.doe@example.com"));
   });
 });

@@ -1,10 +1,10 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { setEngineWarnSink } from "../src/engine/diagnostics.js";
 import { ProtectionEngine } from "../src/engine/engine.js";
 import { regexRecognizer } from "../src/engine/plugins/pii/regex-recognizer.js";
 import { DetectorUnavailableError } from "../src/engine/redaction-engine.js";
+import { engineConfigFromEnv, pluginRuntimeFromEnv } from "../src/engine-env.js";
 import {
   activeBackend,
   activeBackends,
@@ -72,12 +72,14 @@ describe("pii detector plugin", () => {
 
   it("is disabled by default (no detections)", async () => {
     delete process.env[ENV];
-    expect(await piiPlugin.detectText?.(`email ${EMAIL}`, { surface: "body" })).toEqual([]);
+    expect(
+      await piiPlugin.detectText?.(`email ${EMAIL}`, { surface: "body", runtime: pluginRuntimeFromEnv() }),
+    ).toEqual([]);
   });
 
   it("detects and round-trips PII through the engine when enabled", async () => {
     process.env[ENV] = "1";
-    const engine = new ProtectionEngine({ plugins: [piiPlugin] });
+    const engine = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() });
     const body = JSON.stringify({ content: `email ${EMAIL}` });
 
     const redacted = await engine.redactBodyDetailed(body);
@@ -90,7 +92,7 @@ describe("pii detector plugin", () => {
 
   it("counts distinct values restored back into a request's response", async () => {
     process.env[ENV] = "1";
-    const engine = new ProtectionEngine({ plugins: [piiPlugin] });
+    const engine = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() });
     const scope = engine.beginRequest();
     const body = JSON.stringify({ content: `emails ${EMAIL} and ${SSN}` });
 
@@ -109,12 +111,12 @@ describe("pii detector plugin", () => {
 
   it("reports `protecting` only when actually active, not merely present", () => {
     delete process.env[ENV];
-    const off = new ProtectionEngine({ plugins: [piiPlugin] });
+    const off = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() });
     expect(off.enabled).toBe(true); // detector is present
     expect(off.protecting).toBe(false); // ...but disabled → pure passthrough, banner must not claim redaction
 
     process.env[ENV] = "1";
-    const on = new ProtectionEngine({ plugins: [piiPlugin] });
+    const on = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() });
     expect(on.protecting).toBe(true);
   });
 
@@ -123,10 +125,10 @@ describe("pii detector plugin", () => {
     expect(piiPlugin.config?.bindings.map((b) => b.env)).toContain("FICTA_PII_AGENTS");
 
     process.env[ENV] = "0";
-    expect(piiPlugin.discover?.()[0]?.status).toBe("disabled");
+    expect(piiPlugin.discover?.(pluginRuntimeFromEnv())[0]?.status).toBe("disabled");
     process.env[ENV] = "1";
     // On detector reports `active` (matches per request) with no value count, not `available`/(0 values).
-    const active = piiPlugin.discover?.()[0];
+    const active = piiPlugin.discover?.(pluginRuntimeFromEnv())[0];
     expect(active?.status).toBe("active");
     expect(active?.valueCount).toBeUndefined();
   });
@@ -217,7 +219,7 @@ describe("pii backend selection", () => {
     process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
 
     try {
-      const engine = new ProtectionEngine({ plugins: [piiPlugin] });
+      const engine = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() });
       const body = JSON.stringify({ content: `email ${EMAIL} for ${person}` });
       const redacted = await engine.redactBodyDetailed(body);
 
@@ -242,7 +244,7 @@ describe("pii backend selection", () => {
     process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
 
     try {
-      const engine = new ProtectionEngine({ plugins: [piiPlugin] });
+      const engine = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() });
       const body = JSON.stringify({ content: `email ${EMAIL} for ${person}` });
       const redacted = await engine.redactBodyDetailed(body);
 
@@ -257,35 +259,33 @@ describe("pii backend selection", () => {
   });
 
   it("fails open by skipping only the unavailable backend while reachable backends still run", async () => {
-    // The unavailable-backend warning goes through the engine warn sink (which ficta wires to pino).
-    // Install a capturing sink — a bare-library engine has a no-op sink by default.
+    // The unavailable-backend warning goes through the engine's warn sink (which ficta wires to
+    // pino). Pass a capturing sink — an engine without one discards warnings.
     const warnings: Array<{ fields: Record<string, unknown>; message: string }> = [];
-    setEngineWarnSink((fields, message) => warnings.push({ fields, message }));
     const port = await closedPort(); // nothing listening → unreachable
     process.env.FICTA_PII_ENABLED = "1";
     process.env.FICTA_PII_BACKENDS = "presidio,regex";
     process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
 
-    try {
-      const engine = new ProtectionEngine({ plugins: [piiPlugin] });
-      const body = JSON.stringify({ content: `email ${EMAIL}` });
+    const engine = new ProtectionEngine({
+      plugins: [piiPlugin],
+      config: engineConfigFromEnv(),
+      onWarn: (fields, message) => warnings.push({ fields, message }),
+    });
+    const body = JSON.stringify({ content: `email ${EMAIL}` });
 
-      const first = await engine.redactBodyDetailed(body);
-      const second = await engine.redactBodyDetailed(body);
+    const first = await engine.redactBodyDetailed(body);
+    const second = await engine.redactBodyDetailed(body);
 
-      // Multi-backend + fail-open: the unavailable backend is skipped, but regex still runs.
-      expect(first.count).toBe(1);
-      expect(second.count).toBe(1);
-      const backendWarnings = warnings.filter((w) => w.fields.backend === "presidio");
-      expect(backendWarnings).toHaveLength(1); // throttled: repeats within the re-warn interval warn once
-    } finally {
-      setEngineWarnSink(() => {});
-    }
+    // Multi-backend + fail-open: the unavailable backend is skipped, but regex still runs.
+    expect(first.count).toBe(1);
+    expect(second.count).toBe(1);
+    const backendWarnings = warnings.filter((w) => w.fields.backend === "presidio");
+    expect(backendWarnings).toHaveLength(1); // throttled: repeats within the re-warn interval warn once
   });
 
   it("re-warns once the interval elapses, with the running failure count, while the backend stays down", async () => {
     const warnings: Array<{ fields: Record<string, unknown>; message: string }> = [];
-    setEngineWarnSink((fields, message) => warnings.push({ fields, message }));
     // Drive the wall clock the re-warn throttle reads (the plugin uses Date.now, not a timer), so we
     // avoid faking timers and interfering with the fetch/abort path to the closed port.
     let now = 1_000_000;
@@ -296,7 +296,11 @@ describe("pii backend selection", () => {
     process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
 
     try {
-      const engine = new ProtectionEngine({ plugins: [piiPlugin] });
+      const engine = new ProtectionEngine({
+        plugins: [piiPlugin],
+        config: engineConfigFromEnv(),
+        onWarn: (fields, message) => warnings.push({ fields, message }),
+      });
       const body = JSON.stringify({ content: `email ${EMAIL}` });
 
       await engine.redactBodyDetailed(body); // first failure → warns
@@ -313,7 +317,6 @@ describe("pii backend selection", () => {
       expect(backendWarnings[1]?.fields.count).toBe(3);
     } finally {
       nowSpy.mockRestore();
-      setEngineWarnSink(() => {});
     }
   });
 
@@ -325,7 +328,8 @@ describe("pii backend selection", () => {
     process.env.FICTA_PII_BACKEND = "presidio";
     process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
     const body = JSON.stringify({ content: `email ${EMAIL}` });
-    const run = () => new ProtectionEngine({ plugins: [piiPlugin] }).redactBodyDetailed(body);
+    const run = () =>
+      new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() }).redactBodyDetailed(body);
 
     // global off + no per-plugin override → fail-open; the local regex floor still protects email.
     const openDefault = await run();
@@ -353,7 +357,7 @@ describe("pii backend selection", () => {
     expect(selection.name).toBe("regex");
     expect(selection.unknown).toBe("bogus");
 
-    const details = piiPlugin.discover?.()[0]?.details ?? [];
+    const details = piiPlugin.discover?.(pluginRuntimeFromEnv())[0]?.details ?? [];
     expect(details.some((line) => line.includes("bogus"))).toBe(true);
   });
 
@@ -381,7 +385,8 @@ describe("pii backend selection", () => {
     process.env.FICTA_PII_OPENMED_URL = `http://127.0.0.1:${openmed.port}`;
 
     try {
-      const values = (await piiPlugin.detectText?.(`for ${person}`, { surface: "body" })) ?? [];
+      const values =
+        (await piiPlugin.detectText?.(`for ${person}`, { surface: "body", runtime: pluginRuntimeFromEnv() })) ?? [];
       expect(values).toHaveLength(1);
       expect(values[0]).toMatchObject({ value: person, source: "pii-openmed", name: "patient" });
     } finally {

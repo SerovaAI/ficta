@@ -1,3 +1,4 @@
+import type { EnvSource } from "../../env-flags.js";
 import { isRecord } from "../../json.js";
 import type { ProtectedValue } from "../types.js";
 import {
@@ -49,8 +50,8 @@ export interface OpenmedConfig {
   timeoutMs: number;
 }
 
-/** Read openmed config from env, with code fallbacks mirroring the plugin's envDefaults. */
-export function openmedConfig(env: NodeJS.ProcessEnv = process.env): OpenmedConfig {
+/** Parse openmed config from env-style settings, with code fallbacks mirroring the plugin's envDefaults. */
+export function openmedConfig(env: EnvSource): OpenmedConfig {
   return {
     url: stripTrailingSlash(env.FICTA_PII_OPENMED_URL?.trim() || DEFAULT_URL),
     model: env.FICTA_PII_OPENMED_MODEL?.trim() || "",
@@ -88,7 +89,7 @@ export const openmedRecognizer: PiiRecognizer = {
   async detect(text, ctx) {
     // One sidecar round-trip per request body; per-component header/query calls stay regex-only.
     if (!text || ctx.surface !== "body") return [];
-    const config = openmedConfig();
+    const config = ctx.runtime.config.pii.openmed;
     const chunks = chunkText(text);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -107,9 +108,7 @@ export const openmedRecognizer: PiiRecognizer = {
 };
 
 /** GET /health for `ficta doctor`. Never throws — returns a safe reachability verdict. */
-export async function checkOpenmedHealth(
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<{ ok: boolean; url: string; detail?: string }> {
+export async function checkOpenmedHealth(env: EnvSource): Promise<{ ok: boolean; url: string; detail?: string }> {
   return checkPresidioCompatibleAnalyzerHealth(openmedConfig(env));
 }
 

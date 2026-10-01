@@ -1,4 +1,7 @@
+import type { PluginRuntime } from "../config.js";
 import type { BodyLeaf } from "../vault.js";
+
+export type { EngineConfig, PluginRuntime } from "../config.js";
 
 export type ProtectedValueKind = "secret" | "pii" | "custom";
 export type ProtectionConfidence = "exact" | "high" | "probabilistic";
@@ -115,6 +118,8 @@ export interface DetectTextContext {
   path?: string;
   /** Header name for surface="header". */
   header?: string;
+  /** The calling engine's config and warn sink. Detectors read their settings from here, never env. */
+  runtime: PluginRuntime;
 }
 
 /**
@@ -187,7 +192,7 @@ export interface RegistrySourcePlugin extends FictaPluginBase {
   setup: RegistryPluginSetup;
 
   /** Safe launch-time source discovery/status, printed before the agent starts. */
-  discover(): readonly PluginDiscovery[];
+  discover(runtime: PluginRuntime): readonly PluginDiscovery[];
 
   /**
    * Load exact registered *candidates* at startup (strongest exact-match layer). These are not the
@@ -213,15 +218,15 @@ export interface DetectorPlugin extends FictaPluginBase {
   /** Optional `ficta setup` prompts/defaults for this detector's config. */
   setup?: RegistryPluginSetup;
   /** Optional startup discovery/status line (counts, names — never values). */
-  discover?(): readonly PluginDiscovery[];
+  discover?(runtime: PluginRuntime): readonly PluginDiscovery[];
   /**
    * Optional per-detector fail-closed override. Return `true`/`false` to require/allow this detector's
-   * outages, or `undefined` to defer to the global default (`FICTA_FAIL_CLOSED_DETECTION`). This only
+   * outages, or `undefined` to defer to the engine's global default (`detection.failClosed`). This only
    * *exposes* the user's configured policy — a detector never enforces it. When `detectText` throws a
    * {@link import("../redaction-engine.js").DetectorUnavailableError}, the core resolves this against
    * the global default and decides whether to block the request.
    */
-  failClosed?(): boolean | undefined;
+  failClosed?(runtime: PluginRuntime): boolean | undefined;
   /** Detectors have no exact values to load; `loadValues` stays a registry-source-only capability. */
   loadValues?: never;
 }

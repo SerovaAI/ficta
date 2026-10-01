@@ -1,4 +1,4 @@
-import { envFlag, type RestoreIntoToolsPolicy, restoreIntoToolsPolicy } from "./env-flags.js";
+import type { RestoreIntoToolsPolicy } from "./env-flags.js";
 import { expansionSpans, flexiblePatternSource } from "./expander.js";
 import type { ProtectedValueKind } from "./plugins/types.js";
 import { RedactionInvariantError, type RestoreOrigin } from "./redaction-engine.js";
@@ -56,14 +56,27 @@ interface RestoreOptions {
   markers?: RestoreMarkers;
 }
 
-export function surrogateKeyWarning(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  const key = env.FICTA_SURROGATE_KEY;
+/** Warning text for a configured surrogate key that looks low-entropy; undefined when fine or unset. */
+export function surrogateKeyWarning(key: string | undefined): string | undefined {
   if (!key) return undefined;
   if (Buffer.byteLength(key, "utf8") < 32 || new Set(key).size < 8) {
     return "FICTA_SURROGATE_KEY is set but looks weak; use a high-entropy secret value (>=32 random bytes)";
   }
   return undefined;
 }
+
+/**
+ * Engine-wide restore/redaction policy a vault applies, from the engine's config. Fixed for the
+ * vault's lifetime and shared by every scope opened from it.
+ */
+export interface VaultPolicy {
+  /** Restore-into-tools policy (env `FICTA_RESTORE_INTO_TOOLS`). */
+  readonly restoreIntoTools: RestoreIntoToolsPolicy;
+  /** Redact values even inside filesystem-path-like tokens (env `FICTA_REDACT_PATHS`). */
+  readonly redactPaths: boolean;
+}
+
+export const DEFAULT_VAULT_POLICY: VaultPolicy = { restoreIntoTools: "detected", redactPaths: false };
 
 /**
  * A mutable surrogate store: the deterministic value↔surrogate dictionary plus the longest-first
@@ -210,7 +223,15 @@ export abstract class VaultView {
   readonly restored = new Set<string>();
   private readonly restoredSurrogates = new Map<string, string>();
 
-  protected constructor(protected readonly layers: readonly [SurrogateTable, ...SurrogateTable[]]) {}
+  protected constructor(
+    protected readonly layers: readonly [SurrogateTable, ...SurrogateTable[]],
+    protected readonly policy: VaultPolicy,
+  ) {}
+
+  /** Effective path preservation: the per-surface choice, unless the engine redacts paths globally. */
+  protected preservesPaths(preservePaths: boolean): boolean {
+    return preservePaths && !this.policy.redactPaths;
+  }
 
   /** How many distinct values this view has restored into responses so far. */
   get restoredCount(): number {
@@ -467,7 +488,7 @@ export abstract class VaultView {
         v,
         surrogate,
         surrogateSpans(out, this.surrogate.pattern),
-        preservePaths,
+        this.preservesPaths(preservePaths),
         this.isWordBounded(v),
       );
       if (replaced.count === 0) continue;
@@ -597,9 +618,9 @@ export abstract class VaultView {
     );
   }
 
-  /** The active restore-into-tools policy (read per call, mirroring the streaming path). */
+  /** The engine's restore-into-tools policy (shared with the streaming path). */
   private toolPolicy(): RestoreIntoToolsPolicy {
-    return restoreIntoToolsPolicy(process.env.FICTA_RESTORE_INTO_TOOLS);
+    return this.policy.restoreIntoTools;
   }
 
   /**
@@ -681,6 +702,7 @@ export abstract class VaultView {
    */
   leakValues(body: string, preservePaths = true): string[] {
     if (!this.hasValues || !body) return [];
+    const paths = this.preservesPaths(preservePaths);
     const strings: string[] = [];
     let masked: string | undefined;
     try {
@@ -699,15 +721,13 @@ export abstract class VaultView {
     const leaked: string[] = [];
     for (const v of this.orderedValues()) {
       const wordBounded = this.isWordBounded(v);
-      const stringLeak = strings.some((s, i) =>
-        containsKnownOutsidePaths(s, v, stringSpans[i], preservePaths, wordBounded),
-      );
+      const stringLeak = strings.some((s, i) => containsKnownOutsidePaths(s, v, stringSpans[i], paths, wordBounded));
       // For valid JSON, string contents are masked out, so the backstop scans only primitives and
       // matches a value as a complete token — never as a substring of a longer number (so a
       // registered `12345678` is not flagged inside an unrelated `99912345678`).
       const primitiveLeak =
         masked === undefined
-          ? containsKnownOutsidePaths(body, v, bodySpans, preservePaths, wordBounded)
+          ? containsKnownOutsidePaths(body, v, bodySpans, paths, wordBounded)
           : containsKnownPrimitive(masked, v);
       if (stringLeak || primitiveLeak) leaked.push(v);
     }
@@ -719,7 +739,7 @@ export abstract class VaultView {
     if (!this.hasValues || !text) return false;
     const spans = surrogateSpans(text, this.surrogate.pattern);
     return this.orderedValues().some((value) =>
-      containsKnownOutsidePaths(text, value, spans, preservePaths, this.isWordBounded(value)),
+      containsKnownOutsidePaths(text, value, spans, this.preservesPaths(preservePaths), this.isWordBounded(value)),
     );
   }
 
@@ -821,7 +841,7 @@ export abstract class VaultView {
     // it lacked. `all` restores everything, `none` withholds everything. The `buffered` adapter
     // extends the same policy to full-payload replay events (deltas already withheld must not be
     // restored when the provider re-sends the completed tool call).
-    const policy = restoreIntoToolsPolicy(process.env.FICTA_RESTORE_INTO_TOOLS);
+    const policy = this.policy.restoreIntoTools;
     // Highlight markers (the trace-demo hint that drives a caller UI's show/hide toggle) belong on
     // human-facing assistant output — the `kind: "text"` streamed fragments the UI renders and their
     // sibling fields (e.g. `reasoning_content`) in the SAME event. They must NOT land on events that
@@ -865,10 +885,14 @@ export abstract class VaultView {
 export class Vault extends VaultView {
   private readonly permanent: SurrogateTable;
 
-  constructor(values: ReadonlyArray<VaultValue> = [], surrogate: SurrogateStrategy = surrogateStrategy()) {
+  constructor(
+    values: ReadonlyArray<VaultValue> = [],
+    surrogate: SurrogateStrategy = surrogateStrategy(),
+    policy: VaultPolicy = DEFAULT_VAULT_POLICY,
+  ) {
     const permanent = new SurrogateTable(surrogate, "permanent");
     permanent.register(values);
-    super([permanent]);
+    super([permanent], policy);
     this.permanent = permanent;
   }
 
@@ -897,7 +921,7 @@ export class Vault extends VaultView {
    * while both value↔surrogate dictionaries are shared across the scope key's requests.
    */
   beginScope(detected?: SurrogateTable, registryDerived?: SurrogateTable, protectionContextId?: string): ScopedVault {
-    return new ScopedVault(this.permanent, detected, registryDerived, protectionContextId);
+    return new ScopedVault(this.permanent, detected, registryDerived, protectionContextId, this.policy);
   }
 
   /** A detached detected-PII layer sharing this vault's strategy, for persistent keyed scopes. */
@@ -928,6 +952,7 @@ export class ScopedVault extends VaultView {
     detected: SurrogateTable = new SurrogateTable(permanent.surrogate, "detected"),
     registryDerived: SurrogateTable = new SurrogateTable(permanent.surrogate, "permanent"),
     private readonly protectionContextId?: string,
+    policy: VaultPolicy = DEFAULT_VAULT_POLICY,
   ) {
     const userProtected = new SurrogateTable(permanent.surrogate, "permanent", "user");
     // Registry-derived forms (e.g. the caps twin of a registered secret found in a request body)
@@ -935,7 +960,7 @@ export class ScopedVault extends VaultView {
     // request-owned by default and may be shared by a keyed scope; either way its `permanent`
     // provenance makes the `detected` restore-into-tools policy withhold variants exactly like the
     // canonical form. Ordered before `detected` so registry authority wins a duplicate (first match).
-    super([userProtected, registryDerived, detected, permanent]); // all share one strategy → same surrogates
+    super([userProtected, registryDerived, detected, permanent], policy); // all share one strategy → same surrogates
     this.detected = detected;
     this.registryDerived = registryDerived;
     this.userProtected = userProtected;
@@ -1003,7 +1028,7 @@ export class ScopedVault extends VaultView {
   /** Whether a resolver claim is outside existing surrogate tokens and preserved filesystem paths. */
   isRedactableRange(text: string, start: number, end: number, preservePaths = true): boolean {
     if (overlapsSpan(surrogateSpans(text, this.surrogate.pattern), start, end)) return false;
-    return !isInsidePathLikeToken(text, start, end, text.slice(start, end), preservePaths);
+    return !isInsidePathLikeToken(text, start, end, text.slice(start, end), this.preservesPaths(preservePaths));
   }
 
   /** Count of ephemeral values detected in this request (the permanent layer is excluded). */
@@ -1585,10 +1610,10 @@ function isInsidePathLikeToken(
   needle?: string,
   preservePaths = true,
 ): boolean {
-  // preservePaths is the per-surface policy (the proxy passes false for headers so a registered
-  // value embedded in a slash-path there is still redacted); redactPathsEnabled() is the global
-  // FICTA_REDACT_PATHS override. Either one being off means "do not treat this as a path to skip".
-  if (!preservePaths || redactPathsEnabled()) return false;
+  // preservePaths is the effective policy: the per-surface choice (the proxy passes false for headers
+  // so a registered value embedded in a slash-path there is still redacted) combined by the vault with
+  // the engine's global redactPaths override (see VaultView.preservesPaths).
+  if (!preservePaths) return false;
 
   const [tokenStart, tokenEnd] = tokenBounds(text, start, end);
   const token = text.slice(tokenStart, tokenEnd);
@@ -1607,10 +1632,6 @@ function canPreservePathSegmentOccurrence(needle: string): boolean {
   // or profile name) embedded in paths. More complex values containing '/', '\\', quotes,
   // whitespace, or control characters are only preserved in stronger path contexts below.
   return /^[A-Za-z0-9_.:@+=-]+$/.test(needle);
-}
-
-function redactPathsEnabled(): boolean {
-  return envFlag(process.env.FICTA_REDACT_PATHS);
 }
 
 function tokenBounds(text: string, start: number, end: number): [number, number] {

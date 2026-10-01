@@ -4,6 +4,7 @@ import { configuredUpstreamPolicyIssues, loadConfig } from "./config.js";
 import { configPosture } from "./config-posture.js";
 import { applyRuntimeEnvDefaults } from "./defaults.js";
 import { detectorFailClosed } from "./engine/detection-policy.js";
+import { detectionFailClosed } from "./engine-env.js";
 import type { RestoreIntoToolsPolicy } from "./engine/env-flags.js";
 import { globalDisablePath, isGloballyDisabled } from "./global-disable.js";
 import { defaultShimDir, findExecutable } from "./install.js";
@@ -199,9 +200,9 @@ export async function collectDoctorReport(opts: DoctorOptions = {}): Promise<Doc
     for (const { name } of backends) {
       const probe = backendHealthCheck(name);
       if (!probe) continue;
-      const health = await probe();
+      const health = await probe(process.env);
       if (!health.ok) {
-        const consequence = detectorFailClosed(piiFailClosed())
+        const consequence = detectorFailClosed(piiFailClosed(), detectionFailClosed())
           ? "requests will be BLOCKED (503) until it is reachable (fail-closed)"
           : "that backend is skipped while reachable backends still run (fail-open)";
         issues.push({

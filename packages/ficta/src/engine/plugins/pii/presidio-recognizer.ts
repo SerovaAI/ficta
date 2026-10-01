@@ -1,3 +1,4 @@
+import type { EnvSource } from "../../env-flags.js";
 import { isRecord } from "../../json.js";
 import type { ProtectedValue } from "../types.js";
 import type { PiiRecognizer } from "./recognizer.js";
@@ -56,8 +57,8 @@ export interface PresidioConfig {
   timeoutMs: number;
 }
 
-/** Read presidio config from env, with code fallbacks mirroring the plugin's envDefaults. */
-export function presidioConfig(env: NodeJS.ProcessEnv = process.env): PresidioConfig {
+/** Parse presidio config from env-style settings, with code fallbacks mirroring the plugin's envDefaults. */
+export function presidioConfig(env: EnvSource): PresidioConfig {
   return {
     url: stripTrailingSlash(env.FICTA_PII_PRESIDIO_URL?.trim() || DEFAULT_URL),
     language: env.FICTA_PII_PRESIDIO_LANGUAGE?.trim() || DEFAULT_LANGUAGE,
@@ -102,7 +103,7 @@ export const presidioRecognizer: PiiRecognizer = {
     // An /analyze payload without `entities` runs every loaded recognizer — which IS the
     // deployment's intended detection surface. FICTA_PII_PRESIDIO_ENTITIES remains an optional
     // narrowing knob.
-    return detectWithPresidioCompatibleAnalyzer(text, ctx, presidioConfig(), "presidio");
+    return detectWithPresidioCompatibleAnalyzer(text, ctx, ctx.runtime.config.pii.presidio, "presidio");
   },
 };
 
@@ -131,9 +132,7 @@ export async function detectWithPresidioCompatibleAnalyzer(
 }
 
 /** GET /health for `ficta doctor`. Never throws — returns a safe reachability verdict. */
-export async function checkPresidioHealth(
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<{ ok: boolean; url: string; detail?: string }> {
+export async function checkPresidioHealth(env: EnvSource): Promise<{ ok: boolean; url: string; detail?: string }> {
   return checkPresidioCompatibleAnalyzerHealth(presidioConfig(env));
 }
 

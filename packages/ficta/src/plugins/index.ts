@@ -1,3 +1,4 @@
+import { pluginRuntimeFromEnv } from "../engine-env.js";
 import { piiPlugin, resetPiiRecognizerStateForTests } from "../engine/plugins/pii/index.js";
 import {
   collectPluginConfigs,
@@ -32,34 +33,30 @@ import { managedRegistryFilePlugin, resetManagedRegistryFilePluginCacheForTests 
 // the agent integrations). It also preserves the `@serovaai/ficta/plugins` public API — every symbol
 // external plugin authors import stays resolvable here regardless of where files moved internally.
 
-export {
-  piiEnabled,
-  piiFailClosed,
-  piiPlugin,
-  resetPiiRecognizerStateForTests,
-  resolveAgentPiiEnabled,
-} from "../engine/plugins/pii/index.js";
-export {
-  checkOpenmedHealth,
-  OpenmedUnavailableError,
-  openmedConfig,
-} from "../engine/plugins/pii/openmed-recognizer.js";
-export {
-  checkPresidioHealth,
-  PresidioUnavailableError,
-  presidioConfig,
-} from "../engine/plugins/pii/presidio-recognizer.js";
-export type { PiiRecognizer } from "../engine/plugins/pii/recognizer.js";
+// Env-reading helpers come from the engine's env adapter, which defaults them to `process.env`.
 export {
   activeBackend,
   activeBackends,
+  checkOpenmedHealth,
+  checkPresidioHealth,
+  openmedConfig,
+  piiEnabled,
+  piiFailClosed,
+  presidioConfig,
+  secretShapesEnabled,
+  selectedBackendName,
+  selectedBackendNames,
+} from "../engine-env.js";
+export { piiPlugin, resetPiiRecognizerStateForTests, resolveAgentPiiEnabled } from "../engine/plugins/pii/index.js";
+export { OpenmedUnavailableError } from "../engine/plugins/pii/openmed-recognizer.js";
+export { PresidioUnavailableError } from "../engine/plugins/pii/presidio-recognizer.js";
+export type { PiiRecognizer } from "../engine/plugins/pii/recognizer.js";
+export {
   backendHealthCheck,
   builtInBackendNames,
   DEFAULT_BACKEND,
   ENV_BACKEND,
   ENV_BACKENDS,
-  selectedBackendName,
-  selectedBackendNames,
 } from "../engine/plugins/pii/registry.js";
 export type { UserExclusionParse, UserExclusionScope } from "../engine/plugins/policy.js";
 export {
@@ -75,7 +72,6 @@ export {
   detectSecretShapeLeaves,
   detectSecretShapes,
   resolveAgentSecretShapesEnabled,
-  secretShapesEnabled,
   secretShapesPlugin,
 } from "../engine/plugins/secret-shapes/index.js";
 export type {
@@ -85,8 +81,10 @@ export type {
   DetectorPlugin,
   DetectTextContext,
   EffectiveRegistryExclusionRule,
+  EngineConfig,
   PluginDiscovery,
   PluginDiscoveryStatus,
+  PluginRuntime,
   ProtectedValue,
   ProtectedValueKind,
   ProtectedValueSpan,
@@ -184,9 +182,10 @@ export function registrySetupSources(
 /**
  * Load exact registry values + build the effective registry policy for the built-in (or a supplied)
  * plugin set, enforcing only the trusted built-ins' exclusions. Agent integrations are ignored.
+ * Settings (exclusion lists, detector enablement for discovery) come from this process's env.
  */
 export function loadPluginRegistry(plugins: readonly FictaPlugin[] = defaultRedactionPlugins): PluginRegistrySnapshot {
-  return loadPluginRegistryCore(redactionOnly(plugins), TRUSTED_BUILTINS);
+  return loadPluginRegistryCore(redactionOnly(plugins), TRUSTED_BUILTINS, pluginRuntimeFromEnv());
 }
 
 export function loadRegistryValues(plugins: readonly FictaPlugin[] = defaultRedactionPlugins): ProtectedValue[] {
