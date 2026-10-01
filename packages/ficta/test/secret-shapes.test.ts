@@ -285,3 +285,84 @@ describe("secret-shape detector regressions (engine review)", () => {
     expect(performance.now() - started).toBeLessThan(1000);
   });
 });
+
+describe("password labels in prose", () => {
+  const passwordsIn = (text: string) =>
+    detectSecretShapes(text)
+      .filter((value) => value.name === "password-label")
+      .map((value) => value.value);
+
+  it("detects a password after an English label, including short values", () => {
+    expect(passwordsIn("Password: hunter2")).toEqual(["hunter2"]);
+    expect(passwordsIn("pwd=hunter2")).toEqual(["hunter2"]);
+    expect(passwordsIn("passwd = Tr0ub4dor&3")).toEqual(["Tr0ub4dor&3"]);
+    expect(passwordsIn('{"password": "hunter2"}')).toEqual(["hunter2"]);
+  });
+
+  it("detects a German label (Passwort, Kennwort) case-insensitively", () => {
+    expect(passwordsIn("Passwort: Sommer2026!")).toEqual(["Sommer2026!"]);
+    expect(passwordsIn("Kennwort=geheim42")).toEqual(["geheim42"]);
+    expect(passwordsIn("das KENNWORT: Wx7-pq9z")).toEqual(["Wx7-pq9z"]);
+  });
+
+  it("protects only the value mid-sentence and leaves the surrounding text intact", async () => {
+    const text = "send the deck, password: s3cret!, by Thursday?";
+    expect(passwordsIn(text)).toEqual(["s3cret!"]);
+
+    const engine = new ProtectionEngine({ plugins: [secretShapesPlugin] });
+    const { text: redacted, count } = await engine.beginRequest().redactTextDetailed(text);
+    expect(count).toBe(1);
+    expect(redacted).toMatch(/^send the deck, password: FICTA_[0-9a-f]{32}, by Thursday\?$/);
+  });
+
+  it("does not read code, paths, templates, or masked values after a password word as a password", () => {
+    const cases = [
+      "password: string;",
+      "password: Uint8Array",
+      "def login(user, password=None):",
+      "password = new_password",
+      "pwd = os.getcwd()",
+      "password: req.body.password",
+      "PWD=/Users/dev/projects/app",
+      "password: ********",
+      "password: $DB_PASSWORD",
+      "password: !secret db_password",
+      "password: <your password>",
+      "password: changeme",
+      "Password: (see the vault)",
+    ];
+    for (const source of cases) expect(passwordsIn(source)).toEqual([]);
+  });
+
+  it("leaves already-redacted text stable", async () => {
+    // A surrogate or a bracket marker after a password label is not a new password: re-detecting it
+    // would nest tokens on a second pass and make redaction non-idempotent.
+    const token = ["FICTA", "0123456789abcdef0123456789abcdef"].join("_");
+    const typedToken = ["FICTA", "PASSWORD", "0123456789abcdef0123456789abcdef"].join("_");
+    for (const text of [
+      `Password: ${token}`,
+      `Kennwort=${typedToken}`,
+      "password: [REDACTED_PASSWORD]",
+      "Passwort: [REDACTED]",
+      "DB_PASSWORD=[REDACTED_SECRET]",
+      `DB_PASSWORD="${token}"`,
+    ]) {
+      expect(detectSecretShapes(text)).toEqual([]);
+    }
+
+    const engine = new ProtectionEngine({ plugins: [secretShapesPlugin] });
+    const once = await engine.beginRequest().redactTextDetailed("Password: hunter2 and pwd=s3cret!");
+    expect(once.count).toBe(2);
+    const twice = await new ProtectionEngine({ plugins: [secretShapesPlugin] })
+      .beginRequest()
+      .redactTextDetailed(once.text);
+    expect(twice.count).toBe(0);
+    expect(twice.text).toBe(once.text);
+  });
+
+  it("pairs German password keys in assignments", () => {
+    const value = "Zq8!Lm4#Rt7%Wx2";
+    expect(detectSecretShapes(`DB_PASSWORT=${value}`).map((found) => found.value)).toContain(value);
+    expect(detectSecretShapes(`smtp_kennwort: ${value}`).map((found) => found.value)).toContain(value);
+  });
+});

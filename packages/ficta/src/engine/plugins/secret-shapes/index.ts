@@ -26,7 +26,7 @@ const MAX_GENERIC_VALUE_LENGTH = 512;
 const MAX_PRIVATE_KEY_LENGTH = 8192;
 
 const SECRETISH_NAME =
-  /(?:api[_-]?key|token|secret|password|passwd|pwd|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)/i;
+  /(?:api[_-]?key|token|secret|password|passwd|pwd|passwort|kennwort|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)/i;
 
 // Deliberately high-precision, prefix/format-anchored shapes. This mirrors the practical TruffleHog
 // approach for request-time chat protection without live verification or entropy-only scanning.
@@ -150,9 +150,22 @@ const SECRET_SHAPE_PATTERNS: readonly SecretShapePattern[] = [
     // as-is instead of swallowing the next leaf and being rejected as straddling two leaves.
     regex:
       // eslint-disable-next-line no-control-regex -- U+0000 is the engine structural leaf delimiter.
-      /\b([A-Za-z][A-Za-z0-9_.-]{0,64}(?:api[_-]?key|token|secret|password|passwd|pwd|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]{0,64})\b["'`]?\s*[:=]\s*["'`]?((?:[a-z][a-z0-9+.-]{1,31}:\/\/[^\s\u0000"'`,;<>]+|[^\s\u0000"'`,;{}<>()[\]]+))["'`]?/gi,
+      /\b([A-Za-z][A-Za-z0-9_.-]{0,64}(?:api[_-]?key|token|secret|password|passwd|pwd|passwort|kennwort|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]{0,64})\b["'`]?\s*[:=]\s*["'`]?((?:[a-z][a-z0-9+.-]{1,31}:\/\/[^\s\u0000"'`,;<>]+|[^\s\u0000"'`,;{}<>()[\]]+))["'`]?/gi,
     confidence: "probabilistic",
     validate: isLikelySecretValue,
+  },
+  {
+    // A password word used as a label in prose or a message: `Password: hunter2`, `pwd=…`,
+    // `send the deck, password: s3cret!, by Thursday`. Unlike secret-assignment this accepts the word
+    // at the very start of the key and short values, so it is limited to password words (English and
+    // German) and validated by isLikelyLabelledPassword, which rejects the code shapes these labels
+    // also introduce (type annotations, identifiers, paths, template variables, masked values).
+    category: "password-label",
+    regex:
+      // eslint-disable-next-line no-control-regex -- U+0000 is the engine structural leaf delimiter.
+      /\b(password|passwd|pwd|passwort|kennwort)\b["'`]?[ \t]*[:=][ \t]*["'`]?([^\s\u0000"'`,;{}<>()[\]]+)["'`]?/gi,
+    confidence: "probabilistic",
+    validate: isLikelyLabelledPassword,
   },
   {
     // JSON key→value pairs ({"api_key":"..."}) are detected structurally by detectSecretShapeLeaves;
@@ -162,7 +175,7 @@ const SECRET_SHAPE_PATTERNS: readonly SecretShapePattern[] = [
     category: "secret-json-value",
     regex:
       // eslint-disable-next-line no-control-regex -- U+0000 is the engine structural leaf delimiter.
-      /\b([A-Za-z][A-Za-z0-9_.-]{0,64}(?:api[_-]?key|token|secret|password|passwd|pwd|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]{0,64})\b\s*\n\s*["'`]?((?:[a-z][a-z0-9+.-]{1,31}:\/\/[^\s\u0000"'`,;<>]+|[^\s\u0000"'`,;{}<>()[\]]+))["'`]?/gi,
+      /\b([A-Za-z][A-Za-z0-9_.-]{0,64}(?:api[_-]?key|token|secret|password|passwd|pwd|passwort|kennwort|private[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth)[A-Za-z0-9_.-]{0,64})\b\s*\n\s*["'`]?((?:[a-z][a-z0-9+.-]{1,31}:\/\/[^\s\u0000"'`,;<>]+|[^\s\u0000"'`,;{}<>()[\]]+))["'`]?/gi,
     confidence: "probabilistic",
     validate: isLikelySecretValue,
   },
@@ -392,6 +405,32 @@ function isLikelySecretValue(raw: string): boolean {
   ).length;
   if (classes < 2) return false;
   return new Set(value).size >= 8;
+}
+
+/**
+ * The value after a password label. Short passwords are allowed, so this leans on shape instead of
+ * length: the value must carry a digit or a symbol (a bare word after `password:` is far more often
+ * a type, keyword, or variable name than a password) and must not look like code, a path, a template
+ * variable, a YAML tag, or a masked value.
+ */
+function isLikelyLabelledPassword(raw: string): boolean {
+  const value = trimCandidate(raw);
+  if (value.length < 4 || value.length > MAX_GENERIC_VALUE_LENGTH) return false;
+  if (isPlaceholder(value)) return false;
+  // Masked or symbol-only values (`********`, `---`) carry nothing to protect.
+  if (!/[A-Za-z0-9]/.test(value)) return false;
+  // A bare word or snake/camel identifier with no digit: `string`, `None`, `new_password`, `getpass`.
+  if (/^[A-Za-z_$][\w$]*!?$/.test(value) && !/\d/.test(value)) return false;
+  // Typed-array names are the one common type annotation that carries a digit (`password: Uint8Array`).
+  if (/^(?:Big)?(?:Ui|I)nt\d+(?:Clamped)?Array$|^Float\d+Array$/.test(value)) return false;
+  // Dotted chains (`req.body.password`, `process.env.DB_PASSWORD`) are code references.
+  if (/^[A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*)+!?$/.test(value)) return false;
+  // Paths, including the absolute working directory that `PWD=/…` shows in an environment dump.
+  if (/^(?:\/|~\/|\.{1,2}\/|[A-Za-z]:\\)/.test(value) || isPathShaped(value)) return false;
+  if (isCredentialTemplate(value)) return false;
+  // YAML tags such as `!secret db_password` or `!Ref DbPassword` reference a value stored elsewhere.
+  if (/^![A-Za-z]+$/.test(value)) return false;
+  return true;
 }
 
 /**
