@@ -23,7 +23,13 @@ import {
   registryDiscoveryLines,
   registryPolicyLines,
 } from "./plugins/index.js";
-import { configPath } from "./user-config.js";
+import {
+  configPath,
+  requireStableSurrogateKey,
+  resolveSurrogateKey,
+  SurrogateKeyError,
+  type SurrogateKeySource,
+} from "./user-config.js";
 
 export interface DoctorOptions {
   /** Optional agent command to check strictly, e.g. claude/codex/pi. */
@@ -54,6 +60,14 @@ export interface DoctorReport {
     secretShapesAgents: boolean;
     /** Active surrogate token style (governed by [surrogate] style / FICTA_SURROGATE_STYLE). */
     surrogateStyle: "opaque" | "typed";
+    /** Whether surrogates survive a restart: a configured key (`stable`), a random per-process key
+     *  (`ephemeral`), or a configured key file that cannot be used (`invalid`). Never the key itself. */
+    surrogateKey: {
+      status: "stable" | "ephemeral" | "invalid";
+      source?: SurrogateKeySource;
+      keyFile?: string;
+      requireStable: boolean;
+    };
     /** Restore-into-tools policy (FICTA_RESTORE_INTO_TOOLS; default `detected`). */
     restoreIntoTools: RestoreIntoToolsPolicy;
     upstreams: { anthropic: string; openai: string; chatgpt: string };
@@ -139,13 +153,24 @@ export async function collectDoctorReport(opts: DoctorOptions = {}): Promise<Doc
     });
   }
   const path = configPath();
-  if (!process.env.FICTA_SURROGATE_KEY) {
-    issues.push({
-      severity: "warning",
-      message: path
-        ? "no stable surrogate key is active yet; normal launch/install will generate one in ~/.ficta/config.toml"
-        : "no stable surrogate key is active; FICTA_CONFIG_FILE=0 means launches use per-process surrogates unless FICTA_SURROGATE_KEY is set",
-    });
+  const surrogateKey = doctorSurrogateKey(path);
+  if (surrogateKey.status === "invalid") {
+    issues.push({ severity: "error", message: surrogateKey.error ?? "surrogate key file is unusable" });
+  } else if (surrogateKey.status === "ephemeral") {
+    issues.push(
+      surrogateKey.requireStable
+        ? {
+            severity: "error",
+            message:
+              "surrogate.require_stable_key is set but no surrogate key is configured; the proxy will refuse to start",
+          }
+        : {
+            severity: "warning",
+            message: path
+              ? "no stable surrogate key is active yet; normal launch/install will generate one in ~/.ficta/config.toml"
+              : "no stable surrogate key is active; FICTA_CONFIG_FILE=0 means launches use per-process surrogates unless FICTA_SURROGATE_KEY or FICTA_SURROGATE_KEY_FILE is set",
+          },
+    );
   }
 
   const { invalidNames } = parseUserExclusionRule(process.env.FICTA_REGISTRY_EXCLUDE_NAMES);
@@ -216,6 +241,12 @@ export async function collectDoctorReport(opts: DoctorOptions = {}): Promise<Doc
       secretShapesStandalone: posture.detection.secretShapes.standalone,
       secretShapesAgents: posture.detection.secretShapes.agents,
       surrogateStyle: posture.protection.surrogateStyle,
+      surrogateKey: {
+        status: surrogateKey.status,
+        source: surrogateKey.source,
+        keyFile: surrogateKey.keyFile,
+        requireStable: surrogateKey.requireStable,
+      },
       restoreIntoTools: posture.protection.restoreIntoTools,
       upstreams: posture.transport.upstreams,
       forcedUpstream: posture.transport.forcedUpstream,
@@ -230,6 +261,41 @@ export async function collectDoctorReport(opts: DoctorOptions = {}): Promise<Doc
     agents: agentReports,
     issues,
   };
+}
+
+function doctorSurrogateKey(path: string | undefined): DoctorReport["config"]["surrogateKey"] & { error?: string } {
+  const requireStable = requireStableSurrogateKey();
+  try {
+    const resolved = resolveSurrogateKey(path);
+    return {
+      status: resolved.stable ? "stable" : "ephemeral",
+      source: resolved.source,
+      keyFile: resolved.keyFile,
+      requireStable,
+    };
+  } catch (error) {
+    if (!(error instanceof SurrogateKeyError)) throw error;
+    return { status: "invalid", requireStable, error: error.message };
+  }
+}
+
+const SURROGATE_KEY_SOURCE_LABEL: Record<SurrogateKeySource, string> = {
+  env: "FICTA_SURROGATE_KEY",
+  "env-key-file": "FICTA_SURROGATE_KEY_FILE",
+  config: "config.toml surrogate.key",
+  "config-key-file": "config.toml surrogate.key_file",
+  ephemeral: "random per-process key",
+};
+
+function surrogateKeyLine(key: DoctorReport["config"]["surrogateKey"]): string {
+  const required = key.requireStable ? "; stable key required" : "";
+  if (key.status === "invalid") return `  ✗ surrogate key: INVALID key file${required}`;
+  if (key.status === "ephemeral") {
+    return `  ${key.requireStable ? "✗" : "!"} surrogate key: ephemeral (random per process; surrogates change on restart)${required}`;
+  }
+  const source = key.source ? SURROGATE_KEY_SOURCE_LABEL[key.source] : "configured";
+  const file = key.keyFile ? ` ${key.keyFile}` : "";
+  return `  ✓ surrogate key: stable (${source}${file})${required}`;
 }
 
 export function renderDoctorReport(report: DoctorReport): string {
@@ -282,6 +348,7 @@ export function renderDoctorReport(report: DoctorReport): string {
       report.config.surrogateStyle === "typed" ? "typed (FICTA_<TYPE>_… tokens)" : "opaque (FICTA_… tokens)"
     }`,
   );
+  lines.push(surrogateKeyLine(report.config.surrogateKey));
   lines.push(restoreIntoToolsLine(report.config.restoreIntoTools));
   lines.push("");
 

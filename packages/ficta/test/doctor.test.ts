@@ -24,6 +24,8 @@ const ENV_KEYS = [
   "FICTA_TRACE_AUDIT",
   "FICTA_SURROGATE_KEY",
   "FICTA_SURROGATE_STYLE",
+  "FICTA_SURROGATE_KEY_FILE",
+  "FICTA_REQUIRE_STABLE_SURROGATE_KEY",
   "FICTA_SHIM_DIR",
   "FICTA_REAL_CLAUDE",
   "FICTA_REAL_CODEX",
@@ -155,6 +157,62 @@ describe("ficta doctor", () => {
     report = await collectDoctorReport();
     expect(report.config.surrogateStyle).toBe("typed");
     expect(renderDoctorReport(report)).toContain("surrogate style: typed (FICTA_<TYPE>_… tokens)");
+  });
+
+  it("reports whether the surrogate key is stable or ephemeral without printing it", async () => {
+    process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+    const dir = tempDir("ficta-doctor-key-");
+    const key = "c".repeat(32) + "0123456789abcdef".repeat(2);
+    const keyFile = join(dir, "surrogate.key");
+    writeFileSync(keyFile, `${key}\n`, { mode: 0o600 });
+    chmodSync(keyFile, 0o600);
+    delete process.env.FICTA_SURROGATE_KEY;
+    process.env.FICTA_SURROGATE_KEY_FILE = keyFile;
+
+    let report = await collectDoctorReport();
+    let rendered = renderDoctorReport(report);
+    expect(report.config.surrogateKey).toEqual({
+      status: "stable",
+      source: "env-key-file",
+      keyFile,
+      requireStable: false,
+    });
+    expect(rendered).toContain(`✓ surrogate key: stable (FICTA_SURROGATE_KEY_FILE ${keyFile})`);
+    expect(rendered).not.toContain(key);
+    expect(JSON.stringify(report)).not.toContain(key);
+
+    delete process.env.FICTA_SURROGATE_KEY_FILE;
+    delete process.env.FICTA_SURROGATE_KEY;
+    report = await collectDoctorReport();
+    expect(report.config.surrogateKey.status).toBe("ephemeral");
+    expect(renderDoctorReport(report)).toContain("! surrogate key: ephemeral (random per process");
+    expect(report.issues).toContainEqual(expect.objectContaining({ severity: "warning" }));
+  });
+
+  it("errors when a stable surrogate key is required but missing, or the key file is unusable", async () => {
+    process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+    delete process.env.FICTA_SURROGATE_KEY;
+    delete process.env.FICTA_SURROGATE_KEY_FILE;
+    process.env.FICTA_REQUIRE_STABLE_SURROGATE_KEY = "1";
+
+    let report = await collectDoctorReport();
+    expect(doctorExitCode(report)).toBe(1);
+    expect(report.issues).toContainEqual({
+      severity: "error",
+      message: "surrogate.require_stable_key is set but no surrogate key is configured; the proxy will refuse to start",
+    });
+
+    const keyFile = join(tempDir("ficta-doctor-key-"), "surrogate.key");
+    writeFileSync(keyFile, "too-short\n", { mode: 0o600 });
+    chmodSync(keyFile, 0o600);
+    process.env.FICTA_SURROGATE_KEY_FILE = keyFile;
+    report = await collectDoctorReport();
+    expect(report.config.surrogateKey.status).toBe("invalid");
+    expect(renderDoctorReport(report)).toContain("✗ surrogate key: INVALID key file; stable key required");
+    expect(report.issues).toContainEqual({
+      severity: "error",
+      message: expect.stringContaining("must contain exactly 64 hex characters"),
+    });
   });
 
   it("returns an error when strict mode has no loaded registry", async () => {

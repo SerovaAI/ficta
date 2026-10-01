@@ -54,13 +54,23 @@ const ENTITY_PATTERN_SOURCE = `${HEX_PREFIX}(?:ORG|PERSON)_[A-Z2-7]{${ENTITY_TAG
 const ENTITY_MAX_LENGTH = `${HEX_PREFIX}PERSON_${"A".repeat(ENTITY_TAG_LEN)}_${"A".repeat(ENTITY_TAG_LEN)}`.length;
 const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
-const ENV_SURROGATE_KEY = process.env.FICTA_SURROGATE_KEY;
-// One key per process by default (same value → same surrogate across turns). Set
-// FICTA_SURROGATE_KEY for cross-restart stability.
-const DEFAULT_KEY = ENV_SURROGATE_KEY ?? randomBytes(32).toString("hex");
+let processKey: string | undefined;
+
+/**
+ * The HMAC key for strategies built without an explicit one. Read when a strategy is built (not at
+ * module import) so the product layer can resolve a configured key — env var or key file — first.
+ * Without one, a random key is generated once per process: same value → same surrogate across turns,
+ * but every token changes on restart.
+ */
+export function defaultSurrogateKey(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env.FICTA_SURROGATE_KEY;
+  if (configured) return configured;
+  processKey ??= randomBytes(32).toString("hex");
+  return processKey;
+}
 
 /** The built-in strategy: `FICTA_` + 32 hex chars of HMAC-SHA256(value) — opaque and JSON-safe. */
-export function hexSurrogateStrategy(key: string = DEFAULT_KEY): SurrogateStrategy {
+export function hexSurrogateStrategy(key: string = defaultSurrogateKey()): SurrogateStrategy {
   return {
     mint(value) {
       return HEX_PREFIX + createHmac("sha256", key).update(value).digest("hex").slice(0, HEX_LEN);
@@ -93,7 +103,7 @@ const TYPED_TOTAL = HEX_PREFIX.length + MAX_TYPE_LEN + 1 + HEX_LEN; // FICTA_ + 
  * The `<TYPE>` is drawn ONLY from {@link CATEGORY_TYPE} or a coarse kind fallback, so an arbitrary
  * label (e.g. a registered secret's env-var name) never leaks into the token.
  */
-export function typedSurrogateStrategy(key: string = DEFAULT_KEY): SurrogateStrategy {
+export function typedSurrogateStrategy(key: string = defaultSurrogateKey()): SurrogateStrategy {
   const continuation = new RegExp(`^[A-Z0-9]{0,${MAX_TYPE_LEN}}(?:_[0-9a-f]{0,${HEX_LEN}})?$`);
   return {
     mint(value, hint) {
@@ -118,7 +128,7 @@ export function typedSurrogateStrategy(key: string = DEFAULT_KEY): SurrogateStra
  */
 export function entityFamilySurrogateStrategy(
   literal: SurrogateStrategy = surrogateStrategy(),
-  key: string = DEFAULT_KEY,
+  key: string = defaultSurrogateKey(),
 ): SurrogateStrategy {
   const pattern = new RegExp(`(?:${literal.pattern.source}|${ENTITY_PATTERN_SOURCE})`, "g");
   return {
@@ -149,7 +159,10 @@ export function entityFamilySurrogateStrategy(
  * anything else (default) → the opaque {@link hexSurrogateStrategy}. Kept opaque by default so the
  * token shape only changes when explicitly opted in.
  */
-export function surrogateStrategy(env: NodeJS.ProcessEnv = process.env, key: string = DEFAULT_KEY): SurrogateStrategy {
+export function surrogateStrategy(
+  env: NodeJS.ProcessEnv = process.env,
+  key: string = defaultSurrogateKey(env),
+): SurrogateStrategy {
   return surrogateStyle(env) === "typed" ? typedSurrogateStrategy(key) : hexSurrogateStrategy(key);
 }
 

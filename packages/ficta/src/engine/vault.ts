@@ -21,8 +21,6 @@ import {
  * fail-closed leak scanning, and streaming restore.
  */
 
-const ENV_SURROGATE_KEY = process.env.FICTA_SURROGATE_KEY;
-
 /** Shared empty skip-set so the common restore path allocates nothing. */
 const EMPTY_SKIP: ReadonlySet<string> = new Set();
 
@@ -58,9 +56,10 @@ interface RestoreOptions {
   markers?: RestoreMarkers;
 }
 
-export function surrogateKeyWarning(): string | undefined {
-  if (!ENV_SURROGATE_KEY) return undefined;
-  if (Buffer.byteLength(ENV_SURROGATE_KEY, "utf8") < 32 || new Set(ENV_SURROGATE_KEY).size < 8) {
+export function surrogateKeyWarning(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const key = env.FICTA_SURROGATE_KEY;
+  if (!key) return undefined;
+  if (Buffer.byteLength(key, "utf8") < 32 || new Set(key).size < 8) {
     return "FICTA_SURROGATE_KEY is set but looks weak; use a high-entropy secret value (>=32 random bytes)";
   }
   return undefined;

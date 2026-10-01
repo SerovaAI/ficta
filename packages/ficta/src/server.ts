@@ -39,6 +39,7 @@ import {
 } from "@serovaai/ficta-protocol";
 import { type Context, Hono } from "hono";
 import { type Config, loadConfig, resolveTarget, upstreamPolicyIssue } from "./config.js";
+import { checkSurrogateKey, SurrogateKeyError } from "./user-config.js";
 import { configPosture } from "./config-posture.js";
 import { createFictaControlRouter } from "./control-plane.js";
 import { detectorFailClosed } from "./engine/detection-policy.js";
@@ -132,6 +133,9 @@ export async function startProxy(opts: StartProxyOptions = {}): Promise<ProxyHan
   // (cli.ts → startProxy). A bare-library engine with no sink wired stays silent by design.
   setEngineWarnSink((fields, message) => log.warn(fields, message));
   const cfg = loadConfig();
+  // Resolve (and, under surrogate.require_stable_key, insist on) the configured surrogate key before
+  // the engine builds its surrogate strategy. Throws SurrogateKeyError for an unusable key file.
+  checkSurrogateKey();
   const engine: RedactionEngine = new ProtectionEngine({ plugins: opts.plugins ?? defaultRedactionPlugins });
   const stats = new ProtectionStats(protectionStatsPath, { captureDir: currentRunDir });
   const protectionTickets = new Map<string, ProtectionTicket>();
@@ -2195,7 +2199,11 @@ const isMain = (() => {
   }
 })();
 if (isMain) {
-  const handle = await startProxy();
+  const handle = await startProxy().catch((error: unknown) => {
+    if (!(error instanceof SurrogateKeyError)) throw error;
+    process.stderr.write(`ficta: ${error.message}\n`);
+    process.exit(2);
+  });
   // Run directly (pnpm dev / node --watch), the proxy IS the process — nothing else drives
   // shutdown. Without these handlers the listening socket keeps the event loop alive, so the
   // process ignores SIGINT/SIGTERM and a supervisor (node --watch, turbo) has to force-kill it.

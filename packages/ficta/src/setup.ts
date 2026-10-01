@@ -6,7 +6,7 @@ import { installShims } from "./install.js";
 import type { RegistrySetupPromptContext, RegistrySetupSource } from "./plugins/index.js";
 import { registrySetupDefaults, registrySetupSources, selectedBackendNames } from "./plugins/index.js";
 import { reviewExcludeNamesInteractively } from "./review.js";
-import { configPath, ensureSurrogateKey, readUserConfig, writeUserConfig } from "./user-config.js";
+import { configPath, ensureSurrogateKey, readUserConfig, SurrogateKeyError, writeUserConfig } from "./user-config.js";
 
 export interface SetupOptions {
   supportedAgents: readonly string[];
@@ -170,14 +170,20 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
 
   // Stable surrogates are the default, not a choice: every launch runs ensureSurrogateKey anyway
   // (cli.ts), so a "No" here would be undone on the next agent start. Opt-outs that actually hold
-  // are FICTA_SURROGATE_KEY (bring your own) and FICTA_CONFIG_FILE=0 (no persistence at all).
-  const keyResult = ensureSurrogateKey(path);
-  note(
-    keyResult.generated
-      ? "generated a stable 256-bit surrogate key — kept local (0600), never printed"
-      : "stable surrogate key already configured (surrogates stay consistent across sessions)",
-    "Surrogate key",
-  );
+  // are FICTA_SURROGATE_KEY / surrogate.key_file (bring your own) and FICTA_CONFIG_FILE=0 (no
+  // persistence at all).
+  try {
+    const keyResult = ensureSurrogateKey(path);
+    note(
+      keyResult.generated
+        ? "generated a stable 256-bit surrogate key — kept local (0600), never printed"
+        : "stable surrogate key already configured (surrogates stay consistent across sessions)",
+      "Surrogate key",
+    );
+  } catch (error) {
+    if (!(error instanceof SurrogateKeyError)) throw error;
+    note(`${error.message}\nFix the key file or remove surrogate.key_file, then rerun setup.`, "Surrogate key");
+  }
 
   const install = await promptConfirm("Agent shims: install/update claude/codex/pi shims now?", true);
   if (install) {
