@@ -176,10 +176,10 @@ interface TraceRedactionOptions {
   traceOccurrences?: boolean;
 }
 
-export type BodyRedactionContext = Omit<DetectTextContext, "surface"> & TraceRedactionOptions;
+export type BodyRedactionContext = Omit<DetectTextContext, "surface" | "runtime"> & TraceRedactionOptions;
 
 /** Optional context for text redaction: which surface/header/path the text came from. */
-export type TextRedactionContext = Omit<DetectTextContext, "surface"> &
+export type TextRedactionContext = Omit<DetectTextContext, "surface" | "runtime"> &
   TraceRedactionOptions & {
     surface?: DetectTextContext["surface"];
     /**

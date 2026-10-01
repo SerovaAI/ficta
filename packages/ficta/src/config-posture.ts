@@ -3,6 +3,7 @@ import type { Config } from "./config.js";
 import { detectorFailClosed } from "./engine/detection-policy.js";
 import { envFlag, restoreIntoToolsPolicy } from "./engine/env-flags.js";
 import { surrogateStyle } from "./engine/surrogate.js";
+import { detectionFailClosed } from "./engine-env.js";
 import { isGloballyDisabled } from "./global-disable.js";
 import {
   piiEnabled,
@@ -16,9 +17,9 @@ import {
 export type ConfigPosture = ProxyConfigPosture;
 
 /**
- * Build the posture from the transport `Config` plus the engine-side env flags. The engine has no
- * typed config object — plugins read `process.env` at request time — so the env dependency is an
- * explicit parameter here rather than a hidden ambient read; tests pass a plain object.
+ * Build the posture from the transport `Config` plus the engine-side env flags — the same env the
+ * proxy builds its `EngineConfig` from (see engine-env.ts). The env dependency is an explicit
+ * parameter here rather than a hidden ambient read; tests pass a plain object.
  * `globallyDisabled` is a filesystem check (~/.ficta/disabled), injectable for the same reason.
  * `host`/`port` are the configured bind values; a port-0 bind can differ from the actual port.
  */
@@ -46,7 +47,7 @@ export function configPosture(
         agents: resolveAgentPiiEnabled({ enabled: env.FICTA_PII_ENABLED, agents: env.FICTA_PII_AGENTS }),
         configuredBackends: selectedBackendNames(env),
         configuredBackend: selectedBackendNames(env).join(","),
-        failureMode: detectorFailClosed(piiFailClosed(env), env) ? "fail-closed" : "fail-open",
+        failureMode: detectorFailClosed(piiFailClosed(env), detectionFailClosed(env)) ? "fail-closed" : "fail-open",
       },
       secretShapes: {
         standalone: secretShapesEnabled(env),

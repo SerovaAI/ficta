@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { hexSurrogateStrategy, surrogateStrategy, typedSurrogateStrategy } from "../src/engine/surrogate.js";
+import { ProtectionEngine } from "../src/engine/engine.js";
+import {
+  hexSurrogateStrategy,
+  surrogateStrategy,
+  surrogateStyle,
+  typedSurrogateStrategy,
+} from "../src/engine/surrogate.js";
 import { Vault } from "../src/engine/vault.js";
+import { engineConfigFromEnv } from "../src/engine-env.js";
 
 const KEY = "test-surrogate-key-at-least-32-bytes-long!!";
 const OPAQUE = /^FICTA_[0-9a-f]{32}$/;
@@ -8,12 +15,13 @@ const TYPED = /^FICTA_[A-Z0-9]{1,12}_[0-9a-f]{32}$/;
 
 describe("surrogateStrategy factory", () => {
   it("defaults to the opaque FICTA_<hex> token", () => {
-    const token = surrogateStrategy({}, KEY).mint("value", { name: "person", kind: "pii" });
+    const token = surrogateStrategy({ key: KEY }).mint("value", { name: "person", kind: "pii" });
     expect(token).toMatch(OPAQUE);
   });
 
   it("selects typed surrogates when FICTA_SURROGATE_STYLE=typed", () => {
-    const token = surrogateStrategy({ FICTA_SURROGATE_STYLE: "typed" }, KEY).mint("value", {
+    const style = surrogateStyle({ FICTA_SURROGATE_STYLE: "typed" });
+    const token = surrogateStrategy({ style, key: KEY }).mint("value", {
       name: "person",
       kind: "pii",
     });
@@ -89,16 +97,19 @@ describe("vault with typed surrogates end to end", () => {
     expect(vault.leakCount(redacted)).toBe(0);
   });
 
-  it("honors FICTA_SURROGATE_STYLE via the default Vault strategy (the engine's path)", () => {
+  it("honors FICTA_SURROGATE_STYLE through the engine config (the proxy's path)", async () => {
     const saved = process.env.FICTA_SURROGATE_STYLE;
     process.env.FICTA_SURROGATE_STYLE = "typed";
     try {
       const email = "jane@example.com";
-      // No explicit strategy — exactly how engine.ts constructs the vault.
-      const vault = new Vault([{ value: email, name: "email-address", kind: "pii" }]);
-      const { text: redacted } = vault.redactText(JSON.stringify({ to: email }));
+      const engine = new ProtectionEngine({
+        plugins: [],
+        values: [{ value: email, name: "email-address", source: "test", kind: "pii" }],
+        config: engineConfigFromEnv(),
+      });
+      const { body: redacted } = await engine.redactBodyDetailed(JSON.stringify({ to: email }));
       expect(redacted).toMatch(/FICTA_EMAIL_[0-9a-f]{32}/);
-      expect(vault.restoreText(redacted)).toContain(email);
+      expect(engine.restoreText(redacted)).toContain(email);
     } finally {
       if (saved === undefined) delete process.env.FICTA_SURROGATE_STYLE;
       else process.env.FICTA_SURROGATE_STYLE = saved;

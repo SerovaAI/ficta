@@ -42,8 +42,8 @@ import { type Config, loadConfig, resolveTarget, upstreamPolicyIssue } from "./c
 import { checkSurrogateKey, SurrogateKeyError } from "./user-config.js";
 import { configPosture } from "./config-posture.js";
 import { createFictaControlRouter } from "./control-plane.js";
+import type { EngineConfig } from "./engine/config.js";
 import { detectorFailClosed } from "./engine/detection-policy.js";
-import { setEngineWarnSink } from "./engine/diagnostics.js";
 import { ProtectionEngine } from "./engine/engine.js";
 import type { ProtectedValue } from "./engine/plugins/types.js";
 import { withPreservationInstruction } from "./engine/preserve-literals.js";
@@ -59,6 +59,7 @@ import {
   type RestoreTraceDetails,
 } from "./engine/redaction-engine.js";
 import { surrogateKeyWarning } from "./engine/vault.js";
+import { detectionFailClosed, engineConfigFromEnv } from "./engine-env.js";
 import { type Wire, wireOf } from "./engine/wire.js";
 import {
   currentRunDir,
@@ -127,20 +128,26 @@ export interface StartProxyOptions {
 
 /** Start the redaction proxy. Returns the bound port + a handle to close it. */
 export async function startProxy(opts: StartProxyOptions = {}): Promise<ProxyHandle> {
-  // Reconnect the engine's detector-domain warnings (e.g. a PII backend being unavailable) to the
-  // proxy's pino logger. The engine itself carries no logger dependency (see diagnostics.ts); this is
-  // the single wiring point, and it covers both the standalone proxy and the agent-launch path
-  // (cli.ts → startProxy). A bare-library engine with no sink wired stays silent by design.
-  setEngineWarnSink((fields, message) => log.warn(fields, message));
   const cfg = loadConfig();
   // Resolve (and, under surrogate.require_stable_key, insist on) the configured surrogate key before
-  // the engine builds its surrogate strategy. Throws SurrogateKeyError for an unusable key file.
+  // the engine config is read. Throws SurrogateKeyError for an unusable key file.
   checkSurrogateKey();
-  const engine: RedactionEngine = new ProtectionEngine({ plugins: opts.plugins ?? defaultRedactionPlugins });
+  // The engine reads no env itself: its settings are built once here from the fully-merged env
+  // (config.toml, built-in defaults, agent-launch overrides, key file) and fixed for its lifetime.
+  const engineConfig = engineConfigFromEnv();
+  const engine: RedactionEngine = new ProtectionEngine({
+    plugins: opts.plugins ?? defaultRedactionPlugins,
+    config: engineConfig,
+    // Route the engine's detector-domain warnings (e.g. a PII backend being unavailable) to the
+    // proxy's pino logger. The engine itself carries no logger dependency (see diagnostics.ts); this
+    // covers both the standalone proxy and the agent-launch path (cli.ts → startProxy).
+    onWarn: (fields, message) => log.warn(fields, message),
+  });
   const stats = new ProtectionStats(protectionStatsPath, { captureDir: currentRunDir });
   const protectionTickets = new Map<string, ProtectionTicket>();
   const state: ProxyState = {
     cfg,
+    engineConfig,
     configEditLocks: proxyConfigLockedFields(),
     engine,
     stats,
@@ -158,6 +165,8 @@ export async function startProxy(opts: StartProxyOptions = {}): Promise<ProxyHan
 /** Long-lived state shared by every request and control route of one proxy instance. */
 interface ProxyState {
   cfg: Config;
+  /** The settings the engine was built with (from env at startup). */
+  engineConfig: EngineConfig;
   configEditLocks: ReturnType<typeof proxyConfigLockedFields>;
   engine: RedactionEngine;
   stats: ProtectionStats;
@@ -1183,7 +1192,7 @@ function listen(
   state: ProxyState,
   opts: StartProxyOptions,
 ): Promise<ProxyHandle> {
-  const { cfg, engine, stats } = state;
+  const { cfg, engine, engineConfig, stats } = state;
   const bindHost = opts.host ?? cfg.host;
   // Clients dial in over loopback even when we bind a wildcard host, so the copy-paste instructions
   // should say 127.0.0.1, not 0.0.0.0/::. Only substitute for wildcard binds; a specific LAN IP is
@@ -1191,7 +1200,7 @@ function listen(
   const clientHost = bindHost === "0.0.0.0" || bindHost === "::" ? "127.0.0.1" : bindHost;
   return new Promise<ProxyHandle>((resolve) => {
     const server = serve({ fetch: app.fetch, port: opts.port ?? cfg.port, hostname: bindHost }, (info) => {
-      const keyWarning = surrogateKeyWarning();
+      const keyWarning = surrogateKeyWarning(engineConfig.surrogate.key);
       const registry = registryProtectionStatus(engine);
       log.info(
         {
@@ -1322,7 +1331,7 @@ async function protectionStatus(engine: RedactionEngine, stats: ProtectionStats)
   const enabled = piiEnabled();
   const configuredBackends = selectedBackendNames();
   const backendSet = activeBackends();
-  const failClosed = detectorFailClosed(piiFailClosed());
+  const failClosed = detectorFailClosed(piiFailClosed(), detectionFailClosed());
   const failureMode = failClosed ? "fail-closed" : "fail-open";
 
   let pii: {
@@ -1361,7 +1370,7 @@ async function protectionStatus(engine: RedactionEngine, stats: ProtectionStats)
     const healthChecks = await Promise.all(
       backendSet.backends.flatMap(({ name }) => {
         const probe = backendHealthCheck(name);
-        return probe ? [probe().then((health) => ({ name, ...health }))] : [];
+        return probe ? [probe(process.env).then((health) => ({ name, ...health }))] : [];
       }),
     );
     const failed = healthChecks.filter((health) => !health.ok);

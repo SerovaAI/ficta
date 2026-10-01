@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { sanitizeAgentEnv } from "./child-env.js";
 import { applyRuntimeEnvDefaults } from "./defaults.js";
 import { detectorFailClosed } from "./engine/detection-policy.js";
+import { detectionFailClosed, engineConfigFromEnv, surrogateStyle } from "./engine-env.js";
 import { isGloballyDisabled, setGlobalDisabled } from "./global-disable.js";
 import { defaultShimDir, findExecutable, installShims, uninstallShims } from "./install.js";
 import { levelEnabled, parseLogLevel } from "./log-level.js";
@@ -278,7 +279,6 @@ if (surrogate.generated && printStartupDiagnostics) {
 
 const { startProxy } = await import("./server.js");
 const { surrogateKeyWarning } = await import("./engine/vault.js");
-const { surrogateStyle } = await import("./engine/surrogate.js");
 // Every launched agent owns its loopback proxy, so one process-owned scope is the correct isolation
 // boundary. Keeping detected mappings across its model requests lets hidden compaction/subagent
 // calls echo a surrogate into a later tool call without turning that placeholder into file content.
@@ -297,7 +297,7 @@ if (printStartupDiagnostics) {
       registryPolicy: proxy.registryPolicy,
       // Resolve the detector's own override against the global default so the banner states the
       // outage posture; env is fully merged (loadUserConfig + applyRuntimeEnvDefaults) by now.
-      piiFailClosed: detectorFailClosed(piiFailClosed()),
+      piiFailClosed: detectorFailClosed(piiFailClosed(), detectionFailClosed()),
       // Same fully-merged env as above governs the surrogate token style shown on the banner.
       surrogateStyle: surrogateStyle(),
       // --ficta-verbose is banner-only sugar (it never unmutes proxy logs); an explicit
@@ -333,7 +333,7 @@ if (proxy.protectedValues === 0 && printStartupDiagnostics) {
     "   ⚠ no protected values loaded — launching anyway in passthrough mode; set FICTA_REQUIRE_REGISTRY=1 to block instead\n",
   );
 }
-const keyWarning = surrogateKeyWarning();
+const keyWarning = surrogateKeyWarning(engineConfigFromEnv().surrogate.key);
 if (keyWarning && printStartupDiagnostics) process.stderr.write(`   ⚠ ${keyWarning}\n`);
 
 const agentPath = resolveAgentExecutable(agent.command);

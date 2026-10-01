@@ -1812,7 +1812,13 @@ describe("pii fail-closed backend", () => {
       process.env.FICTA_PII_PRESIDIO_TIMEOUT_MS = "300";
 
       const { startProxy } = await import("../src/server.js");
-      proxy = await startProxy({ port: 0 });
+      // The engine reads its config once, at proxy startup: each policy change below restarts it.
+      const restart = async () => {
+        proxy?.close();
+        proxy = await startProxy({ port: 0 });
+        return proxy;
+      };
+      proxy = await restart();
 
       const send = () =>
         fetch(`http://127.0.0.1:${proxy?.port}/v1/messages`, {
@@ -1833,6 +1839,7 @@ describe("pii fail-closed backend", () => {
 
       // flip to fail-open (default): the same down backend now skips detection and forwards.
       process.env.FICTA_PII_FAIL_CLOSED = "0";
+      await restart();
       const forwarded = await send();
       expect(forwarded.status).toBe(200);
       await forwarded.text();
@@ -1841,16 +1848,13 @@ describe("pii fail-closed backend", () => {
       // global default alone (no per-plugin override) also blocks — core-enforced.
       delete process.env.FICTA_PII_FAIL_CLOSED;
       process.env.FICTA_FAIL_CLOSED_DETECTION = "1";
+      const globalProxy = await restart();
       const globalBlocked = await send();
       expect(globalBlocked.status).toBe(503);
       expect(upstreamHits).toBe(1); // unchanged — not forwarded
 
-      expect(proxy.protectionStats()).toMatchObject({
-        totals: { events: 2, affectedRequests: 2, blockedRequests: 2, keptOutOfModelValues: 0 },
-        events: [
-          { blocked: true, blockReason: "detector_unavailable" },
-          { blocked: true, blockReason: "detector_unavailable" },
-        ],
+      expect(globalProxy.protectionStats()).toMatchObject({
+        events: [{ blocked: true, blockReason: "detector_unavailable" }],
       });
     } finally {
       proxy?.close();

@@ -6,6 +6,7 @@ import {
   resolveAgentSecretShapesEnabled,
   secretShapesPlugin,
 } from "../src/plugins/index.js";
+import { engineConfigFromEnv, pluginRuntimeFromEnv } from "../src/engine-env.js";
 
 const OPENAI = ["sk", "proj", "abc123def456ghi789T3BlbkFJabcdefghijklmno"].join("-");
 const GITHUB = ["ghp", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJ1234"].join("_");
@@ -49,7 +50,7 @@ describe("secret-shape detector", () => {
     const assignment = detectSecretShapes(`CUSTOM_API_TOKEN=${GENERIC_SECRET}`);
     expect(assignment.map((value) => value.value)).toContain(GENERIC_SECRET);
 
-    const engine = new ProtectionEngine({ plugins: [secretShapesPlugin] });
+    const engine = new ProtectionEngine({ plugins: [secretShapesPlugin], config: engineConfigFromEnv() });
     process.env.FICTA_SECRET_SHAPES_ENABLED = "1";
     try {
       const body = JSON.stringify({ api_token: GENERIC_SECRET });
@@ -66,16 +67,23 @@ describe("secret-shape detector", () => {
 
   it("is active by default and respects explicit opt-out", async () => {
     delete process.env.FICTA_SECRET_SHAPES_ENABLED;
-    expect(await secretShapesPlugin.detectText(OPENAI, { surface: "body" })).not.toEqual([]);
+    expect(
+      await secretShapesPlugin.detectText(OPENAI, { surface: "body", runtime: pluginRuntimeFromEnv() }),
+    ).not.toEqual([]);
     process.env.FICTA_SECRET_SHAPES_ENABLED = "0";
-    expect(await secretShapesPlugin.detectText(OPENAI, { surface: "body" })).toEqual([]);
-    expect(secretShapesPlugin.discover?.()[0]?.status).toBe("disabled");
+    expect(await secretShapesPlugin.detectText(OPENAI, { surface: "body", runtime: pluginRuntimeFromEnv() })).toEqual(
+      [],
+    );
+    expect(secretShapesPlugin.discover?.(pluginRuntimeFromEnv())[0]?.status).toBe("disabled");
 
     process.env.FICTA_SECRET_SHAPES_ENABLED = "1";
     try {
-      const found = (await secretShapesPlugin.detectText(OPENAI, { surface: "body" })) as ProtectedValue[];
+      const found = (await secretShapesPlugin.detectText(OPENAI, {
+        surface: "body",
+        runtime: pluginRuntimeFromEnv(),
+      })) as ProtectedValue[];
       expect(found.map((value) => value.value)).toEqual([OPENAI]);
-      expect(secretShapesPlugin.discover?.()[0]?.status).toBe("active");
+      expect(secretShapesPlugin.discover?.(pluginRuntimeFromEnv())[0]?.status).toBe("active");
     } finally {
       delete process.env.FICTA_SECRET_SHAPES_ENABLED;
     }
@@ -84,7 +92,7 @@ describe("secret-shape detector", () => {
   it("round-trips a pasted secret through the scoped engine layer", async () => {
     process.env.FICTA_SECRET_SHAPES_ENABLED = "1";
     try {
-      const engine = new ProtectionEngine({ plugins: [secretShapesPlugin] });
+      const engine = new ProtectionEngine({ plugins: [secretShapesPlugin], config: engineConfigFromEnv() });
       const scope = engine.beginRequest("org:thread");
       const body = JSON.stringify({ messages: [{ role: "user", content: `new key ${OPENAI}` }] });
 
@@ -216,7 +224,7 @@ describe("secret-shape detector regressions (engine review)", () => {
   const credentialUrl = `postgresql${schemeSeparator}deploy:${password}@db.internal.test/app`;
 
   async function bodyCount(messages: unknown[]): Promise<number> {
-    const engine = new ProtectionEngine({ plugins: [secretShapesPlugin] });
+    const engine = new ProtectionEngine({ plugins: [secretShapesPlugin], config: engineConfigFromEnv() });
     return (await engine.beginRequest().redactBodyDetailed(JSON.stringify({ messages }))).count;
   }
 

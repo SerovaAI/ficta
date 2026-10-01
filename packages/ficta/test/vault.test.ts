@@ -18,10 +18,16 @@ import { ProtectionEngine } from "../src/engine/engine.js";
 import { hexSurrogateStrategy } from "../src/engine/surrogate.js";
 import { ScopedVault, SurrogateTable, Vault } from "../src/engine/vault.js";
 import { bufferedRestoreAdapterFor, sseRestoreAdapterFor } from "../src/engine/wire-restore.js";
+import { vaultPolicyFromEnv } from "../src/engine-env.js";
 import { loadRegistryValues } from "../src/plugins/index.js";
 
 const AWS = "AKIAIOSFODNN7EXAMPLE";
-const v = new Vault(loadRegistryValues());
+
+// A vault with the restore/redact-paths policy read from env when it is built (as the proxy does).
+function envVault(values: ConstructorParameters<typeof Vault>[0]): Vault {
+  return new Vault(values, undefined, vaultPolicyFromEnv());
+}
+const v = envVault(loadRegistryValues());
 
 describe("vault", () => {
   // The restore-into-tools flag is read per restoreEventStream() call; keep it off (the safe
@@ -119,7 +125,7 @@ describe("vault", () => {
 
   it("redacts registered multi-word values across whitespace differences", () => {
     const value = "Proxima Medical Supplies CC";
-    const vault = new Vault([{ value }]);
+    const vault = envVault([{ value }]);
     const text = "counterparty: Proxima Medical\nSupplies CC";
     const { text: red, count } = vault.redactText(text);
 
@@ -135,7 +141,7 @@ describe("vault", () => {
     // Flexible whitespace matching handles single-line reflow but must not bridge a blank line:
     // tokens separated by a paragraph break are likely unrelated, not a reflowed value.
     const value = "Proxima Medical Supplies CC";
-    const vault = new Vault([{ value }]);
+    const vault = envVault([{ value }]);
     const text = "counterparty: Proxima Medical\n\nSupplies CC arrived";
     const { text: red, count } = vault.redactText(text);
 
@@ -201,7 +207,7 @@ describe("vault", () => {
   });
 
   it("does not redact known values inside filesystem paths", () => {
-    const vault = new Vault([{ value: "eu-central-1" }]);
+    const vault = envVault([{ value: "eu-central-1" }]);
     const path = "/Users/alice/src/acme/eu-central-1-prod";
     const body = JSON.stringify({ cwd: path, command: `cd ${path} && git diff` });
 
@@ -210,7 +216,7 @@ describe("vault", () => {
   });
 
   it("redacts non-path occurrences while leaving path occurrences untouched", () => {
-    const vault = new Vault([{ value: "eu-central-1" }]);
+    const vault = envVault([{ value: "eu-central-1" }]);
     const path = "/Users/alice/src/acme/eu-central-1-prod";
     const body = JSON.stringify({ content: `cwd=${path}\nAWS_REGION=eu-central-1` });
     const { text: red, count } = vault.redactText(body);
@@ -223,7 +229,7 @@ describe("vault", () => {
   });
 
   it("does not redact simple registered values when used as bare cd path operands", () => {
-    const vault = new Vault([{ value: "eu-central-1-prod" }]);
+    const vault = envVault([{ value: "eu-central-1-prod" }]);
     const command = "cd eu-central-1-prod && grep -ril supabase .";
 
     expect(vault.redactText(command)).toEqual({ text: command, count: 0 });
@@ -231,7 +237,7 @@ describe("vault", () => {
   });
 
   it("does not redact registered values that are themselves explicit path operands", () => {
-    const vault = new Vault([{ value: "./corova" }, { value: "/corova" }]);
+    const vault = envVault([{ value: "./corova" }, { value: "/corova" }]);
     const body = JSON.stringify({ content: "check ./corova and find /corova -type f" });
 
     expect(vault.redactText(body)).toEqual({ text: body, count: 0 });
@@ -240,7 +246,7 @@ describe("vault", () => {
 
   it("still redacts slash-containing assignment values", () => {
     const secret = "/fake/secret/value-12345";
-    const vault = new Vault([{ value: secret }]);
+    const vault = envVault([{ value: secret }]);
     const body = JSON.stringify({ content: `API_SECRET=${secret}` });
     const { text: red, count } = vault.redactText(body);
 
@@ -250,7 +256,7 @@ describe("vault", () => {
   });
 
   it("still redacts the same simple value in non-path env assignment context", () => {
-    const vault = new Vault([{ value: "eu-central-1-prod" }]);
+    const vault = envVault([{ value: "eu-central-1-prod" }]);
     const body = JSON.stringify({ content: "AWS_PROFILE=eu-central-1-prod" });
     const { text: red, count } = vault.redactText(body);
 
@@ -260,7 +266,7 @@ describe("vault", () => {
   });
 
   it("still redacts values inside URLs rather than treating them as filesystem paths", () => {
-    const vault = new Vault([{ value: "longpassword" }]);
+    const vault = envVault([{ value: "longpassword" }]);
     const body = JSON.stringify({ content: "DATABASE_URL=postgres://u:longpassword@host:5432/db" });
 
     expect(vault.redactText(body).text).not.toContain("longpassword");
@@ -268,7 +274,7 @@ describe("vault", () => {
 
   it("redacts slash-containing secrets instead of treating them as filesystem paths", () => {
     const secret = "fake/secret/value-12345";
-    const vault = new Vault([{ value: secret }]);
+    const vault = envVault([{ value: secret }]);
     const body = JSON.stringify({ content: `API_SECRET=${secret}` });
     const { text: red, count } = vault.redactText(body);
 
@@ -279,7 +285,7 @@ describe("vault", () => {
 
   it("redacts multiline private-key-like values", () => {
     const secret = "-----BEGIN TEST PRIVATE KEY-----\nabc123multilinefake\n-----END TEST PRIVATE KEY-----";
-    const vault = new Vault([{ value: secret }]);
+    const vault = envVault([{ value: secret }]);
     const { text: red, count } = vault.redactText(secret);
 
     expect(count).toBe(1);
@@ -289,7 +295,7 @@ describe("vault", () => {
 
   it("restoreJson re-escapes restored values containing JSON-special characters", () => {
     const secret = 'p@ss"word\\\nwith-newline';
-    const vault = new Vault([{ value: secret }]);
+    const vault = envVault([{ value: secret }]);
     const surrogate = vault.redactText(secret).text;
     const wire = JSON.stringify({ content: surrogate });
 
@@ -314,7 +320,7 @@ describe("vault", () => {
   });
 
   it("fail-closed gate does not flag a registered number that is a substring of a larger number", () => {
-    const vault = new Vault([{ value: "12345678" }]);
+    const vault = envVault([{ value: "12345678" }]);
     expect(vault.leakCount(JSON.stringify({ amount: 99912345678 }))).toBe(0);
     // …but a standalone primitive equal to the value is still caught.
     expect(vault.leakCount(JSON.stringify({ pin: 12345678 }))).toBe(1);
@@ -324,7 +330,7 @@ describe("vault", () => {
     const before = process.env.FICTA_REDACT_PATHS;
     process.env.FICTA_REDACT_PATHS = "yes";
     try {
-      const vault = new Vault([{ value: "eu-central-1" }]);
+      const vault = envVault([{ value: "eu-central-1" }]);
       const path = "/Users/alice/src/acme/eu-central-1-prod";
       const { text: red, count } = vault.redactText(JSON.stringify({ cwd: path }));
 
@@ -340,7 +346,7 @@ describe("vault", () => {
     const before = process.env.FICTA_REDACT_PATHS;
     process.env.FICTA_REDACT_PATHS = "1";
     try {
-      const vault = new Vault([{ value: "eu-central-1" }]);
+      const vault = envVault([{ value: "eu-central-1" }]);
       const path = "/Users/alice/src/acme/eu-central-1-prod";
       const { text: red, count } = vault.redactText(JSON.stringify({ cwd: path }));
 
@@ -365,7 +371,7 @@ describe("vault", () => {
   it("SSE restore reassembles Anthropic tool input deltas split across events (opt-in FICTA_RESTORE_INTO_TOOLS=1)", async () => {
     process.env.FICTA_RESTORE_INTO_TOOLS = "1";
     const secret = "corova-control-plane";
-    const vault = new Vault([{ value: secret }]);
+    const vault = envVault([{ value: secret }]);
     const surrogate = vault.redactText(secret).text;
     const first = `{\\"oldText\\":\\"${surrogate.slice(0, 18)}`;
     const second = `${surrogate.slice(18)}\\",\\"newText\\":\\"fixed\\"}`;
@@ -388,7 +394,7 @@ describe("vault", () => {
   it("SSE restore reassembles OpenAI chat tool-call argument deltas split across events (opt-in FICTA_RESTORE_INTO_TOOLS=1)", async () => {
     process.env.FICTA_RESTORE_INTO_TOOLS = "1";
     const secret = "corova-control-plane";
-    const vault = new Vault([{ value: secret }]);
+    const vault = envVault([{ value: secret }]);
     const surrogate = vault.redactText(secret).text;
     const first = `{"oldText":"${surrogate.slice(0, 18)}`;
     const second = `${surrogate.slice(18)}","newText":"fixed"}`;
@@ -408,7 +414,7 @@ describe("vault", () => {
 
   it("SSE restore also restores surrogates in sibling delta fields the adapter does not name", async () => {
     const secret = "corova-control-plane";
-    const vault = new Vault([{ value: secret }]);
+    const vault = envVault([{ value: secret }]);
     const surrogate = vault.redactText(secret).text;
     // delta.content is a named fragment; delta.reasoning_content is a sibling the adapter ignores.
     const sse = [
@@ -433,7 +439,7 @@ describe("vault", () => {
     // withheld one), so it is genuinely restored and should come back wrapped in markers.
     const toolSecret = "corova-control-plane";
     const siblingSecret = "corova-billing-service";
-    const vault = new Vault([{ value: toolSecret }, { value: siblingSecret }]);
+    const vault = envVault([{ value: toolSecret }, { value: siblingSecret }]);
     const toolSurrogate = vault.redactText(toolSecret).text;
     const siblingSurrogate = vault.redactText(siblingSecret).text;
     const markers = { start: "«", metadata: "§", end: "»" };
@@ -472,7 +478,7 @@ describe("vault", () => {
   it("does not restore inside restore-highlight metadata during the OpenAI Responses deep sweep", async () => {
     const cfo = "Amelia Naidoo";
     const counsel = "Jordan Price";
-    const vault = new Vault([{ value: cfo }, { value: counsel }]);
+    const vault = envVault([{ value: cfo }, { value: counsel }]);
     const cfoSurrogate = vault.redactText(cfo).text;
     const counselSurrogate = vault.redactText(counsel).text;
     const markers = {
@@ -523,7 +529,7 @@ describe("vault", () => {
     // highlighted: the toggle UI never surfaces that field, so decorating it only litters metadata.
     // A real assistant text delta in the same stream must still be highlighted.
     const secret = "Amelia Naidoo";
-    const vault = new Vault([{ value: secret }]);
+    const vault = envVault([{ value: secret }]);
     const surrogate = vault.redactText(secret).text;
     const markers = {
       start: FICTA_RESTORE_HIGHLIGHT_START,
@@ -567,7 +573,7 @@ describe("vault", () => {
 
   it("NOOP-wire SSE restore restores whole surrogates and re-escapes JSON-special values", async () => {
     const secret = 'tok"en\\value';
-    const vault = new Vault([{ value: secret }]);
+    const vault = envVault([{ value: secret }]);
     const surrogate = vault.redactText(secret).text;
     const sse = `data: ${JSON.stringify({ note: surrogate })}\n\n`;
 
@@ -581,7 +587,7 @@ describe("vault", () => {
   });
 
   it("NOOP-wire SSE restore preserves large integers in non-fragment event bodies", async () => {
-    const vault = new Vault([{ value: "corova-control-plane" }]);
+    const vault = envVault([{ value: "corova-control-plane" }]);
     // Built as raw text: a JS number literal would already round 2^53 + 1 before we could send it.
     const sse = 'data: {"id":9007199254740993,"usage":{"input_tokens":4503599627370497}}\n\n';
 
@@ -594,7 +600,7 @@ describe("vault", () => {
   it("SSE restore reassembles OpenAI Responses tool-call argument deltas split across events (opt-in FICTA_RESTORE_INTO_TOOLS=1)", async () => {
     process.env.FICTA_RESTORE_INTO_TOOLS = "1";
     const secret = "corova-control-plane";
-    const vault = new Vault([{ value: secret }]);
+    const vault = envVault([{ value: secret }]);
     const surrogate = vault.redactText(secret).text;
     const first = `{"oldText":"${surrogate.slice(0, 18)}`;
     const second = `${surrogate.slice(18)}","newText":"fixed"}`;
@@ -616,7 +622,7 @@ describe("vault", () => {
 
   it("withholds tool-call arguments by default: a placeholder reaches the tool, not the secret", async () => {
     const secret = "corova-control-plane";
-    const vault = new Vault([{ value: secret }]);
+    const vault = envVault([{ value: secret }]);
     const surrogate = vault.redactText(secret).text;
     // A whole surrogate in a single tool-input delta — the model placing a registered value into a
     // network-capable tool argument.
@@ -637,7 +643,7 @@ describe("vault", () => {
 
   it("restores assistant text while withholding tool arguments in the same stream", async () => {
     const secret = "corova-control-plane";
-    const vault = new Vault([{ value: secret }]);
+    const vault = envVault([{ value: secret }]);
     const surrogate = vault.redactText(secret).text;
     const sse = [
       `event: content_block_delta\ndata: ${JSON.stringify({
@@ -668,7 +674,7 @@ describe("vault", () => {
     // per-fragment withhold check. The withhold branch now reassembles across fragments before
     // deciding, so the whole placeholder is emitted intact and the secret never reaches the tool.
     const permValue = "alpha-registry-eu-west-1x";
-    const vault = new Vault([{ value: permValue }]);
+    const vault = envVault([{ value: permValue }]);
     const surrogate = vault.redactText(permValue).text;
     const first = `{\\"cmd\\":\\"echo ${surrogate.slice(0, 18)}`;
     const second = `${surrogate.slice(18)}\\"}`;
@@ -691,7 +697,7 @@ describe("vault", () => {
   it("default `detected` policy restores a content-detected token but withholds a registry token in the same tool arg", async () => {
     const permValue = "alpha-registry-eu-west-1x";
     const detValue = "bravo-content-hostname-9z";
-    const vault = new Vault([{ value: permValue }]);
+    const vault = envVault([{ value: permValue }]);
     const scope = vault.beginScope();
     scope.register([{ value: detValue }]);
     const permSur = scope.redactText(permValue).text;
@@ -719,7 +725,7 @@ describe("vault", () => {
     // therefore be re-escaped on the way in, exactly as restoreJsonText does for response bodies.
     // Splicing it in raw yields a literal newline inside a JSON string literal, which is invalid.
     const detValue = ["line-one-alpha", 'quote"inside', "line-two-bravo"].join("\n");
-    const vault = new Vault([]);
+    const vault = envVault([]);
     const scope = vault.beginScope();
     scope.register([{ value: detValue }]);
     const detSur = scope.redactText(detValue).text;
@@ -745,7 +751,7 @@ describe("vault", () => {
     process.env.FICTA_RESTORE_INTO_TOOLS = "all";
     try {
       const permValue = ["-----BEGIN KEY-----", 'has"quote', "-----END KEY-----"].join("\n");
-      const vault = new Vault([{ value: permValue }]);
+      const vault = envVault([{ value: permValue }]);
       const surrogate = vault.redactText(permValue).text;
       const sse = [
         anthropicInputDelta(0, `{"content":"${surrogate}"}`),
@@ -769,7 +775,7 @@ describe("vault", () => {
     const permValue = "alpha-registry-eu-west-1x";
     const detValue = "bravo-content-hostname-9z";
     const build = () => {
-      const vault = new Vault([{ value: permValue }]);
+      const vault = envVault([{ value: permValue }]);
       const scope = vault.beginScope();
       scope.register([{ value: detValue }]);
       const permSur = scope.redactText(permValue).text;
@@ -819,7 +825,7 @@ describe("buffered restore withholding", () => {
   it("withholds Anthropic tool_use input in a buffered body while restoring assistant text", () => {
     const toolSecret = "corova-control-plane";
     const textSecret = "corova-status-page";
-    const vault = new Vault([{ value: toolSecret }, { value: textSecret }]);
+    const vault = envVault([{ value: toolSecret }, { value: textSecret }]);
     const toolToken = vault.redactText(toolSecret).text;
     const textToken = vault.redactText(textSecret).text;
     const body = JSON.stringify({
@@ -840,7 +846,7 @@ describe("buffered restore withholding", () => {
 
   it("withholds OpenAI chat tool_calls arguments in a buffered completion", () => {
     const secret = "corova-control-plane";
-    const vault = new Vault([{ value: secret }]);
+    const vault = envVault([{ value: secret }]);
     const token = vault.redactText(secret).text;
     const body = JSON.stringify({
       choices: [
@@ -864,7 +870,7 @@ describe("buffered restore withholding", () => {
 
   it("withholds OpenAI Responses function_call arguments in a buffered response", () => {
     const secret = "corova-control-plane";
-    const vault = new Vault([{ value: secret }]);
+    const vault = envVault([{ value: secret }]);
     const token = vault.redactText(secret).text;
     const body = JSON.stringify({
       output: [{ type: "function_call", id: "fc_1", call_id: "call_1", name: "bash", arguments: `{"key":"${token}"}` }],
@@ -882,7 +888,7 @@ describe("buffered restore withholding", () => {
     // two string contexts deep. Escaping it once leaves a body that parses while the tool call
     // inside it does not — the buffered twin of the streamed-fragment corruption.
     const detValue = ["line-one-alpha", 'quote"inside', "back\\slash"].join("\n");
-    const vault = new Vault([]);
+    const vault = envVault([]);
     const scope = vault.beginScope();
     scope.register([{ value: detValue }]);
     const token = scope.redactText(detValue).text;
@@ -901,7 +907,7 @@ describe("buffered restore withholding", () => {
 
   it("escapes a restored value in tool arguments replayed by an openai-responses completion event", async () => {
     const detValue = ["alpha-line-value", 'has"quote', "and\\slash"].join("\n");
-    const vault = new Vault([]);
+    const vault = envVault([]);
     const scope = vault.beginScope();
     scope.register([{ value: detValue }]);
     const token = scope.redactText(detValue).text;
@@ -927,7 +933,7 @@ describe("buffered restore withholding", () => {
     // occurrence twice must not also double-escape the one in `content`, or the assistant text
     // renders a literal `\n` where the value had a newline.
     const detValue = ["first-line-value", 'quote"inside'].join("\n");
-    const vault = new Vault([]);
+    const vault = envVault([]);
     const scope = vault.beginScope();
     scope.register([{ value: detValue }]);
     const token = scope.redactText(detValue).text;
@@ -953,7 +959,7 @@ describe("buffered restore withholding", () => {
     // must not inflate it, or the signal stops meaning "something went in one level deeper".
     const toolValue = "tool-bound-detected-value";
     const textValue = "text-bound-detected-value";
-    const vault = new Vault([]);
+    const vault = envVault([]);
     const scope = vault.beginScope();
     scope.register([{ value: toolValue }, { value: textValue }]);
     const toolToken = scope.redactText(toolValue).text;
@@ -978,7 +984,7 @@ describe("buffered restore withholding", () => {
 
   it("counts a streamed tool-argument restore into the same tally", async () => {
     const detValue = "streamed-detected-tool-value";
-    const vault = new Vault([]);
+    const vault = envVault([]);
     const scope = vault.beginScope();
     scope.register([{ value: detValue }]);
     const token = scope.redactText(detValue).text;
@@ -994,7 +1000,7 @@ describe("buffered restore withholding", () => {
 
   it("leaves Anthropic tool_use input at one escaping level (input is an object, not nested JSON)", () => {
     const detValue = ["anthropic-line-one", 'quote"inside'].join("\n");
-    const vault = new Vault([]);
+    const vault = envVault([]);
     const scope = vault.beginScope();
     scope.register([{ value: detValue }]);
     const token = scope.redactText(detValue).text;
@@ -1008,7 +1014,7 @@ describe("buffered restore withholding", () => {
   it("restores tool arguments in buffered bodies when FICTA_RESTORE_INTO_TOOLS=1 (opt-in)", () => {
     process.env.FICTA_RESTORE_INTO_TOOLS = "1";
     const secret = "corova-control-plane";
-    const vault = new Vault([{ value: secret }]);
+    const vault = envVault([{ value: secret }]);
     const token = vault.redactText(secret).text;
     const body = JSON.stringify({
       content: [{ type: "tool_use", id: "tu_1", name: "bash", input: { cmd: `echo ${token}` } }],
@@ -1023,7 +1029,7 @@ describe("buffered restore withholding", () => {
 
   it("keeps the blanket restore for unknown wires (no shape knowledge)", () => {
     const secret = "corova-control-plane";
-    const vault = new Vault([{ value: secret }]);
+    const vault = envVault([{ value: secret }]);
     const token = vault.redactText(secret).text;
     const body = JSON.stringify({
       content: [{ type: "tool_use", id: "tu_1", name: "bash", input: { cmd: `echo ${token}` } }],
@@ -1033,7 +1039,7 @@ describe("buffered restore withholding", () => {
   });
 
   it("preserves large integers when a buffered body is withheld-scanned", () => {
-    const vault = new Vault([{ value: "corova-control-plane" }]);
+    const vault = envVault([{ value: "corova-control-plane" }]);
     const token = vault.redactText("corova-control-plane").text;
     // Raw text: a JS number literal would already round 2^53 + 1 before we could send it.
     const body = `{"id":9007199254740993,"content":[{"type":"tool_use","input":{"k":"${token}"}}]}`;
@@ -1046,7 +1052,7 @@ describe("buffered restore withholding", () => {
 
   it("withholds completed tool arguments replayed by openai-responses SSE events (response.completed)", async () => {
     const secret = "corova-control-plane";
-    const vault = new Vault([{ value: secret }]);
+    const vault = envVault([{ value: secret }]);
     const token = vault.redactText(secret).text;
     // Every argument delta was withheld; the final replay event re-sends the COMPLETE arguments and
     // must not hand the sink the real value either.
@@ -1075,7 +1081,7 @@ describe("buffered restore withholding", () => {
   it("restores replayed tool arguments in SSE completion events when opted in", async () => {
     process.env.FICTA_RESTORE_INTO_TOOLS = "1";
     const secret = "corova-control-plane";
-    const vault = new Vault([{ value: secret }]);
+    const vault = envVault([{ value: secret }]);
     const token = vault.redactText(secret).text;
     const sse = `event: response.completed\ndata: ${JSON.stringify({
       type: "response.completed",
