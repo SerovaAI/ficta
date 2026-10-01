@@ -1,6 +1,7 @@
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "./config.js";
+import { truncateRedactedText } from "./engine/text.js";
 import { type Wire, wireOf } from "./engine/wire.js";
 import { inspectionLines, inspectJson, inspectSse, inspectText, registeredValueCount } from "./inspection.js";
 import { log } from "./logger.js";
@@ -23,11 +24,13 @@ const pretty = (s: string) => {
     return s;
   }
 };
+// Upstream response bodies carry surrogate tokens; a preview cut mid-token would read exactly like a
+// model-truncated surrogate (`FICTA_62a0…`) and mislead restore-failure debugging, so cut before it.
 const preview = (s: unknown, max: number) => {
   const flat = String(s ?? "")
     .replace(/\s+/g, " ")
     .trim();
-  return flat.length > max ? flat.slice(0, max) + "…" : flat;
+  return truncateRedactedText(flat, max, { ellipsis: "…" });
 };
 
 export function logRequest(args: {
