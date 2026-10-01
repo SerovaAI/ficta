@@ -35,6 +35,7 @@ regexes = [
   '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIiwiaWF0IjoxNTE2MjM5MDIyfQ\.KMUFsIDTnFmyG3nMiGM6H9FNFUROf3wh7SmqJp-QV30''',
   '''-----BEGIN PRIVATE KEY-----''',
   '''MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCu''',
+  '''0123456789abcdef0123456789abcdef''',
 ]
 paths = ['''(^|.*/)packages/ficta/test/secret-shapes\.test\.ts$''']
 
