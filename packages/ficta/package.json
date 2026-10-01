@@ -52,7 +52,7 @@
     "ficta": "node --conditions=development --import tsx src/cli.ts",
     "build": "tsc",
     "check:presidio": "tsx --conditions=development scripts/verify-presidio-sidecar.mts",
-    "prepack": "pnpm build",
+    "prepack": "pnpm --filter \"@serovaai/ficta^...\" run build && pnpm build",
     "format": "oxfmt --write .",
     "lint": "oxlint .",
     "check": "pnpm check:static && pnpm typecheck && pnpm test",

@@ -1,6 +1,6 @@
 {
   "name": "@serovaai/ficta-engine",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": false,
   "description": "Experimental: the Ficta redaction engine as a library — detect sensitive values, replace them with surrogates, restore them",
   "keywords": [
@@ -37,6 +37,13 @@
     }
   },
   "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js",
+        "default": "./dist/index.js"
+      }
+    },
     "access": "public"
   },
   "scripts": {

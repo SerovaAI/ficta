@@ -27,7 +27,7 @@ import { ProtectionEngine } from "@serovaai/ficta-engine";
 const engine = new ProtectionEngine({
   config: {
     // Required: a stable, high-entropy secret (at least 32 bytes). The same key always mints the
-    // same surrogate for the same value, so restore works across restarts.
+    // same surrogate for the same value.
     surrogate: { key: process.env.MY_SURROGATE_KEY, style: "typed" },
     pii: { enabled: true },
   },
@@ -44,6 +44,12 @@ engine.restoreText(text);
 - **Surrogate key.** Construction throws `MissingSurrogateKeyError` without `config.surrogate.key`.
   Pass `allowEphemeralKey: true` only if surrogates never need to outlive the process: the key is
   then random per process, so tokens change on every restart.
+- **Restore needs the mappings, not just the key.** A stable key keeps surrogates _consistent_: the
+  same value gets the same token in every process. It does not make old tokens restorable on its
+  own. Detected values (PII, secret shapes) live in the engine's in-memory vault, so a fresh engine
+  with the same key cannot restore a token for a value it has not seen. Restoring after a restart
+  requires the original mappings, or registered `values` reloaded into the new engine. Persistent
+  vault storage is not part of this package yet.
 - **Detectors.** Without a `plugins` option the engine runs the built-in detectors
   (`defaultDetectors`: secret shapes, on by default, and PII, off unless `pii.enabled`). Pass
   `values` to protect exact registered values.
