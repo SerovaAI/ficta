@@ -331,6 +331,14 @@ addresses are recognized without NER. General date recognition is disabled; birt
 is context-bound. The registry retains structured recognizers such as South African IDs and phones,
 document identifiers, and Mauritius phones.
 
+One-time codes (`ONE_TIME_CODE`) are 4–8 digit runs admitted only next to an OTP label in English or
+German: `verification code 7731`, `Your one-time PIN: 55120931`, `Ihr Code lautet 4821`,
+`TAN: 482913`, or a trailing label such as `7731 is your verification code`. The label is part of the
+pattern rather than a Presidio context word, because Presidio's context enhancer matches context
+words as substrings (`tan` inside "Standard") and only looks before a match. A bare "code" counts only
+in OTP phrasing (`your code`, `Code lautet`, a sentence-opening `Code:`), so statute and postal numbers
+such as `Civil Procedure Code 1908` or `postal code 2196` stay visible.
+
 - **`pnpm sidecars`** (repo root, ↔ `docker-compose.sidecars.yml`) starts the shared sidecar stack
   detached with health-gated `--wait` and `--build`: the Gateway document converter plus Presidio
   (compose profiles `gateway` + `engine`). The opt-in OpenMed backend has its own profile — start it

@@ -302,6 +302,32 @@ recognizers:
         regex: "(?<!\\d)\\d{9,11}(?!\\d)"
         score: 0.3
 
+  # One-time codes (OTP, 2FA, banking TAN) are bare 4-8 digit runs, so the label is the only signal.
+  # Unlike FictaAccountNumberRecognizer this does NOT rely on Presidio's context enhancer: the enhancer
+  # matches context words as substrings of nearby lemmas (`tan` hits "Standard", `pin` hits "opinion"),
+  # only looks BEFORE the match (context_suffix_count defaults to 0), and a bare `code` context word
+  # boosts statute numbers and years in legal text ("Civil Procedure Code 1908"). The label is instead
+  # part of the regex: a lookbehind requires a one-time-code noun on a word boundary followed directly
+  # by a separator (":", "is", "lautet", ...) and the digits, so the span is just the code. A generic
+  # "code" only counts when possessive ("your code", "Ihr Code"), followed by "lautet", or opening a
+  # sentence as "Code:"; "postal code 2196", "branch code 250655" and "Code 1908" stay visible.
+  # German words are exact surface forms (the English spaCy pipeline does not lemmatise German); the
+  # umlaut is written as a YAML \u00e4 escape, and the transliteration `ae` is accepted too.
+  # A second pattern covers the label after the code ("4821 is your code", "4821 ist Ihr Code").
+  - name: FictaOneTimeCodeRecognizer
+    supported_languages:
+      - en
+    type: custom
+    enabled: true
+    supported_entity: ONE_TIME_CODE
+    patterns:
+      - name: One-time code after its label
+        regex: "(?<=\\b(?:(?:one[ -]?time|verification|security|login|sign[ -]?in|access|confirmation|authentication|auth|otp|2fa|sms)[ -](?:code|pin|passcode|password)|(?:your|ihr|ihre|dein|deine)\\s+code|otp|2fa|passcode|pin|tan|best(?:\u00e4|ae)tigungscode|einmalcode|einmalpasswort|sicherheitscode)\\b(?:\\s*[:#=]\\s*|\\s+(?:is|ist|lautet|was|lautete)\\s*:?\\s*|\\s+)|(?:^|[.!?]\\s+)code\\s*:\\s*|\\bcode\\s+lautet\\s*:?\\s*)(?<![\\d.,])\\d{4,8}(?!\\d|[.,]\\d)"
+        score: 0.6
+      - name: One-time code before its label
+        regex: "(?<![\\d.,])\\d{4,8}(?=\\s+(?:is|ist)\\s+(?:your|ihr|ihre|dein|deine)\\s+(?:[\\w-]+\\s+)?(?:code|otp|2fa|passcode|pin|tan|best(?:\u00e4|ae)tigungscode|einmalcode|einmalpasswort|sicherheitscode)\\b)"
+        score: 0.6
+
   - name: HuggingFaceNerRecognizer
     supported_languages:
       - en

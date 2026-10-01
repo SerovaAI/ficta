@@ -28,9 +28,10 @@ const EXPECTED_SUPPORTED_ENTITIES = [
   "MAC_ADDRESS",
   "PHONE_NUMBER",
   "URL",
-  // Ficta custom recognizers (DOCUMENT_ID/ACCOUNT_NUMBER are deliberately locale-agnostic)
+  // Ficta custom recognizers (DOCUMENT_ID/ACCOUNT_NUMBER/ONE_TIME_CODE are deliberately locale-agnostic)
   "DOCUMENT_ID",
   "ACCOUNT_NUMBER",
+  "ONE_TIME_CODE",
   // Country-tagged recognizers loaded by the reference profile (za, us; mu shares PHONE_NUMBER)
   "ZA_ID_NUMBER",
   "US_BANK_NUMBER",
@@ -172,6 +173,37 @@ assert.deepEqual(
   "an /analyze without `entities` differs from the explicit reference-profile allowlist",
 );
 
+// One-time codes: labelled codes (English and German) are tokenized end to end, and unlabelled or
+// formatted numbers stay byte-identical through the full default request.
+const otpEngine = new ProtectionEngine({ plugins: [piiPlugin] });
+for (const [text, code] of [
+  ["verification code 7731", "7731"],
+  ["Your one-time PIN: 55120931", "55120931"],
+  ["Ihr Code lautet 4821", "4821"],
+  ["TAN: 482913", "482913"],
+  ["7731 is your verification code", "7731"],
+] as const) {
+  const result = await otpEngine.redactBodyDetailed(JSON.stringify({ content: text }));
+  assert.equal(result.body.includes(code), false, `one-time code survived: ${JSON.stringify(text)}`);
+  assert.match(result.body, /FICTA_OTP_[0-9a-f]{32}/, `one-time code was not typed OTP: ${JSON.stringify(text)}`);
+}
+for (const text of [
+  "Order 7731 ships Monday",
+  "Budget 2027 is 48000",
+  "ref 62004418871",
+  "Termin am 01.10.2026",
+  "48.000 \u20ac",
+  "10115 Berlin",
+  "Civil Procedure Code 1908",
+  "postal code 2196",
+]) {
+  // A fresh engine: the shared one already holds the positive codes, which it would (correctly)
+  // keep redacting wherever they reappear.
+  const body = JSON.stringify({ content: text });
+  const result = await new ProtectionEngine({ plugins: [piiPlugin] }).redactBodyDetailed(body);
+  assert.equal(result.body, body, `an unlabelled number was redacted: ${JSON.stringify(text)}`);
+}
+
 interface Fixture {
   name: string;
   text: string;
@@ -216,6 +248,7 @@ console.log(
       redactedDistinct: redacted.count,
       knownSurvivors: redacted.leaks,
       negativeControls: "clean",
+      oneTimeCodes: "labelled codes tokenized; unlabelled numbers unchanged",
       countryScoping: "uk unloaded; za/us/mu loaded",
       entityDrift: "supportedentities == reference profile",
       categories: Object.fromEntries([...categories].sort(([a], [b]) => a.localeCompare(b))),
