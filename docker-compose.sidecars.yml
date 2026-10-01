@@ -89,7 +89,8 @@ services:
       # Required: the CPU image's torch rejects SDPA attention for the DeBERTa-based PII models.
       OPENMED_TORCH_ATTENTION_BACKEND: eager
       OPENMED_SERVICE_KEEP_ALIVE: ${OPENMED_KEEP_ALIVE:-10m}
-      HF_TOKEN: ${HF_TOKEN:-}
+      # Passed through only when set: an empty value makes huggingface_hub send `Bearer ` and fail.
+      HF_TOKEN:
     volumes:
       - openmed-hf-cache:/root/.cache/huggingface
     # The OpenMed image ships its own HEALTHCHECK, so `up --wait` blocks until it is actually ready.
