@@ -294,6 +294,7 @@ const CATEGORY_TYPE: Record<string, string> = {
   "iban-code": "ACCOUNT",
   "us-bank-number": "ACCOUNT",
   "account-number": "ACCOUNT",
+  "one-time-code": "OTP",
   "us-itin": "ID",
   "us-driver-license": "ID",
   "us-passport": "ID",
