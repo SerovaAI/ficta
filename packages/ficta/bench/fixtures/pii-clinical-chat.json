@@ -1,0 +1,821 @@
+[
+  {
+    "name": "voice-note-sacral-ulcer-home-visit",
+    "text": "[07:41, 03/10/2026] Sister Ndlovu: 🎤 voice note transcribed: morning team so i saw mrs precious mokoena again this morning at her house in 14 jacaranda street mamelodi east the sacral pressure ulcer is now 4.2 x 3.1 cm with some slough on the base i cleaned with saline and put aquacel ag and a foam dressing her daughter thandi says she is not turning her at night so please can someone phone thandi on 072 445 9183 and explain the turning chart again rv 2/7 thanks",
+    "expected": [
+      {
+        "value": "Ndlovu",
+        "entity": "PERSON"
+      },
+      {
+        "value": "precious mokoena",
+        "entity": "PERSON"
+      },
+      {
+        "value": "14 jacaranda street",
+        "entity": "ADDRESS"
+      },
+      {
+        "value": "mamelodi east",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "thandi",
+        "entity": "PERSON"
+      },
+      {
+        "value": "072 445 9183",
+        "entity": "PHONE_NUMBER"
+      }
+    ],
+    "mustRemainVisible": [
+      "Sister",
+      "sacral pressure ulcer",
+      "4.2 x 3.1 cm",
+      "slough",
+      "saline",
+      "aquacel ag",
+      "foam dressing",
+      "her daughter",
+      "turning chart",
+      "rv 2/7"
+    ]
+  },
+  {
+    "name": "one-liner-gift-heel-afrikaans",
+    "text": "pt Gift Dlamini dsg changed, L heel ulcer clean, no ?infection. sy is beter vandag 🙏 rv tues",
+    "expected": [
+      {
+        "value": "Gift Dlamini",
+        "entity": "PERSON"
+      }
+    ],
+    "mustRemainVisible": ["dsg changed", "L heel ulcer", "?infection", "sy is beter vandag", "rv tues"]
+  },
+  {
+    "name": "referral-letter-pasted-vascular",
+    "text": "[10:15, 04/10/2026] Dr Botha: pasting the referral for vascular, pls check b4 I send 🙏\n\nREFERRAL LETTER\nTo: Vascular Surgery OPD, Mooiplaas Regional Hospital\nRe: Mr Johannes PRETORIUS   DOB 12/03/1951   ID 5103125089083\nHosp MRN: 2207731-4\nAddress: 33 Kerk Street, Brits\n\nDear colleague\nThank you for seeing this 75 y/o diabetic gentleman (HbA1c 9.1) with a non-healing venous leg ulcer R medial malleolus, 6.0 x 4.5 cm, ABPI 0.7. Currently on metformin 850mg bd and amlodipine 5mg daily. Compression bandage held due to ?arterial component. Charcot foot L noted.\n\nKind regards\nDr. Willem Botha\nTel 012 345 6789 | willem.botha.rooms@gmail.com",
+    "expected": [
+      {
+        "value": "Botha",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Mooiplaas Regional Hospital",
+        "entity": "FACILITY"
+      },
+      {
+        "value": "Johannes PRETORIUS",
+        "entity": "PERSON"
+      },
+      {
+        "value": "12/03/1951",
+        "entity": "DATE_OF_BIRTH"
+      },
+      {
+        "value": "5103125089083",
+        "entity": "ZA_ID_NUMBER"
+      },
+      {
+        "value": "2207731-4",
+        "entity": "FILE_NUMBER"
+      },
+      {
+        "value": "33 Kerk Street",
+        "entity": "ADDRESS"
+      },
+      {
+        "value": "Brits",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "Willem Botha",
+        "entity": "PERSON"
+      },
+      {
+        "value": "012 345 6789",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "willem.botha.rooms@gmail.com",
+        "entity": "EMAIL_ADDRESS"
+      }
+    ],
+    "mustRemainVisible": [
+      "Vascular Surgery OPD",
+      "Dear colleague",
+      "75 y/o",
+      "diabetic",
+      "HbA1c 9.1",
+      "venous leg ulcer",
+      "R medial malleolus",
+      "6.0 x 4.5 cm",
+      "ABPI 0.7",
+      "metformin 850mg bd",
+      "amlodipine 5mg daily",
+      "Compression bandage",
+      "Charcot foot"
+    ]
+  },
+  {
+    "name": "handover-table-tsv",
+    "text": "Handover list wk 41 🩹\nName\tFile no\tWound\tDsg\tNext\nN. Khumalo (Nomsa)\tWC-0412\tR shin VLU 3x2cm\tsilver alginate + crepe\tmon\nBlessing Sithole\tWC-0398\tsacral PU cat 3\tAquacel Ag + foam\ttues\nbaba Mthembu\tWC-0455\tdiabetic foot ulcer L hallux\tiodosorb\twed\nmrs du plessis\tWC-0371\tskin tear L forearm\tsteri-strips + mepitel\tfri",
+    "expected": [
+      {
+        "value": "N. Khumalo",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Nomsa",
+        "entity": "PERSON"
+      },
+      {
+        "value": "WC-0412",
+        "entity": "FILE_NUMBER"
+      },
+      {
+        "value": "Blessing Sithole",
+        "entity": "PERSON"
+      },
+      {
+        "value": "WC-0398",
+        "entity": "FILE_NUMBER"
+      },
+      {
+        "value": "Mthembu",
+        "entity": "PERSON"
+      },
+      {
+        "value": "WC-0455",
+        "entity": "FILE_NUMBER"
+      },
+      {
+        "value": "du plessis",
+        "entity": "PERSON"
+      },
+      {
+        "value": "WC-0371",
+        "entity": "FILE_NUMBER"
+      }
+    ],
+    "mustRemainVisible": [
+      "R shin VLU 3x2cm",
+      "silver alginate",
+      "sacral PU cat 3",
+      "Aquacel Ag",
+      "diabetic foot ulcer",
+      "L hallux",
+      "iodosorb",
+      "skin tear L forearm",
+      "steri-strips",
+      "mepitel",
+      "tues"
+    ]
+  },
+  {
+    "name": "medical-aid-authorisation-dependant",
+    "text": "[11:02, 05/10/2026] Lerato (Pharmacy): Auth update from Discovery for pt Sipho Nkosi - member no 31876542, dependant code 01. Approved 12 x Aquacel Ag Extra 10x10 and 4 x Mepilex Border. Valid until 31/12. They need ICD-10 L89.153 on the script plz. Main member is his wife Zanele Nkosi ID 7408150321089",
+    "expected": [
+      {
+        "value": "Lerato",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Sipho Nkosi",
+        "entity": "PERSON"
+      },
+      {
+        "value": "31876542",
+        "entity": "MEDICAL_AID_NUMBER"
+      },
+      {
+        "value": "Zanele Nkosi",
+        "entity": "PERSON"
+      },
+      {
+        "value": "7408150321089",
+        "entity": "ZA_ID_NUMBER"
+      }
+    ],
+    "mustRemainVisible": [
+      "Discovery",
+      "dependant code 01",
+      "Aquacel Ag Extra",
+      "Mepilex Border",
+      "ICD-10 L89.153",
+      "Main member",
+      "his wife"
+    ]
+  },
+  {
+    "name": "family-member-on-behalf-of-gogo",
+    "text": "[19:47, 05/10/2026] +27 83 902 1147: Good evening sister this is Bongani, ugogo's grandson. Gogo Nokuthula Zwane, house no. 2231 Section K Umlazi. her leg is very sore tonight and the bandage is wet and smelling 😢 she is diabetic. must we take her to casualty or wait for you tomorrow? her clinic card number is 004417/22",
+    "expected": [
+      {
+        "value": "+27 83 902 1147",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "Bongani",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Nokuthula Zwane",
+        "entity": "PERSON"
+      },
+      {
+        "value": "house no. 2231 Section K",
+        "entity": "ADDRESS"
+      },
+      {
+        "value": "Umlazi",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "004417/22",
+        "entity": "FILE_NUMBER"
+      }
+    ],
+    "mustRemainVisible": [
+      "sister",
+      "ugogo's grandson",
+      "the bandage is wet and smelling",
+      "diabetic",
+      "casualty",
+      "tomorrow",
+      "clinic card number"
+    ]
+  },
+  {
+    "name": "photo-caption-heel",
+    "text": "<attached: IMG-20261006-WA0012.jpg> pic of Mr Mahlangu's R heel post debridement, 2.1 x 1.8cm, granulating nicely 👍 Bactroban to edges",
+    "expected": [
+      {
+        "value": "Mahlangu",
+        "entity": "PERSON"
+      }
+    ],
+    "mustRemainVisible": ["R heel", "debridement", "2.1 x 1.8cm", "granulating", "Bactroban"]
+  },
+  {
+    "name": "afrikaans-cellulitis-oom",
+    "text": "[08:12, 06/10/2026] Suster Annatjie: môre almal. Oom Koos Pretorius van 7 Bloekomlaan, Parys se voet lyk sleg vandag 😬 erge sellulitis tot by die enkel, temp 38.4. ek het dr. Venter gebel, hy sê begin flucloxacillin 500mg qid en bring hom môre na die kliniek. sy vrou Marietjie se nommer is 0824417730",
+    "expected": [
+      {
+        "value": "Annatjie",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Koos Pretorius",
+        "entity": "PERSON"
+      },
+      {
+        "value": "7 Bloekomlaan",
+        "entity": "ADDRESS"
+      },
+      {
+        "value": "Parys",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "Venter",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Marietjie",
+        "entity": "PERSON"
+      },
+      {
+        "value": "0824417730",
+        "entity": "PHONE_NUMBER"
+      }
+    ],
+    "mustRemainVisible": [
+      "Suster",
+      "Oom",
+      "sellulitis",
+      "temp 38.4",
+      "flucloxacillin 500mg qid",
+      "die kliniek",
+      "sy vrou"
+    ]
+  },
+  {
+    "name": "surname-durban-and-gift-as-word",
+    "text": "[13:30, 06/10/2026] Sr Mokoena: thanks for the gift of extra crepe bandages from the pharmacy 😂 btw pt Thabo Durban (yes thats his surname lol) from Kwa-Thema - L BKA stump wound dehisced 1cm, ?infection, swab sent. durban says pain 6/10. Pls book with Dr Naidoo at Mabuyane CHC thurs",
+    "expected": [
+      {
+        "value": "Mokoena",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Thabo Durban",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Kwa-Thema",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "durban",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Naidoo",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Mabuyane CHC",
+        "entity": "FACILITY"
+      }
+    ],
+    "mustRemainVisible": [
+      "the gift of extra crepe bandages",
+      "the pharmacy",
+      "L BKA stump",
+      "dehisced 1cm",
+      "swab sent",
+      "pain 6/10",
+      "thurs"
+    ]
+  },
+  {
+    "name": "pharmacy-script-ready-caps-name",
+    "text": "[09:05, 07/10/2026] Pharm Asst Kgomotso: script ready for MS. ANGELINA MASHABA, folder 22-04517 — amoxicillin 500mg tds x 7/7, paracetamol 1g qid prn, metformin 500mg bd (repeat). She collects at Sunnyridge Pharmacy but she works night shift at Ridgeway Poultry so only sat. pls sms her 076 781 2290",
+    "expected": [
+      {
+        "value": "Kgomotso",
+        "entity": "PERSON"
+      },
+      {
+        "value": "ANGELINA MASHABA",
+        "entity": "PERSON"
+      },
+      {
+        "value": "22-04517",
+        "entity": "FILE_NUMBER"
+      },
+      {
+        "value": "Sunnyridge Pharmacy",
+        "entity": "FACILITY"
+      },
+      {
+        "value": "Ridgeway Poultry",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "076 781 2290",
+        "entity": "PHONE_NUMBER"
+      }
+    ],
+    "mustRemainVisible": [
+      "Pharm Asst",
+      "amoxicillin 500mg tds",
+      "7/7",
+      "paracetamol 1g qid prn",
+      "metformin 500mg bd",
+      "night shift",
+      "sat"
+    ]
+  },
+  {
+    "name": "precious-name-vs-adjective",
+    "text": "[16:20, 07/10/2026] Sister Ndlovu: this dressing is precious, we only have 3 left 🙈 dont use the Aquacel on Precious unless the wound is wet. her sister called again 061 440 2219 about transport to the clinic",
+    "expected": [
+      {
+        "value": "Ndlovu",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Precious",
+        "entity": "PERSON"
+      },
+      {
+        "value": "061 440 2219",
+        "entity": "PHONE_NUMBER"
+      }
+    ],
+    "mustRemainVisible": ["this dressing is precious", "Aquacel", "the wound is wet", "her sister", "the clinic"]
+  },
+  {
+    "name": "isizulu-voice-note-cellulitis",
+    "text": "[20:03, 07/10/2026] Nurse Zodwa: VN: sawubona sisi ngicela ungitshele mayelana no baba Mandla Ngcobo e KwaMashu M section 1187 the wound on his left shin is bigger today maybe 5cm by 3 the leg is hot and red i think its cellulitis he says ubuhlungu kakhulu i gave him the pain tabs ngizobuya kusasa his number is +27 (0)73 551 0042",
+    "expected": [
+      {
+        "value": "Zodwa",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Mandla Ngcobo",
+        "entity": "PERSON"
+      },
+      {
+        "value": "KwaMashu",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "M section 1187",
+        "entity": "ADDRESS"
+      },
+      {
+        "value": "+27 (0)73 551 0042",
+        "entity": "PHONE_NUMBER"
+      }
+    ],
+    "mustRemainVisible": [
+      "sawubona sisi",
+      "baba",
+      "left shin",
+      "5cm by 3",
+      "hot and red",
+      "cellulitis",
+      "ubuhlungu kakhulu",
+      "the pain tabs",
+      "ngizobuya kusasa"
+    ]
+  },
+  {
+    "name": "forwarded-intake-form",
+    "text": "Forwarded\n[08:30, 08/10/2026] Admin: Hi all, new patient intake 👇\nName: Lindiwe Precious Mabaso\nDOB: 1958-11-23\nID no: 581123 0412 087\nCell: (+27) 71-334-8821\nEmail: lindi.mabaso58@gmail.com\nAddress: Unit 12 Sunset Court, 88 Edward Rd, Glenwood\nMedical aid: Bonitas, member 00812274563\nReferred by: Dr R. Govender (GP)\nDiagnosis: bilateral venous leg ulcers, lymphoedema, BMI 41\nNOK: daughter Ayanda 0727719034",
+    "expected": [
+      {
+        "value": "Lindiwe Precious Mabaso",
+        "entity": "PERSON"
+      },
+      {
+        "value": "1958-11-23",
+        "entity": "DATE_OF_BIRTH"
+      },
+      {
+        "value": "581123 0412 087",
+        "entity": "ZA_ID_NUMBER"
+      },
+      {
+        "value": "(+27) 71-334-8821",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "lindi.mabaso58@gmail.com",
+        "entity": "EMAIL_ADDRESS"
+      },
+      {
+        "value": "Unit 12 Sunset Court, 88 Edward Rd",
+        "entity": "ADDRESS"
+      },
+      {
+        "value": "Glenwood",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "00812274563",
+        "entity": "MEDICAL_AID_NUMBER"
+      },
+      {
+        "value": "R. Govender",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Ayanda",
+        "entity": "PERSON"
+      },
+      {
+        "value": "0727719034",
+        "entity": "PHONE_NUMBER"
+      }
+    ],
+    "mustRemainVisible": [
+      "new patient intake",
+      "Bonitas",
+      "GP",
+      "bilateral venous leg ulcers",
+      "lymphoedema",
+      "BMI 41",
+      "NOK: daughter"
+    ]
+  },
+  {
+    "name": "one-liner-lowercase-surname",
+    "text": "rv 2/7 for mrs. khoza, dsg intact 👌",
+    "expected": [
+      {
+        "value": "khoza",
+        "entity": "PERSON"
+      }
+    ],
+    "mustRemainVisible": ["rv 2/7", "dsg intact"]
+  },
+  {
+    "name": "round-list-nicknames-lowercase",
+    "text": "[17:55, 08/10/2026] Sr Ndlovu: tomorrows round 🚗\n1. tannie bets (elizabeth van wyk) - sacral, change pico if canister full\n2. 'mr T' themba shabalala - charcot foot, offloading boot check\n3. gogo ma-dlamini - skin tear, ask family re: pressure mattress\n4. blessing - ?osteo L 2nd toe, xray results from dr pillay\nstart 8am at the depot",
+    "expected": [
+      {
+        "value": "Ndlovu",
+        "entity": "PERSON"
+      },
+      {
+        "value": "bets",
+        "entity": "PERSON"
+      },
+      {
+        "value": "elizabeth van wyk",
+        "entity": "PERSON"
+      },
+      {
+        "value": "mr T",
+        "entity": "PERSON"
+      },
+      {
+        "value": "themba shabalala",
+        "entity": "PERSON"
+      },
+      {
+        "value": "ma-dlamini",
+        "entity": "PERSON"
+      },
+      {
+        "value": "blessing",
+        "entity": "PERSON"
+      },
+      {
+        "value": "pillay",
+        "entity": "PERSON"
+      }
+    ],
+    "mustRemainVisible": [
+      "tomorrows round",
+      "tannie",
+      "sacral",
+      "pico",
+      "canister full",
+      "charcot foot",
+      "offloading boot",
+      "gogo",
+      "skin tear",
+      "pressure mattress",
+      "?osteo L 2nd toe",
+      "xray",
+      "the depot"
+    ]
+  },
+  {
+    "name": "gp-frail-care-age-over-89",
+    "text": "[12:10, 09/10/2026] Dr Mthethwa: re Mrs Rachel Abrahams (folder AB/3381), 94 y/o, frail, CKD 3b - not for surgical debridement. Pls continue Betadine paint to the dry eschar on the L heel and keep it dry. Family (son Ebrahim) wants her moved to Bethany Frail Care in Wynberg; I've said that's their call. Her neighbour 67 y/o also has a wound, will refer separately.",
+    "expected": [
+      {
+        "value": "Mthethwa",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Rachel Abrahams",
+        "entity": "PERSON"
+      },
+      {
+        "value": "AB/3381",
+        "entity": "FILE_NUMBER"
+      },
+      {
+        "value": "94",
+        "entity": "AGE"
+      },
+      {
+        "value": "Ebrahim",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Bethany Frail Care",
+        "entity": "FACILITY"
+      },
+      {
+        "value": "Wynberg",
+        "entity": "LOCATION"
+      }
+    ],
+    "mustRemainVisible": [
+      "frail",
+      "CKD 3b",
+      "surgical debridement",
+      "Betadine",
+      "dry eschar",
+      "L heel",
+      "Family",
+      "67 y/o"
+    ]
+  },
+  {
+    "name": "clinic-file-and-hospital-number-typos",
+    "text": "[15:44, 09/10/2026] Sister Ndlovu: Plz chek file 0034471 at Soshanguve Block H clinic for pt Lucky Maluleke, the one with teh fungating breast wound. hosp no from GaRankuwa: GR-889102. pt says dressing makes her 'nauseous' coz of smell - try metronidazole gel + charcoal dsg 🤢",
+    "expected": [
+      {
+        "value": "Ndlovu",
+        "entity": "PERSON"
+      },
+      {
+        "value": "0034471",
+        "entity": "FILE_NUMBER"
+      },
+      {
+        "value": "Soshanguve Block H clinic",
+        "entity": "FACILITY"
+      },
+      {
+        "value": "Lucky Maluleke",
+        "entity": "PERSON"
+      },
+      {
+        "value": "GaRankuwa",
+        "entity": "FACILITY"
+      },
+      {
+        "value": "GR-889102",
+        "entity": "FILE_NUMBER"
+      }
+    ],
+    "mustRemainVisible": ["fungating breast wound", "nauseous", "metronidazole gel", "charcoal dsg"]
+  },
+  {
+    "name": "workplace-burn-employer",
+    "text": "[07:20, 10/10/2026] Sr Mokoena: pt Pieter-Jan Steyn (works at Vaal Steel Fabricators in Vanderbijlpark, burn from grinder) needs a sick note for his foreman Mr Coetzee. 2nd degree burn R forearm ~2% TBSA. silver sulfadiazine + paraffin gauze, rv 3/7. COID claim no 2026/118934",
+    "expected": [
+      {
+        "value": "Mokoena",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Pieter-Jan Steyn",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Vaal Steel Fabricators",
+        "entity": "ORGANIZATION"
+      },
+      {
+        "value": "Vanderbijlpark",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "Coetzee",
+        "entity": "PERSON"
+      },
+      {
+        "value": "2026/118934",
+        "entity": "FILE_NUMBER"
+      }
+    ],
+    "mustRemainVisible": [
+      "sick note",
+      "his foreman",
+      "2nd degree burn",
+      "R forearm",
+      "~2% TBSA",
+      "silver sulfadiazine",
+      "paraffin gauze",
+      "rv 3/7"
+    ]
+  },
+  {
+    "name": "group-chat-diabetic-foot-day",
+    "text": "[06:58, 11/10/2026] Sister Ndlovu: morning ☀️ who has the east list today?\n[07:01, 11/10/2026] Sr Mokoena: me. starting with mr ramaphakela then the twins' gran\n[07:03, 11/10/2026] Sister Ndlovu: ok. RAMAPHAKELA's wife phoned last night, she says hes not eating, sugars 18.2 this am\n[07:04, 11/10/2026] Sr Mokoena: 😳 ok will check. hes on lantus 20u nocte\n[07:10, 11/10/2026] Dr Botha: if glucose >15 again pls send him to Tembisa Hospital casualty, dont wait\n[07:11, 11/10/2026] Sr Mokoena: noted dr\n[09:32, 11/10/2026] Sr Mokoena: at 1520 Mpho Street Ext 5 now. o/e plantar ulcer R 1st MTP head 1.5 x 1.5 cm, probes to bone 😟\n[09:33, 11/10/2026] Sr Mokoena: <attached: photo>\n[09:40, 11/10/2026] Dr Botha: that's osteo until proven otherwise. start clindamycin 300mg qid and refer to ortho\n[09:41, 11/10/2026] Sr Mokoena: his son Kagiso will drive him, number 079 331 88 25\n[11:15, 11/10/2026] Sr Mokoena: gran (ma Sibiya) fine, dsg dry, rv fri\n[11:16, 11/10/2026] Sister Ndlovu: 👍 dankie",
+    "expected": [
+      {
+        "value": "Ndlovu",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Mokoena",
+        "entity": "PERSON"
+      },
+      {
+        "value": "ramaphakela",
+        "entity": "PERSON"
+      },
+      {
+        "value": "RAMAPHAKELA",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Botha",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Tembisa Hospital",
+        "entity": "FACILITY"
+      },
+      {
+        "value": "1520 Mpho Street Ext 5",
+        "entity": "ADDRESS"
+      },
+      {
+        "value": "Kagiso",
+        "entity": "PERSON"
+      },
+      {
+        "value": "079 331 88 25",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "Sibiya",
+        "entity": "PERSON"
+      }
+    ],
+    "mustRemainVisible": [
+      "the twins' gran",
+      "sugars 18.2",
+      "lantus 20u nocte",
+      "casualty",
+      "o/e",
+      "plantar ulcer",
+      "R 1st MTP head",
+      "1.5 x 1.5 cm",
+      "probes to bone",
+      "osteo",
+      "clindamycin 300mg qid",
+      "ortho",
+      "his son",
+      "rv fri",
+      "dankie"
+    ]
+  },
+  {
+    "name": "medical-aid-rejection-npwt",
+    "text": "[14:02, 12/10/2026] Lerato (Pharmacy): GEMS rejected the NPWT auth for member 9921 004 3317 (Mr Ruben Petersen, ID 660204-5733083, 41 Vygie St, Mitchells Plain). They want a motivation from the GP + wound photos + measurements. Wife Shireen says call her not him: 084-220-1913 or shireen.p@outlook.com",
+    "expected": [
+      {
+        "value": "Lerato",
+        "entity": "PERSON"
+      },
+      {
+        "value": "9921 004 3317",
+        "entity": "MEDICAL_AID_NUMBER"
+      },
+      {
+        "value": "Ruben Petersen",
+        "entity": "PERSON"
+      },
+      {
+        "value": "660204-5733083",
+        "entity": "ZA_ID_NUMBER"
+      },
+      {
+        "value": "41 Vygie St",
+        "entity": "ADDRESS"
+      },
+      {
+        "value": "Mitchells Plain",
+        "entity": "LOCATION"
+      },
+      {
+        "value": "Shireen",
+        "entity": "PERSON"
+      },
+      {
+        "value": "084-220-1913",
+        "entity": "PHONE_NUMBER"
+      },
+      {
+        "value": "shireen.p@outlook.com",
+        "entity": "EMAIL_ADDRESS"
+      }
+    ],
+    "mustRemainVisible": ["GEMS", "NPWT", "motivation from the GP", "wound photos", "measurements", "Wife"]
+  },
+  {
+    "name": "dob-in-chat-and-birthday-word",
+    "text": "[10:48, 13/10/2026] Sr Mokoena: Mrs Fatima Ismail, born 02 Feb 1947, lives with her son Yusuf in 9 Mint Road, Fordsburg. venous eczema around VLU L gaiter area, applied zinc paste bandage + Coban 2. she says its her grandsons birthday next week so she wants it changed fri not mon 😅",
+    "expected": [
+      {
+        "value": "Mokoena",
+        "entity": "PERSON"
+      },
+      {
+        "value": "Fatima Ismail",
+        "entity": "PERSON"
+      },
+      {
+        "value": "02 Feb 1947",
+        "entity": "DATE_OF_BIRTH"
+      },
+      {
+        "value": "Yusuf",
+        "entity": "PERSON"
+      },
+      {
+        "value": "9 Mint Road",
+        "entity": "ADDRESS"
+      },
+      {
+        "value": "Fordsburg",
+        "entity": "LOCATION"
+      }
+    ],
+    "mustRemainVisible": [
+      "venous eczema",
+      "VLU L gaiter area",
+      "zinc paste bandage",
+      "Coban 2",
+      "birthday",
+      "next week",
+      "fri not mon",
+      "her son"
+    ]
+  }
+]
