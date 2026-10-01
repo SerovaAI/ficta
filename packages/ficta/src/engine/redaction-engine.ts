@@ -25,6 +25,14 @@ export interface RedactionEngine {
   /** Redact a raw string (header value, query component) and report matches / leaks. Async: see above. */
   redactTextDetailed(text: string, ctx?: TextRedactionContext): Promise<TextRedactionDetails>;
 
+  /**
+   * Redact a plain string as message content: the same detection and occurrence pipeline as a
+   * request body (every detector runs, including out-of-process NER such as Presidio), applied to the
+   * whole string as one leaf. The text is never parsed as JSON. Use this for free text from outside a
+   * request; {@link redactTextDetailed} is the header/query path, where NER detectors do not run.
+   */
+  redactContentDetailed(text: string, ctx?: ContentRedactionContext): Promise<ContentRedactionDetails>;
+
   /** Restore surrogates → real values in a chunk of text. */
   restoreText(text: string, opts?: RestoreOptions): string;
 
@@ -97,6 +105,9 @@ export interface RequestScope {
 
   /** Redact a raw string (header value, query component); detected values enter this scope. */
   redactTextDetailed(text: string, ctx?: TextRedactionContext): Promise<TextRedactionDetails>;
+
+  /** Redact a plain string as message content (see {@link RedactionEngine.redactContentDetailed}). */
+  redactContentDetailed(text: string, ctx?: ContentRedactionContext): Promise<ContentRedactionDetails>;
 
   /** Restore surrogates → real values in a chunk of text (scope-detected then permanent). */
   restoreText(text: string, opts?: RestoreOptions): string;
@@ -177,6 +188,9 @@ interface TraceRedactionOptions {
 }
 
 export type BodyRedactionContext = Omit<DetectTextContext, "surface" | "runtime"> & TraceRedactionOptions;
+
+/** Optional context for content redaction: the same options as a body, minus nothing JSON-specific. */
+export type ContentRedactionContext = BodyRedactionContext;
 
 /** Optional context for text redaction: which surface/header/path the text came from. */
 export type TextRedactionContext = Omit<DetectTextContext, "surface" | "runtime"> &
@@ -279,6 +293,11 @@ export interface BodyRedactionDetails extends BodyRedactionResult {
   traceLeakValues?: ProtectionTraceValue[];
   traceOccurrences?: ProtectionTraceOccurrence[];
   traceAmbiguousEntityLinks?: AmbiguousEntityLinkDiagnostic[];
+}
+
+/** {@link BodyRedactionDetails} for a plain string: the redacted string is `text`, not `body`. */
+export interface ContentRedactionDetails extends Omit<BodyRedactionDetails, "body"> {
+  text: string;
 }
 
 export interface TextRedactionDetails extends TextRedactionResult {
