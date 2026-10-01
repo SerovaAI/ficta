@@ -31,6 +31,8 @@ import {
   type AmbiguousEntityLinkDiagnostic,
   type BodyRedactionContext,
   type BodyRedactionDetails,
+  type ContentRedactionContext,
+  type ContentRedactionDetails,
   DetectorUnavailableError,
   type EngineRegistryStatus,
   type ProtectionHit,
@@ -374,6 +376,10 @@ export class ProtectionEngine implements RedactionEngine {
     return this.defaultScope.redactTextDetailed(text, ctx);
   }
 
+  redactContentDetailed(text: string, ctx: ContentRedactionContext = {}): Promise<ContentRedactionDetails> {
+    return this.defaultScope.redactContentDetailed(text, ctx);
+  }
+
   /** Conservative raw-value membership check for deciding whether derived metadata is safe to log. */
   containsProtectedValue(text: string): boolean {
     return this.defaultScope.containsProtectedValue(text);
@@ -458,12 +464,21 @@ class ProtectionRequestScope implements RequestScope {
   }
 
   async redactBodyDetailed(body: string, ctx: BodyRedactionContext = {}): Promise<BodyRedactionDetails> {
-    return this.redactBodyOccurrences(body, ctx);
+    return this.redactBodyOccurrences(bodyDocument(body), ctx);
   }
 
-  private async redactBodyOccurrences(body: string, ctx: BodyRedactionContext): Promise<BodyRedactionDetails> {
+  async redactContentDetailed(text: string, ctx: ContentRedactionContext = {}): Promise<ContentRedactionDetails> {
+    // A plain string is one raw content leaf: never parsed as JSON (so "42" or `{"a":1}` stay text),
+    // and run through the body pipeline so NER detectors see it as content (surface "body").
+    const { body, ...details } = await this.redactBodyOccurrences(rawDocument(text), ctx);
+    return { ...details, text: body };
+  }
+
+  private async redactBodyOccurrences(
+    document: BodyDocument,
+    ctx: BodyRedactionContext,
+  ): Promise<BodyRedactionDetails> {
     const { traceValues, traceOccurrences, ...detectCtx } = ctx;
-    const document = bodyDocument(body);
     const seen = this.seenLeaves;
     const hashes = seen ? document.leaves.map((leaf) => leafHash(leaf.text)) : [];
     const freshLeaves = seen ? document.leaves.filter((_, i) => !seen.has(hashes[i] ?? "")) : document.leaves;
@@ -918,16 +933,21 @@ function bodyDocument(body: string): BodyDocument {
     });
     return { body, parsed, leaves, isJson: true };
   } catch {
-    const leaves: BodyLeaf[] = [];
-    visitBodyLeaves(
-      body,
-      (leaf) => {
-        leaves.push(leaf);
-      },
-      "raw",
-    );
-    return { body, leaves, isJson: false };
+    return rawDocument(body);
   }
+}
+
+/** A non-JSON document: the whole string is a single raw leaf. */
+function rawDocument(body: string): BodyDocument {
+  const leaves: BodyLeaf[] = [];
+  visitBodyLeaves(
+    body,
+    (leaf) => {
+      leaves.push(leaf);
+    },
+    "raw",
+  );
+  return { body, leaves, isJson: false };
 }
 
 function renderBodyDocument(document: BodyDocument, replacements: ReadonlyMap<number, string>): string {
