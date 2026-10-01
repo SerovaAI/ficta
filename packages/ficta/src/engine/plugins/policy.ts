@@ -88,13 +88,13 @@ export interface UserExclusionParse {
  * user-local ~/.ficta/projects.json — never from a file inside the repository) into its own rule.
  */
 export function parseUserExclusionRule(
-  raw: string | undefined,
+  raw: string | readonly string[] | undefined,
   scope: UserExclusionScope = "global",
 ): UserExclusionParse {
   const seen = new Set<string>();
   const names: string[] = [];
   const invalidNames: string[] = [];
-  for (const entry of (raw ?? "").split(",")) {
+  for (const entry of typeof raw === "string" ? raw.split(",") : (raw ?? [])) {
     const name = entry.trim();
     if (!name) continue;
     if (!ENV_NAME_RE.test(name)) {

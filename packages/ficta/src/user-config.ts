@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import { parseBoolean } from "./engine/env-flags.js";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import { envFlag, parseBoolean } from "./engine/env-flags.js";
 import type { ConfigBinding, ConfigBindingKind, ConfigSection } from "./engine/plugins/types.js";
 import { pluginConfigBindings, pluginConfigSections } from "./plugins/index.js";
 import { projectRoot, projectsFilePath, readProjectExcludeNames } from "./project-config.js";
@@ -23,6 +23,8 @@ const CORE_CONFIG_BINDINGS: readonly ConfigBinding[] = [
   { env: "FICTA_LOG_ROOT", path: ["logging", "log_root"], kind: "string" },
   { env: "FICTA_LOG_DIR", path: ["logging", "log_dir"], kind: "string" },
   { env: "FICTA_SURROGATE_KEY", path: ["surrogate", "key"], kind: "string" },
+  { env: "FICTA_SURROGATE_KEY_FILE", path: ["surrogate", "key_file"], kind: "string" },
+  { env: "FICTA_REQUIRE_STABLE_SURROGATE_KEY", path: ["surrogate", "require_stable_key"], kind: "boolean" },
   { env: "FICTA_SURROGATE_STYLE", path: ["surrogate", "style"], kind: "string" },
   { env: "FICTA_PORT", path: ["runtime", "port"], kind: "number" },
   { env: "FICTA_ANTHROPIC_UPSTREAM", path: ["upstreams", "anthropic"], kind: "string" },
@@ -37,7 +39,7 @@ const CORE_SECTION_ORDER: readonly ConfigSection[] = [
   { path: ["redaction"], keys: ["fail_closed", "redact_paths", "restore_into_tools"] },
   { path: ["detection"], keys: ["fail_closed"] },
   { path: ["logging"], keys: ["max_bytes", "log_root", "log_dir"] },
-  { path: ["surrogate"], keys: ["key", "style"] },
+  { path: ["surrogate"], keys: ["key", "key_file", "require_stable_key", "style"] },
   { path: ["runtime"], keys: ["port"] },
   { path: ["upstreams"], keys: ["anthropic", "openai", "chatgpt", "forced", "allow_custom"] },
 ];
@@ -102,6 +104,13 @@ export function loadUserConfig(): void {
   }
 }
 
+/** Forget what `loadUserConfig()` / key resolution recorded, so tests can simulate a fresh process. */
+export function resetUserConfigForTests(): void {
+  loaded = false;
+  loadedConfigEnv.clear();
+  keyActivatedFromFile = undefined;
+}
+
 /** True when `loadUserConfig()` supplied this process env key from config.toml, not the shell. */
 export function wasLoadedFromUserConfig(key: string): boolean {
   return loadedConfigEnv.has(key);
@@ -123,25 +132,146 @@ export function readUserConfig(path = defaultConfigPath()): Record<string, strin
   return configObjectToEnv(parseToml(readFileSync(path, "utf8")));
 }
 
+/** Where the active surrogate key came from; `ephemeral` means a random per-process key. */
+export type SurrogateKeySource = "env" | "env-key-file" | "config" | "config-key-file" | "ephemeral";
+
+export interface SurrogateKeyStatus {
+  /** True when a configured key is active, so surrogates survive a restart. */
+  stable: boolean;
+  source: SurrogateKeySource;
+  /** Resolved key-file path, when the key came from a file. Never the key itself. */
+  keyFile?: string;
+}
+
+/** A configured surrogate key could not be used, or a stable key is required but none is configured. */
+export class SurrogateKeyError extends Error {
+  override name = "SurrogateKeyError";
+}
+
+const KEY_ENV = "FICTA_SURROGATE_KEY";
+const KEY_FILE_ENV = "FICTA_SURROGATE_KEY_FILE";
+const KEY_FILE_HEX = /^[0-9a-fA-F]{64}$/;
+
+/** The key value this module activated from a key file, so a re-resolve does not mistake it for a shell key. */
+let keyActivatedFromFile: string | undefined;
+
+/** `surrogate.require_stable_key` / `FICTA_REQUIRE_STABLE_SURROGATE_KEY`. */
+export function requireStableSurrogateKey(env: NodeJS.ProcessEnv = process.env): boolean {
+  return envFlag(env.FICTA_REQUIRE_STABLE_SURROGATE_KEY);
+}
+
+/**
+ * Resolve the surrogate key and activate it as `FICTA_SURROGATE_KEY` for the engine. Precedence, first
+ * match wins: `FICTA_SURROGATE_KEY` from the shell, `FICTA_SURROGATE_KEY_FILE` from the shell,
+ * `surrogate.key` in config.toml, `surrogate.key_file` in config.toml. With none, the engine falls
+ * back to a random per-process key (`ephemeral`). Never generates or persists a key — see
+ * {@link ensureSurrogateKey} — and throws {@link SurrogateKeyError} for an unusable key file.
+ */
+export function resolveSurrogateKey(path = configPath()): SurrogateKeyStatus {
+  const env = process.env;
+  const key = env[KEY_ENV] && env[KEY_ENV] !== keyActivatedFromFile ? env[KEY_ENV] : undefined;
+  const keyFile = env[KEY_FILE_ENV];
+  const keyFromShell = Boolean(key) && !loadedConfigEnv.has(KEY_ENV);
+  const keyFileFromShell = Boolean(keyFile) && !loadedConfigEnv.has(KEY_FILE_ENV);
+
+  if (keyFromShell) return { stable: true, source: "env" };
+  if (keyFile && keyFileFromShell) return activateKeyFile(resolve(expandHome(keyFile)), "env-key-file");
+  if (key) return { stable: true, source: "config" };
+  if (keyFile) {
+    const base = path ? dirname(path) : process.cwd();
+    const expanded = expandHome(keyFile);
+    return activateKeyFile(isAbsolute(expanded) ? expanded : resolve(base, expanded), "config-key-file");
+  }
+  if (env[KEY_ENV] === keyActivatedFromFile) delete env[KEY_ENV]; // the key file is no longer configured
+  return { stable: false, source: "ephemeral" };
+}
+
+/**
+ * Resolve the surrogate key and, when `surrogate.require_stable_key` is on, refuse an ephemeral one.
+ * The proxy calls this at startup so a deployment that keeps surrogates across restarts (e.g.
+ * persisted chat history) fails loudly instead of silently minting tokens it can never restore.
+ */
+export function checkSurrogateKey(path = configPath()): SurrogateKeyStatus {
+  const status = resolveSurrogateKey(path);
+  if (!status.stable && requireStableSurrogateKey()) throw new SurrogateKeyError(MISSING_STABLE_KEY);
+  return status;
+}
+
+const MISSING_STABLE_KEY =
+  "surrogate.require_stable_key is set but no surrogate key is configured; set FICTA_SURROGATE_KEY, " +
+  "FICTA_SURROGATE_KEY_FILE, or surrogate.key_file in config.toml (or run `ficta setup` to generate one)";
+
+function activateKeyFile(file: string, source: "env-key-file" | "config-key-file"): SurrogateKeyStatus {
+  const key = readSurrogateKeyFile(file);
+  process.env[KEY_ENV] = key;
+  keyActivatedFromFile = key;
+  return { stable: true, source, keyFile: file };
+}
+
+/**
+ * Read a surrogate key file: exactly 64 hex characters (a 256-bit key, e.g. `openssl rand -hex 32`),
+ * optionally followed by a newline. On POSIX the file must not be accessible to group or others —
+ * the same rule ssh applies to private keys. Errors name the file, never its contents.
+ */
+export function readSurrogateKeyFile(file: string): string {
+  let mode: number;
+  try {
+    const stat = statSync(file);
+    if (!stat.isFile()) throw new SurrogateKeyError(`surrogate key file ${file} is not a regular file`);
+    mode = stat.mode;
+  } catch (error) {
+    if (error instanceof SurrogateKeyError) throw error;
+    throw new SurrogateKeyError(
+      `surrogate key file ${file} is not readable (${(error as NodeJS.ErrnoException).code ?? "error"})`,
+    );
+  }
+  if (process.platform !== "win32" && (mode & 0o077) !== 0) {
+    throw new SurrogateKeyError(
+      `surrogate key file ${file} is accessible by group/others (mode ${(mode & 0o777).toString(8)}); run \`chmod 600 ${file}\``,
+    );
+  }
+  const key = readFileSync(file, "utf8").trim();
+  if (!KEY_FILE_HEX.test(key)) {
+    throw new SurrogateKeyError(
+      `surrogate key file ${file} must contain exactly 64 hex characters (a 256-bit key, e.g. \`openssl rand -hex 32\`)`,
+    );
+  }
+  return key;
+}
+
 /**
  * Ensure a stable local surrogate key exists, so surrogates stay consistent across sessions.
- * No-op if one is already active (env or config file). Otherwise generates a 256-bit key, persists
- * it 0600 (merging with any existing config), and activates it for the current process. The key
- * never leaves the machine and is never printed.
+ * No-op if one is already configured (env, key file, or config file). Otherwise generates a 256-bit
+ * key, persists it 0600 (merging with any existing config), and activates it for the current
+ * process — unless `generate` is false, which leaves the key ephemeral for the caller to reject.
+ * The key never leaves the machine and is never printed.
  */
-export function ensureSurrogateKey(path = configPath()): { generated: boolean; path?: string } {
-  if (process.env.FICTA_SURROGATE_KEY) return { generated: false, path };
-  if (!path) return { generated: false }; // config file disabled (FICTA_CONFIG_FILE=0)
+export function ensureSurrogateKey(
+  path = configPath(),
+  opts: { generate?: boolean } = {},
+): { generated: boolean; path?: string; status: SurrogateKeyStatus } {
+  let status = resolveSurrogateKey(path);
+  if (status.stable || !path) return { generated: false, path, status }; // !path: FICTA_CONFIG_FILE=0
   const values = readUserConfig(path);
-  if (values.FICTA_SURROGATE_KEY) {
-    process.env.FICTA_SURROGATE_KEY = values.FICTA_SURROGATE_KEY;
-    return { generated: false, path };
+  if (values[KEY_ENV] || values[KEY_FILE_ENV]) {
+    // Configured in the file but not loaded into this process yet (e.g. setup just wrote it).
+    for (const name of [KEY_ENV, KEY_FILE_ENV]) {
+      const value = values[name];
+      if (value) {
+        process.env[name] = value;
+        loadedConfigEnv.add(name);
+      }
+    }
+    status = resolveSurrogateKey(path);
+    return { generated: false, path, status };
   }
+  if (opts.generate === false) return { generated: false, path, status };
   const key = randomBytes(32).toString("hex");
-  values.FICTA_SURROGATE_KEY = key;
+  values[KEY_ENV] = key;
   writeUserConfig(values, path);
-  process.env.FICTA_SURROGATE_KEY = key;
-  return { generated: true, path };
+  process.env[KEY_ENV] = key;
+  loadedConfigEnv.add(KEY_ENV);
+  return { generated: true, path, status: { stable: true, source: "config" } };
 }
 
 function expandHome(path: string): string {

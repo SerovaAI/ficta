@@ -1,6 +1,6 @@
-import { envEnabled, parseBoolean } from "../../env-flags.js";
+import { type EnvSource, envEnabled, parseBoolean } from "../../env-flags.js";
 import type { BodyLeaf, BodyLeafPath } from "../../vault.js";
-import type { DetectorPlugin, PluginDiscovery, ProtectedValue } from "../types.js";
+import type { DetectorPlugin, PluginDiscovery, PluginRuntime, ProtectedValue } from "../types.js";
 
 const PLUGIN_NAME = "secret-shapes";
 const ENV_ENABLED = "FICTA_SECRET_SHAPES_ENABLED";
@@ -188,7 +188,8 @@ const SECRET_SHAPE_PATTERNS: readonly SecretShapePattern[] = [
  */
 const KNOWN_SHAPE_PATTERNS = SECRET_SHAPE_PATTERNS.filter((pattern) => pattern.confidence === "high");
 
-export function secretShapesEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+/** Parse the secret-shapes enable flag from env-style settings (default on). */
+export function secretShapesEnabled(env: EnvSource): boolean {
   return envEnabled(env[ENV_ENABLED], true);
 }
 
@@ -314,30 +315,30 @@ export const secretShapesPlugin: DetectorPlugin = {
     sections: [{ path: ["secret_shapes"], keys: ["enabled", "agents"] }],
   },
   setup: {
-    registrySources: () => [
+    registrySources: (ctx) => [
       {
         id: `${PLUGIN_NAME}/detector`,
         label:
           "Secret-shape detection — best-effort redaction of pasted API keys, JWTs, private keys, opaque values, and credential URLs (on by default for web, standalone proxy, and coding agents)",
-        defaultEnabled: secretShapesEnabled(),
+        defaultEnabled: secretShapesEnabled(ctx.env),
         enabledValues: () => ({ [ENV_ENABLED]: "1" }),
         disabledValues: () => ({ [ENV_ENABLED]: "0" }),
       },
     ],
   },
-  discover: () => [discoverSecretShapes()],
+  discover: (runtime) => [discoverSecretShapes(runtime)],
   detectText(text, ctx) {
-    if (!text || !secretShapesEnabled()) return [];
+    if (!text || !ctx.runtime.config.secretShapes.enabled) return [];
     return detectSecretShapes(text, { header: ctx.header });
   },
-  detectBodyLeaves(leaves) {
-    if (!secretShapesEnabled()) return [];
+  detectBodyLeaves(leaves, ctx) {
+    if (!ctx.runtime.config.secretShapes.enabled) return [];
     return detectSecretShapeLeaves(leaves);
   },
 };
 
-function discoverSecretShapes(): PluginDiscovery {
-  if (!secretShapesEnabled()) {
+function discoverSecretShapes(runtime: PluginRuntime): PluginDiscovery {
+  if (!runtime.config.secretShapes.enabled) {
     return {
       id: `${PLUGIN_NAME}/detector`,
       plugin: PLUGIN_NAME,

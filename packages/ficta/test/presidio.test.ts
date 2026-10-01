@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { pluginRuntimeFromEnv } from "../src/engine-env.js";
 import {
   checkPresidioHealth,
   chunkText,
@@ -30,7 +31,14 @@ interface StubOptions {
   health?: number;
 }
 
-const BODY = { surface: "body" } as const;
+// The detect context carries the engine's runtime; build it from env at call time, after each test
+// has set its FICTA_PII_* overrides.
+const BODY = {
+  surface: "body",
+  get runtime() {
+    return pluginRuntimeFromEnv();
+  },
+} as const;
 
 const ENV_KEYS = [
   "FICTA_PII_ENABLED",
@@ -190,7 +198,11 @@ describe("presidio recognizer", () => {
 
   it("does not contact the sidecar for non-body surfaces", async () => {
     const { result, requests } = await withStub({ analyze: () => [span("x", "x", "PERSON", 0.9)] }, () =>
-      presidioRecognizer.detect("email FICTA test", { surface: "header", header: "x-test" }),
+      presidioRecognizer.detect("email FICTA test", {
+        surface: "header",
+        header: "x-test",
+        runtime: pluginRuntimeFromEnv(),
+      }),
     );
     expect(result).toEqual([]);
     expect(requests).toHaveLength(0);
@@ -275,7 +287,7 @@ describe("presidio recognizer", () => {
       const { server, port } = await start({ analyze: () => [] });
       process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
       try {
-        expect(await checkPresidioHealth()).toMatchObject({ ok: true });
+        expect(await checkPresidioHealth(process.env)).toMatchObject({ ok: true });
       } finally {
         await close(server);
       }
@@ -284,7 +296,7 @@ describe("presidio recognizer", () => {
     it("reports not-ok (never throws) when the sidecar is down", async () => {
       const port = await closedPort();
       process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
-      const health = await checkPresidioHealth();
+      const health = await checkPresidioHealth(process.env);
       expect(health.ok).toBe(false);
       expect(health.detail).toBeTruthy();
     });

@@ -1,3 +1,4 @@
+import type { PluginRuntime } from "../config.js";
 import { isRecord } from "../json.js";
 import {
   literalProtectionRecords,
@@ -145,11 +146,13 @@ export function collectPluginSetups(plugins: readonly RedactionPlugin[]): Regist
  * Load exact registry values + build the effective policy for a plugin set. `trusted` is the set of
  * plugins core vouches for (the built-ins) — only their registry exclusions are enforced; any other
  * plugin's exclusions are recorded but not honored (the un-protection fence). Identity-based so a
- * fixture/external plugin cannot self-grant trust by name.
+ * fixture/external plugin cannot self-grant trust by name. `runtime` carries the calling engine's
+ * config (the user's exclusion lists) and is handed to every plugin's `discover()`.
  */
 export function loadPluginRegistry(
   plugins: readonly RedactionPlugin[],
   trusted: ReadonlySet<FictaPluginBase>,
+  runtime: PluginRuntime,
 ): PluginRegistrySnapshot {
   validatePluginBoundaries(plugins);
 
@@ -158,8 +161,8 @@ export function loadPluginRegistry(
   // registryPolicy to both enforcement seams (load filter here + request-time admit() in engine.ts).
   // The current project's list is a second user rule that adds to the global one; a name in both is
   // attributed to the global rule, which comes first.
-  const userExclusion = parseUserExclusionRule(process.env.FICTA_REGISTRY_EXCLUDE_NAMES);
-  const projectExclusion = parseUserExclusionRule(process.env.FICTA_REGISTRY_PROJECT_EXCLUDE_NAMES, "project");
+  const userExclusion = parseUserExclusionRule(runtime.config.registry.excludeNames);
+  const projectExclusion = parseUserExclusionRule(runtime.config.registry.projectExcludeNames, "project");
   const pluginPolicy = buildRegistryPolicy(plugins, trusted);
   const userRules = [userExclusion.rule, projectExclusion.rule].filter(
     (rule): rule is EffectiveRegistryExclusionRule => rule !== undefined,
@@ -201,7 +204,7 @@ export function loadPluginRegistry(
     if (plugin.kind !== "registry-source") {
       // A non-registry plugin (e.g. a config-driven detector) contributes no exact values at load
       // time, but may still report a discovery/status line for the startup banner.
-      if (plugin.discover) collectDiscovery(plugin.name, plugin.discover, discoveries);
+      if (plugin.discover) collectDiscovery(plugin.name, plugin.discover, discoveries, runtime);
       continue;
     }
 
@@ -255,7 +258,7 @@ export function loadPluginRegistry(
       continue;
     }
 
-    collectDiscovery(plugin.name, plugin.discover, discoveries);
+    collectDiscovery(plugin.name, plugin.discover, discoveries, runtime);
   }
 
   return {
@@ -291,11 +294,12 @@ function recordPolicyExclusion(
 /** Run a plugin's discover() and append its lines, turning a throw into a safe error discovery. */
 function collectDiscovery(
   name: string,
-  discover: () => readonly PluginDiscovery[],
+  discover: (runtime: PluginRuntime) => readonly PluginDiscovery[],
   discoveries: PluginDiscovery[],
+  runtime: PluginRuntime,
 ): void {
   try {
-    discoveries.push(...discover());
+    discoveries.push(...discover(runtime));
   } catch {
     discoveries.push({
       id: `${name}/discover`,

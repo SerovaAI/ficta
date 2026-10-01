@@ -1,5 +1,7 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import type { EngineConfigInput } from "../src/engine/config.js";
 import { ProtectionEngine } from "../src/engine/engine.js";
+import type { RestoreIntoToolsPolicy } from "../src/engine/env-flags.js";
 import {
   type ProtectionRecord,
   protectionRecordSurfaces,
@@ -19,11 +21,6 @@ import type { DetectorPlugin, RegistrySourcePlugin } from "../src/plugins/index.
 const KEY = "phase-zero-entity-fidelity-key-at-least-32-bytes";
 const CONTEXT = "thread:entity-fidelity-fixture";
 const NORTHSTAR_ID = "entity-northstar-biologics";
-
-afterEach(() => {
-  delete process.env.FICTA_RESTORE_INTO_TOOLS;
-  delete process.env.FICTA_SURROGATE_STYLE;
-});
 
 describe("entity-family surrogate contract", () => {
   it("matches the characterized canonical HMAC/base32 token exactly", () => {
@@ -178,21 +175,14 @@ describe("engine entity-family rendering", () => {
   });
 
   it("keeps the configured typed style for literals in a keyed entity scope", async () => {
-    const originalStyle = process.env.FICTA_SURROGATE_STYLE;
-    try {
-      process.env.FICTA_SURROGATE_STYLE = "typed";
-      const scope = fixtureEngine().beginRequest(CONTEXT);
-      const body = JSON.stringify({ content: "Northstar approved account ZA-TRUST-0042." });
+    const scope = fixtureEngine({ surrogate: { style: "typed" } }).beginRequest(CONTEXT);
+    const body = JSON.stringify({ content: "Northstar approved account ZA-TRUST-0042." });
 
-      const result = await scope.redactBodyDetailed(body);
+    const result = await scope.redactBodyDetailed(body);
 
-      expect(result.body).toMatch(/FICTA_ORG_[A-Z2-7]{12}_[A-Z2-7]{12}/u);
-      expect(result.body).toMatch(/FICTA_SECRET_[0-9a-f]{32}/u);
-      expect(scope.restoreJson(result.body)).toBe(body);
-    } finally {
-      if (originalStyle === undefined) delete process.env.FICTA_SURROGATE_STYLE;
-      else process.env.FICTA_SURROGATE_STYLE = originalStyle;
-    }
+    expect(result.body).toMatch(/FICTA_ORG_[A-Z2-7]{12}_[A-Z2-7]{12}/u);
+    expect(result.body).toMatch(/FICTA_SECRET_[0-9a-f]{32}/u);
+    expect(scope.restoreJson(result.body)).toBe(body);
   });
 
   it("keeps raw text surfaces literal after the same value renders as a body entity", async () => {
@@ -385,16 +375,16 @@ describe("entity-family restoration transports", () => {
     expect(registry.scope.restoreJson(registryBody, bufferedRestoreAdapterFor("anthropic"))).toContain(registry.token);
     expect(detected.scope.restoreJson(detectedBody, bufferedRestoreAdapterFor("anthropic"))).toContain("Proxima");
 
-    process.env.FICTA_RESTORE_INTO_TOOLS = "all";
-    const optedIn = entityScope("Northstar", "registry");
+    const optedIn = entityScope("Northstar", "registry", "all");
     expect(
       optedIn.scope.restoreJson(anthropicToolBody(optedIn.token), bufferedRestoreAdapterFor("anthropic")),
     ).toContain("Northstar");
   });
 });
 
-function fixtureEngine(): ProtectionEngine {
+function fixtureEngine(config?: EngineConfigInput): ProtectionEngine {
   return new ProtectionEngine({
+    config,
     plugins: [
       structuredRegistry([
         entityRecord(NORTHSTAR_ID, "organization", "Northstar Biologics (Pty) Ltd", ["Northstar"]),
@@ -481,9 +471,14 @@ function organizationDetector(value: string): DetectorPlugin {
   };
 }
 
-function entityScope(surface: string, authority: "registry" | "detected") {
+function entityScope(
+  surface: string,
+  authority: "registry" | "detected",
+  restoreIntoTools: RestoreIntoToolsPolicy = "detected",
+) {
   const strategy = entityFamilySurrogateStrategy(hexSurrogateStrategy(KEY), KEY);
-  const scope = new Vault([], strategy).beginScope(undefined, undefined, CONTEXT);
+  const vault = new Vault([], strategy, { restoreIntoTools, redactPaths: false });
+  const scope = vault.beginScope(undefined, undefined, CONTEXT);
   const token = scope.registerResolvedEntitySurface(
     { value: surface, entityId: `${surface.toLowerCase()}-entity`, entityType: "organization" },
     authority,

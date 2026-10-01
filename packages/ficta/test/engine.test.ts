@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ProtectionEngine } from "../src/engine/engine.js";
 import { DetectorUnavailableError } from "../src/engine/redaction-engine.js";
+import { engineConfigFromEnv } from "../src/engine-env.js";
 import { type DetectorPlugin, dopplerPlugin, type RegistrySourcePlugin } from "../src/plugins/index.js";
 
 const SECRET = "test-secret-value-12345";
@@ -287,15 +288,12 @@ describe("protection engine plugins", () => {
     await expect(engine.redactTextDetailed(SECRET)).rejects.toBeInstanceOf(DetectorUnavailableError);
     await expect(engine.redactBodyDetailed(body)).rejects.toMatchObject({ plugin: "crashing-detector" });
 
-    const saved = process.env.FICTA_FAIL_CLOSED_DETECTION;
-    process.env.FICTA_FAIL_CLOSED_DETECTION = "1";
-    try {
-      const global = new ProtectionEngine({ plugins: [{ ...crashing, failClosed: () => undefined }] });
-      await expect(global.redactBodyDetailed(body)).rejects.toBeInstanceOf(DetectorUnavailableError);
-    } finally {
-      if (saved === undefined) delete process.env.FICTA_FAIL_CLOSED_DETECTION;
-      else process.env.FICTA_FAIL_CLOSED_DETECTION = saved;
-    }
+    // No per-detector override → the engine's global default (env FICTA_FAIL_CLOSED_DETECTION) decides.
+    const global = new ProtectionEngine({
+      plugins: [{ ...crashing, failClosed: () => undefined }],
+      config: { detection: { failClosed: true } },
+    });
+    await expect(global.redactBodyDetailed(body)).rejects.toBeInstanceOf(DetectorUnavailableError);
 
     // Fail-open: the crash is reported on the details instead of hidden.
     const open = new ProtectionEngine({ plugins: [{ ...crashing, failClosed: () => false }] });
@@ -431,7 +429,7 @@ describe("protection engine plugins", () => {
             { name: "REAL", value: "real-secret-value-abc", source: "fixture", kind: "secret", confidence: "exact" },
           ],
         };
-        const engine = new ProtectionEngine({ plugins: [detector] });
+        const engine = new ProtectionEngine({ plugins: [detector], config: engineConfigFromEnv() });
         const redacted = await engine.redactBodyDetailed(
           JSON.stringify({ content: "build-label-1234 / real-secret-value-abc" }),
         );

@@ -1,3 +1,4 @@
+import type { EnvSource } from "../../env-flags.js";
 import { checkOpenmedHealth, openmedRecognizer } from "./openmed-recognizer.js";
 import { checkPresidioHealth, presidioRecognizer } from "./presidio-recognizer.js";
 import type { PiiRecognizer } from "./recognizer.js";
@@ -23,7 +24,9 @@ const BUILT_IN: Readonly<Record<string, PiiRecognizer>> = {
 };
 
 /** Health probes for networked backends (`ficta doctor`, /status). In-process backends have none. */
-const HEALTH_CHECKS: Readonly<Record<string, () => Promise<{ ok: boolean; url: string; detail?: string }>>> = {
+const HEALTH_CHECKS: Readonly<
+  Record<string, (env: EnvSource) => Promise<{ ok: boolean; url: string; detail?: string }>>
+> = {
   presidio: checkPresidioHealth,
   openmed: checkOpenmedHealth,
 };
@@ -31,7 +34,7 @@ const HEALTH_CHECKS: Readonly<Record<string, () => Promise<{ ok: boolean; url: s
 /** The reachability probe for a networked backend, or undefined for in-process ones (regex). */
 export function backendHealthCheck(
   name: string,
-): (() => Promise<{ ok: boolean; url: string; detail?: string }>) | undefined {
+): ((env: EnvSource) => Promise<{ ok: boolean; url: string; detail?: string }>) | undefined {
   return HEALTH_CHECKS[name];
 }
 
@@ -54,24 +57,24 @@ export interface BackendSetSelection {
 }
 
 /** The configured backend name (lowercased). Defaults to `regex` when unset/blank. */
-export function selectedBackendName(env: NodeJS.ProcessEnv = process.env): string {
+export function selectedBackendName(env: EnvSource): string {
   return env[ENV_BACKEND]?.trim().toLowerCase() || DEFAULT_BACKEND;
 }
 
 /** Configured backend names. `FICTA_PII_BACKENDS` wins; legacy `FICTA_PII_BACKEND` remains supported. */
-export function selectedBackendNames(env: NodeJS.ProcessEnv = process.env): string[] {
+export function selectedBackendNames(env: EnvSource): string[] {
   const raw = env[ENV_BACKENDS]?.trim() || selectedBackendName(env);
-  const names = dedupe(
-    raw
-      .split(",")
-      .map((name) => name.trim().toLowerCase())
-      .filter(Boolean),
-  );
-  return names.length > 0 ? names : [DEFAULT_BACKEND];
+  return normalizeBackendNames(raw.split(","));
+}
+
+/** Lowercase, trim and dedupe configured backend names; none → the `regex` default. */
+export function normalizeBackendNames(names: readonly string[]): string[] {
+  const normalized = dedupe(names.map((name) => name.trim().toLowerCase()).filter(Boolean));
+  return normalized.length > 0 ? normalized : [DEFAULT_BACKEND];
 }
 
 /** Resolve the configured backend to a recognizer; an unknown name safely degrades to regex. */
-export function activeBackend(env: NodeJS.ProcessEnv = process.env): BackendSelection {
+export function activeBackend(env: EnvSource): BackendSelection {
   const name = selectedBackendName(env);
   const backend = BUILT_IN[name];
   if (backend) return { name, backend };
@@ -79,8 +82,13 @@ export function activeBackend(env: NodeJS.ProcessEnv = process.env): BackendSele
 }
 
 /** Resolve configured backends and always retain regex as the structured-identity safety floor. */
-export function activeBackends(env: NodeJS.ProcessEnv = process.env): BackendSetSelection {
-  const configured = selectedBackendNames(env);
+export function activeBackends(env: EnvSource): BackendSetSelection {
+  return resolveBackends(selectedBackendNames(env));
+}
+
+/** Resolve configured backend names (e.g. `EngineConfig.pii.backends`) to recognizers, regex floor kept. */
+export function resolveBackends(names: readonly string[]): BackendSetSelection {
+  const configured = normalizeBackendNames(names);
   const backends: Array<{ name: string; backend: PiiRecognizer }> = [];
   const unknown: string[] = [];
 

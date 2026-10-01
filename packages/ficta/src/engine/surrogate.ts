@@ -1,4 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
+import type { EnvSource } from "./env-flags.js";
 import type { ProtectedValue } from "./plugins/types.js";
 
 /**
@@ -54,13 +55,20 @@ const ENTITY_PATTERN_SOURCE = `${HEX_PREFIX}(?:ORG|PERSON)_[A-Z2-7]{${ENTITY_TAG
 const ENTITY_MAX_LENGTH = `${HEX_PREFIX}PERSON_${"A".repeat(ENTITY_TAG_LEN)}_${"A".repeat(ENTITY_TAG_LEN)}`.length;
 const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
-const ENV_SURROGATE_KEY = process.env.FICTA_SURROGATE_KEY;
-// One key per process by default (same value → same surrogate across turns). Set
-// FICTA_SURROGATE_KEY for cross-restart stability.
-const DEFAULT_KEY = ENV_SURROGATE_KEY ?? randomBytes(32).toString("hex");
+let processKey: string | undefined;
+
+/**
+ * The HMAC key used when no key is configured: generated once per process, so the same value maps
+ * to the same surrogate across turns and across engines in this process, but every token changes on
+ * restart. A configured key (`EngineConfig.surrogate.key`) replaces it.
+ */
+export function ephemeralSurrogateKey(): string {
+  processKey ??= randomBytes(32).toString("hex");
+  return processKey;
+}
 
 /** The built-in strategy: `FICTA_` + 32 hex chars of HMAC-SHA256(value) — opaque and JSON-safe. */
-export function hexSurrogateStrategy(key: string = DEFAULT_KEY): SurrogateStrategy {
+export function hexSurrogateStrategy(key: string = ephemeralSurrogateKey()): SurrogateStrategy {
   return {
     mint(value) {
       return HEX_PREFIX + createHmac("sha256", key).update(value).digest("hex").slice(0, HEX_LEN);
@@ -93,7 +101,7 @@ const TYPED_TOTAL = HEX_PREFIX.length + MAX_TYPE_LEN + 1 + HEX_LEN; // FICTA_ + 
  * The `<TYPE>` is drawn ONLY from {@link CATEGORY_TYPE} or a coarse kind fallback, so an arbitrary
  * label (e.g. a registered secret's env-var name) never leaks into the token.
  */
-export function typedSurrogateStrategy(key: string = DEFAULT_KEY): SurrogateStrategy {
+export function typedSurrogateStrategy(key: string = ephemeralSurrogateKey()): SurrogateStrategy {
   const continuation = new RegExp(`^[A-Z0-9]{0,${MAX_TYPE_LEN}}(?:_[0-9a-f]{0,${HEX_LEN}})?$`);
   return {
     mint(value, hint) {
@@ -118,7 +126,7 @@ export function typedSurrogateStrategy(key: string = DEFAULT_KEY): SurrogateStra
  */
 export function entityFamilySurrogateStrategy(
   literal: SurrogateStrategy = surrogateStrategy(),
-  key: string = DEFAULT_KEY,
+  key: string = ephemeralSurrogateKey(),
 ): SurrogateStrategy {
   const pattern = new RegExp(`(?:${literal.pattern.source}|${ENTITY_PATTERN_SOURCE})`, "g");
   return {
@@ -144,20 +152,24 @@ export function entityFamilySurrogateStrategy(
   };
 }
 
+/** Surrogate token style: opaque `FICTA_<hex>` or typed `FICTA_<TYPE>_<hex>`. */
+export type SurrogateStyle = "opaque" | "typed";
+
 /**
- * Select the surrogate token style from the environment: `typed` → {@link typedSurrogateStrategy};
- * anything else (default) → the opaque {@link hexSurrogateStrategy}. Kept opaque by default so the
- * token shape only changes when explicitly opted in.
+ * Build the literal strategy for a style: `typed` → {@link typedSurrogateStrategy}; otherwise (the
+ * default) the opaque {@link hexSurrogateStrategy}. Opaque by default so the token shape only changes
+ * when explicitly opted in. Without a key the per-process ephemeral key is used.
  */
-export function surrogateStrategy(env: NodeJS.ProcessEnv = process.env, key: string = DEFAULT_KEY): SurrogateStrategy {
-  return surrogateStyle(env) === "typed" ? typedSurrogateStrategy(key) : hexSurrogateStrategy(key);
+export function surrogateStrategy(opts: { style?: SurrogateStyle; key?: string } = {}): SurrogateStrategy {
+  const key = opts.key || ephemeralSurrogateKey();
+  return opts.style === "typed" ? typedSurrogateStrategy(key) : hexSurrogateStrategy(key);
 }
 
 /**
- * The active surrogate token style from the environment. Single source of truth shared by the
- * strategy factory above, the startup banner, and `ficta doctor`, so all three always agree.
+ * Parse the surrogate style from env-style settings (`FICTA_SURROGATE_STYLE`). Single source of truth
+ * shared by the engine-config adapter, the startup banner, and `ficta doctor`, so all three agree.
  */
-export function surrogateStyle(env: NodeJS.ProcessEnv = process.env): "opaque" | "typed" {
+export function surrogateStyle(env: EnvSource): SurrogateStyle {
   return env.FICTA_SURROGATE_STYLE?.trim().toLowerCase() === "typed" ? "typed" : "opaque";
 }
 

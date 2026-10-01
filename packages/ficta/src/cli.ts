@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { sanitizeAgentEnv } from "./child-env.js";
 import { applyRuntimeEnvDefaults } from "./defaults.js";
 import { detectorFailClosed } from "./engine/detection-policy.js";
+import { detectionFailClosed, engineConfigFromEnv, surrogateStyle } from "./engine-env.js";
 import { isGloballyDisabled, setGlobalDisabled } from "./global-disable.js";
 import { defaultShimDir, findExecutable, installShims, uninstallShims } from "./install.js";
 import { levelEnabled, parseLogLevel } from "./log-level.js";
@@ -19,7 +20,13 @@ import {
   resolveAgentSecretShapesEnabled,
 } from "./plugins/index.js";
 import { renderStartupBanner, shouldPrintStartupDiagnostics } from "./startup-banner.js";
-import { ensureSurrogateKey, loadUserConfig } from "./user-config.js";
+import {
+  checkSurrogateKey,
+  ensureSurrogateKey,
+  loadUserConfig,
+  requireStableSurrogateKey,
+  SurrogateKeyError,
+} from "./user-config.js";
 
 // Snapshot the environment as the shell handed it to us, before loadUserConfig() and
 // applyRuntimeEnvDefaults() merge config.toml and built-in defaults into process.env. Two uses:
@@ -75,17 +82,27 @@ if (command === "install") {
     if (result.pathUpdated) process.stderr.write(`✓ added ${result.shimDir} to PATH in ${result.rcPath}\n`);
     else if (result.pathAlreadyConfigured) process.stderr.write(`✓ PATH already configured in ${result.rcPath}\n`);
   }
-  const keyResult = ensureSurrogateKey();
-  process.stderr.write(
-    keyResult.generated
-      ? `✓ generated a stable surrogate key in ${keyResult.path} (0600, never printed)\n`
-      : "✓ stable surrogate key already configured\n",
-  );
+  let keyFailed = false;
+  try {
+    const keyResult = ensureSurrogateKey();
+    process.stderr.write(
+      keyResult.generated
+        ? `✓ generated a stable surrogate key in ${keyResult.path} (0600, never printed)\n`
+        : keyResult.status.stable
+          ? "✓ stable surrogate key already configured\n"
+          : "- no stable surrogate key (FICTA_CONFIG_FILE=0); surrogates change on every launch\n",
+    );
+  } catch (error) {
+    if (!(error instanceof SurrogateKeyError)) throw error;
+    keyFailed = true;
+    process.stderr.write(`! ${error.message}\n`);
+  }
   process.stderr.write(
     `\nRestart your shell, then run:\n  ${supportedAgents.join("\n  ")}\n\nBypass once with: FICTA_DISABLE=1 ${supportedAgents[0] ?? "claude"}\nDisable globally with: ficta disable\n`,
   );
   process.exit(
-    result.launcher.status === "skipped-existing" ||
+    keyFailed ||
+      result.launcher.status === "skipped-existing" ||
       result.shims.some((s) => s.status === "skipped-existing" || s.status === "skipped-launcher")
       ? 1
       : 0,
@@ -245,14 +262,23 @@ const printStartupDiagnostics = shouldPrintStartupDiagnostics({
   machineReadable: agent.isMachineReadable?.(rest),
 });
 
-const surrogate = ensureSurrogateKey();
+// With surrogate.require_stable_key, never mint a fresh key at launch: a silently regenerated key
+// would orphan every surrogate issued under the old one. Refuse instead (startProxy re-checks).
+let surrogate: ReturnType<typeof ensureSurrogateKey>;
+try {
+  surrogate = ensureSurrogateKey(undefined, { generate: !requireStableSurrogateKey() });
+  checkSurrogateKey();
+} catch (error) {
+  if (!(error instanceof SurrogateKeyError)) throw error;
+  process.stderr.write(`\n🛑 ficta: ${error.message}\n`);
+  process.exit(2);
+}
 if (surrogate.generated && printStartupDiagnostics) {
   process.stderr.write(`🔑 ficta — generated a stable surrogate key (${surrogate.path}, 0600)\n`);
 }
 
 const { startProxy } = await import("./server.js");
 const { surrogateKeyWarning } = await import("./engine/vault.js");
-const { surrogateStyle } = await import("./engine/surrogate.js");
 // Every launched agent owns its loopback proxy, so one process-owned scope is the correct isolation
 // boundary. Keeping detected mappings across its model requests lets hidden compaction/subagent
 // calls echo a surrogate into a later tool call without turning that placeholder into file content.
@@ -271,7 +297,7 @@ if (printStartupDiagnostics) {
       registryPolicy: proxy.registryPolicy,
       // Resolve the detector's own override against the global default so the banner states the
       // outage posture; env is fully merged (loadUserConfig + applyRuntimeEnvDefaults) by now.
-      piiFailClosed: detectorFailClosed(piiFailClosed()),
+      piiFailClosed: detectorFailClosed(piiFailClosed(), detectionFailClosed()),
       // Same fully-merged env as above governs the surrogate token style shown on the banner.
       surrogateStyle: surrogateStyle(),
       // --ficta-verbose is banner-only sugar (it never unmutes proxy logs); an explicit
@@ -307,7 +333,7 @@ if (proxy.protectedValues === 0 && printStartupDiagnostics) {
     "   ⚠ no protected values loaded — launching anyway in passthrough mode; set FICTA_REQUIRE_REGISTRY=1 to block instead\n",
   );
 }
-const keyWarning = surrogateKeyWarning();
+const keyWarning = surrogateKeyWarning(engineConfigFromEnv().surrogate.key);
 if (keyWarning && printStartupDiagnostics) process.stderr.write(`   ⚠ ${keyWarning}\n`);
 
 const agentPath = resolveAgentExecutable(agent.command);

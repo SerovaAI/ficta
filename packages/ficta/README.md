@@ -77,6 +77,18 @@ their own config under `[registry.*]`; see
 [`docs/plugins.md`](./docs/plugins.md#configuring-built-in-plugins) for the per-source options
 (Doppler `configs` / `project` / `timeout_ms`, etc.).
 
+**Surrogate key.** Tokens are a keyed HMAC of the value, so the same key always yields the same
+surrogate. `ficta setup` / `ficta install` (and agent launches) generate a 256-bit key into
+`config.toml` when none is configured. To keep the secret out of `config.toml`, point
+`surrogate.key_file` (or `FICTA_SURROGATE_KEY_FILE`) at a `0600` file containing 64 hex characters
+(`openssl rand -hex 32`); a malformed or group/world-readable file stops the proxy. Precedence:
+`FICTA_SURROGATE_KEY` > `FICTA_SURROGATE_KEY_FILE` > `surrogate.key` > `surrogate.key_file`; with
+none, the key is random per process and tokens change on restart. Deployments that keep surrogates
+across restarts (e.g. persisted chat history) should set `surrogate.require_stable_key = true`
+(`FICTA_REQUIRE_STABLE_SURROGATE_KEY=1`) so startup fails instead of minting an ephemeral key;
+`ficta doctor` reports which key is active without printing it. Key rotation is not supported:
+changing the key changes every surrogate, and tokens issued under the old key cannot be restored.
+
 **Request-time detectors** are intentionally per-surface. The standalone/web proxy follows
 `secret_shapes.enabled` and `pii.enabled`. A launched coding agent gets those detectors only when both the
 matching `enabled` and `agents` toggles are true, unless you explicitly set `FICTA_SECRET_SHAPES_ENABLED`

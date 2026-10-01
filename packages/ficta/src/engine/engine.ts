@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { type EngineConfig, type EngineConfigInput, type PluginRuntime, resolveEngineConfig } from "./config.js";
 import { detectorFailClosed } from "./detection-policy.js";
-import { engineWarn } from "./diagnostics.js";
+import { noopWarnSink, type WarnSink } from "./diagnostics.js";
 import { type EntityLinkAnchorIndex, entityLinkAnchorIndex, linkDetectedEntityClaims } from "./entity-linker.js";
 import { expandEntities, expansionSpans } from "./expander.js";
 import {
@@ -43,7 +44,7 @@ import {
   type TextRedactionContext,
   type TextRedactionDetails,
 } from "./redaction-engine.js";
-import { entityFamilySurrogateStrategy, surrogateStrategy } from "./surrogate.js";
+import { entityFamilySurrogateStrategy, ephemeralSurrogateKey, surrogateStrategy } from "./surrogate.js";
 import { type BodyLeaf, type ScopedVault, type SurrogateTable, Vault, visitBodyLeaves } from "./vault.js";
 import type { Wire } from "./wire.js";
 import { bufferedRestoreAdapterFor, sseRestoreAdapterFor } from "./wire-restore.js";
@@ -58,6 +59,14 @@ export interface ProtectionEngineOptions {
    * fence against *external* plugins lives in the public `loadPluginRegistry` (see plugins/index.ts).
    */
   trusted?: ReadonlySet<FictaPluginBase>;
+  /**
+   * This engine's settings (surrogate key/style, detectors, fail-closed, restore policy, exclusions).
+   * Omitted fields take their defaults; the engine never reads `process.env`. Fixed for the engine's
+   * lifetime, so engines in one process can be configured independently.
+   */
+  config?: EngineConfigInput;
+  /** Sink for values-free detector-domain warnings (e.g. a PII backend outage). Default: discard. */
+  onWarn?: WarnSink;
 }
 
 /** How long a keyed scope's detected PII may sit idle in memory before it is dropped. */
@@ -150,6 +159,13 @@ export class ProtectionEngine implements RedactionEngine {
   private readonly trusted: ReadonlySet<FictaPluginBase>;
   /** Current registry-source snapshot; replaced by {@link reloadRegistryValues}. */
   private registrySnapshot: PluginRegistrySnapshot;
+  /** This engine's resolved config + warn sink, handed to every plugin call. Stable for its lifetime. */
+  private readonly runtime: PluginRuntime;
+
+  /** The resolved config this engine runs with. */
+  get config(): EngineConfig {
+    return this.runtime.config;
+  }
 
   /** Safe registry-source diagnostics (refreshed by {@link reloadRegistryValues}); never raw values. */
   get registryStatus(): EngineRegistryStatus {
@@ -166,9 +182,10 @@ export class ProtectionEngine implements RedactionEngine {
   readonly registrySize: number;
 
   constructor(opts: ProtectionEngineOptions = {}) {
+    this.runtime = { config: resolveEngineConfig(opts.config), warn: opts.onWarn ?? noopWarnSink };
     this.plugins = opts.plugins ?? defaultDetectors;
     this.trusted = opts.trusted ?? new Set(this.plugins);
-    this.registrySnapshot = loadPluginRegistry(this.plugins, this.trusted);
+    this.registrySnapshot = loadPluginRegistry(this.plugins, this.trusted, this.runtime);
     // loadPluginRegistry already ran validatePluginBoundaries, so derive this directly rather than
     // calling pluginsHaveDetectors (which would re-validate every plugin).
     this.hasDetectors = this.plugins.some((plugin) => Boolean(plugin.detectText || plugin.detectBodyLeaves));
@@ -182,7 +199,16 @@ export class ProtectionEngine implements RedactionEngine {
     this.permanentClaims = entityClaimsFromProtectionRecords([...this.registrySnapshot.records, ...optionRecords]);
     for (const record of this.registrySnapshot.records) this.activeRegistryRecords.set(recordKey(record), record);
     this.registrySize = values.length;
-    this.vault = new Vault(values, entityFamilySurrogateStrategy(surrogateStrategy()));
+    const { surrogate, restore, redactPaths } = this.runtime.config;
+    const key = surrogate.key || ephemeralSurrogateKey();
+    this.vault = new Vault(
+      values,
+      entityFamilySurrogateStrategy(surrogateStrategy({ style: surrogate.style, key }), key),
+      {
+        restoreIntoTools: restore.intoTools,
+        redactPaths,
+      },
+    );
     applyRecordBoundaries(this.vault, this.registrySnapshot.records);
   }
 
@@ -202,7 +228,7 @@ export class ProtectionEngine implements RedactionEngine {
    * `resetManagedRegistryFilePluginCache`); the stat-based cache key covers ordinary edits.
    */
   reloadRegistryValues(): { added: number; total: number; restartRequired: boolean } {
-    const snapshot = loadPluginRegistry(this.plugins, this.trusted);
+    const snapshot = loadPluginRegistry(this.plugins, this.trusted, this.runtime);
     const nextByKey = new Map(snapshot.records.map((record) => [recordKey(record), record]));
     let restartRequired = false;
     for (const [key, active] of this.activeRegistryRecords) {
@@ -266,6 +292,7 @@ export class ProtectionEngine implements RedactionEngine {
     if (!scopeKey) {
       return new ProtectionRequestScope(
         this.plugins,
+        this.runtime,
         this.policy,
         this.metadataByValue,
         this.permanentClaims,
@@ -280,6 +307,7 @@ export class ProtectionEngine implements RedactionEngine {
     const state = this.keyedScopeState(scopeKey);
     return new ProtectionRequestScope(
       this.plugins,
+      this.runtime,
       this.policy,
       this.metadataByValue,
       this.permanentClaims,
@@ -328,6 +356,7 @@ export class ProtectionEngine implements RedactionEngine {
     if (!this.defaultRequestScope) {
       this.defaultRequestScope = new ProtectionRequestScope(
         this.plugins,
+        this.runtime,
         this.policy,
         this.metadataByValue,
         this.permanentClaims,
@@ -390,6 +419,7 @@ class ProtectionRequestScope implements RequestScope {
 
   constructor(
     private readonly plugins: readonly RedactionPlugin[],
+    private readonly runtime: PluginRuntime,
     private readonly policy: RegistryPolicy,
     private readonly permanentMetadata: ReadonlyMap<string, ProtectedValue[]>,
     private readonly permanentClaims: readonly EntityClaim[],
@@ -441,6 +471,7 @@ class ProtectionRequestScope implements RequestScope {
     const detection = await this.detectBodyValues(freshContentLeaves, freshLeaves, document.leaves, {
       ...detectCtx,
       surface: "body",
+      runtime: this.runtime,
     });
     if (seen && detection.complete) for (const hash of hashes) seen.add(hash);
 
@@ -647,6 +678,7 @@ class ProtectionRequestScope implements RequestScope {
     const skippedDetectors = await this.registerDetectedValues(text, {
       ...rest,
       surface,
+      runtime: this.runtime,
     });
     const redacted = this.vault.redactTextDetailed(text, preservePaths);
     this.safeFieldMemo.clear(); // detection registered above; hit labels are checked below
@@ -735,7 +767,7 @@ class ProtectionRequestScope implements RequestScope {
         // detector only *signals* a backend outage (DetectorUnavailableError); core owns the policy:
         // resolve the detector's own fail-closed override against the global default and either block
         // (re-raise → server.ts refuses to forward) or skip detection for this request (continue).
-        detectorOutage(plugin, err);
+        detectorOutage(plugin, err, this.runtime);
         skipped.push(plugin.name);
         continue;
       }
@@ -771,7 +803,7 @@ class ProtectionRequestScope implements RequestScope {
         // an unchanged key can acquire a new value, or a known value can move under a secret key.
         if (plugin.detectBodyLeaves) structuralDetected = await plugin.detectBodyLeaves(structuralLeaves, ctx);
       } catch (err) {
-        detectorOutage(plugin, err);
+        detectorOutage(plugin, err, this.runtime);
         skipped.push(plugin.name);
         continue;
       }
@@ -1104,17 +1136,17 @@ function resolvedAmbiguityDiagnostics(
  * blocked-detection response applies. Under fail-open the failure is logged (values-free) and the
  * caller skips the detector for this request.
  */
-function detectorOutage(plugin: RedactionPlugin, err: unknown): void {
-  const override = plugin.kind === "detector" ? plugin.failClosed?.() : undefined;
+function detectorOutage(plugin: RedactionPlugin, err: unknown, runtime: PluginRuntime): void {
+  const override = plugin.kind === "detector" ? plugin.failClosed?.(runtime) : undefined;
   const unavailable = err instanceof DetectorUnavailableError;
-  if (detectorFailClosed(override)) {
+  if (detectorFailClosed(override, runtime.config.detection.failClosed)) {
     if (unavailable) throw err;
     const wrapped = new DetectorUnavailableError(plugin.name, "detector threw");
     wrapped.cause = err;
     throw wrapped;
   }
   if (!unavailable) {
-    engineWarn(
+    runtime.warn(
       { plugin: plugin.name, error: err instanceof Error ? err.name : typeof err },
       "detector threw; forwarding this request without its detections (fail-open)",
     );

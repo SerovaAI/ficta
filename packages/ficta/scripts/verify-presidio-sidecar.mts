@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { ProtectionEngine } from "../src/engine/engine.js";
+import { engineConfigFromEnv } from "../src/engine-env.js";
 import { piiPlugin } from "../src/plugins/index.js";
 
 const url = (process.env.FICTA_PII_PRESIDIO_URL ?? "http://127.0.0.1:5002").replace(/\/+$/, "");
@@ -186,7 +187,7 @@ const fixture = corpus.find(({ name }) => name === "synthetic-legal-loan");
 assert.ok(fixture, "synthetic legal-loan fixture is missing");
 const text = fixture.text;
 
-const engine = new ProtectionEngine({ plugins: [piiPlugin] });
+const engine = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() });
 const body = JSON.stringify({ content: text });
 const redacted = await engine.redactBodyDetailed(body, { traceValues: true });
 
