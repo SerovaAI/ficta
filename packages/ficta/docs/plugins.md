@@ -174,7 +174,8 @@ to run until you unset it or provide a real path.
 The `secret-shapes` detector catches newly pasted secret-shaped values that were not present in the
 launch-time registry. It is local and in-process: no network verification and no sidecar. The detector set includes common API key
 prefixes, JWTs, PEM private keys, credential URLs with literal userinfo, Google OAuth access tokens,
-AWS access key IDs and secret assignments such as `API_TOKEN=...`, plus probabilistic detection of
+AWS access key IDs and secret assignments such as `API_TOKEN=...`, passwords after a label in prose
+(`Password: …`, `pwd=…`, and the German `Passwort:` / `Kennwort:`), plus probabilistic detection of
 bare opaque values.
 
 Bare opaque detection accepts whole whitespace/quote-delimited values: hexadecimal strings of
@@ -199,9 +200,15 @@ can still be missed in these positions if it does not independently match the ba
 
 | Shape                                   | Example                                                                       | Why                                                                                                                                                                                                                                              |
 | --------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Secret-ish word at the start of the key | `token: …`, `password: …`, `secret: …`                                        | The key pattern requires at least one character before the word. Relaxing this makes every `name: value` line in ordinary source a candidate — measured at +83% detections on a 4,000-file corpus, nearly all of them identifiers and i18n keys. |
+| Secret-ish word at the start of the key | `token: …`, `secret: …`, `auth: …`                                            | The key pattern requires at least one character before the word. Relaxing this makes every `name: value` line in ordinary source a candidate — measured at +83% detections on a 4,000-file corpus, nearly all of them identifiers and i18n keys. |
 | Decoration between separator and value  | `api_token: \|`, `api_token: >`, `- <value>`, `Authorization: Bearer <value>` | The value capture stops at the decoration, so the token that follows is not considered.                                                                                                                                                          |
 | No separator at all                     | `deploy --api-token <value>`                                                  | The assignment pattern requires `:` or `=`.                                                                                                                                                                                                      |
+
+Password words are the exception: `password`, `passwd`, `pwd`, `passwort`, and `kennwort` used as a
+label (`Password: hunter2`, `Kennwort=…`) are detected even at the start of the key and with short
+values. The value must contain a digit or a symbol and must not look like a type, identifier, dotted
+code reference, path, template variable, YAML tag, masked value, Ficta surrogate, or `[REDACTED…]`
+marker, so already-redacted text stays stable on a second pass.
 
 Values that look like **filesystem paths** are also rejected on purpose, including `path:line`
 locators from `grep`/`ripgrep`. Without that, a listing whose previous line ends in a token
