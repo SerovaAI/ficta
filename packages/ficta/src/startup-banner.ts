@@ -1,4 +1,4 @@
-import { plural } from "./engine/text.js";
+import { plural } from "@serovaai/ficta-engine";
 import {
   discoverySourceKey,
   type PluginDiscovery,

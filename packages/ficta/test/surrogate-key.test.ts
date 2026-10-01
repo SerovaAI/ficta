@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { hexSurrogateStrategy } from "../src/engine/surrogate.js";
+import { hexSurrogateStrategy } from "@serovaai/ficta-engine";
 import { engineConfigFromEnv } from "../src/engine-env.js";
 import { startProxy } from "../src/server.js";
 import {
@@ -183,6 +183,16 @@ describe("surrogate.require_stable_key", () => {
 
   it("is off by default", () => {
     expect(checkSurrogateKey(path)).toEqual({ stable: false, source: "ephemeral" });
+  });
+
+  it("lets the proxy start on an ephemeral key when not required (the CLI keeps the fallback)", async () => {
+    // The engine package refuses to construct without a key unless the host opts in; the proxy does.
+    const proxy = await startProxy({ port: 0, plugins: [] });
+    try {
+      expect(proxy.port).toBeGreaterThan(0);
+    } finally {
+      proxy.close();
+    }
   });
 
   it("makes the proxy fail at startup instead of minting a random key", async () => {

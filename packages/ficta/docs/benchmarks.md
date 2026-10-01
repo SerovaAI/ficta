@@ -3,8 +3,8 @@
 _Recorded 2026-06-21 on darwin (Apple Silicon), Node v24.17.0. Reproduce:_
 
 ```sh
-pnpm exec tsx bench/redaction-bench.mts   # core ops, isolated from network
-pnpm exec tsx bench/e2e-bench.mts          # round-trip latency vs direct
+pnpm bench       # core ops, isolated from network
+pnpm bench:e2e   # round-trip latency vs direct
 ```
 
 Two layers: a **microbench** of the vault's core operations (no network, isolates CPU cost) and

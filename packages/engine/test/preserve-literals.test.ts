@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildPreservationInstruction, withPreservationInstruction } from "../src/engine/preserve-literals.js";
-import { Vault } from "../src/engine/vault.js";
+import { buildPreservationInstruction, withPreservationInstruction } from "../src/preserve-literals.js";
+import { Vault } from "../src/vault.js";
 
 const SURR = [
   "FICTA_62a02923eca8d0f518581ade81bcb579",

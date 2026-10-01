@@ -2,13 +2,12 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { pluginRuntimeFromEnv } from "../src/engine-env.js";
+import { checkPresidioHealth, PresidioUnavailableError } from "@serovaai/ficta-engine";
 import {
-  checkPresidioHealth,
   chunkText,
   makeCodepointIndexer,
-  PresidioUnavailableError,
   presidioRecognizer,
-} from "../src/engine/plugins/pii/presidio-recognizer.js";
+} from "../../engine/src/plugins/pii/presidio-recognizer.js";
 import type { ProtectedValue } from "../src/plugins/index.js";
 
 interface AnalyzeRequest {

@@ -5,8 +5,8 @@ import {
   type Occurrence,
   resolveOccurrences,
   spliceResolvedOccurrences,
-} from "../src/engine/occurrence.js";
-import { RedactionInvariantError } from "../src/engine/redaction-engine.js";
+} from "../src/occurrence.js";
+import { RedactionInvariantError } from "../src/redaction-engine.js";
 
 describe("occurrence resolver", () => {
   it("lets a registry entity own its exact span and clips a noisy detected superset", () => {

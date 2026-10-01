@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ProtectionEngine } from "../src/engine/engine.js";
-import { type BodyLeaf, visitBodyLeaves } from "../src/engine/vault.js";
+import { ProtectionEngine, type BodyLeaf, visitBodyLeaves } from "@serovaai/ficta-engine";
 import { detectSecretShapeLeaves, secretShapesPlugin } from "../src/plugins/index.js";
 
 // Secret-ish test values assembled at runtime so the source file never contains a contiguous
@@ -20,7 +19,7 @@ async function redactWithDetector(body: string) {
   const previous = process.env.FICTA_SECRET_SHAPES_ENABLED;
   process.env.FICTA_SECRET_SHAPES_ENABLED = "1";
   try {
-    const engine = new ProtectionEngine({ plugins: [secretShapesPlugin] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [secretShapesPlugin] });
     return { engine, redacted: await engine.redactBodyDetailed(body) };
   } finally {
     if (previous === undefined) delete process.env.FICTA_SECRET_SHAPES_ENABLED;
@@ -33,7 +32,7 @@ describe("structural secret-json-value detection", () => {
     const previous = process.env.FICTA_SECRET_SHAPES_ENABLED;
     process.env.FICTA_SECRET_SHAPES_ENABLED = "1";
     try {
-      const engine = new ProtectionEngine({ plugins: [secretShapesPlugin] });
+      const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [secretShapesPlugin] });
       const redact = (body: unknown) =>
         engine.beginRequest("structural-cache").redactBodyDetailed(JSON.stringify(body));
       const first = await redact({ api_token: SECRET_A, note: SECRET_B });

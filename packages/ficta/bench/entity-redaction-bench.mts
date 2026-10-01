@@ -1,8 +1,8 @@
 // Microbenchmark for the occurrence-based body path.
 // Run: pnpm exec tsx bench/entity-redaction-bench.mts
-import { ProtectionEngine } from "../src/engine/engine.js";
-import { expandEntities } from "../src/engine/expander.js";
-import { type Entity, resolveOccurrences } from "../src/engine/occurrence.js";
+import { ProtectionEngine } from "@serovaai/ficta-engine";
+import { expandEntities } from "../../engine/src/expander.js";
+import { type Entity, resolveOccurrences } from "../../engine/src/occurrence.js";
 import type { ProtectedValue } from "../src/plugins/index.js";
 
 const ITERATIONS = 120;
@@ -22,7 +22,7 @@ const content = `${entityValues.map((value) => `${value} / ${value.toUpperCase()
 const body = JSON.stringify({ messages: [{ role: "user", content }] });
 
 async function run(): Promise<{ times: number[]; peakHeap: number }> {
-  const engine = new ProtectionEngine({ plugins: [], values });
+  const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [], values });
   for (let i = 0; i < 5; i++) await engine.beginRequest().redactBodyDetailed(body);
   const times: number[] = [];
   let peakHeap = process.memoryUsage().heapUsed;

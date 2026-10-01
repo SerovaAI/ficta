@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { ProtectionEngine } from "../src/engine/engine.js";
-import { DetectorUnavailableError } from "../src/engine/redaction-engine.js";
-import type { DetectorPlugin } from "../src/plugins/index.js";
+import { ProtectionEngine } from "../src/engine.js";
+import { DetectorUnavailableError } from "../src/redaction-engine.js";
+import type { DetectorPlugin } from "../src/index.js";
 
 const EMAIL = "alice@example.com";
 const SURROGATE = /FICTA_[0-9a-f]{32}/;
@@ -35,7 +35,7 @@ const cardDetector: DetectorPlugin = {
 
 describe("request scopes isolate detected PII", () => {
   it("never restores one scope's detected value into another scope's response (cross-client leak fix)", async () => {
-    const engine = new ProtectionEngine({ plugins: [emailDetector] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [emailDetector] });
 
     // Scope A detects the email and mints a surrogate for it.
     const scopeA = engine.beginRequest();
@@ -55,7 +55,7 @@ describe("request scopes isolate detected PII", () => {
   });
 
   it("does not persist detected PII into the shared permanent vault (ephemerality)", async () => {
-    const engine = new ProtectionEngine({ plugins: [emailDetector] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [emailDetector] });
     expect(engine.size).toBe(0);
 
     const scope = engine.beginRequest();
@@ -73,7 +73,7 @@ describe("request scopes isolate detected PII", () => {
   });
 
   it("mints the same surrogate for the same value across independent scopes (cross-turn consistency)", async () => {
-    const engine = new ProtectionEngine({ plugins: [emailDetector] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [emailDetector] });
 
     const a = await engine.beginRequest().redactBodyDetailed(JSON.stringify({ content: EMAIL }));
     const b = await engine.beginRequest().redactBodyDetailed(JSON.stringify({ content: EMAIL }));
@@ -89,7 +89,7 @@ describe("request scopes isolate detected PII", () => {
 
 describe("detection matches the redactable surface (numeric-JSON PII, TODO #2)", () => {
   it("redacts a value that appears as a JSON string leaf", async () => {
-    const engine = new ProtectionEngine({ plugins: [cardDetector] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [cardDetector] });
     const redacted = await engine.beginRequest().redactBodyDetailed(JSON.stringify({ card: CARD }));
 
     expect(redacted.count).toBe(1);
@@ -99,7 +99,7 @@ describe("detection matches the redactable surface (numeric-JSON PII, TODO #2)",
   });
 
   it("leaves a value that appears only as a JSON number leaf untouched — detected==redactable, so no fail-closed reject", async () => {
-    const engine = new ProtectionEngine({ plugins: [cardDetector] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [cardDetector] });
     // `{"card": 4111111111111111}` — the digits are a JSON *number*, not a string leaf, so a string
     // surrogate cannot replace them without changing the leaf's type. Because detection runs over the
     // same string leaves redaction can rewrite, the number is neither detected nor flagged as a leak:
@@ -135,7 +135,7 @@ const fictaWordDetector: DetectorPlugin = {
 
 describe("surrogate self-collision: detected values that match inside token text", () => {
   it("a detected value equal to the token prefix redacts without tripping the fail-closed gate", async () => {
-    const engine = new ProtectionEngine({ plugins: [emailDetector, fictaWordDetector] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [emailDetector, fictaWordDetector] });
     const scope = engine.beginRequest();
 
     // The regression shape: restored turn-1 assistant text mentions "FICTA tokens" alongside real
@@ -158,7 +158,7 @@ describe("surrogate self-collision: detected values that match inside token text
   });
 
   it("does not corrupt sibling surrogate tokens when a detected value matches their prefix", async () => {
-    const engine = new ProtectionEngine({ plugins: [emailDetector, fictaWordDetector] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [emailDetector, fictaWordDetector] });
     const scope = engine.beginRequest();
 
     const body = JSON.stringify({ content: `whether these FICTA tokens hide ${EMAIL}` });
@@ -186,7 +186,7 @@ describe("surrogate self-collision: detected values that match inside token text
             ]
           : [],
     };
-    const engine = new ProtectionEngine({ plugins: [hexy] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [hexy] });
     const scope = engine.beginRequest();
 
     // A stale token from an earlier turn (e.g. one restore missed) whose hex happens to contain the
@@ -206,7 +206,7 @@ describe("keyed scopes persist detected PII across a thread's requests", () => {
     const now = Date.now();
     const clock = vi.spyOn(Date, "now").mockReturnValue(now);
     try {
-      const engine = new ProtectionEngine({ plugins: [emailDetector] });
+      const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [emailDetector] });
       const original = engine.beginRequest("idle-thread");
       const body = JSON.stringify({ content: EMAIL });
       const first = await original.redactBodyDetailed(body);
@@ -245,7 +245,7 @@ describe("keyed scopes persist detected PII across a thread's requests", () => {
             ]
           : [],
     };
-    const engine = new ProtectionEngine({ plugins: [flaky] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [flaky] });
 
     const turn1 = await engine
       .beginRequest("org:thread-1")
@@ -268,7 +268,7 @@ describe("keyed scopes persist detected PII across a thread's requests", () => {
   });
 
   it("different keys stay isolated: one thread's values never restore in another's scope", async () => {
-    const engine = new ProtectionEngine({ plugins: [emailDetector] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [emailDetector] });
 
     const a = engine.beginRequest("org:thread-a");
     const redacted = await a.redactBodyDetailed(JSON.stringify({ content: EMAIL }));
@@ -292,7 +292,7 @@ describe("keyed scopes persist detected PII across a thread's requests", () => {
         return [];
       },
     };
-    const engine = new ProtectionEngine({ plugins: [recording] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [recording] });
 
     const turn1 = JSON.stringify({ messages: [{ role: "user", content: "hello world" }] });
     await engine.beginRequest("org:thread-inc").redactBodyDetailed(turn1);
@@ -330,7 +330,7 @@ describe("keyed scopes persist detected PII across a thread's requests", () => {
         return [];
       },
     };
-    const engine = new ProtectionEngine({ plugins: [flaky] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [flaky] });
     const body = JSON.stringify({ content: "needs a scan" });
 
     await engine.beginRequest("org:thread-out").redactBodyDetailed(body); // outage: swept nothing

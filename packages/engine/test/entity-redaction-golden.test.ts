@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
-import { ProtectionEngine } from "../src/engine/engine.js";
-import { normalizeMarkdownForDetection } from "../src/engine/plugins/pii/markdown.js";
-import type { DetectorPlugin, ProtectedValue } from "../src/plugins/index.js";
+import { ProtectionEngine } from "../src/engine.js";
+import { normalizeMarkdownForDetection } from "../src/plugins/pii/markdown.js";
+import type { DetectorPlugin, ProtectedValue } from "../src/index.js";
 
 const FIXTURE_ROOT = new URL("./fixtures/entity-redaction/", import.meta.url);
 
@@ -15,7 +15,7 @@ describe("entity redaction golden fixtures", () => {
     const memo = fixture("legal-memo.md");
     const values = registryFixture("legal-registry.env");
     const detector = fixtureDetector(["Project:** Project Copper Kite", "Proxima Medical\nSupplies CC"]);
-    const engine = new ProtectionEngine({ plugins: [detector], values });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [detector], values });
     const redacted = await engine.redactBodyDetailed(JSON.stringify({ content: memo }), { traceValues: true });
 
     expect(redacted.leaks).toBe(0);
@@ -38,6 +38,7 @@ describe("entity redaction golden fixtures", () => {
     const hoa = fixture("markitdown-hoa.md");
     const detected = ["Avery Example", "Morgan Example", "BLUE LANTERN LIMITED SEYCHELLES", "Blue Lantern FZCO"];
     const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
       plugins: [normalizedFixtureDetector(detected)],
       values: [
         protectedValue("JURISDICTION", "Mauritius", "golden-registry", "secret", "exact"),

@@ -1,9 +1,9 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ProtectionEngine } from "../src/engine/engine.js";
-import { normalizeMarkdownForDetection } from "../src/engine/plugins/pii/markdown.js";
-import { flexibleOccurrences } from "../src/engine/vault.js";
+import { ProtectionEngine } from "@serovaai/ficta-engine";
+import { normalizeMarkdownForDetection } from "../../engine/src/plugins/pii/markdown.js";
+import { flexibleOccurrences } from "../../engine/src/vault.js";
 import { piiPlugin } from "../src/plugins/index.js";
 import { engineConfigFromEnv } from "../src/engine-env.js";
 
@@ -116,7 +116,11 @@ describe("piiPlugin.detectText — markdown + case coverage", () => {
     process.env.FICTA_PII_BACKEND = "presidio";
     process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
     try {
-      const engine = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() });
+      const engine = new ProtectionEngine({
+        allowEphemeralKey: true,
+        plugins: [piiPlugin],
+        config: engineConfigFromEnv(),
+      });
       const redacted = await engine.redactBodyDetailed(JSON.stringify({ content: body }));
 
       // NER saw Markdown-normalized text (no `**`/`#`), which is why the heading name is detectable.
@@ -141,7 +145,11 @@ describe("piiPlugin.detectText — markdown + case coverage", () => {
     process.env.FICTA_PII_BACKEND = "presidio";
     process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
     try {
-      const engine = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() });
+      const engine = new ProtectionEngine({
+        allowEphemeralKey: true,
+        plugins: [piiPlugin],
+        config: engineConfigFromEnv(),
+      });
       const redacted = await engine.redactBodyDetailed(JSON.stringify({ content: body }));
       expect(redacted.body).not.toContain("Will Smith");
       expect(redacted.body).not.toContain("WILL SMITH");
@@ -165,7 +173,11 @@ describe("piiPlugin.detectText — markdown + case coverage", () => {
     process.env.FICTA_PII_BACKEND = "presidio";
     process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
     try {
-      const engine = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() });
+      const engine = new ProtectionEngine({
+        allowEphemeralKey: true,
+        plugins: [piiPlugin],
+        config: engineConfigFromEnv(),
+      });
       const redacted = await engine.redactBodyDetailed(JSON.stringify({ content: body }));
       expect(redacted.body).not.toContain("Alice");
       expect(redacted.body).not.toContain("Candice");
@@ -192,7 +204,11 @@ describe("piiPlugin.detectText — markdown + case coverage", () => {
     process.env.FICTA_PII_BACKEND = "presidio";
     process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
     try {
-      const engine = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() });
+      const engine = new ProtectionEngine({
+        allowEphemeralKey: true,
+        plugins: [piiPlugin],
+        config: engineConfigFromEnv(),
+      });
       const redacted = await engine.redactBodyDetailed(JSON.stringify({ content: body }));
       expect(analyzerText).toContain(party);
       expect(redacted.body).not.toContain("Blue **Lantern** FZCO");

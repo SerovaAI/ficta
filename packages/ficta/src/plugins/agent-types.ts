@@ -1,4 +1,4 @@
-import type { FictaPluginBase } from "../engine/plugins/types.js";
+import type { FictaPluginBase } from "@serovaai/ficta-engine";
 
 // Agent-launch types. These are a product concern (how the CLI launches Claude/Codex/Pi through
 // ficta) and are deliberately kept out of the engine's type surface — the engine never launches

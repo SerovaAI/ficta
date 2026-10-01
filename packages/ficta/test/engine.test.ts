@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { ProtectionEngine } from "../src/engine/engine.js";
-import { DetectorUnavailableError } from "../src/engine/redaction-engine.js";
+import { ProtectionEngine, DetectorUnavailableError } from "@serovaai/ficta-engine";
 import { engineConfigFromEnv } from "../src/engine-env.js";
 import { type DetectorPlugin, dopplerPlugin, type RegistrySourcePlugin } from "../src/plugins/index.js";
 
@@ -19,7 +18,7 @@ describe("protection engine plugins", () => {
         { name: "FIXTURE_SECRET", value: SECRET, source: "fixture", kind: "secret", confidence: "exact" },
       ],
     };
-    const engine = new ProtectionEngine({ plugins: [plugin] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [plugin] });
 
     expect(engine.registrySize).toBe(1);
     expect(engine.registryStatus.policyExcluded).toBe(0);
@@ -36,7 +35,7 @@ describe("protection engine plugins", () => {
 
   it("recognizes registered values across line-wrapped whitespace in safety checks", () => {
     const value = "Proxima Medical Supplies CC";
-    const engine = new ProtectionEngine({ plugins: [], values: [{ value }] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [], values: [{ value }] });
 
     expect(engine.containsProtectedValue("counterparty: Proxima Medical\nSupplies CC")).toBe(true);
     expect(engine.containsProtectedValue("counterparty: ProximaMedicalSupplies CC")).toBe(false);
@@ -53,7 +52,7 @@ describe("protection engine plugins", () => {
         { name: "FIXTURE_SECRET", value: SECRET, source: "fixture", kind: "secret", confidence: "exact" },
       ],
     };
-    const engine = new ProtectionEngine({ plugins: [plugin] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [plugin] });
     const body = JSON.stringify({ content: `secret=${SECRET}` });
 
     const normal = await engine.redactBodyDetailed(body);
@@ -105,7 +104,7 @@ describe("protection engine plugins", () => {
           ? [{ name: "person", value: NAME, source: "fixture-detector", kind: "pii", confidence: "high" }]
           : [],
     };
-    const engine = new ProtectionEngine({ plugins: [registry, detector] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [registry, detector] });
 
     const scope = engine.beginRequest();
     const redacted = await scope.redactBodyDetailed(JSON.stringify({ content: `The CFO is ${NAME}.` }), {
@@ -132,6 +131,7 @@ describe("protection engine plugins", () => {
 
   it("case-expands word-like registry values to every casing present, but not digit-bearing secrets", async () => {
     const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
       plugins: [],
       values: [
         { name: "JURISDICTION", value: "Mauritius", source: "env-file", kind: "secret", confidence: "exact" },
@@ -164,6 +164,7 @@ describe("protection engine plugins", () => {
 
   it("persists registry case-variant mappings across requests in the same keyed scope", async () => {
     const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
       plugins: [],
       values: [{ name: "JURISDICTION", value: "Mauritius", source: "env-file", kind: "secret" }],
     });
@@ -193,7 +194,7 @@ describe("protection engine plugins", () => {
           : [{ name: "person", value, source: "fixture", kind: "pii", spans: [{ start, end: start + value.length }] }];
       },
     };
-    const engine = new ProtectionEngine({ plugins: [detector] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [detector] });
     const key = "org-1:span-thread";
     await engine.beginRequest(key).redactBodyDetailed(JSON.stringify({ content: `Contact ${value}` }));
     await engine.beginRequest(key).redactBodyDetailed(JSON.stringify({ content: "A later request without the value" }));
@@ -215,6 +216,7 @@ describe("protection engine plugins", () => {
     delete process.env.FICTA_RESTORE_INTO_TOOLS; // default policy: "detected"
     try {
       const engine = new ProtectionEngine({
+        allowEphemeralKey: true,
         plugins: [],
         values: [{ name: "CLIENT", value: "Mauritius Holdings", source: "env-file", kind: "secret" }],
       });
@@ -248,6 +250,7 @@ describe("protection engine plugins", () => {
 
   it("isolates detector plugin exceptions", async () => {
     const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
       plugins: [
         {
           kind: "detector",
@@ -282,7 +285,7 @@ describe("protection engine plugins", () => {
       },
       failClosed: () => true,
     };
-    const engine = new ProtectionEngine({ plugins: [crashing] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [crashing] });
     const body = JSON.stringify({ content: SECRET });
     await expect(engine.redactBodyDetailed(body)).rejects.toBeInstanceOf(DetectorUnavailableError);
     await expect(engine.redactTextDetailed(SECRET)).rejects.toBeInstanceOf(DetectorUnavailableError);
@@ -290,13 +293,14 @@ describe("protection engine plugins", () => {
 
     // No per-detector override → the engine's global default (env FICTA_FAIL_CLOSED_DETECTION) decides.
     const global = new ProtectionEngine({
+      allowEphemeralKey: true,
       plugins: [{ ...crashing, failClosed: () => undefined }],
       config: { detection: { failClosed: true } },
     });
     await expect(global.redactBodyDetailed(body)).rejects.toBeInstanceOf(DetectorUnavailableError);
 
     // Fail-open: the crash is reported on the details instead of hidden.
-    const open = new ProtectionEngine({ plugins: [{ ...crashing, failClosed: () => false }] });
+    const open = new ProtectionEngine({ allowEphemeralKey: true, plugins: [{ ...crashing, failClosed: () => false }] });
     expect((await open.redactBodyDetailed(body)).skippedDetectors).toEqual(["crashing-detector"]);
     expect((await open.redactTextDetailed(SECRET)).skippedDetectors).toEqual(["crashing-detector"]);
   });
@@ -316,7 +320,7 @@ describe("protection engine plugins", () => {
         }));
       },
     };
-    const engine = new ProtectionEngine({ plugins: [piiPlugin] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [piiPlugin] });
 
     expect(engine.registrySize).toBe(0);
     expect(engine.enabled).toBe(true);
@@ -329,7 +333,7 @@ describe("protection engine plugins", () => {
   });
 
   it("stays disabled with no values and no detector plugins", () => {
-    const engine = new ProtectionEngine({ plugins: [] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [] });
     expect(engine.registrySize).toBe(0);
     expect(engine.size).toBe(0);
     expect(engine.enabled).toBe(false);
@@ -382,6 +386,7 @@ describe("protection engine plugins", () => {
       };
 
       const engine = new ProtectionEngine({
+        allowEphemeralKey: true,
         plugins: [dopplerPlugin, detector],
         values: [
           {
@@ -429,7 +434,11 @@ describe("protection engine plugins", () => {
             { name: "REAL", value: "real-secret-value-abc", source: "fixture", kind: "secret", confidence: "exact" },
           ],
         };
-        const engine = new ProtectionEngine({ plugins: [detector], config: engineConfigFromEnv() });
+        const engine = new ProtectionEngine({
+          allowEphemeralKey: true,
+          plugins: [detector],
+          config: engineConfigFromEnv(),
+        });
         const redacted = await engine.redactBodyDetailed(
           JSON.stringify({ content: "build-label-1234 / real-secret-value-abc" }),
         );

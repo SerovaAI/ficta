@@ -1,8 +1,6 @@
 import { createServer } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resolveEngineConfig } from "../src/engine/config.js";
-import { ProtectionEngine } from "../src/engine/engine.js";
-import { DetectorUnavailableError } from "../src/engine/redaction-engine.js";
+import { resolveEngineConfig, ProtectionEngine, DetectorUnavailableError } from "@serovaai/ficta-engine";
 import { engineConfigFromEnv } from "../src/engine-env.js";
 import { type DetectorPlugin, piiPlugin, secretShapesPlugin } from "../src/plugins/index.js";
 
@@ -54,8 +52,16 @@ describe("engine config injection", () => {
         throw new TypeError("boom");
       },
     };
-    const closed = new ProtectionEngine({ plugins: [crashing], config: { detection: { failClosed: true } } });
-    const open = new ProtectionEngine({ plugins: [crashing], config: { detection: { failClosed: false } } });
+    const closed = new ProtectionEngine({
+      allowEphemeralKey: true,
+      plugins: [crashing],
+      config: { detection: { failClosed: true } },
+    });
+    const open = new ProtectionEngine({
+      allowEphemeralKey: true,
+      plugins: [crashing],
+      config: { detection: { failClosed: false } },
+    });
     const body = JSON.stringify({ content: "hello" });
 
     await expect(closed.redactBodyDetailed(body)).rejects.toBeInstanceOf(DetectorUnavailableError);
@@ -67,8 +73,18 @@ describe("engine config injection", () => {
     const pii = { enabled: true, backends: ["presidio"], presidio: { url: `http://127.0.0.1:${port}` } };
     const warnsA: string[] = [];
     const warnsB: string[] = [];
-    const a = new ProtectionEngine({ plugins: [piiPlugin], config: { pii }, onWarn: (_, m) => warnsA.push(m) });
-    const b = new ProtectionEngine({ plugins: [piiPlugin], config: { pii }, onWarn: (_, m) => warnsB.push(m) });
+    const a = new ProtectionEngine({
+      allowEphemeralKey: true,
+      plugins: [piiPlugin],
+      config: { pii },
+      onWarn: (_, m) => warnsA.push(m),
+    });
+    const b = new ProtectionEngine({
+      allowEphemeralKey: true,
+      plugins: [piiPlugin],
+      config: { pii },
+      onWarn: (_, m) => warnsB.push(m),
+    });
     const body = JSON.stringify({ content: `mail ${EMAIL}` });
 
     await a.redactBodyDetailed(body);
@@ -83,13 +99,21 @@ describe("engine config injection", () => {
 
   it("does not read the environment after construction", async () => {
     vi.stubEnv("FICTA_SECRET_SHAPES_ENABLED", "0");
-    const engine = new ProtectionEngine({ plugins: [secretShapesPlugin], config: engineConfigFromEnv() });
+    const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
+      plugins: [secretShapesPlugin],
+      config: engineConfigFromEnv(),
+    });
     const secret = ["9b07e2fa", "d4518c36", "a28f04de", "65cb1937", "f0a2e8dc"].join(""); // synthetic opaque hex
     const body = JSON.stringify({ content: `key ${secret}` });
 
     vi.stubEnv("FICTA_SECRET_SHAPES_ENABLED", "1");
     // Positive control: an engine built now does detect it.
-    const fresh = new ProtectionEngine({ plugins: [secretShapesPlugin], config: engineConfigFromEnv() });
+    const fresh = new ProtectionEngine({
+      allowEphemeralKey: true,
+      plugins: [secretShapesPlugin],
+      config: engineConfigFromEnv(),
+    });
     expect((await fresh.redactBodyDetailed(body)).body).not.toContain(secret);
     expect((await engine.redactBodyDetailed(body)).body).toContain(secret);
   });

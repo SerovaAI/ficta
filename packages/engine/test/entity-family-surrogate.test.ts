@@ -1,22 +1,22 @@
 import { describe, expect, it } from "vitest";
-import type { EngineConfigInput } from "../src/engine/config.js";
-import { ProtectionEngine } from "../src/engine/engine.js";
-import type { RestoreIntoToolsPolicy } from "../src/engine/env-flags.js";
+import type { EngineConfigInput } from "../src/config.js";
+import { ProtectionEngine } from "../src/engine.js";
+import type { RestoreIntoToolsPolicy } from "../src/env-flags.js";
 import {
   type ProtectionRecord,
   protectionRecordSurfaces,
   type StructuredRegistrySourceCapabilities,
-} from "../src/engine/protection.js";
-import { RedactionInvariantError } from "../src/engine/redaction-engine.js";
+} from "../src/protection.js";
+import { RedactionInvariantError } from "../src/redaction-engine.js";
 import {
   entityFamilySurrogateStrategy,
   hexSurrogateStrategy,
   type SurrogateStrategy,
   typedSurrogateStrategy,
-} from "../src/engine/surrogate.js";
-import { Vault } from "../src/engine/vault.js";
-import { bufferedRestoreAdapterFor, sseRestoreAdapterFor } from "../src/engine/wire-restore.js";
-import type { DetectorPlugin, RegistrySourcePlugin } from "../src/plugins/index.js";
+} from "../src/surrogate.js";
+import { Vault } from "../src/vault.js";
+import { bufferedRestoreAdapterFor, sseRestoreAdapterFor } from "../src/wire-restore.js";
+import type { DetectorPlugin, RegistrySourcePlugin } from "../src/index.js";
 
 const KEY = "phase-zero-entity-fidelity-key-at-least-32-bytes";
 const CONTEXT = "thread:entity-fidelity-fixture";
@@ -231,6 +231,7 @@ describe("engine entity-family rendering", () => {
     expect(northstar.restoreJson(northstarRedaction.body)).toBe(northstarBody);
 
     const proximaEngine = new ProtectionEngine({
+      allowEphemeralKey: true,
       plugins: [structuredRegistry([entityRecord("entity-proxima", "organization", "Proxima Medical Supplies CC")])],
     });
     const proxima = proximaEngine.beginRequest(CONTEXT);
@@ -242,6 +243,7 @@ describe("engine entity-family rendering", () => {
 
   it("gives a uniquely linked detector alias the registered entity family without upgrading its trust", async () => {
     const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
       plugins: [
         structuredRegistry([entityRecord(NORTHSTAR_ID, "organization", "Northstar Biologics (Pty) Ltd")]),
         organizationDetector("Northstar"),
@@ -270,6 +272,7 @@ describe("engine entity-family rendering", () => {
   it("round-trips an entity-family residual clipped by a higher-authority literal without persisting it", async () => {
     const detected = "Northstar-segment";
     const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
       plugins: [
         structuredRegistry([
           entityRecord("entity-northstar-segment", "organization", "Northstar-segment Holdings Ltd"),
@@ -384,6 +387,7 @@ describe("entity-family restoration transports", () => {
 
 function fixtureEngine(config?: EngineConfigInput): ProtectionEngine {
   return new ProtectionEngine({
+    allowEphemeralKey: true,
     config,
     plugins: [
       structuredRegistry([

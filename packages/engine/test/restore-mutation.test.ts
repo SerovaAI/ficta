@@ -8,9 +8,9 @@
 // secret.
 
 import { afterEach, describe, expect, it } from "vitest";
-import { typedSurrogateStrategy } from "../src/engine/surrogate.js";
-import { Vault } from "../src/engine/vault.js";
-import { sseRestoreAdapterFor } from "../src/engine/wire-restore.js";
+import { typedSurrogateStrategy } from "../src/surrogate.js";
+import { Vault } from "../src/vault.js";
+import { sseRestoreAdapterFor } from "../src/wire-restore.js";
 
 const KEY = "test-surrogate-key-at-least-32-bytes-long!!";
 const SECRET = "corova-control-plane";

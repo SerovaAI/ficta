@@ -1,7 +1,7 @@
 import { confirm, intro, isCancel, multiselect, note, outro, select, text } from "@clack/prompts";
 import { PII_BACKEND_NAMES, type PiiBackendName } from "@serovaai/ficta-protocol";
 import { defaultLogDir, FICTA_DEFAULTS } from "./defaults.js";
-import { envEnabled, envFlag, parseBoolean } from "./engine/env-flags.js";
+import { envEnabled, envFlag, parseBoolean } from "@serovaai/ficta-engine";
 import { installShims } from "./install.js";
 import type { RegistrySetupPromptContext, RegistrySetupSource } from "./plugins/index.js";
 import { registrySetupDefaults, registrySetupSources, selectedBackendNames } from "./plugins/index.js";

@@ -2,11 +2,8 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { pluginRuntimeFromEnv } from "../src/engine-env.js";
-import {
-  checkOpenmedHealth,
-  OpenmedUnavailableError,
-  openmedRecognizer,
-} from "../src/engine/plugins/pii/openmed-recognizer.js";
+import { checkOpenmedHealth, OpenmedUnavailableError } from "@serovaai/ficta-engine";
+import { openmedRecognizer } from "../../engine/src/plugins/pii/openmed-recognizer.js";
 import { type ProtectedValue, piiPlugin } from "../src/plugins/index.js";
 
 interface ExtractRequest {

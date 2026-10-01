@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { ProtectionEngine } from "../src/engine/engine.js";
-import { entityLinkAnchorIndex, linkDetectedEntityClaims } from "../src/engine/entity-linker.js";
-import type { EntityClaim } from "../src/engine/occurrence.js";
+import { ProtectionEngine } from "../src/engine.js";
+import { entityLinkAnchorIndex, linkDetectedEntityClaims } from "../src/entity-linker.js";
+import type { EntityClaim } from "../src/occurrence.js";
 import {
   entityClaimsFromProtectionRecords,
   literalProtectionRecords,
@@ -9,8 +9,8 @@ import {
   protectionRecordSurfaces,
   type RegisteredEntityProtection,
   type StructuredRegistrySourceCapabilities,
-} from "../src/engine/protection.js";
-import type { DetectorPlugin, ProtectedValue, RegistrySourcePlugin } from "../src/plugins/index.js";
+} from "../src/protection.js";
+import type { DetectorPlugin, ProtectedValue, RegistrySourcePlugin } from "../src/index.js";
 
 afterEach(() => {
   delete process.env.FICTA_SURROGATE_KEY;
@@ -90,7 +90,7 @@ describe("registered-anchor entity linking", () => {
       entityRecord("northstar-finance", "Northstar Finance LLC"),
     ];
     const detector = organizationDetector("Northstar");
-    const engine = new ProtectionEngine({ plugins: [structuredRegistry(records), detector] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [structuredRegistry(records), detector] });
     const body = JSON.stringify({ content: "Northstar retained counsel. Northstar approved the filing." });
 
     const result = await engine.beginRequest("org:thread-phase-3").redactBodyDetailed(body, { traceValues: true });
@@ -122,9 +122,10 @@ describe("registered-anchor entity linking", () => {
     process.env.FICTA_SURROGATE_KEY = "phase-3-rendering-equivalence-key";
     const detector = organizationDetector("Northstar");
     const linked = new ProtectionEngine({
+      allowEphemeralKey: true,
       plugins: [structuredRegistry([entityRecord("northstar", "Northstar Biologics Ltd")]), detector],
     });
-    const literal = new ProtectionEngine({ plugins: [detector] });
+    const literal = new ProtectionEngine({ allowEphemeralKey: true, plugins: [detector] });
     const body = JSON.stringify({ content: "Northstar retained counsel." });
 
     const linkedResult = await linked.redactBodyDetailed(body);
@@ -158,6 +159,7 @@ describe("registered-anchor entity linking", () => {
           : [],
     };
     const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
       plugins: [structuredRegistry([entityRecord("northstar", "Northstar Biologics Ltd")]), detector],
     });
     const scopeKey = "org:thread-linked-turns";
@@ -185,7 +187,10 @@ describe("registered-anchor entity linking", () => {
       ]),
       entityRecord("northstar-finance", "Northstar Finance LLC"),
     ];
-    const engine = new ProtectionEngine({ plugins: [structuredRegistry(records), organizationDetector("Northstar")] });
+    const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
+      plugins: [structuredRegistry(records), organizationDetector("Northstar")],
+    });
 
     const result = await engine.redactBodyDetailed(JSON.stringify({ content: "Northstar retained counsel." }), {
       traceValues: true,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { expandEntities, expansionSpans } from "../src/engine/expander.js";
-import type { Entity, EntityClaim } from "../src/engine/occurrence.js";
+import { expandEntities, expansionSpans } from "../src/expander.js";
+import type { Entity, EntityClaim } from "../src/occurrence.js";
 
 describe("expansionSpans", () => {
   it("returns re-anchored UTF-16 ranges for case and single-line whitespace variants", () => {

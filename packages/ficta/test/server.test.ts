@@ -16,7 +16,7 @@ import {
   type ProtectionRecord,
   protectionRecordSurfaces,
   type StructuredRegistrySourceCapabilities,
-} from "../src/engine/protection.js";
+} from "@serovaai/ficta-engine";
 import type { DetectorPlugin, RegistrySourcePlugin } from "../src/plugins/index.js";
 
 const AWS = "AKIAIOSFODNN7EXAMPLE";
@@ -1685,7 +1685,7 @@ describe("pii fail-closed backend", () => {
       process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
       // Resolve the error class after any vi.resetModules() calls in earlier tests so the engine's
       // instanceof check sees this exact module instance.
-      const { DetectorUnavailableError } = await import("../src/engine/redaction-engine.js");
+      const { DetectorUnavailableError } = await import("@serovaai/ficta-engine");
       const unavailable: DetectorPlugin = {
         kind: "detector",
         name: "surface-outage-fixture",

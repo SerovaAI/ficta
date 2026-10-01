@@ -1,27 +1,27 @@
 #!/usr/bin/env node
-// Engine boundary check.
+// Engine boundary check for @serovaai/ficta-engine.
 //
-// The redaction engine (`src/engine/`) is a sealed module: it may import only its own files and
-// Node built-ins. It must never reach into the CLI, proxy, config, logger, or agent-launch layers
-// (the product side), nor pull in product npm deps (hono, pino, @clack, …). Keeping that boundary
-// one-directional is what lets the engine be audited and reused (e.g. a future browser extension)
-// independently of the ficta CLI/proxy — see docs/product-architecture (private notes).
+// The redaction engine (this package's `src/`) is sealed: it may import only its own files and Node
+// built-ins. It has no npm dependencies and must never reach into the ficta CLI/proxy (or any other
+// workspace package), nor pull in product deps (hono, pino, @clack, …). Keeping that boundary
+// one-directional is what lets the engine be audited and embedded in other hosts independently of
+// the ficta CLI/proxy.
 //
 // The engine also never reads the process environment. Its settings arrive as an `EngineConfig`
 // passed to each engine instance, so several engines in one process can run with different config.
-// The one place ficta turns env vars into that config is `src/engine-env.ts`, which deliberately
-// sits outside `src/engine/` (env is a host concern), so no engine file is exempt from this rule.
+// Turning env vars into that config is the host's job (ficta does it in
+// `packages/ficta/src/engine-env.ts`), so no engine file is exempt from this rule.
 //
-// This is the enforcement that makes the sealed subtree non-regressing: a future edit that adds
-// `import { log } from "../logger.js"` or reads `process.env.FICTA_X` in an engine file fails here
-// (and in CI via `check`).
+// This is the enforcement that makes the sealed package non-regressing: a future edit that adds
+// `import { log } from "../../ficta/src/logger.js"` or reads `process.env.FICTA_X` in an engine file
+// fails here (and in CI via `check`).
 
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const engineDir = resolve(here, "..", "src", "engine");
+const engineDir = resolve(here, "..", "src");
 
 function walk(dir) {
   const files = [];
@@ -65,7 +65,7 @@ for (const file of files) {
       const target = resolve(dirname(file), spec);
       const rel = relative(engineDir, target);
       if (rel === "" || rel.startsWith("..")) {
-        violations.push({ file, spec, reason: "relative import escapes src/engine/" });
+        violations.push({ file, spec, reason: "relative import escapes the engine package's src/" });
       }
       continue;
     }
@@ -76,7 +76,7 @@ for (const file of files) {
 
 if (violations.length > 0) {
   console.error(
-    "✗ engine boundary violated — src/engine/ may import only itself + node: builtins, and never read process.env:",
+    "✗ engine boundary violated — the engine's src/ may import only itself + node: builtins, and never read process.env:",
   );
   for (const v of violations) {
     console.error(`  ${relative(process.cwd(), v.file)}  →  "${v.spec}"  (${v.reason})`);
@@ -84,6 +84,4 @@ if (violations.length > 0) {
   process.exit(1);
 }
 
-console.log(
-  `✓ engine boundary clean — ${files.length} files scanned, no imports escape src/engine/, no process.env reads`,
-);
+console.log(`✓ engine boundary clean — ${files.length} files scanned, no imports escape src/, no process.env reads`);

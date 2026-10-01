@@ -69,6 +69,24 @@ export interface ProtectionEngineOptions {
   config?: EngineConfigInput;
   /** Sink for values-free detector-domain warnings (e.g. a PII backend outage). Default: discard. */
   onWarn?: WarnSink;
+  /**
+   * Permit construction without `config.surrogate.key`, falling back to a random key generated once
+   * per process. Surrogates minted under that key change on every restart, so anything persisted or
+   * restored across processes breaks. Off by default: a library caller must pass a key. The ficta CLI
+   * opts in, because it reports an ephemeral key at startup and can be told to refuse one.
+   */
+  allowEphemeralKey?: boolean;
+}
+
+/** Thrown by {@link ProtectionEngine} when no surrogate key is configured and none may be generated. */
+export class MissingSurrogateKeyError extends Error {
+  constructor() {
+    super(
+      "ProtectionEngine needs a surrogate key: pass config.surrogate.key (a stable, high-entropy secret of at " +
+        "least 32 bytes), or set allowEphemeralKey: true to accept a random per-process key",
+    );
+    this.name = "MissingSurrogateKeyError";
+  }
 }
 
 /** How long a keyed scope's detected PII may sit idle in memory before it is dropped. */
@@ -185,6 +203,7 @@ export class ProtectionEngine implements RedactionEngine {
 
   constructor(opts: ProtectionEngineOptions = {}) {
     this.runtime = { config: resolveEngineConfig(opts.config), warn: opts.onWarn ?? noopWarnSink };
+    if (!this.runtime.config.surrogate.key && !opts.allowEphemeralKey) throw new MissingSurrogateKeyError();
     this.plugins = opts.plugins ?? defaultDetectors;
     this.trusted = opts.trusted ?? new Set(this.plugins);
     this.registrySnapshot = loadPluginRegistry(this.plugins, this.trusted, this.runtime);

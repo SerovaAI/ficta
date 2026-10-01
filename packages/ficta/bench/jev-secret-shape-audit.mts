@@ -1,7 +1,7 @@
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { extname, join, relative } from "node:path";
 import { choice, noul } from "@typesafe-ai/sdk";
-import { detectSecretShapes } from "../src/engine/plugins/secret-shapes/index.js";
+import { detectSecretShapes } from "@serovaai/ficta-engine";
 import { createJevJudge, ENV_API_KEY, estimateUsd } from "./jev-judge.js";
 
 /**
