@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.4.0
+
+### Minor Changes
+
+- [#97](https://github.com/SerovaAI/ficta/pull/97) [`070b33c`](https://github.com/SerovaAI/ficta/commit/070b33c2f59aec6f131e0b382731666a3902082d) Thanks [@steflsd](https://github.com/steflsd)! - `ficta review` now saves exclusions per project by default, in the user-local `~/.ficta/projects.json` keyed by the project root (the nearest ancestor holding `.git`). Agent launches inside that project apply that list on top of the global one. `ficta review --global` edits the global `registry.exclude_names` as before. `ficta doctor` shows the current project, and the startup banner and doctor list project exclusions separately. The project list is never read from a file inside the repository.
+
+- [`3916323`](https://github.com/SerovaAI/ficta/commit/3916323c51e6652e726cdb7ce905b590e0ac9ca5) Thanks [@steflsd](https://github.com/steflsd)! - Publish discoverable evidence and operator interfaces with validated clients and portable preview tickets.
+
+- [#102](https://github.com/SerovaAI/ficta/pull/102) [`81a5d51`](https://github.com/SerovaAI/ficta/commit/81a5d51e50d8c48ce8fa7bdc2ee748c9abc7ef68) Thanks [@steflsd](https://github.com/steflsd)! - The surrogate key can now come from a private key file: `surrogate.key_file` / `FICTA_SURROGATE_KEY_FILE` (64 hex characters, not readable by group or others). `surrogate.require_stable_key` / `FICTA_REQUIRE_STABLE_SURROGATE_KEY` makes the proxy and agent launches fail at startup instead of falling back to a random per-process key. `ficta doctor` reports whether the surrogate key is stable or ephemeral and where it comes from, without printing it. The key is now resolved when the proxy starts rather than at module import.
+
+- [`c7f736b`](https://github.com/SerovaAI/ficta/commit/c7f736b92ac24f7ebb2a5b0107fe8cfd3a90178e) Thanks [@steflsd](https://github.com/steflsd)! - Enable secret detection by default for proxies and coding agents, and detect long random-looking bare credentials locally.
+
+### Patch Changes
+
+- [`6936247`](https://github.com/SerovaAI/ficta/commit/6936247f99455448eaa5b52737d64c7b72961cef) Thanks [@steflsd](https://github.com/steflsd)! - Fix `codex` failing to start under ficta on Codex 0.156+ (`workspace backend must use an HTTPS origin`): ficta no longer overrides `chatgpt_base_url`, so Codex account/plugin/usage housekeeping goes direct while model turns still route through ficta, and wrapped launches now set `analytics.enabled=false` because Codex analytics events carried registered values.
+
+- [#102](https://github.com/SerovaAI/ficta/pull/102) [`81a5d51`](https://github.com/SerovaAI/ficta/commit/81a5d51e50d8c48ce8fa7bdc2ee748c9abc7ef68) Thanks [@steflsd](https://github.com/steflsd)! - The redaction engine no longer reads environment variables: `ProtectionEngine` takes its settings (surrogate key and style, PII and secret-shape detection, fail-closed detection, restore-into-tools, path redaction, registry exclusions) as a `config` object and warnings through an `onWarn` sink, so several engines in one process can run with different settings. The ficta CLI and proxy build that config from env and `config.toml` once at startup, so their behaviour is unchanged. Plugin authors: detect contexts, `discover()` and `failClosed()` now receive a `runtime` carrying the calling engine's config and warn sink.
+
+- [`c409910`](https://github.com/SerovaAI/ficta/commit/c409910ebf96cffad13e64fcc3cffee0488efea2) Thanks [@steflsd](https://github.com/steflsd)! - Preserve structural detection context across requests, expire idle scopes before reuse, and retain prototype-named JSON fields during redaction.
+
+- [`2c5f9c2`](https://github.com/SerovaAI/ficta/commit/2c5f9c27bf8e9d675e2dc38906af692205703d5a) Thanks [@steflsd](https://github.com/steflsd)! - Pin Presidio and OpenMed to stable release tags and digests, with advisory update checks in pnpm check and a health-gated refresh command for source deployments.
+
+- [`2c5f9c2`](https://github.com/SerovaAI/ficta/commit/2c5f9c27bf8e9d675e2dc38906af692205703d5a) Thanks [@steflsd](https://github.com/steflsd)! - Skip unchanged sidecar builds and reuse unchanged containers during updates; add --force for a full refresh.
+
+- [#103](https://github.com/SerovaAI/ficta/pull/103) [`5f9708d`](https://github.com/SerovaAI/ficta/commit/5f9708d1346760332d26f9f09ae2993604823fa7) Thanks [@steflsd](https://github.com/steflsd)! - Secret-shape detection now catches a password after a label in prose (`Password: hunter2`, `pwd=…`, `…, password: s3cret!, …`), including short values, and recognises the German labels `Passwort` and `Kennwort`. Already-redacted values (Ficta surrogates and `[REDACTED…]` markers) after a password label are left alone.
+
+- [`078445a`](https://github.com/SerovaAI/ficta/commit/078445aeab61c141ba0e3489953695395d0a851b) Thanks [@steflsd](https://github.com/steflsd)! - `ficta review` now marks suggested (auto-unchecked) names as not excluded until you submit, and warns that suggested exclusions were not saved when the prompt is cancelled.
+
+- [#104](https://github.com/SerovaAI/ficta/pull/104) [`da11c8a`](https://github.com/SerovaAI/ficta/commit/da11c8a1ddb287fb7cf7b3ede7954f806be05109) Thanks [@steflsd](https://github.com/steflsd)! - The bundled Presidio registry now detects one-time codes (`ONE_TIME_CODE`, typed surrogate `FICTA_OTP_…`): 4–8 digit codes next to an OTP, 2FA, PIN, passcode or verification label in English, or a Bestätigungscode, Einmalcode, Einmalpasswort, Sicherheitscode, TAN or "Code lautet" label in German. A bare "code" only counts in OTP phrasing, so statute, postal and branch-code numbers stay visible.
+
+- [`2c5f9c2`](https://github.com/SerovaAI/ficta/commit/2c5f9c27bf8e9d675e2dc38906af692205703d5a) Thanks [@steflsd](https://github.com/steflsd)! - Fix Presidio sidecar startup with the tagged upstream runtime by invoking Gunicorn directly without Poetry.
+
+- [#96](https://github.com/SerovaAI/ficta/pull/96) [`4703388`](https://github.com/SerovaAI/ficta/commit/470338821ba8c9719bc988d7c5e7524b833f42b1) Thanks [@steflsd](https://github.com/steflsd)! - Secret-shape detector and engine fixes from a core-engine review:
+
+  - An unquoted `KEY=value` line or credential URL that ended a request-body leaf was missed whenever another leaf followed it: the value patterns ran across the engine's leaf boundary and the straddling candidate was then rejected. The value classes now stop at the boundary.
+  - `host:port/@path` URLs (Vite's `/@vite/client`, `/@fs/…`, scoped-package paths) were registered as high-confidence credential URLs; userinfo may no longer contain `/`.
+  - The placeholder filter (`example`, `your`, `xxx`, …) no longer suppresses a PEM private key whose base64 body contains such a substring, or a credential URL whose _hostname_ does; for credential URLs it inspects only the password.
+  - Google OAuth access tokens (`ya29.…`) are now a recognised shape.
+  - The opaque-value entropy bar scales with length below 40 characters, so genuinely random 32-char tokens are no longer rejected about a third of the time.
+  - Detection is linear on large identifier or base64url blobs (bounded key/scheme runs, anchored JWT start); a 100 KB run previously took seconds.
+  - Under fail-closed detection (`FICTA_FAIL_CLOSED_DETECTION` or a detector's own `fail_closed`), any detector exception now blocks the request, not only a signalled backend outage; under fail-open the skipped detector is logged and reported as `skippedDetectors` on the redaction details.
+  - Keyed-scope requests carrying thousands of detected values (a lockfile's worth of hashes) are several times faster: merged value order and expansion patterns are cached, hit-label safety checks are memoised, and the shell-path check no longer rescans the whole leaf per match.
+  - Cached metadata safety checks preserve the separate name, source, and plugin fallback labels when those fields contain the same protected text.
+
+- [#101](https://github.com/SerovaAI/ficta/pull/101) [`d28a573`](https://github.com/SerovaAI/ficta/commit/d28a5736eb87c698ac8a470bfbcc2ba14f49382e) Thanks [@steflsd](https://github.com/steflsd)! - Trace-log previews of upstream responses no longer cut a surrogate token in half; a token that straddles the preview limit is dropped whole, so a cut preview can't be mistaken for a model-truncated surrogate.
+
+- [#99](https://github.com/SerovaAI/ficta/pull/99) [`af1d59e`](https://github.com/SerovaAI/ficta/commit/af1d59ea4cdcf93a9ad0a8d84e2df6a2b16a21c8) Thanks [@steflsd](https://github.com/steflsd)! - Presidio sidecar: detect South African phone numbers, bare CIPC registration numbers, and street addresses; keep full names with surname particles (du Plessis, van der Merwe); admit single names next to clear person cues (honorifics, family relations, task owners, attendee lists); and read name fields in pasted JSON records and CSV exports.
+- Updated dependencies [[`6936247`](https://github.com/SerovaAI/ficta/commit/6936247f99455448eaa5b52737d64c7b72961cef), [`3916323`](https://github.com/SerovaAI/ficta/commit/3916323c51e6652e726cdb7ce905b590e0ac9ca5)]:
+  - @serovaai/ficta-protocol@0.4.0
+  - @serovaai/ficta-contract@0.2.0
+
 ## 0.3.0
 
 ### Minor Changes
