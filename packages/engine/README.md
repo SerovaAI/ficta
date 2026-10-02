@@ -6,9 +6,8 @@ the built-in regex floor or an optional Presidio/OpenMed sidecar), replaces them
 surrogate tokens, and restores the real values in text that comes back.
 
 > **Experimental (0.x).** This package is the engine the ficta CLI and proxy run on, published so
-> other services can use it in-process. Its API may change in any minor release until 1.0. A smaller
-> library-facing facade (batch redaction, an explicit "redaction unavailable" error) is planned;
-> until then the entry point is `ProtectionEngine`.
+> other services can use it in-process. Both of its APIs, the `createEngine` facade and the
+> lower-level `ProtectionEngine`, may change in any minor release until 1.0.
 
 ## Install
 
@@ -21,6 +20,94 @@ runtime dependencies and never reads environment variables: everything is config
 object you pass in.
 
 ## Usage
+
+`createEngine` is the entry point for in-process callers: named profiles, batch calls, keyed scopes
+for reversible pseudonymisation, and one typed error whenever redaction cannot complete.
+
+```ts
+import { createEngine, RedactionUnavailableError } from "@serovaai/ficta-engine";
+import { openSqliteVaultStore } from "@serovaai/ficta-engine/sqlite";
+
+const engine = await createEngine({
+  // Required: a stable, high-entropy secret (at least 32 bytes). The same key always mints the
+  // same token for the same value, in every profile and every process.
+  surrogateKey: process.env.MY_SURROGATE_KEY,
+  surrogateStyle: "typed",
+  vault: openSqliteVaultStore("/var/lib/my-service/ficta-vault.db", { encryptionKey: process.env.MY_VAULT_KEY }),
+  presidio: { url: "http://127.0.0.1:5002" }, // optional
+  detection: { entityPriority: ["za-id-number", "credit-card"] },
+  profiles: {
+    // One-way: these values are replaced by markers and can never be restored.
+    rules: {
+      entities: ["CREDIT_CARD", "ZA_ID_NUMBER", "US_BANK_NUMBER"],
+      destroy: {
+        categories: ["credit-card", "za-id-number", "us-bank-number", "password-label"],
+        labels: { "password-label": "[REDACTED_SECRET]" },
+      },
+    },
+    // Reversible: these values get tokens that restore within the same scope key.
+    pseudonymise: { entities: ["PERSON", "ORGANIZATION", "EMAIL_ADDRESS"], secretShapes: false },
+  },
+  onWarn: (fields, message) => console.warn(message, fields),
+});
+
+try {
+  const pass1 = await engine.redactMany(texts, "rules"); // stateless
+  const scope = engine.scope("owner");
+  const pass2 = await scope.pseudonymiseMany(pass1.texts, "pseudonymise"); // saved to the vault
+  const preview = engine.truncate(pass2.texts[0], 400, { boundary: "word", ellipsis: "…" });
+  // later, possibly in another process with the same keys and vault file:
+  const { text, restoredCount, unknownCount } = await scope.restore(reply, { unknownToken: "[unknown]" });
+} catch (err) {
+  if (err instanceof RedactionUnavailableError) {
+    // err.reason: "unreachable" | "timeout" | "http_error" | "bad_response" | "detector_error"
+    //           | "store_error" | "internal_error"; err.detector and err.item when known.
+    // Nothing from the failed call is usable: skip the work and report it.
+  }
+  throw err;
+} finally {
+  await engine.close(); // waits for background vault writes, then closes the vault store
+}
+```
+
+- **Profiles.** Each profile chooses its detectors and dispositions: `pii` (default on: the regex
+  floor, plus Presidio or OpenMed when configured), `entities` (an allowlist of entity types, sent
+  to Presidio and applied to every PII backend's findings, the regex floor included, whose `email`
+  counts as `EMAIL_ADDRESS`), `secretShapes` (default on), and `destroy` (see
+  [Destroying values](#destroying-values-instead-of-surrogating-them)). All profiles share one
+  surrogate key, token style and vault, so a value gets the same token whichever profile minted it.
+  Malformed settings throw `InvalidEngineConfigError` from `createEngine`; naming a profile it was
+  not given throws `UnknownProfileError`.
+- **Always fail-closed.** There is no fail-open switch. If a detector cannot run (a sidecar is
+  unreachable, times out, answers with an error or a malformed response, or a detector throws), or
+  the vault store fails, the call throws `RedactionUnavailableError` and returns nothing. Batches are
+  all or nothing: if any item fails, no text from the call is returned. Error messages carry the
+  reason, the detector and the item index, never a value or any input text; `cause` keeps the
+  underlying error. Fail-closed is about _availability_: it does not make detection complete (see
+  below).
+- **Batches.** `redactMany` and `pseudonymiseMany` redact one item at a time, with one detector
+  call per item, so context in one text (a keyword near a number, say) never affects another.
+- **`redactMany` is stateless.** Each item runs in a fresh scope and nothing is kept or written to
+  the vault afterwards, so any tokens it emits cannot be restored. Use it for one-way passes.
+- **Keyed scopes.** `engine.scope(key)` gives reversible pseudonymisation: each redaction saves its
+  new mappings to the vault before returning, and a value found once stays redacted in that scope's
+  later texts. `scope.restore` fetches tokens other processes minted, then restores; unknown tokens
+  (pruned, forgotten, mangled or invented) are counted and, with `unknownToken`, replaced. See
+  [Unknown tokens](#unknown-tokens). In a failed `pseudonymiseMany`, mappings for the items before
+  the failing one may already be saved; their tokens were never returned.
+- **Without a vault** mappings live in the engine's memory only (shared by its profiles) and are
+  lost on `close()` or exit. With one, see [Persistent vaults](#persistent-vaults).
+- **Paths.** Unlike the proxy's default, values inside path-like tokens are redacted too.
+- **Truncation.** `engine.truncate(text, max, { boundary: "word", ellipsis })` never cuts a token or
+  a destroy marker in half (see `truncateRedactedText`).
+- **What it does not promise.** Detection is best-effort: a value no detector reports passes
+  through unchanged, whichever profile runs. Destroy changes what happens to a value _once found_;
+  it does not make finding it more likely.
+
+### Lower-level API: `ProtectionEngine`
+
+The facade is built on `ProtectionEngine`, which the ficta proxy uses directly. Reach for it when
+you need registered exact-match values, JSON bodies, streaming restore, or fail-open detection.
 
 ```ts
 import { ProtectionEngine } from "@serovaai/ficta-engine";

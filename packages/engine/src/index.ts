@@ -1,8 +1,10 @@
 // @serovaai/ficta-engine: the Ficta redaction engine as a library.
 //
 // Experimental (0.x). This entry point is what the ficta CLI/proxy builds on; the API may change in
-// any minor release until 1.0. Construction: `new ProtectionEngine({ config })`, where the config
-// carries an explicit surrogate key (see ProtectionEngineOptions.allowEphemeralKey).
+// any minor release until 1.0. Library callers start with `createEngine` (facade.ts): named
+// profiles, batch redaction, keyed scopes, always fail-closed. The lower-level API is
+// `new ProtectionEngine({ config })`, where the config carries an explicit surrogate key (see
+// ProtectionEngineOptions.allowEphemeralKey).
 //
 // Persistent vaults: pass a `VaultStore` as `vault`. The SQLite store lives on the
 // `@serovaai/ficta-engine/sqlite` subpath (Node >= 22.13) so this entry never imports node:sqlite.
@@ -20,6 +22,21 @@ export {
   resolveEngineConfig,
 } from "./config.js";
 export { detectorFailClosed, globalDetectionFailClosed } from "./detection-policy.js";
+export {
+  type BatchResult,
+  createEngine,
+  type CreateEngineOptions,
+  type FictaEngine,
+  type FictaRestoreOptions,
+  type FictaScope,
+  type ItemHit,
+  type ItemResult,
+  type ProfileConfig,
+  RedactionUnavailableError,
+  type RedactionUnavailableReason,
+  type TruncateOptions,
+  UnknownProfileError,
+} from "./facade.js";
 export { noopWarnSink, type WarnFields, type WarnSink } from "./diagnostics.js";
 export { MissingSurrogateKeyError, ProtectionEngine, type ProtectionEngineOptions } from "./engine.js";
 export {

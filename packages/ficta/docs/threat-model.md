@@ -142,6 +142,35 @@ In practice the two features are mutually exclusive today, which is the safer fa
 not read that as a redaction gap ficta could close by relaxing the routing: the mirroring channel is
 unredacted either way, because ficta has no reader for that schema.
 
+## Embedding the engine
+
+`@serovaai/ficta-engine` lets a service run the redaction engine in its own process, usually through
+its `createEngine` facade. That use is outside the threat model above: the proxy's covered request
+surfaces, restore-into-tools withholding, and auth-header handling do not apply, because there is no
+proxy. The embedding service decides which texts are redacted, where they go, and who may restore
+them. Its scope keys are the isolation boundary between restorers, so it must derive them itself and
+never take them from untrusted input.
+
+What the facade does promise, kept as separate claims:
+
+- **Availability is fail-closed.** If a detector cannot run (an unreachable, slow, or failing
+  sidecar, or a detector error) or the vault store fails, the call throws `RedactionUnavailableError`
+  and returns no text. A batch is all or nothing, never partly redacted. There is no fail-open
+  setting. Error messages carry no values or input text.
+- **Detection is still best-effort.** Fail-closed means a detector that _could not run_ never lets
+  text through. It does not mean every sensitive value is found: a value that a running detector does
+  not report passes through unchanged, under any profile. Deterministic output for the same input is
+  a consistency property, not a coverage one.
+- **Destroyed values are never vaulted.** A value in a destroy category becomes a fixed marker. It is
+  never written to memory mappings or the vault store and cannot be restored. This applies to values
+  once found and does not make detection more likely.
+- **Exact-match protection applies only to registered values.** The fail-closed exact-match
+  promise above covers values registered with the engine. The facade registers none, so its
+  protection is detector-based.
+- **The vault is encrypted at rest.** With a persistent store, keyed scopes' mappings are encrypted
+  as described under [persistent vaults](#design-tradeoffs). Without one, they stay in the engine's
+  memory and are lost when it closes.
+
 ## Design tradeoffs
 
 - **Exact-match over broad guessing.** The reliable layer is values you already know. Detector-style matching can be added, but is best effort.

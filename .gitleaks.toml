@@ -75,3 +75,15 @@ paths = [
   '''(^|.*/)packages/engine/test/category-priority\.test\.ts$''',
   '''(^|.*/)packages/ficta/presidio/ficta_presidio/test_span_precedence\.py$''',
 ]
+
+[[allowlists]]
+description = "Synthetic card, account number, surrogate-key and encryption-key inputs in the library facade test (the password is built at runtime)."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexes = [
+  '''facade-test-surrogate-key-at-least-32-bytes''',
+  '''"c3"\.repeat\(32\)''',
+  '''4111 1111 1111 1111''',
+  '''40217733''',
+]
+paths = ['''(^|.*/)packages/engine/test/facade\.test\.ts$''']

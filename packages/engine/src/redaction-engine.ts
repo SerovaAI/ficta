@@ -391,12 +391,19 @@ export interface TextRedactionDetails extends TextRedactionResult {
  * never request text or protected values.
  */
 export class DetectorUnavailableError extends Error {
+  /** The failing backend inside the plugin (e.g. `presidio` for the `pii` plugin), when known. */
+  readonly backend?: string;
+
   constructor(
     readonly plugin: string,
     readonly reason?: string,
+    /** `cause`: the backend's own typed, values-free failure (e.g. a `PresidioUnavailableError`). */
+    options?: { readonly backend?: string; readonly cause?: unknown },
   ) {
     super(reason ? `detector "${plugin}" unavailable: ${reason}` : `detector "${plugin}" unavailable`);
     this.name = "DetectorUnavailableError";
+    if (options?.backend !== undefined) this.backend = options.backend;
+    if (options?.cause !== undefined) this.cause = options.cause;
   }
 }
 
