@@ -1,3 +1,5 @@
+import type { EngineConfig } from "../../config.js";
+import { compareCategoryClaims } from "../../detection-priority.js";
 import { detectorFailClosed } from "../../detection-policy.js";
 import { type EnvSource, envFlag, parseBoolean } from "../../env-flags.js";
 import { expansionSpans } from "../../expander.js";
@@ -6,6 +8,7 @@ import type { DetectorPlugin, PluginDiscovery, PluginRuntime, ProtectedValue } f
 import { type MarkdownDetectionView, normalizeMarkdownForDetection } from "./markdown.js";
 import { OpenmedUnavailableError } from "./openmed-recognizer.js";
 import { PresidioUnavailableError, withMergedSpans } from "./presidio-recognizer.js";
+import { REGEX_FLOOR_SOURCE } from "./regex-recognizer.js";
 import { ENV_BACKEND, ENV_BACKENDS, resolveBackends } from "./registry.js";
 
 const PLUGIN_NAME = "pii";
@@ -235,7 +238,7 @@ export const piiPlugin: DetectorPlugin = {
     if (failures.length > 0 && detectorFailClosed(pii.failClosed, detection.failClosed)) {
       throw new DetectorUnavailableError(PLUGIN_NAME, failures.join("; "));
     }
-    return mergeDetectedValues(values);
+    return mergeDetectedValues(values, runtime.config);
   },
 };
 
@@ -295,14 +298,14 @@ function backendLabelFor(name: string, runtime: PluginRuntime): string {
   return name;
 }
 
-function mergeDetectedValues(values: readonly ProtectedValue[]): ProtectedValue[] {
+function mergeDetectedValues(values: readonly ProtectedValue[], config: EngineConfig): ProtectedValue[] {
   const accepted: ProtectedValue[] = [];
   for (const value of values) {
     if (!value.value.trim()) continue;
     const exact = accepted.find((existing) => existing.value === value.value);
     if (exact) {
       const index = accepted.indexOf(exact);
-      const preferred = preferValue(value, exact);
+      const preferred = preferValue(value, exact, config);
       accepted[index] = preferred === value ? withMergedSpans(value, exact) : withMergedSpans(exact, value);
       continue;
     }
@@ -315,7 +318,16 @@ function mergeDetectedValues(values: readonly ProtectedValue[]): ProtectedValue[
   return accepted;
 }
 
-function preferValue(a: ProtectedValue, b: ProtectedValue): ProtectedValue {
+/**
+ * Pick one category for a value several backends (or one backend) reported under different
+ * categories. Explicit config decides first (destroy, then `detection.entityPriority`); after that,
+ * confidence, medical specificity, and finally the regex floor yields to a configured backend, whose
+ * classification is the richer one (the floor exists for coverage, not for labelling).
+ */
+function preferValue(a: ProtectedValue, b: ProtectedValue, config: EngineConfig): ProtectedValue {
+  const configured = compareCategoryClaims(a, b, config);
+  if (configured !== 0) return configured < 0 ? a : b;
+
   const confidence = { exact: 3, high: 2, probabilistic: 1 } as const;
   const aConfidence = confidence[a.confidence ?? "probabilistic"];
   const bConfidence = confidence[b.confidence ?? "probabilistic"];
@@ -326,7 +338,12 @@ function preferValue(a: ProtectedValue, b: ProtectedValue): ProtectedValue {
   if (aMedical !== bMedical) return aMedical ? a : b;
 
   if (a.value.length !== b.value.length) return a.value.length > b.value.length ? a : b;
-  return a.source <= b.source ? a : b;
+  const aFloor = a.source === REGEX_FLOOR_SOURCE;
+  const bFloor = b.source === REGEX_FLOOR_SOURCE;
+  if (aFloor !== bFloor) return aFloor ? b : a;
+  if (a.source !== b.source) return a.source < b.source ? a : b;
+  // Last resort, so backend result order never decides: lexical category order.
+  return a.name <= b.name ? a : b;
 }
 
 /** Medical-specific detections win ties: the clinical backends' labels beat generic ones. */

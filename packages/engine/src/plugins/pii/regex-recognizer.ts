@@ -2,6 +2,9 @@ import type { ProtectedValue } from "../types.js";
 import { dedupeByValue } from "./presidio-recognizer.js";
 import type { PiiRecognizer } from "./recognizer.js";
 
+/** `ProtectedValue.source` of every regex-floor detection. */
+export const REGEX_FLOOR_SOURCE = "pii-regex";
+
 interface StructuredPattern {
   /** Safe category label used as the ProtectedValue.name (never the matched value). */
   category: string;
@@ -36,7 +39,7 @@ export const regexRecognizer: PiiRecognizer = {
         out.push({
           name: pattern.category,
           value,
-          source: "pii-regex",
+          source: REGEX_FLOOR_SOURCE,
           kind: "pii",
           confidence: pattern.confidence,
           spans: [{ start, end: start + value.length }],

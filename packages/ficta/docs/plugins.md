@@ -338,6 +338,13 @@ addresses are recognized without NER. General date recognition is disabled; birt
 is context-bound. The registry retains structured recognizers such as South African IDs and phones,
 document identifiers, and Mauritius phones.
 
+A valid South African ID number ends in a Luhn check digit, so Presidio's card recognizer also
+accepts it, at the same score. When `ZA_ID_NUMBER` validated exactly the same span, the sidecar drops
+the `CREDIT_CARD` result, so the ID is reported as an ID whatever order the recognizers ran in. A
+Luhn-valid 13-digit number that is not a valid ID (an impossible date, for example) is still a card.
+Ficta then prefers the sidecar's classification over its own regex-floor `credit-card` match for the
+same value.
+
 One-time codes (`ONE_TIME_CODE`) are 4–8 digit runs admitted only next to an OTP label in English or
 German: `verification code 7731`, `Your one-time PIN: 55120931`, `Ihr Code lautet 4821`,
 `TAN: 482913`, or a trailing label such as `7731 is your verification code`. The label is part of the

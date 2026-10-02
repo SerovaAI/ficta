@@ -356,17 +356,24 @@ export async function mapConcurrent<T, R>(
   return results;
 }
 
+/**
+ * Collapse repeat detections of one value under one category, unioning their spans. The same value
+ * under different categories (a 13-digit ID that is also a checksum-valid card number) is kept as
+ * separate findings: which category wins is the PII plugin's merge decision, made by explicit rules
+ * rather than by the order a backend happened to return its results in.
+ */
 export function dedupeByValue(values: readonly ProtectedValue[]): ProtectedValue[] {
   const byValue = new Map<string, number>();
   const out: ProtectedValue[] = [];
   for (const value of values) {
-    const existingIndex = byValue.get(value.value);
+    const key = `${value.name}\u0000${value.value}`;
+    const existingIndex = byValue.get(key);
     if (existingIndex !== undefined) {
       const existing = out[existingIndex];
       if (existing) out[existingIndex] = withMergedSpans(existing, value);
       continue;
     }
-    byValue.set(value.value, out.length);
+    byValue.set(key, out.length);
     out.push(value);
   }
   return out;
