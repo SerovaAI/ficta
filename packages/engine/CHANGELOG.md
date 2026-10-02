@@ -1,5 +1,13 @@
 # @serovaai/ficta-engine
 
+## 0.8.0
+
+### Minor Changes
+
+- [#118](https://github.com/SerovaAI/ficta/pull/118) [`41ebc32`](https://github.com/SerovaAI/ficta/commit/41ebc32c71c24d761e4aadd67a5ca1b782a8fd56) Thanks [@steflsd](https://github.com/steflsd)! - Library roster: `createEngine({ roster })` takes known people and organisations (`RosterEntry` / `RosterSource`), matches them exactly before detection in every profile, links each entry's surfaces under one `FICTA_PERSON|ORG_<entity>_<surface>` family in keyed scopes, drops forms claimed by more than one entry, and exposes `rosterFingerprint` so processes can check they loaded the same roster.
+
+- [#120](https://github.com/SerovaAI/ficta/pull/120) [`60ab447`](https://github.com/SerovaAI/ficta/commit/60ab44797ff3fd0ba8862de24c3b26731d25ceb0) Thanks [@steflsd](https://github.com/steflsd)! - Destroy dispositions accept `categories: "*"` to destroy every detector finding whatever its category (registered and roster values keep their surrogates), so a keyed two-pass flow persists only roster mappings. A keyed scope now re-applies a roster short form it already holds at word boundaries and with its linked entity token (also after hydrating from the vault store), instead of a literal token inside longer words. `redactMany` reports roster matches (`hits[].roster`) and warns once that their tokens cannot be restored.
+
 ## 0.7.0
 
 ### Minor Changes

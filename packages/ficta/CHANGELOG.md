@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0
+
+### Patch Changes
+
+- Updated dependencies [[`41ebc32`](https://github.com/SerovaAI/ficta/commit/41ebc32c71c24d761e4aadd67a5ca1b782a8fd56), [`60ab447`](https://github.com/SerovaAI/ficta/commit/60ab44797ff3fd0ba8862de24c3b26731d25ceb0)]:
+  - @serovaai/ficta-engine@0.8.0
+  - @serovaai/ficta-protocol@0.8.0
+  - @serovaai/ficta-contract@0.2.4
+
 ## 0.7.0
 
 ### Patch Changes
