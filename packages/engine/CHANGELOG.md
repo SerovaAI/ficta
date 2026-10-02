@@ -1,5 +1,17 @@
 # @serovaai/ficta-engine
 
+## 0.6.0
+
+### Minor Changes
+
+- [#110](https://github.com/SerovaAI/ficta/pull/110) [`234e8aa`](https://github.com/SerovaAI/ficta/commit/234e8aa21381f41ffaa9864566f9d04ca1f1d0cb) Thanks [@steflsd](https://github.com/steflsd)! - Engine: add an irreversible "destroy" disposition. `dispositions.destroy.categories` replaces detections of the chosen categories with a fixed marker (default `[REDACTED_<CATEGORY>]`, overridable per category) instead of a reversible surrogate; destroyed values are never stored in the vault and are reported as `destroyed` plus `disposition: "destroy"` hits. Registered values keep their surrogates.
+
+- [#113](https://github.com/SerovaAI/ficta/pull/113) [`8a1f906`](https://github.com/SerovaAI/ficta/commit/8a1f906d5a146df810e7069d1813ce8f0151461a) Thanks [@steflsd](https://github.com/steflsd)! - Engine: `restoreTextDetailed(text, { unknownToken })` on the engine and on scopes restores a complete text and returns `{ text, restoredCount, unknownCount }`. Every token-shaped string the vault does not map (unknown, model-mutated, truncated, wildcard entity references, or pruned/forgotten from a vault store) is counted and, with `unknownToken`, replaced by that placeholder; it is never mapped to a value. Destroy markers are not tokens. `restoreText` and the JSON/streaming restores are unchanged.
+
+- [#112](https://github.com/SerovaAI/ficta/pull/112) [`92e7036`](https://github.com/SerovaAI/ficta/commit/92e7036956c34c74ff34e5cbaed3f9efdc469968) Thanks [@steflsd](https://github.com/steflsd)! - Engine: persistent, encrypted vault for keyed scopes. Pass a `VaultStore` as `vault` and keyed scopes persist their value↔token mappings, so another process with the same surrogate and scope key can restore them and restarts lose nothing; values are encrypted with AES-256-GCM under a separate caller-supplied key, bound to their scope and token. New `@serovaai/ficta-engine/sqlite` entry (`openSqliteVaultStore`, Node >= 22.13) on built-in `node:sqlite` with WAL and a busy timeout, plus `prune` by last use and `forget(value)`. Scopes gain `hydrate()` and `prepareRestore(text)`; destroyed values are never stored. The main entry still loads on Node 20. Threat model updated: the CLI keeps mappings in memory; an embedding with a vault store writes encrypted mappings to disk.
+
+- [#114](https://github.com/SerovaAI/ficta/pull/114) [`1893eae`](https://github.com/SerovaAI/ficta/commit/1893eae1dad32c24954048dcc43624913a6ee893) Thanks [@steflsd](https://github.com/steflsd)! - A valid, Luhn-passing South African ID number is now classified as an ID rather than a credit card, deterministically. The reference Presidio sidecar drops `CREDIT_CARD` when `ZA_ID_NUMBER` validated the same span; the PII plugin no longer lets backend result order pick a value's category and prefers a configured backend over the regex floor; and the engine adds `detection.entityPriority` (categories, highest first) for values reported under several categories. Destroying the ID category alone now destroys such an ID; it no longer needs `credit-card` destroyed too.
+
 ## 0.5.0
 
 ### Minor Changes

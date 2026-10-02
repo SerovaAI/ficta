@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.0
+
+### Minor Changes
+
+- [#114](https://github.com/SerovaAI/ficta/pull/114) [`1893eae`](https://github.com/SerovaAI/ficta/commit/1893eae1dad32c24954048dcc43624913a6ee893) Thanks [@steflsd](https://github.com/steflsd)! - A valid, Luhn-passing South African ID number is now classified as an ID rather than a credit card, deterministically. The reference Presidio sidecar drops `CREDIT_CARD` when `ZA_ID_NUMBER` validated the same span; the PII plugin no longer lets backend result order pick a value's category and prefers a configured backend over the regex floor; and the engine adds `detection.entityPriority` (categories, highest first) for values reported under several categories. Destroying the ID category alone now destroys such an ID; it no longer needs `credit-card` destroyed too.
+
+### Patch Changes
+
+- [#115](https://github.com/SerovaAI/ficta/pull/115) [`e847b50`](https://github.com/SerovaAI/ficta/commit/e847b509175becd79111cf55a1fd0b4b68453129) Thanks [@steflsd](https://github.com/steflsd)! - Make upstream connections resilient on slow or VPN networks: the proxy now uses a dedicated HTTP client that gives each address family 2.5s to connect (instead of Node's 250–500ms happy-eyeballs cutoff, which abandoned slow IPv4 connects in favour of unreachable IPv6 routes and returned `502 … AggregateError [ETIMEDOUT]`), and retries once when a request fails before it is sent.
+- Updated dependencies [[`234e8aa`](https://github.com/SerovaAI/ficta/commit/234e8aa21381f41ffaa9864566f9d04ca1f1d0cb), [`8a1f906`](https://github.com/SerovaAI/ficta/commit/8a1f906d5a146df810e7069d1813ce8f0151461a), [`92e7036`](https://github.com/SerovaAI/ficta/commit/92e7036956c34c74ff34e5cbaed3f9efdc469968), [`1893eae`](https://github.com/SerovaAI/ficta/commit/1893eae1dad32c24954048dcc43624913a6ee893)]:
+  - @serovaai/ficta-engine@0.6.0
+  - @serovaai/ficta-protocol@0.6.0
+  - @serovaai/ficta-contract@0.2.2
+
 ## 0.5.0
 
 ### Minor Changes

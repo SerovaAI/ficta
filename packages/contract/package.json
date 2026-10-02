@@ -1,6 +1,6 @@
 {
   "name": "@serovaai/ficta-contract",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": false,
   "description": "Typed oRPC and OpenAPI contract for the Ficta control plane",
   "homepage": "https://ficta.sh",
