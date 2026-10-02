@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0
+
+### Patch Changes
+
+- Updated dependencies [[`a20737b`](https://github.com/SerovaAI/ficta/commit/a20737baadae5ee05dc1e7ac3af47c252fc8cf0e)]:
+  - @serovaai/ficta-engine@0.7.0
+  - @serovaai/ficta-protocol@0.7.0
+  - @serovaai/ficta-contract@0.2.3
+
 ## 0.6.0
 
 ### Minor Changes
