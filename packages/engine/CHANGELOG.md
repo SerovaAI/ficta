@@ -1,5 +1,11 @@
 # @serovaai/ficta-engine
 
+## 0.7.0
+
+### Minor Changes
+
+- [#116](https://github.com/SerovaAI/ficta/pull/116) [`a20737b`](https://github.com/SerovaAI/ficta/commit/a20737baadae5ee05dc1e7ac3af47c252fc8cf0e) Thanks [@steflsd](https://github.com/steflsd)! - Engine: `createEngine`, a fail-closed library facade with named redaction profiles (entity allowlists, secret shapes, destroy dispositions), stateless `redactMany`, keyed-scope `pseudonymise`/`pseudonymiseMany`/`restore` with counts, token-safe `truncate`, and a typed `RedactionUnavailableError` that never returns partially redacted text
+
 ## 0.6.0
 
 ### Minor Changes
