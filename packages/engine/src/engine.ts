@@ -6,6 +6,7 @@ import {
   type PluginRuntime,
   resolveEngineConfig,
 } from "./config.js";
+import { compareCategoryClaims } from "./detection-priority.js";
 import { detectorFailClosed } from "./detection-policy.js";
 import { noopWarnSink, type WarnSink } from "./diagnostics.js";
 import { type EntityLinkAnchorIndex, entityLinkAnchorIndex, linkDetectedEntityClaims } from "./entity-linker.js";
@@ -577,10 +578,11 @@ class ProtectionRequestScope implements RequestScope {
       if (meta) detectedByValue.set(value, meta);
     }
     for (const { value } of detection.detections) {
-      // A value detected under several categories is destroyed if any of them is a destroy category:
-      // the irreversible disposition is the one that cannot leak a restorable mapping.
+      // A value detected under several categories is destroyed if any of them is a destroy category
+      // (the irreversible disposition is the one that cannot leak a restorable mapping); otherwise
+      // `detection.entityPriority` decides, and only then the later detector.
       const current = detectedByValue.get(value.value);
-      if (current && this.destroyLabelFor(current) !== undefined && this.destroyLabelFor(value) === undefined) continue;
+      if (current && compareCategoryClaims(current, value, this.runtime.config) < 0) continue;
       detectedByValue.set(value.value, value);
     }
     const detectedClaims = linkDetectedEntityClaims(
@@ -829,6 +831,8 @@ class ProtectionRequestScope implements RequestScope {
       (!registered && this.destroyLabelFor(value) !== undefined ? destroy : reversible).push(value);
     }
     const destroyedValues = new Set(destroy.map((value) => value.value));
+    // The vault keeps the first category it sees for a value, so register in priority order.
+    reversible.sort((a, b) => compareCategoryClaims(a, b, this.runtime.config));
     for (const value of reversible) {
       if (destroyedValues.has(value.value)) continue; // another category of this value destroys it
       remember(this.detectedMetadata, value);

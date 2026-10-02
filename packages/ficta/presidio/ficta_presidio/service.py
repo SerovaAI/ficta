@@ -8,6 +8,7 @@ from presidio_analyzer.recognizer_registry.recognizers_loader_utils import (
     RecognizerListLoader,
 )
 
+from . import span_precedence
 from .identity_recognizer import (
     FictaGlinerIdentityRecognizer,
     FictaSpacyIdentityRecognizer,
@@ -78,6 +79,9 @@ def create_app():
 
     recognizer.load()
     registry.add_recognizer(recognizer)
+    # Exact-span collisions between a validated national ID and a generic checksum match (a 13-digit
+    # South African ID also passes the card Luhn check) resolve here, not by result order.
+    span_precedence.install(server.engine)
     return server.app
 
 

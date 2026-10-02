@@ -65,3 +65,13 @@ regexes = [
   '''correct horse battery staple correct horse battery staple''',
 ]
 paths = ['''(^|.*/)packages/engine/test/vault-store\.test\.ts$''']
+
+[[allowlists]]
+description = "Synthetic card and surrogate-key inputs in the ID-versus-card precedence tests (ID numbers are generated at runtime)."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexes = ['''4111 1111 1111 1111''', '''category-priority-surrogate-key-32-bytes-min''']
+paths = [
+  '''(^|.*/)packages/engine/test/category-priority\.test\.ts$''',
+  '''(^|.*/)packages/ficta/presidio/ficta_presidio/test_span_precedence\.py$''',
+]

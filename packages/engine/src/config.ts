@@ -25,6 +25,15 @@ export interface EngineConfig {
   readonly detection: {
     /** Global default for detector outages: block the request (true) or skip detection (false). */
     readonly failClosed: boolean;
+    /**
+     * Category precedence for one value claimed under several categories (normalized names, highest
+     * first). When detectors disagree about the same value (a 13-digit national ID that also passes
+     * the card checksum, say), the category listed earlier wins, whatever order the detectors ran or
+     * returned in. Unlisted categories rank after every listed one and keep the detector's own
+     * tie-breaks. A destroy category still wins over a surrogate one (see `dispositions`).
+     * Empty (the default): no category outranks another.
+     */
+    readonly entityPriority: readonly string[];
   };
   readonly pii: {
     readonly enabled: boolean;
@@ -111,7 +120,10 @@ export function resolveEngineConfig(input: EngineConfigInput = {}): EngineConfig
       key: input.surrogate?.key || undefined,
       style: input.surrogate?.style ?? "opaque",
     },
-    detection: { failClosed: input.detection?.failClosed ?? false },
+    detection: {
+      failClosed: input.detection?.failClosed ?? false,
+      entityPriority: resolveCategoryList(input.detection?.entityPriority, "detection.entityPriority"),
+    },
     pii: {
       enabled: input.pii?.enabled ?? false,
       failClosed: input.pii?.failClosed,
@@ -144,17 +156,21 @@ const CATEGORY_PATTERN = /^[a-z0-9][a-z0-9.-]{0,63}$/;
 /** A bracketed marker of safe characters: never surrogate-shaped and unchanged by JSON escaping. */
 const LABEL_PATTERN = /^\[[A-Za-z0-9_.:-]{1,64}\]$/;
 
-function resolveDestroyDisposition(input: DestroyDispositionInput | undefined): DestroyDisposition {
+/** Normalize, validate and dedupe detection category names, keeping first-occurrence order. */
+function resolveCategoryList(input: readonly string[] | undefined, setting: string): string[] {
   const categories: string[] = [];
-  for (const raw of input?.categories ?? []) {
+  for (const raw of input ?? []) {
     const category = typeof raw === "string" ? normalizeCategory(raw) : "";
     if (!CATEGORY_PATTERN.test(category)) {
-      throw new InvalidEngineConfigError(
-        `dispositions.destroy.categories: ${JSON.stringify(raw)} is not a detection category name`,
-      );
+      throw new InvalidEngineConfigError(`${setting}: ${JSON.stringify(raw)} is not a detection category name`);
     }
     if (!categories.includes(category)) categories.push(category);
   }
+  return categories;
+}
+
+function resolveDestroyDisposition(input: DestroyDispositionInput | undefined): DestroyDisposition {
+  const categories = resolveCategoryList(input?.categories, "dispositions.destroy.categories");
   const overrides = new Map<string, string>();
   for (const [raw, label] of Object.entries(input?.labels ?? {})) {
     const category = normalizeCategory(raw);

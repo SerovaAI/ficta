@@ -145,10 +145,38 @@ const result = await engine.redactContentDetailed("Card 4111 1111 1111 1111, pas
   `scope.registerProtectedValues`) keeps its surrogate and the fail-closed leak check, even when a
   detector also reports it in a destroy category. Destroy applies to detector findings only.
 - **Several categories, one value.** When one value is reported under a destroy category and a
-  surrogate category, it is destroyed. Overlapping findings resolve exactly as they do for
-  surrogates (registry first, then confidence, then span length); whatever part a destroy finding
-  wins is destroyed. A 13-digit national ID that is also Luhn-valid can be reported as a card, so a
-  profile that destroys the ID usually destroys `credit-card` too.
+  surrogate category, it is destroyed, whichever detector reported it first. Partly overlapping
+  findings resolve exactly as they do for surrogates (registry first, then confidence, then span
+  length); whatever part a destroy finding wins is destroyed. Destroying an ID category is enough
+  for a Luhn-valid 13-digit ID that a card detector also matched; there is no need to destroy
+  `credit-card` as well (see [Category priority](#category-priority)).
+
+## Category priority
+
+Detectors can disagree about what a value is. A South African ID number is 13 digits ending in a
+Luhn check digit, so the regex floor's `credit-card` pattern (and Presidio's card recogniser) accept
+it too. To make the more specific reading win, list categories highest first:
+
+```ts
+const engine = new ProtectionEngine({
+  config: {
+    pii: { enabled: true, backends: ["presidio"] },
+    detection: { entityPriority: ["za-id-number", "credit-card"] },
+  },
+});
+// "ID <valid 13-digit ID>" → "ID FICTA_ID_…" (typed style), reported as za-id-number
+```
+
+- Applies when one value is reported under several categories, whichever detector, backend or
+  response order produced them. A value only one detector reports keeps that detector's category, so
+  a card-shaped number that is not a valid ID (an impossible date, say) stays `credit-card`.
+- A destroy category still beats a surrogate one; the list orders the rest. Unlisted categories rank
+  after listed ones and fall back to confidence, then a configured backend over the regex floor.
+- Names follow the destroy-category rules (case-insensitive, `_` read as `-`); a malformed name
+  throws `InvalidEngineConfigError`. The default is empty: no category outranks another.
+- The engine ships no country rules of its own. The reference Presidio sidecar already drops the
+  `CREDIT_CARD` result when `ZA_ID_NUMBER` validated exactly the same span, so with it the ID wins
+  even without a priority list; the list makes the outcome independent of which detectors run.
 
 What destroy does **not** change: it is about what happens to a value _once found_. Detection stays
 best-effort, so a value no detector reports passes through unchanged. Destroyed values are not part
