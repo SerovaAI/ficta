@@ -298,6 +298,17 @@ describe("roster: ambiguity", () => {
     expect((err as Error).message).toContain("roster[1]");
     expect((err as Error).message.toLowerCase()).not.toContain("anna");
   });
+
+  it("names the entry that owns the canonical name when earlier entries claim it only as a form", async () => {
+    const roster: RosterEntry[] = [
+      { id: "contact-1", type: "person", canonical: LINA, forms: [ANNA] },
+      { id: "contact-2", type: "person", canonical: "Mira Holt", forms: [ANNA] },
+      { id: "contact-3", type: "person", canonical: ANNA },
+    ];
+    const err = await facade({ roster }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(InvalidEngineConfigError);
+    expect((err as Error).message).toMatch(/^roster\[0\]: .*roster\[2\]'s canonical name/);
+  });
 });
 
 describe("roster: validation", () => {

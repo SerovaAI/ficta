@@ -110,9 +110,10 @@ export function buildRoster(entries: unknown, surrogateKey: string): LoadedRoste
     if (claimants.size < 2) continue;
     if (owners.canonical.length > 0) {
       // A canonical name has to identify one entry; which one is the application's merge decision.
-      const [a, b] = [...claimants].sort((x, y) => x - y);
+      const owner = Math.min(...owners.canonical);
+      const other = Math.min(...[...claimants].filter((index) => index !== owner));
       throw new InvalidEngineConfigError(
-        `roster[${b}]: shares a canonical name or form with roster[${a}]'s canonical name; merge or disambiguate them`,
+        `roster[${other}]: shares a canonical name or form with roster[${owner}]'s canonical name; merge or disambiguate them`,
       );
     }
     ambiguous.add(key);
