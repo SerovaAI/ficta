@@ -75,7 +75,7 @@ function regexPiiEngine(config: EngineConfigInput = {}, values: ProtectedValue[]
 
 describe("destroy disposition config", () => {
   it("is off by default", () => {
-    expect(resolveEngineConfig().dispositions.destroy).toEqual({ categories: [], labels: {} });
+    expect(resolveEngineConfig().dispositions.destroy).toEqual({ all: false, categories: [], labels: {} });
   });
 
   it("normalizes categories and derives default markers", () => {
@@ -418,5 +418,47 @@ describe("destroy disposition: body path, scopes, headers and restore", () => {
     expect(scope.restoreJson(JSON.stringify({ text: redacted.text }))).toBe(
       JSON.stringify({ text: `Card [REDACTED_CREDIT_CARD], mail ${EMAIL}` }),
     );
+  });
+});
+
+describe('destroy disposition: categories "*"', () => {
+  it("resolves to destroy-all, with label overrides for any category", () => {
+    const { destroy } = resolveEngineConfig({
+      dispositions: { destroy: { categories: "*", labels: { CREDIT_CARD: "[REDACTED_CARD]" } } },
+    }).dispositions;
+    expect(destroy).toEqual({ all: true, categories: [], labels: { "credit-card": "[REDACTED_CARD]" } });
+    const listed = resolveEngineConfig({ dispositions: { destroy: { categories: ["*"] } } }).dispositions.destroy;
+    expect(listed.all).toBe(true);
+  });
+
+  it.each([
+    ['"*" mixed with names', { categories: ["*", "email"] }],
+    ["another bare string", { categories: "all" }],
+    ["an invalid label", { categories: "*", labels: { email: "nope" } }],
+  ])("rejects %s", (_, destroy) => {
+    const input = { dispositions: { destroy } } as EngineConfigInput;
+    expect(() => resolveEngineConfig(input)).toThrow(InvalidEngineConfigError);
+  });
+
+  it("destroys every detector category, including one no config names, and keeps registered values", async () => {
+    const engine = new ProtectionEngine({
+      plugins: [piiPlugin, valueDetector("future-category", "QX-7731")],
+      values: [{ name: "registered", value: "registered-literal-value", source: "fixture", kind: "custom" }],
+      config: {
+        surrogate: { key: KEY, style: "typed" },
+        pii: { enabled: true },
+        dispositions: { destroy: { categories: "*", labels: { email: "[REDACTED_MAIL]" } } },
+      },
+    });
+    const text = `Card ${CARD}, mail ${EMAIL}, code QX-7731, key registered-literal-value.`;
+    const result = await engine.redactContentDetailed(text);
+    expect(result.text).toMatch(
+      /^Card \[REDACTED_CREDIT_CARD\], mail \[REDACTED_MAIL\], code \[REDACTED_FUTURE_CATEGORY\], key FICTA_[A-Z]+_[0-9a-f]{32}\.$/,
+    );
+    expect(result.destroyed).toBe(3);
+    expect(result.leaks).toBe(0);
+    expect(stateContains(engine, "QX-7731")).toBe(false);
+    // Idempotent: default-shaped markers of any category are left alone.
+    expect((await engine.redactContentDetailed(result.text)).text).toBe(result.text);
   });
 });

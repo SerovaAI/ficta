@@ -539,7 +539,7 @@ export abstract class VaultView {
   }
 
   /** A value is bounded only when every matching layer that contains it declares that policy. */
-  private isWordBounded(value: string): boolean {
+  protected isWordBounded(value: string): boolean {
     let found = false;
     for (const layer of this.layers) {
       if (!layer.hasMatchForm(value)) continue;
@@ -1213,6 +1213,18 @@ export class ScopedVault extends VaultView {
   /** Register request-detected values into the ephemeral layer only (never the permanent vault). */
   register(values: ReadonlyArray<VaultValue>): number {
     return this.detected.register(values);
+  }
+
+  /**
+   * How a value this scope already maps should be matched again: at word boundaries only (as it
+   * was admitted), and under which registered entities it was rendered (so it keeps its linked
+   * entity token rather than falling back to a literal one).
+   */
+  retainedSurface(value: string): {
+    readonly wordBounded: boolean;
+    readonly registryEntities: readonly TableEntityMapping[];
+  } {
+    return { wordBounded: this.isWordBounded(value), registryEntities: this.registryDerived.entityMappings(value) };
   }
 
   /**

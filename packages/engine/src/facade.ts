@@ -5,14 +5,14 @@ import {
   normalizeCategory,
   resolveEngineConfig,
 } from "./config.js";
-import type { WarnSink } from "./diagnostics.js";
+import { noopWarnSink, type WarnSink } from "./diagnostics.js";
 import { MissingSurrogateKeyError, ProtectionEngine } from "./engine.js";
 import { piiPlugin } from "./plugins/pii/index.js";
 import { type OpenmedConfig, OpenmedUnavailableError } from "./plugins/pii/openmed-recognizer.js";
 import { categoryOf, type PresidioConfig, PresidioUnavailableError } from "./plugins/pii/presidio-recognizer.js";
 import { secretShapesPlugin } from "./plugins/secret-shapes/index.js";
 import type { DetectorPlugin, ProtectedValueKind, RedactionPlugin } from "./plugins/types.js";
-import { loadRoster, type RosterEntry, type RosterSource, rosterRegistrySource } from "./roster.js";
+import { loadRoster, ROSTER_PLUGIN, type RosterEntry, type RosterSource, rosterRegistrySource } from "./roster.js";
 import { type ContentRedactionDetails, DetectorUnavailableError, type RestoreTextDetails } from "./redaction-engine.js";
 import type { SurrogateStyle } from "./surrogate.js";
 import { truncateRedactedText } from "./text.js";
@@ -81,6 +81,8 @@ export interface ItemHit {
   readonly kind?: ProtectedValueKind;
   /** `surrogate`: replaced by a token; `destroy`: replaced by an irreversible marker. */
   readonly disposition: "surrogate" | "destroy";
+  /** Present when the value is a roster entry's name or form (always surrogated, never destroyed). */
+  readonly roster?: true;
 }
 
 /** One redacted text and its values-free summary. */
@@ -269,11 +271,17 @@ export async function createEngine(options: CreateEngineOptions): Promise<FictaE
   }
   // Restores run detection-free on their own engine, so any profile's tokens restore in any scope.
   const restorer = new ProtectionEngine({ plugins: [], config: shared, onWarn: options.onWarn, vault: store });
-  return new Facade(engines, restorer, store, {
-    size: roster.size,
-    fingerprint: roster.fingerprint,
-    ambiguousForms: roster.ambiguousForms,
-  });
+  return new Facade(
+    engines,
+    restorer,
+    store,
+    {
+      size: roster.size,
+      fingerprint: roster.fingerprint,
+      ambiguousForms: roster.ambiguousForms,
+    },
+    options.onWarn ?? noopWarnSink,
+  );
 }
 
 function profileEntities(name: string, entities: readonly string[] | undefined): string[] | undefined {
@@ -309,12 +317,14 @@ function entityFilteredPii(entities: readonly string[]): DetectorPlugin {
 
 class Facade implements FictaEngine {
   private closed = false;
+  private warnedStatelessRoster = false;
 
   constructor(
     private readonly engines: ReadonlyMap<string, ProtectionEngine>,
     private readonly restorer: ProtectionEngine,
     private readonly store: VaultStore,
     private readonly roster: { readonly size: number; readonly fingerprint: string; readonly ambiguousForms: number },
+    private readonly warn: WarnSink,
   ) {}
 
   get rosterSize(): number {
@@ -338,7 +348,19 @@ class Facade implements FictaEngine {
     checkTexts(texts);
     // A fresh unkeyed scope per item: nothing detected in one text carries over to the next, and
     // nothing is kept (or written to the vault) afterwards.
-    return runBatch(texts, (text) => engine.beginRequest().redactContentDetailed(text));
+    const result = await runBatch(texts, (text) => engine.beginRequest().redactContentDetailed(text));
+    // Roster names here get tokens that can never be restored, and a later keyed pass never sees the
+    // names. Never left in the text, but almost always a pipeline mistake: say so, once.
+    const items = result.items.filter((item) => item.hits.some((hit) => hit.roster)).length;
+    if (items > 0 && !this.warnedStatelessRoster) {
+      this.warnedStatelessRoster = true;
+      this.warn(
+        { profile, items },
+        "redactMany replaced roster names with tokens that cannot be restored; " +
+          "run a pass whose output must restore in a keyed scope (engine.scope(key))",
+      );
+    }
+    return result;
   }
 
   scope(key: string): FictaScope {
@@ -440,6 +462,7 @@ function itemResult(details: ContentRedactionDetails): ItemResult {
       name: hit.name,
       ...(hit.kind ? { kind: hit.kind } : {}),
       disposition: hit.disposition ?? "surrogate",
+      ...(hit.plugin === ROSTER_PLUGIN ? { roster: true as const } : {}),
     })),
   };
 }

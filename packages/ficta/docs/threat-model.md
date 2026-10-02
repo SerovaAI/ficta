@@ -163,7 +163,9 @@ What the facade does promise, kept as separate claims:
   a consistency property, not a coverage one.
 - **Destroyed values are never vaulted.** A value in a destroy category becomes a fixed marker. It is
   never written to memory mappings or the vault store and cannot be restored. This applies to values
-  once found and does not make detection more likely.
+  once found and does not make detection more likely. A profile can destroy every detector finding
+  (`categories: "*"`), whatever its category, so that in a keyed scope only registered (roster)
+  values are ever written to the vault store.
 - **Exact-match protection applies only to registered values.** The fail-closed exact-match
   promise above covers values registered with the engine. Through the facade, those are the entries
   of a roster the embedding application supplies (known people and organisations): their canonical

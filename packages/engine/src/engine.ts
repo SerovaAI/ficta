@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import {
   type EngineConfig,
   type EngineConfigInput,
-  normalizeCategory,
+  DEFAULT_DESTROY_MARKER_PATTERN,
+  destroyLabel,
+  destroysAnything,
   type PluginRuntime,
   resolveEngineConfig,
 } from "./config.js";
@@ -13,7 +15,9 @@ import { type EntityLinkAnchorIndex, entityLinkAnchorIndex, linkDetectedEntityCl
 import { expandEntities, expansionSpans } from "./expander.js";
 import { BackgroundVaultWrites, KeyedScopePersistence } from "./keyed-vault.js";
 import {
+  type Entity,
   type EntityClaim,
+  type EntityForm,
   mapJoinedOffsets,
   type Occurrence,
   type ResolvedOccurrence,
@@ -486,6 +490,7 @@ class ProtectionRequestScope implements RequestScope {
     permanentClaimsLength: number;
     registryClaims: EntityClaim[];
     anchorIndex: EntityLinkAnchorIndex;
+    activeEntities: ReadonlyMap<string, Entity>;
   };
   /**
    * Memo for {@link safeMetadataField}: label → contains a protected value. Hit metadata repeats the same few
@@ -574,13 +579,11 @@ class ProtectionRequestScope implements RequestScope {
       runtime: this.runtime,
     });
 
-    const { registryClaims, anchorIndex } = this.registryLinkingState();
-    const detectedByValue = new Map<string, ProtectedValue>();
-    for (const [value, metas] of this.detectedMetadata) {
-      if (this.tokenOnly.has(value)) continue;
-      const meta = metas[0];
-      if (meta) detectedByValue.set(value, meta);
-    }
+    const linking = this.registryLinkingState();
+    const { anchorIndex } = linking;
+    const retained = this.retainedClaims(linking.registryClaims, linking.activeEntities);
+    const registryClaims = retained.registryClaims;
+    const detectedByValue = retained.literals;
     for (const { value } of detection.detections) {
       // A value detected under several categories is destroyed if any of them is a destroy category
       // (the irreversible disposition is the one that cannot leak a restorable mapping); otherwise
@@ -591,7 +594,11 @@ class ProtectionRequestScope implements RequestScope {
     }
     const detectedClaims = linkDetectedEntityClaims(
       anchorIndex,
-      claimsFromValues([...detectedByValue.values()], "detected"),
+      claimsFromValues([...detectedByValue.values()], "detected").map((claim) =>
+        retained.wordBounded.has(claim.meta.value)
+          ? { ...claim, entity: { ...claim.entity, canonicalBoundary: "token" as const } }
+          : claim,
+      ),
     );
     const detectedClaimByValue = new Map(detectedClaims.map((claim) => [claim.meta.value, claim]));
 
@@ -628,7 +635,7 @@ class ProtectionRequestScope implements RequestScope {
       if (!validSpans) occurrences.push(...exactDetectorOccurrences(detectedLeaves, value.value, claim));
     }
 
-    const allClaims = [...registryClaims, ...detectedClaims];
+    const allClaims = [...registryClaims, ...retained.entities, ...detectedClaims];
     if (allClaims.length > MAX_BODY_ENTITIES) throw new RedactionInvariantError("body entity limit exceeded");
     occurrences.push(
       ...expandEntities(
@@ -808,6 +815,7 @@ class ProtectionRequestScope implements RequestScope {
   private registryLinkingState(): {
     registryClaims: readonly EntityClaim[];
     anchorIndex: EntityLinkAnchorIndex;
+    activeEntities: ReadonlyMap<string, Entity>;
   } {
     const cached = this.registryLinkingCache;
     if (cached && cached.permanentClaimsLength === this.permanentClaims.length) return cached;
@@ -816,9 +824,102 @@ class ProtectionRequestScope implements RequestScope {
       permanentClaimsLength: this.permanentClaims.length,
       registryClaims,
       anchorIndex: entityLinkAnchorIndex(registryClaims),
+      activeEntities: new Map(
+        registryClaims
+          .filter((claim) => claim.entity.protectionKind === "entity")
+          .map((claim) => [claim.entity.id, claim.entity] as const),
+      ),
     };
     this.registryLinkingCache = refreshed;
     return refreshed;
+  }
+
+  /**
+   * Claims for the values this scope already holds (re-applied even where no detector finds them).
+   * Each keeps the matching policy it was admitted with: a word-bounded surface stays word-bounded.
+   * A surface rendered for a registered entity keeps that entity's linked token: while the entity is
+   * still registered its own claim covers the surface, and once it is gone (a mapping hydrated from
+   * the store after the entry left the registry) its retained surfaces are regrouped under its id.
+   */
+  private retainedClaims(
+    registryClaims: readonly EntityClaim[],
+    activeEntities: ReadonlyMap<string, Entity>,
+  ): {
+    literals: Map<string, ProtectedValue>;
+    wordBounded: Set<string>;
+    registryClaims: readonly EntityClaim[];
+    entities: EntityClaim[];
+  } {
+    const literals = new Map<string, ProtectedValue>();
+    const wordBounded = new Set<string>();
+    const extraForms = new Map<string, EntityForm[]>();
+    const removed = new Map<
+      string,
+      { entityType: "organization" | "person"; surfaces: { meta: ProtectedValue; wordBounded: boolean }[] }
+    >();
+    for (const [value, metas] of this.detectedMetadata) {
+      if (this.tokenOnly.has(value)) continue;
+      const meta = metas[0];
+      if (!meta) continue;
+      const surface = this.vault.retainedSurface(value);
+      const owners = new Set(surface.registryEntities.map((mapping) => mapping.entityId));
+      const [mapping] = surface.registryEntities;
+      if (owners.size === 1 && mapping) {
+        const active = activeEntities.get(mapping.entityId);
+        if (active) {
+          // Still registered: its own claim matches the surface, unless the registry stopped listing
+          // it (a form that became ambiguous, say). Then it stays linked in this scope as an extra form.
+          if (!claimsSurface(active, value)) {
+            const forms = extraForms.get(mapping.entityId) ?? [];
+            forms.push({ value, boundary: surface.wordBounded ? "token" : "substring" });
+            extraForms.set(mapping.entityId, forms);
+          }
+          continue;
+        }
+        const group = removed.get(mapping.entityId) ?? { entityType: mapping.entityType, surfaces: [] };
+        group.surfaces.push({ meta: { ...meta, value }, wordBounded: surface.wordBounded });
+        removed.set(mapping.entityId, group);
+        continue;
+      }
+      literals.set(value, meta);
+      if (surface.wordBounded) wordBounded.add(value);
+    }
+    const entities: EntityClaim[] = [];
+    for (const [id, group] of removed) {
+      // The longest surface stands in as canonical; every surface keeps its own boundary.
+      const [canonical, ...forms] = group.surfaces.sort(
+        (a, b) => b.meta.value.length - a.meta.value.length || a.meta.value.localeCompare(b.meta.value),
+      );
+      if (!canonical) continue;
+      entities.push({
+        entity: {
+          id,
+          protectionKind: "entity",
+          provenance: "registry",
+          entityType: group.entityType,
+          canonical: canonical.meta.value,
+          canonicalBoundary: canonical.wordBounded ? "token" : "substring",
+          forms: forms.map((form) => ({ value: form.meta.value, boundary: form.wordBounded ? "token" : "substring" })),
+        },
+        meta: canonical.meta,
+        mention: {
+          detectionSource: "registry",
+          detectionConfidence: "exact",
+          linkSource: "explicit_form",
+          linkConfidence: "exact",
+          resolverAuthority: "registry",
+          protectionEligible: true,
+        },
+      });
+    }
+    const withExtras =
+      extraForms.size === 0
+        ? registryClaims
+        : registryClaims.map((claim) => {
+            const extra = claim.entity.protectionKind === "entity" ? extraForms.get(claim.entity.id) : undefined;
+            return extra ? { ...claim, entity: { ...claim.entity, forms: [...claim.entity.forms, ...extra] } } : claim;
+          });
+    return { literals, wordBounded, registryClaims: withExtras, entities };
   }
 
   async redactTextDetailed(text: string, ctx: TextRedactionContext = {}): Promise<TextRedactionDetails> {
@@ -949,9 +1050,7 @@ class ProtectionRequestScope implements RequestScope {
 
   /** The marker for a detection's category when that category is configured to be destroyed. */
   private destroyLabelFor(value: ProtectedValue): string | undefined {
-    const { labels } = this.runtime.config.dispositions.destroy;
-    const category = normalizeCategory(value.name);
-    return Object.hasOwn(labels, category) ? labels[category] : undefined;
+    return destroyLabel(this.runtime.config.dispositions.destroy, value.name);
   }
 
   /**
@@ -974,9 +1073,16 @@ class ProtectionRequestScope implements RequestScope {
   /** UTF-16 ranges of every configured destroy marker already present in `text`. */
   private markerSpans(text: string): Array<readonly [number, number]> {
     const spans: Array<readonly [number, number]> = [];
-    for (const label of new Set(Object.values(this.runtime.config.dispositions.destroy.labels))) {
+    const destroy = this.runtime.config.dispositions.destroy;
+    for (const label of new Set(Object.values(destroy.labels))) {
       for (let at = text.indexOf(label); at >= 0; at = text.indexOf(label, at + label.length)) {
         spans.push([at, at + label.length]);
+      }
+    }
+    // Under "*" any category can produce a default-shaped marker.
+    if (destroy.all) {
+      for (const match of text.matchAll(DEFAULT_DESTROY_MARKER_PATTERN)) {
+        spans.push([match.index, match.index + match[0].length]);
       }
     }
     return spans;
@@ -989,7 +1095,7 @@ class ProtectionRequestScope implements RequestScope {
    * claims are untouched: an exact registered value is always replaced wherever it appears.
    */
   private outsideDestroyMarkers(document: BodyDocument, occurrences: readonly Occurrence[]): Occurrence[] {
-    if (this.runtime.config.dispositions.destroy.categories.length === 0) return [...occurrences];
+    if (!destroysAnything(this.runtime.config.dispositions.destroy)) return [...occurrences];
     const spansByLeaf = new Map<number, Array<readonly [number, number]>>();
     const out: Occurrence[] = [];
     for (const occurrence of occurrences) {
@@ -1312,16 +1418,27 @@ function applyRecordBoundaries(vault: Vault, records: readonly ProtectionRecord[
   for (const [value, wordBounded] of policies) vault.setWordBounded(value, wordBounded);
 }
 
+/** Whether `entity`'s canonical name or one of its forms matches all of `surface` (case-insensitively). */
+function claimsSurface(entity: Entity, surface: string): boolean {
+  return [entity.canonical, ...entity.forms.map((form) => form.value)].some((value) =>
+    expansionSpans(surface, value, { caseInsensitive: true }).some(
+      ({ start, end }) => start === 0 && end === surface.length,
+    ),
+  );
+}
+
 function occurrenceWordBounded(occurrence: Occurrence): boolean {
-  if (occurrence.entity.protectionKind !== "entity") return false;
-  if (occurrence.mention.linkSource === "deterministic_alias") return true;
+  if (occurrence.entity.protectionKind === "entity" && occurrence.mention.linkSource === "deterministic_alias") {
+    return true;
+  }
   if (
     expansionSpans(occurrence.surface, occurrence.entity.canonical, { caseInsensitive: true }).some(
       ({ start, end }) => start === 0 && end === occurrence.surface.length,
     )
   ) {
-    return false;
+    return occurrence.entity.canonicalBoundary === "token";
   }
+  if (occurrence.entity.protectionKind !== "entity") return false;
   let matchedToken = false;
   for (const form of occurrence.entity.forms) {
     const matchesSurface = expansionSpans(occurrence.surface, form.value, { caseInsensitive: true }).some(

@@ -55,6 +55,10 @@ function spansFor(text: string) {
   for (const match of text.matchAll(/[\w.]+@[\w.]+\.\w+/g)) {
     spans.push({ entity_type: "EMAIL_ADDRESS", start: match.index, end: match.index + match[0].length, score: 1 });
   }
+  // An entity type no profile in this file names: stands in for a category a backend adds later.
+  for (const match of text.matchAll(/\bREF-\d{4}-[A-Z]{2}\b/g)) {
+    spans.push({ entity_type: "CASE_REFERENCE", start: match.index, end: match.index + match[0].length, score: 0.9 });
+  }
   return spans;
 }
 
@@ -406,8 +410,130 @@ describe("roster: stateless redactMany", () => {
     expect(texts[1]).toMatch(/^FICTA_PERSON_[0-9a-f]{32} via FICTA_PERSON_[0-9a-f]{32}$/);
     // Registered names keep surrogates even under a destroy disposition; nothing is persisted.
     expect(texts.slice(0, 2).join(" ")).not.toContain("[REDACTED_PERSON]");
+    expect(items[0]?.hits).toEqual([{ name: "person", kind: "pii", disposition: "surrogate", roster: true }]);
+    expect(items[2]?.hits.some((hit) => hit.roster)).toBe(false);
     await engine.close();
     expect(rawRows()).toHaveLength(0);
+  });
+
+  it("warns once, values-free, that roster tokens from redactMany cannot be restored", async () => {
+    const warnings: { fields: Record<string, unknown>; message: string }[] = [];
+    const engine = await facade({ onWarn: (fields, message) => warnings.push({ fields, message }) });
+    await engine.redactMany([`${UNREGISTERED} wrote`], "pseudonymise");
+    expect(warnings).toEqual([]);
+    const { texts } = await engine.redactMany([`${ANNA} wrote`, "nothing here", `${ANNA_SHORT} too`], "pseudonymise");
+    await engine.redactMany([`${LINA} wrote`], "pseudonymise");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.fields).toEqual({ profile: "pseudonymise", items: 2 });
+    expect(warnings[0]?.message).toContain("cannot be restored");
+    expect(JSON.stringify(warnings).toLowerCase()).not.toMatch(/anna|lina/);
+    expect((await engine.scope(SCOPE).restore(texts.join(" "))).unknownCount).toBe(2);
+  });
+});
+
+describe("roster: two-pass flow (destroy everything detected, then pseudonymise)", () => {
+  const TWO_PASS: CreateEngineOptions["profiles"] = {
+    rules: { secretShapes: false, destroy: { categories: "*" } },
+    pseudonymise: { entities: ["PERSON", "EMAIL_ADDRESS"], secretShapes: false },
+  };
+  const REF = "REF-4412-QQ";
+  const OTHER_EMAIL = "someone.else@example.org";
+  const TEXTS = [
+    `${ANNA} (${ANNA_EMAIL}) met ${UNREGISTERED}, case ${REF}.`,
+    `${ANNA_SHORT} copied ${OTHER_EMAIL} and ${LINA}.`,
+  ];
+
+  it("keeps only roster names as linked, restorable tokens and never persists a detector finding", async () => {
+    const engine = await facade({ vault: openStore(), profiles: TWO_PASS });
+    const scope = engine.scope(SCOPE);
+    const pass1 = await scope.pseudonymiseMany(TEXTS, "rules");
+    const pass2 = await scope.pseudonymiseMany(pass1.texts, "pseudonymise");
+    expect(pass2.texts).toEqual(pass1.texts); // nothing left for pass 2 to find
+
+    const [first, second] = pass1.texts;
+    expect(first).toMatch(/\(FICTA_PERSON_\S+\) met \[REDACTED_PERSON\], case \[REDACTED_CASE_REFERENCE\]\.$/);
+    expect(second).toMatch(/ copied \[REDACTED_EMAIL(?:_ADDRESS)?\] and FICTA_PERSON_\S+\.$/);
+    // Four roster surfaces from two entries: three share one entity tag (the canonical name, its
+    // email and the short form), the fourth has its own.
+    const surfacesByEntity = new Map<string, number>();
+    for (const t of entityTokens(`${first} ${second}`)) {
+      surfacesByEntity.set(t.entity, (surfacesByEntity.get(t.entity) ?? 0) + 1);
+    }
+    expect([...surfacesByEntity.values()].sort()).toEqual([1, 3]);
+    await engine.close();
+
+    // The store holds roster surfaces only: no detector finding, under any category.
+    for (const value of [UNREGISTERED, REF, OTHER_EMAIL]) expect(rawBytesContain(value)).toBe(false);
+    const store = openStore();
+    try {
+      const values = new Set((await store.load(SCOPE)).map((entry) => entry.value));
+      expect(values).toEqual(new Set([ANNA, ANNA_EMAIL, ANNA_SHORT, LINA]));
+    } finally {
+      await store.close();
+    }
+
+    // Another process on the same file restores every roster surface; markers stay markers.
+    const other = await facade({ vault: openStore(), profiles: TWO_PASS });
+    const restored = await other.scope(SCOPE).restore(pass2.texts.join("\n"));
+    expect(restored.unknownCount).toBe(0);
+    expect(restored.restoredCount).toBe(4);
+    expect(restored.text).toBe(
+      [
+        `${ANNA} (${ANNA_EMAIL}) met [REDACTED_PERSON], case [REDACTED_CASE_REFERENCE].`,
+        `${ANNA_SHORT} copied ${second?.match(/\[REDACTED_EMAIL(?:_ADDRESS)?\]/)?.[0]} and ${LINA}.`,
+      ].join("\n"),
+    );
+  });
+});
+
+describe("roster: re-applying values a keyed scope already holds", () => {
+  const BARE: CreateEngineOptions["profiles"] = { none: { pii: false, secretShapes: false } };
+  const LATER = `Annabel and Joanna came. ${ANNA_SHORT} too.`;
+
+  async function firstMention(engine: FictaEngine): Promise<string> {
+    const { text } = await engine.scope(SCOPE).pseudonymise(`Thanks, ${ANNA_SHORT}.`, "none");
+    const [token] = entityTokens(text);
+    expect(text).toBe(`Thanks, ${token?.token}.`);
+    return token?.token ?? "";
+  }
+
+  it("keeps short forms word-bounded and linked on later texts", async () => {
+    const engine = await facade({ profiles: BARE });
+    const token = await firstMention(engine);
+    const { text } = await engine.scope(SCOPE).pseudonymise(LATER, "none");
+    expect(text).toBe(`Annabel and Joanna came. ${token} too.`);
+    expect((await engine.scope(SCOPE).restore(text)).text).toBe(LATER);
+  });
+
+  it("behaves the same in a fresh engine hydrated from the store, with or without the entry", async () => {
+    const first = await facade({ vault: openStore(), profiles: BARE });
+    const token = await firstMention(first);
+    await first.close();
+
+    // The same roster; the entry removed; and the short form made ambiguous by a new entry (dropped
+    // from the registry, yet still linked to its original entry within this scope).
+    const ambiguous = [
+      ...ROSTER,
+      { id: "contact-5", type: "person" as const, canonical: "Anna Lund", forms: ["Anna"] },
+    ];
+    for (const roster of [ROSTER, ROSTER.slice(1), ambiguous]) {
+      const fresh = await facade({ vault: openStore(), profiles: BARE, roster });
+      const { text } = await fresh.scope(SCOPE).pseudonymise(LATER, "none");
+      expect(text).toBe(`Annabel and Joanna came. ${token} too.`);
+      expect((await fresh.scope(SCOPE).restore(text)).text).toBe(LATER);
+      await fresh.close();
+    }
+  });
+
+  it("still re-applies a detected (non-roster) value as before: a literal token, matched as a substring", async () => {
+    stub.persons = [UNREGISTERED];
+    const engine = await facade();
+    const first = await engine.scope(SCOPE).pseudonymise(`Hi ${UNREGISTERED}.`, "pseudonymise");
+    const [literal] = first.text.match(LITERAL_TOKEN) ?? [];
+    expect(first.text).toBe(`Hi ${literal}.`);
+    stub.persons = [];
+    const later = await engine.scope(SCOPE).pseudonymise(`${UNREGISTERED}s wrote.`, "pseudonymise");
+    expect(later.text).toBe(`${literal}s wrote.`);
   });
 });
 

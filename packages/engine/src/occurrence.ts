@@ -27,8 +27,13 @@ export interface Entity {
   readonly protectionKind: "literal" | "entity";
   readonly provenance: EntityProvenance;
   readonly entityType?: "organization" | "person";
-  /** Full canonical values always match as unbounded substrings, preserving exact registry semantics. */
+  /** Full canonical values match as unbounded substrings, preserving exact registry semantics. */
   readonly canonical: string;
+  /**
+   * Only for a value a keyed scope already holds as word-bounded (a short registered form it
+   * matched before): its canonical keeps that boundary when it is matched again. Default substring.
+   */
+  readonly canonicalBoundary?: EntityFormBoundary;
   /** Additional full forms or short aliases; short aliases must opt into token boundaries explicitly. */
   readonly forms: readonly EntityForm[];
 }

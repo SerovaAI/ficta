@@ -1,4 +1,4 @@
-import { type EngineConfig, normalizeCategory } from "./config.js";
+import { destroyLabel, type EngineConfig, normalizeCategory } from "./config.js";
 import type { ProtectedValue } from "./plugins/types.js";
 
 /**
@@ -13,9 +13,9 @@ export function compareCategoryClaims(
   b: Pick<ProtectedValue, "name">,
   config: Pick<EngineConfig, "detection" | "dispositions">,
 ): number {
-  const destroyed = config.dispositions.destroy.labels;
-  const aDestroyed = Object.hasOwn(destroyed, normalizeCategory(a.name));
-  const bDestroyed = Object.hasOwn(destroyed, normalizeCategory(b.name));
+  const { destroy } = config.dispositions;
+  const aDestroyed = destroyLabel(destroy, a.name) !== undefined;
+  const bDestroyed = destroyLabel(destroy, b.name) !== undefined;
   if (aDestroyed !== bDestroyed) return aDestroyed ? -1 : 1;
   return priorityRank(a.name, config) - priorityRank(b.name, config);
 }
