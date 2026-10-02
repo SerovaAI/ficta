@@ -12,6 +12,7 @@ import { type OpenmedConfig, OpenmedUnavailableError } from "./plugins/pii/openm
 import { categoryOf, type PresidioConfig, PresidioUnavailableError } from "./plugins/pii/presidio-recognizer.js";
 import { secretShapesPlugin } from "./plugins/secret-shapes/index.js";
 import type { DetectorPlugin, ProtectedValueKind, RedactionPlugin } from "./plugins/types.js";
+import { loadRoster, type RosterEntry, type RosterSource, rosterRegistrySource } from "./roster.js";
 import { type ContentRedactionDetails, DetectorUnavailableError, type RestoreTextDetails } from "./redaction-engine.js";
 import type { SurrogateStyle } from "./surrogate.js";
 import { truncateRedactedText } from "./text.js";
@@ -46,6 +47,12 @@ export interface CreateEngineOptions {
   };
   /** Named redaction profiles; every call names the profile it runs. At least one is required. */
   readonly profiles: Readonly<Record<string, ProfileConfig>>;
+  /**
+   * Known people and organisations, matched exactly before detection in every profile (see the
+   * README's "Roster" section). Loaded once, here, and never written to the vault store; create a
+   * new engine to pick up a changed roster.
+   */
+  readonly roster?: RosterSource | readonly RosterEntry[];
   /** Sink for values-free warnings (backend outages, restore-only tokens). Default: discard. */
   readonly onWarn?: WarnSink;
 }
@@ -123,6 +130,16 @@ export interface FictaScope {
 export interface FictaEngine {
   /** Profile names, in configuration order. */
   readonly profiles: readonly string[];
+  /** Roster entries loaded at creation (0 without a roster). */
+  readonly rosterSize: number;
+  /**
+   * Keyed, order-independent hash of the loaded roster (hex). Equal in two engines with the same
+   * surrogate key and the same roster, so an application can check its processes agree. Reveals no
+   * names without the surrogate key.
+   */
+  readonly rosterFingerprint: string;
+  /** Distinct roster forms claimed by more than one entry, and therefore linked to none of them. */
+  readonly rosterAmbiguousForms: number;
   /** Redact each text under `profile`, keeping nothing afterwards. All or nothing: any failure throws. */
   redactMany(texts: readonly string[], profile: string): Promise<BatchResult>;
   /** Open (or reopen) the keyed scope `key`. */
@@ -188,6 +205,15 @@ export async function createEngine(options: CreateEngineOptions): Promise<FictaE
   const names = Object.keys(options.profiles ?? {});
   if (names.length === 0) throw new InvalidEngineConfigError("profiles: configure at least one profile");
 
+  const roster = await loadRoster(options.roster, options.surrogateKey);
+  if (roster.ambiguousForms > 0) {
+    options.onWarn?.(
+      { ambiguousForms: roster.ambiguousForms },
+      "roster forms claimed by more than one entry are linked to none of them",
+    );
+  }
+  const rosterPlugins: RedactionPlugin[] = roster.size > 0 ? [rosterRegistrySource(roster)] : [];
+
   const store = options.vault ?? new MemoryVaultStore();
   const backends = ["regex"];
   if (options.presidio) backends.push("presidio");
@@ -209,7 +235,8 @@ export async function createEngine(options: CreateEngineOptions): Promise<FictaE
     }
     const entities = profileEntities(name, profile.entities);
     const pii = profile.pii ?? true;
-    const plugins: RedactionPlugin[] = [];
+    // The roster is the registered layer: exact-matched before detection, in every profile.
+    const plugins: RedactionPlugin[] = [...rosterPlugins];
     if (profile.secretShapes ?? true) plugins.push(secretShapesPlugin);
     if (pii) plugins.push(entities ? entityFilteredPii(entities) : piiPlugin);
     try {
@@ -242,7 +269,11 @@ export async function createEngine(options: CreateEngineOptions): Promise<FictaE
   }
   // Restores run detection-free on their own engine, so any profile's tokens restore in any scope.
   const restorer = new ProtectionEngine({ plugins: [], config: shared, onWarn: options.onWarn, vault: store });
-  return new Facade(engines, restorer, store);
+  return new Facade(engines, restorer, store, {
+    size: roster.size,
+    fingerprint: roster.fingerprint,
+    ambiguousForms: roster.ambiguousForms,
+  });
 }
 
 function profileEntities(name: string, entities: readonly string[] | undefined): string[] | undefined {
@@ -283,7 +314,20 @@ class Facade implements FictaEngine {
     private readonly engines: ReadonlyMap<string, ProtectionEngine>,
     private readonly restorer: ProtectionEngine,
     private readonly store: VaultStore,
+    private readonly roster: { readonly size: number; readonly fingerprint: string; readonly ambiguousForms: number },
   ) {}
+
+  get rosterSize(): number {
+    return this.roster.size;
+  }
+
+  get rosterFingerprint(): string {
+    return this.roster.fingerprint;
+  }
+
+  get rosterAmbiguousForms(): number {
+    return this.roster.ambiguousForms;
+  }
 
   get profiles(): readonly string[] {
     return [...this.engines.keys()];

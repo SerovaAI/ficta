@@ -37,6 +37,7 @@ export {
   type TruncateOptions,
   UnknownProfileError,
 } from "./facade.js";
+export type { RosterEntry, RosterSource } from "./roster.js";
 export { noopWarnSink, type WarnFields, type WarnSink } from "./diagnostics.js";
 export { MissingSurrogateKeyError, ProtectionEngine, type ProtectionEngineOptions } from "./engine.js";
 export {

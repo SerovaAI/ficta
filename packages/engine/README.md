@@ -104,6 +104,74 @@ try {
   through unchanged, whichever profile runs. Destroy changes what happens to a value _once found_;
   it does not make finding it more likely.
 
+### Roster
+
+Detected names are never linked to each other: "Anna Berg" and "Anna" in the same text get unrelated
+tokens, because deciding that they are the same person is guesswork that would also merge two
+different Annas. Linked tokens come only from entities the application _registers_. Pass a roster of
+known people and organisations to `createEngine`:
+
+```ts
+const engine = await createEngine({
+  surrogateKey,
+  profiles,
+  roster: [
+    { id: "c-1042", type: "person", canonical: "Anna Berg", forms: ["Anna", "anna.berg@example.com"] },
+    { id: "o-7", type: "organization", canonical: "Northstar Biologics", forms: ["Northstar"] },
+  ],
+  // or a source: roster: { load: async () => myDirectory.rosterEntries() },
+});
+
+const { text } = await engine.scope("owner").pseudonymise("Anna Berg wrote; Anna replied.", "pseudonymise");
+// "FICTA_PERSON_<E>_<S1> wrote; FICTA_PERSON_<E>_<S2> replied." — one entity tag, one surface tag each
+engine.rosterFingerprint; // compare across processes to check they loaded the same roster
+```
+
+**The boundary.** The engine owns the mechanism; the application owns the data.
+
+- _The engine_ validates entries, matches every canonical name and form exactly before detection, in
+  every profile, derives linked tokens, runs the fail-closed leak check over them, and exposes a
+  fingerprint. It never knows where entries come from.
+- _The application_ owns where entries come from (a directory, contacts, attendee lists), how they are
+  stored and refreshed, how duplicates are merged, and keeping every process on the same roster
+  (compare `rosterFingerprint`). The roster is sensitive: it stays with the application. The engine
+  holds it in memory only and never writes it to the vault store.
+
+**Matching.**
+
+- `canonical` is matched case-insensitively (exact-case when it contains a digit) and
+  whitespace-flexibly anywhere in the text; `forms` (short names, nicknames, email addresses) are matched the same way but only at
+  word boundaries, so a form `Anna` leaves "Annabel" alone. Forms are trimmed and deduplicated, and a
+  form equal to the canonical name is dropped. Canonical names and forms need at least 2 characters.
+- Roster matches are registered values: they keep their surrogate even in a profile that destroys
+  the detector category they would fall under, and if one survives redaction the call throws
+  `RedactionUnavailableError("internal_error")`.
+- A name that is not in the roster is still found by detection (best-effort) and gets its own,
+  unlinked token.
+
+**Tokens.** In a keyed scope a roster match becomes `FICTA_PERSON_<entity>_<surface>` or
+`FICTA_ORG_<entity>_<surface>`. The entity tag depends only on the surrogate key, the scope key and
+the entry's `id`; the surface tag adds the exact matched text. Roster order and the other entries
+never affect a token, so adding an entry does not change existing tokens; changing an entry's `id`
+does. Entity tags differ between scope keys. `redactMany` is stateless and has no scope key, so it
+does not render entity families: roster matches there get ordinary unlinked tokens
+(`FICTA_PERSON_<hex>` in the typed style), which, like everything `redactMany` emits, cannot be
+restored. They are never left in the text and never destroyed.
+
+**Validation.** `createEngine` throws `InvalidEngineConfigError` for a missing or duplicate `id`, an
+unknown `type`, a missing or too-short canonical name or form, or a canonical name that another entry
+also claims (as its canonical name or as a form): merge or disambiguate those entries first. Messages
+name entry indexes, never ids or values.
+
+**Ambiguous forms.** A form claimed by more than one entry (compared case-insensitively) is linked to
+none of them: it is dropped from every claiming entry, `rosterAmbiguousForms` counts it, and `onWarn`
+reports the count, never the value. Such a form is then protected only by detection.
+
+**Persistence and reload.** Mappings minted from the roster in keyed scopes are saved to the vault
+store like any other (encrypted, as the registry layer), so a token keeps restoring after its entry
+leaves the roster. The roster is loaded once, by `createEngine`; to pick up a changed roster, create a
+new engine.
+
 ### Lower-level API: `ProtectionEngine`
 
 The facade is built on `ProtectionEngine`, which the ficta proxy uses directly. Reach for it when
