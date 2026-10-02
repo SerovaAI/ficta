@@ -87,3 +87,14 @@ regexes = [
   '''40217733''',
 ]
 paths = ['''(^|.*/)packages/engine/test/facade\.test\.ts$''']
+
+[[allowlists]]
+description = "Synthetic surrogate-key and encryption-key inputs in the library roster test."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexes = [
+  '''roster-test-surrogate-key-at-least-32-bytes''',
+  '''roster-test-other-surrogate-key-32-bytes!''',
+  '''"d4"\.repeat\(32\)''',
+]
+paths = ['''(^|.*/)packages/engine/test/roster\.test\.ts$''']

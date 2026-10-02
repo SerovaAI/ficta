@@ -165,8 +165,14 @@ What the facade does promise, kept as separate claims:
   never written to memory mappings or the vault store and cannot be restored. This applies to values
   once found and does not make detection more likely.
 - **Exact-match protection applies only to registered values.** The fail-closed exact-match
-  promise above covers values registered with the engine. The facade registers none, so its
-  protection is detector-based.
+  promise above covers values registered with the engine. Through the facade, those are the entries
+  of a roster the embedding application supplies (known people and organisations): their canonical
+  names and forms are matched exactly before detection, in every profile, are never destroyed, and a
+  roster value surviving redaction fails the call. Only roster entries get linked entity tokens
+  (one entity tag for "Anna Berg", "Anna" and her email address within a scope). Names outside the
+  roster remain detector-based: best-effort, and never linked to each other or to a roster entry.
+  Sourcing, refreshing and protecting the roster itself is the application's responsibility; the
+  engine keeps it in memory and never writes it to the vault store.
 - **The vault is encrypted at rest.** With a persistent store, keyed scopes' mappings are encrypted
   as described under [persistent vaults](#design-tradeoffs). Without one, they stay in the engine's
   memory and are lost when it closes.
