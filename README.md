@@ -205,5 +205,6 @@ coding agents do not use it -
 
 This monorepo is licensed per product - see [`LICENSING.md`](LICENSING.md) for the map:
 
-- **`packages/ficta`** (the published `@serovaai/ficta` engine + CLI) - **MIT**, see [`packages/ficta/LICENSE`](packages/ficta/LICENSE).
+- **`packages/ficta`** (the published `@serovaai/ficta` CLI, proxy, and npm package) - **MIT**, see [`packages/ficta/LICENSE`](packages/ficta/LICENSE).
+- **`packages/engine`** (the published `@serovaai/ficta-engine` redaction engine library) - **MIT**, see [`packages/engine/LICENSE`](packages/engine/LICENSE).
 - **`apps/gateway`** (Ficta Gateway) - **BUSL-1.1**, source-available: free for non-production use, production use requires a commercial license; see [`apps/gateway/LICENSING.md`](apps/gateway/LICENSING.md). Versions up to commit `aacf45d` remain AGPL-3.0-only.
