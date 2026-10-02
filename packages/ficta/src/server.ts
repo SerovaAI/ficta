@@ -101,6 +101,7 @@ import {
 } from "./proxy-config-edit.js";
 import { decodeRequestBody, MAX_ENCODED_BYTES, RequestBodyDecodeError } from "./request-encoding.js";
 import { formatUpstreamError, upstreamErrorDiagnostic } from "./upstream-error.js";
+import { fetchUpstream } from "./upstream-fetch.js";
 
 export interface ProxyHandle {
   port: number;
@@ -1031,7 +1032,7 @@ async function forwardUpstream(
   const { n, requestModel, bodyToSend } = prepared;
   let upstream: Response;
   try {
-    upstream = await fetch(routed.target, { method, headers, body: bodyToSend });
+    upstream = await fetchUpstream(routed.target, { method, headers, body: bodyToSend }, { reqId: n });
   } catch (err) {
     const diagnostic = upstreamErrorDiagnostic(err);
     const message = formatUpstreamError(diagnostic);
