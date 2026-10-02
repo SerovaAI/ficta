@@ -50,6 +50,32 @@ export interface EngineConfig {
     /** User-excluded env-var names for the current project. */
     readonly projectExcludeNames: readonly string[];
   };
+  /** What happens to a detected value once it is found (default: every detection gets a surrogate). */
+  readonly dispositions: {
+    readonly destroy: DestroyDisposition;
+  };
+}
+
+/**
+ * Detection categories whose values are irreversibly replaced by a fixed marker instead of a
+ * reversible surrogate. A category is the detector's `ProtectedValue.name` (lowercase, hyphenated:
+ * `credit-card`, `email`, `person`, `secret-assignment`, `password-label`, ...). Destroyed values are
+ * never stored in the vault and can never be restored. Registered (exact-match) values are never
+ * destroyed: they keep their surrogate and fail-closed leak check.
+ */
+export interface DestroyDisposition {
+  /** Normalized category names (lowercase, `_` → `-`, deduped). Empty: nothing is destroyed. */
+  readonly categories: readonly string[];
+  /** Marker text per category: every entry of `categories` has one (default `[REDACTED_<CATEGORY>]`). */
+  readonly labels: Readonly<Record<string, string>>;
+}
+
+/** Thrown by {@link resolveEngineConfig} (and so by `new ProtectionEngine`) for a malformed setting. */
+export class InvalidEngineConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidEngineConfigError";
+  }
 }
 
 type Section<T> = { readonly [F in keyof T]?: T[F] };
@@ -66,6 +92,16 @@ export interface EngineConfigInput {
   readonly restore?: Section<EngineConfig["restore"]>;
   readonly redactPaths?: boolean;
   readonly registry?: Section<EngineConfig["registry"]>;
+  readonly dispositions?: {
+    readonly destroy?: DestroyDispositionInput;
+  };
+}
+
+/** Input form of {@link DestroyDisposition}: categories in any case/separator, labels optional. */
+export interface DestroyDispositionInput {
+  readonly categories?: readonly string[];
+  /** Marker overrides per category; several categories may share one label. */
+  readonly labels?: Readonly<Record<string, string>>;
 }
 
 /** Defaults: PII off, secret shapes on, fail-open detection, opaque tokens with an ephemeral key. */
@@ -90,7 +126,54 @@ export function resolveEngineConfig(input: EngineConfigInput = {}): EngineConfig
       excludeNames: input.registry?.excludeNames ?? [],
       projectExcludeNames: input.registry?.projectExcludeNames ?? [],
     },
+    dispositions: { destroy: resolveDestroyDisposition(input.dispositions?.destroy) },
   };
+}
+
+/** `Credit_Card`, `CREDIT-CARD` or ` credit-card ` → `credit-card`, the form detectors emit as `name`. */
+export function normalizeCategory(category: string): string {
+  return category.trim().toLowerCase().replaceAll("_", "-");
+}
+
+/** `credit-card` → `[REDACTED_CREDIT_CARD]`: the default marker a destroyed value of that category becomes. */
+export function defaultDestroyLabel(category: string): string {
+  return `[REDACTED_${normalizeCategory(category).toUpperCase().replaceAll("-", "_").replaceAll(".", "_")}]`;
+}
+
+const CATEGORY_PATTERN = /^[a-z0-9][a-z0-9.-]{0,63}$/;
+/** A bracketed marker of safe characters: never surrogate-shaped and unchanged by JSON escaping. */
+const LABEL_PATTERN = /^\[[A-Za-z0-9_.:-]{1,64}\]$/;
+
+function resolveDestroyDisposition(input: DestroyDispositionInput | undefined): DestroyDisposition {
+  const categories: string[] = [];
+  for (const raw of input?.categories ?? []) {
+    const category = typeof raw === "string" ? normalizeCategory(raw) : "";
+    if (!CATEGORY_PATTERN.test(category)) {
+      throw new InvalidEngineConfigError(
+        `dispositions.destroy.categories: ${JSON.stringify(raw)} is not a detection category name`,
+      );
+    }
+    if (!categories.includes(category)) categories.push(category);
+  }
+  const overrides = new Map<string, string>();
+  for (const [raw, label] of Object.entries(input?.labels ?? {})) {
+    const category = normalizeCategory(raw);
+    if (!categories.includes(category)) {
+      throw new InvalidEngineConfigError(
+        `dispositions.destroy.labels: ${JSON.stringify(raw)} is not listed in dispositions.destroy.categories`,
+      );
+    }
+    if (typeof label !== "string" || !LABEL_PATTERN.test(label) || label.toUpperCase().includes("FICTA_")) {
+      throw new InvalidEngineConfigError(
+        `dispositions.destroy.labels.${raw}: a label must be a bracketed marker such as [REDACTED_CARD] ` +
+          "(1-64 letters, digits or _ . : - inside the brackets, and never a FICTA_ token)",
+      );
+    }
+    overrides.set(category, label);
+  }
+  const labels: Record<string, string> = {};
+  for (const category of categories) labels[category] = overrides.get(category) ?? defaultDestroyLabel(category);
+  return { categories, labels };
 }
 
 /**

@@ -5,8 +5,13 @@
 // carries an explicit surrogate key (see ProtectionEngineOptions.allowEphemeralKey).
 
 export {
+  defaultDestroyLabel,
+  type DestroyDisposition,
+  type DestroyDispositionInput,
   type EngineConfig,
   type EngineConfigInput,
+  InvalidEngineConfigError,
+  normalizeCategory,
   type PluginRuntime,
   pluginRuntime,
   resolveEngineConfig,

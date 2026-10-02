@@ -62,6 +62,61 @@ engine.restoreText(text);
   sidecar) is skipped and the text is redacted by the rest. Set `detection: { failClosed: true }` to
   make an outage throw `DetectorUnavailableError` instead.
 
+## Destroying values instead of surrogating them
+
+Some values should never come back: a one-time code, a card number, a password typed into a message.
+Configure their detection categories to be _destroyed_ and the engine replaces them with a fixed
+marker instead of a reversible surrogate:
+
+```ts
+const engine = new ProtectionEngine({
+  config: {
+    surrogate: { key: process.env.MY_SURROGATE_KEY },
+    pii: { enabled: true },
+    dispositions: {
+      destroy: {
+        categories: ["credit-card", "password-label", "secret-assignment"],
+        // Optional. Default marker: [REDACTED_<CATEGORY>], e.g. [REDACTED_CREDIT_CARD].
+        labels: { "password-label": "[REDACTED_SECRET]", "secret-assignment": "[REDACTED_SECRET]" },
+      },
+    },
+  },
+});
+
+const result = await engine.redactContentDetailed("Card 4111 1111 1111 1111, password: hunter2!");
+// result.text: "Card [REDACTED_CREDIT_CARD], password: [REDACTED_SECRET]"
+// result.destroyed: 2; result.hits carry the category and disposition: "destroy", never the value
+```
+
+- **Categories** are the detector category names reported as `hits[].name`: lowercase and hyphenated.
+  The built-in detectors emit `email`, `us-ssn` and `credit-card` (regex floor); Presidio and OpenMed
+  entity types converted the same way (`PHONE_NUMBER` → `phone-number`, `PERSON` → `person`); and the
+  secret-shape categories (`secret-assignment`, `password-label`, `secret-json-value`, `secret-header`,
+  `opaque-secret`, `credential-url`, `jwt`, `private-key`, and the vendor key names such as
+  `github-token`). Category names in the config are matched case-insensitively, with `_` read as `-`.
+- **Labels** must be a bracketed marker of 1–64 letters, digits or `_ . : -` (`[REDACTED_CARD]`) and
+  can never be a `FICTA_` token. Several categories may share a label. Invalid config throws
+  `InvalidEngineConfigError` at construction.
+- **Irreversible.** A destroyed value is never stored: not in the vault, the scope metadata, or a
+  keyed scope. `restoreText` and the streaming restores leave markers as they are, and they are
+  not counted as unrestored surrogates. Because nothing is retained, a keyed scope re-runs detection
+  on any re-sent content that held a destroyed value instead of skipping it as already swept.
+- **Deterministic and idempotent.** The same input gives the same output, and redacting the output
+  again changes nothing: detector findings that overlap an existing marker are clipped off it.
+  Surrogate tokens from another pass are left untouched.
+- **Registered values win.** An exact registered value (or one passed to
+  `scope.registerProtectedValues`) keeps its surrogate and the fail-closed leak check, even when a
+  detector also reports it in a destroy category. Destroy applies to detector findings only.
+- **Several categories, one value.** When one value is reported under a destroy category and a
+  surrogate category, it is destroyed. Overlapping findings resolve exactly as they do for
+  surrogates (registry first, then confidence, then span length); whatever part a destroy finding
+  wins is destroyed. A 13-digit national ID that is also Luhn-valid can be reported as a card, so a
+  profile that destroys the ID usually destroys `credit-card` too.
+
+What destroy does **not** change: it is about what happens to a value _once found_. Detection stays
+best-effort, so a value no detector reports passes through unchanged. Destroyed values are not part
+of the fail-closed exact-match promise, which covers registered values only.
+
 ## Security model
 
 What the engine does and does not protect against is described in ficta's
