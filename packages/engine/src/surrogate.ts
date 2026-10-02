@@ -204,7 +204,8 @@ function hmacBase32(key: string, payload: Uint8Array): string {
   throw new Error("HMAC digest was too short for an entity-family tag");
 }
 
-function canonicalEncode(...fields: string[]): Uint8Array {
+/** Unambiguous encoding of several strings (each prefixed by its 4-byte big-endian byte length). */
+export function canonicalEncode(...fields: string[]): Uint8Array {
   const parts: Buffer[] = [];
   for (const field of fields) {
     const value = Buffer.from(field, "utf8");

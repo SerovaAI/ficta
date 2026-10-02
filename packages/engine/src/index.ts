@@ -3,6 +3,9 @@
 // Experimental (0.x). This entry point is what the ficta CLI/proxy builds on; the API may change in
 // any minor release until 1.0. Construction: `new ProtectionEngine({ config })`, where the config
 // carries an explicit surrogate key (see ProtectionEngineOptions.allowEphemeralKey).
+//
+// Persistent vaults: pass a `VaultStore` as `vault`. The SQLite store lives on the
+// `@serovaai/ficta-engine/sqlite` subpath (Node >= 22.13) so this entry never imports node:sqlite.
 
 export {
   defaultDestroyLabel,
@@ -108,4 +111,22 @@ export {
 } from "./surrogate.js";
 export { plural, truncateRedactedText } from "./text.js";
 export { type BodyLeaf, surrogateKeyWarning, Vault, type VaultPolicy, visitBodyLeaves } from "./vault.js";
+export {
+  InvalidVaultKeyError,
+  parseVaultKey,
+  type SealedVaultEntry,
+  VAULT_ENTRY_VERSION,
+  VaultCipher,
+  VaultDecryptError,
+  type VaultEncryptionKey,
+} from "./vault-crypto.js";
+export type {
+  VaultEntityEntry,
+  VaultEntry,
+  VaultEntryMetadata,
+  VaultLayer,
+  VaultLiteralEntry,
+  VaultStore,
+} from "./vault-store.js";
+export { VaultStoreError } from "./vault-store.js";
 export { type Wire, wireOf } from "./wire.js";

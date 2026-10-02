@@ -55,3 +55,13 @@ targetRules = ["generic-api-key"]
 condition = "AND"
 regexes = ['''Tr0ub4dor&3x''', '''4111 1111 1111 1111''', '''destroy-disposition-surrogate-key-32-bytes-min''']
 paths = ['''(^|.*/)packages/engine/test/destroy-disposition\.test\.ts$''']
+
+[[allowlists]]
+description = "Synthetic surrogate key, encryption-key pattern, and passphrase inputs in the persistent-vault test."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexes = [
+  '''vault-store-test-surrogate-key-at-least-32-bytes''',
+  '''correct horse battery staple correct horse battery staple''',
+]
+paths = ['''(^|.*/)packages/engine/test/vault-store\.test\.ts$''']

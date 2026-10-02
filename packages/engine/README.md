@@ -16,8 +16,9 @@ surrogate tokens, and restores the real values in text that comes back.
 npm install @serovaai/ficta-engine
 ```
 
-Node.js 20 or newer. The package has no runtime dependencies and never reads environment variables:
-everything is configured through the object you pass in.
+Node.js 20 or newer (the optional `/sqlite` vault store needs 22.13 or newer). The package has no
+runtime dependencies and never reads environment variables: everything is configured through the
+object you pass in.
 
 ## Usage
 
@@ -48,8 +49,9 @@ engine.restoreText(text);
   same value gets the same token in every process. It does not make old tokens restorable on its
   own. Detected values (PII, secret shapes) live in the engine's in-memory vault, so a fresh engine
   with the same key cannot restore a token for a value it has not seen. Restoring after a restart
-  requires the original mappings, or registered `values` reloaded into the new engine. Persistent
-  vault storage is not part of this package yet.
+  requires the original mappings, or registered `values` reloaded into the new engine. To keep
+  keyed scopes' mappings across processes and restarts, attach a
+  [persistent vault](#persistent-vaults).
 - **Detectors.** Without a `plugins` option the engine runs the built-in detectors
   (`defaultDetectors`: secret shapes, on by default, and PII, off unless `pii.enabled`). Pass
   `values` to protect exact registered values.
@@ -116,6 +118,98 @@ const result = await engine.redactContentDetailed("Card 4111 1111 1111 1111, pas
 What destroy does **not** change: it is about what happens to a value _once found_. Detection stays
 best-effort, so a value no detector reports passes through unchanged. Destroyed values are not part
 of the fail-closed exact-match promise, which covers registered values only.
+
+## Persistent vaults
+
+By default every mapping lives in memory and dies with the process. Pass a `VaultStore` as `vault`
+and each keyed scope (`engine.beginRequest(scopeKey)`) persists its value↔token mappings, encrypted,
+so that another process with the same surrogate key and scope key can restore its tokens, and a
+restart loses nothing. The motivating case is a batch job and a long-running service sharing one
+vault on one machine: the job pseudonymises, the service restores.
+
+The package ships one store, on Node's built-in SQLite, as a separate entry point:
+
+```ts
+import { ProtectionEngine } from "@serovaai/ficta-engine";
+import { openSqliteVaultStore } from "@serovaai/ficta-engine/sqlite";
+
+const vault = openSqliteVaultStore("/var/lib/my-service/ficta-vault.db", {
+  // 32 random bytes: 64 hex characters, base64, or a Uint8Array. NOT the surrogate key.
+  encryptionKey: process.env.MY_VAULT_KEY,
+});
+const engine = new ProtectionEngine({ config: { surrogate: { key: process.env.MY_SURROGATE_KEY } }, vault });
+
+// Process A: pseudonymise. Redaction saves new mappings before it returns.
+const { text } = await engine.beginRequest("org:thread-1").redactContentDetailed(input);
+
+// Process B (same keys, same file): restore A's tokens.
+const scope = engine.beginRequest("org:thread-1");
+await scope.prepareRestore(text); // loads the scope, then fetches any token not yet in memory
+scope.restoreText(text);
+
+// Shutdown.
+await engine.flushVault();
+await vault.close();
+```
+
+- **What is persisted.** For each keyed scope: the detected and registry-derived mappings (value,
+  token, the category it was minted under, matching flags, detection labels) and entity-family
+  tokens with their entity id, so the per-scope entity-tag collision check survives a restart.
+  Values destroyed by a [destroy disposition](#destroying-values-instead-of-surrogating-them) are
+  never stored. Unkeyed scopes, registered `values`, and values passed to `registerProtectedValues`
+  are not persisted (the first are per-request; the others are re-supplied by the caller). The
+  per-scope "already swept" leaf hashes are not persisted either, so a new process re-runs detection
+  once on content it has not seen.
+- **Sync and async.** Redaction is already async: a keyed scope loads its stored mappings on first
+  use, and every redaction appends its new mappings before returning. If the store fails, redaction
+  throws `VaultStoreError` rather than hand back tokens no other process could restore. The restore
+  methods stay synchronous and work on memory, so in a process that has not redacted for that scope,
+  call `await scope.hydrate()` or `await scope.prepareRestore(text)` first. `prepareRestore` also
+  fetches tokens another process minted after this one loaded. Restores record each token's last
+  use in the background; `engine.flushVault()` waits for those writes. Without a `vault` nothing
+  changes: `hydrate` and `prepareRestore` are no-ops.
+- **Same keys required.** A store needs a configured surrogate key (`MissingSurrogateKeyError`
+  otherwise). Stored tokens that the current key and style would not mint again (the key or style
+  changed) stay restorable but are never used to redact new text, and a warning is reported.
+- **Encryption.** Values, and everything derived from them, are encrypted with AES-256-GCM under a
+  key derived from `encryptionKey`, with a random 12-byte IV per entry. Each ciphertext is bound to
+  its scope key, layer, token, and format version as additional authenticated data, so a row moved
+  or copied elsewhere fails to decrypt. Tokens, scope keys, timestamps, and the layer are stored in
+  clear: tokens are what already leaves the machine, and the store looks rows up by them. A keyed
+  HMAC of each value (under a second derived key, never the surrogate key) lets `forget(value)` find
+  rows without storing the value. Opening a vault with the wrong key throws `VaultKeyMismatchError`;
+  a malformed key throws `InvalidVaultKeyError`.
+- **Key handling.** Protect the encryption key like the surrogate key: anyone with the vault file
+  and the encryption key can read every stored value. Keep the two keys separate, out of the
+  repository, and out of the vault file's directory. Losing the encryption key makes the vault
+  unreadable; changing the surrogate key makes stored tokens restore-only.
+- **Retention.** The store is add-only. `prune({ notUsedSince })` deletes entries whose tokens have
+  not been emitted or restored since a date, and `forget(value, { scope? })` deletes every entry for
+  one exact value. Both act on the file; an engine that already holds the mapping in memory keeps it
+  until that scope is evicted or the process restarts. A pruned or forgotten token passes through
+  restore unchanged.
+- **Other backends.** `VaultStore` is a small async interface (`load`, `lookup`, `append`, `touch`,
+  `prune`, `forget`, `close`) in domain terms. `VaultCipher` from the main entry gives any backend the
+  same sealing as the SQLite store.
+
+### SQLite store
+
+`@serovaai/ficta-engine/sqlite` needs Node.js 22.13 or newer (`node:sqlite` without a flag); Node 24
+LTS is recommended. Node releases before 24.15 / 25.7 (where `node:sqlite` became a release
+candidate) print an experimental-feature warning for it. The main
+`@serovaai/ficta-engine` entry never imports it, so it still loads on Node 20. There is no native
+module and no npm dependency.
+
+- Every connection uses WAL journaling, `foreign_keys=ON`, and a `busy_timeout` (default 5000 ms,
+  `busyTimeoutMs` to change). Readers never block; writes are short `BEGIN IMMEDIATE` transactions
+  that wait their turn, so several processes can share one file at modest write rates.
+- Keep the file on a local disk. WAL needs shared memory between processes, which network
+  filesystems (NFS, SMB) do not reliably provide.
+- Back up with the SQLite backup API (`sqlite3 vault.db ".backup copy.db"`), or copy the `-wal` and
+  `-shm` files together with the database while no process is writing. Copying the main file alone
+  can lose recent writes.
+- The schema is versioned with `PRAGMA user_version`; a file from a newer engine is refused with
+  `VaultSchemaError`.
 
 ## Security model
 

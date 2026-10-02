@@ -22,6 +22,9 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const engineDir = resolve(here, "..", "src");
+// The `@serovaai/ficta-engine/sqlite` subpath: the only file that may import node:sqlite (Node >= 22.13),
+// and one nothing else imports, so the main entry stays loadable on Node 20.
+const sqliteEntry = join(engineDir, "sqlite.ts");
 
 function walk(dir) {
   const files = [];
@@ -60,12 +63,18 @@ for (const file of files) {
     const spec = match[1] ?? match[2];
     match = specifierRe.exec(source);
     if (!spec) continue;
+    if (spec === "node:sqlite" && file !== sqliteEntry) {
+      violations.push({ file, spec, reason: "node:sqlite is imported only by the ./sqlite subpath entry" });
+      continue;
+    }
     if (spec.startsWith("node:")) continue; // Node built-ins are allowed.
     if (spec.startsWith(".")) {
       const target = resolve(dirname(file), spec);
       const rel = relative(engineDir, target);
       if (rel === "" || rel.startsWith("..")) {
         violations.push({ file, spec, reason: "relative import escapes the engine package's src/" });
+      } else if (target.replace(/\.js$/, ".ts") === sqliteEntry) {
+        violations.push({ file, spec, reason: "the ./sqlite subpath entry must not be imported by the main engine" });
       }
       continue;
     }

@@ -109,6 +109,20 @@ export interface RequestScope {
   /** Redact a plain string as message content (see {@link RedactionEngine.redactContentDetailed}). */
   redactContentDetailed(text: string, ctx?: ContentRedactionContext): Promise<ContentRedactionDetails>;
 
+  /**
+   * Load this keyed scope's mappings from the engine's persistent vault store (once; `refresh`
+   * reloads to pick up other processes' additions). Redaction does this itself; call it before a
+   * synchronous restore in a fresh process. A no-op without a store or for an unkeyed scope.
+   */
+  hydrate(opts?: { refresh?: boolean }): Promise<void>;
+
+  /**
+   * Make `text`'s tokens restorable: hydrate, then fetch from the store any token in `text` that no
+   * in-memory layer maps yet (one another process minted after this one loaded). Returns how many
+   * tokens were fetched. Follow it with the synchronous restore. A no-op without a store.
+   */
+  prepareRestore(text: string): Promise<number>;
+
   /** Restore surrogates → real values in a chunk of text (scope-detected then permanent). */
   restoreText(text: string, opts?: RestoreOptions): string;
 
