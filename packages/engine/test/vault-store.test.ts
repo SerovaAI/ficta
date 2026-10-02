@@ -296,7 +296,7 @@ describe("persistent vault contents", () => {
 });
 
 describe("retention", () => {
-  it("prunes entries not used since a cutoff; their tokens then pass through unrestored", async () => {
+  it("prunes entries not used since a cutoff; their tokens then restore as unknown", async () => {
     const store = open();
     const a = engineWith(store);
     const old = await a.beginRequest(SCOPE).redactContentDetailed(`old ${EMAIL}`);
@@ -311,8 +311,13 @@ describe("retention", () => {
     const fresh = engineWith(open()).beginRequest(SCOPE);
     const both = `${old.text} | ${recent.text}`;
     await fresh.prepareRestore(both);
-    // F8's unknown-token placeholder is not built yet: a pruned token passes through as-is.
+    // Plain restore leaves a pruned token as it is; the reporting restore counts and replaces it.
     expect(fresh.restoreText(both)).toBe(`${old.text} | new ${OTHER_EMAIL}`);
+    expect(fresh.restoreTextDetailed(both, { unknownToken: "[unrestored]" })).toEqual({
+      text: "old [unrestored] | new " + OTHER_EMAIL,
+      restoredCount: 1,
+      unknownCount: 1,
+    });
   });
 
   it("forgets one exact value in every scope", async () => {
@@ -331,6 +336,11 @@ describe("retention", () => {
     const restored = fresh.restoreText(one.text);
     expect(restored).not.toContain(EMAIL);
     expect(restored).toContain(OTHER_EMAIL);
+    expect(fresh.restoreTextDetailed(one.text, { unknownToken: "[unrestored]" })).toEqual({
+      text: `mail [unrestored] and ${OTHER_EMAIL}`,
+      restoredCount: 1,
+      unknownCount: 1,
+    });
   });
 
   it("forgets only within one scope when asked", async () => {

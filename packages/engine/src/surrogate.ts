@@ -264,6 +264,57 @@ export function residualSurrogatePattern(): RegExp {
 }
 
 /**
+ * Model-mutated surrogate shapes (case changed, a character dropped or added, truncated, or split by
+ * one whitespace character), matched case-insensitively and only at identifier boundaries so a
+ * `FICTA_` substring inside a longer identifier is left alone. Opaque/typed: `FICTA_[TYPE_]` plus a
+ * run of 16–40 hex digits, or a shorter head whose next whitespace-separated hex run completes it to
+ * exactly {@link HEX_LEN} digits. Entity-family: a type and an 8–13 character base32 tag, optionally
+ * followed by `_` and a (possibly partial) surface tag or a `*` wildcard. Used only by opt-in
+ * reporting restores to find tokens to count and replace; they are never mapped back to a value.
+ */
+const MUTATED_HEX_SOURCE =
+  `(?<![0-9A-Za-z_])${HEX_PREFIX}(?:[A-Z0-9]{1,${MAX_TYPE_LEN}}_)?([0-9A-F]{1,40})(?![0-9A-Za-z_])` +
+  `(?:\\s([0-9A-F]{1,${HEX_LEN - 1}})(?![0-9A-Za-z_]))?`;
+const MUTATED_ENTITY_SOURCE =
+  `(?<![0-9A-Za-z_])${HEX_PREFIX}(?:ORG|PERSON)_[A-Z2-7]{8,${ENTITY_TAG_LEN + 1}}` +
+  `(?:_(?:\\*|[A-Z2-7]{0,${ENTITY_TAG_LEN + 1}}))?(?![0-9A-Za-z_])`;
+const MIN_MUTATED_HEX = 16;
+
+/**
+ * Spans `[start, end)` of every token-shaped string in `text`: each {@link residualSurrogatePattern}
+ * match plus the model-mutated shapes above, merged where they overlap and in text order. Callers
+ * decide which spans are mapped; this function knows nothing about the vault.
+ */
+export function tokenShapedSpans(text: string): Array<[number, number]> {
+  if (!/ficta_/iu.test(text)) return [];
+  const spans: Array<[number, number]> = [];
+  for (const match of text.matchAll(residualSurrogatePattern())) {
+    spans.push([match.index, match.index + match[0].length]);
+  }
+  for (const match of text.matchAll(new RegExp(MUTATED_ENTITY_SOURCE, "gi"))) {
+    spans.push([match.index, match.index + match[0].length]);
+  }
+  for (const match of text.matchAll(new RegExp(MUTATED_HEX_SOURCE, "gi"))) {
+    const head = match[1] ?? "";
+    const tail = match[2];
+    const headEnd = match.index + match[0].length - (tail === undefined ? 0 : tail.length + 1);
+    if (tail !== undefined && head.length + tail.length === HEX_LEN) {
+      spans.push([match.index, match.index + match[0].length]); // one token split by whitespace
+    } else if (head.length >= MIN_MUTATED_HEX) {
+      spans.push([match.index, headEnd]);
+    }
+  }
+  spans.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+  const merged: Array<[number, number]> = [];
+  for (const span of spans) {
+    const last = merged.at(-1);
+    if (last && span[0] < last[1]) last[1] = Math.max(last[1], span[1]);
+    else merged.push([span[0], span[1]]);
+  }
+  return merged;
+}
+
+/**
  * Detector category (`ProtectedValue.name`, lowercase-hyphenated) → short surrogate type. Adapted and
  * condensed from Presidio's anonymizer entity taxonomy, keyed on the names ficta's detectors actually
  * emit (regex-recognizer, presidio-recognizer `categoryOf`, secret-shapes). Unmapped names fall back

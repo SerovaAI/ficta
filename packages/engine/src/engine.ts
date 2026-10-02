@@ -49,6 +49,8 @@ import {
   RedactionInvariantError,
   type RequestScope,
   type RestoreOptions,
+  type RestoreTextDetailedOptions,
+  type RestoreTextDetails,
   type RestoreTraceDetails,
   type TextRedactionContext,
   type TextRedactionDetails,
@@ -448,6 +450,10 @@ export class ProtectionEngine implements RedactionEngine {
 
   restoreText(text: string, opts?: RestoreOptions): string {
     return this.defaultScope.restoreText(text, opts);
+  }
+
+  restoreTextDetailed(text: string, opts?: RestoreTextDetailedOptions): RestoreTextDetails {
+    return this.defaultScope.restoreTextDetailed(text, opts);
   }
 
   restoreJson(body: string, wire?: Wire, opts?: RestoreOptions): string {
@@ -858,6 +864,11 @@ class ProtectionRequestScope implements RequestScope {
   restoreText(text: string, opts?: RestoreOptions): string {
     this.noteRestoreUse(text);
     return this.vault.restoreText(text, opts);
+  }
+
+  restoreTextDetailed(text: string, opts?: RestoreTextDetailedOptions): RestoreTextDetails {
+    this.noteRestoreUse(text);
+    return this.vault.restoreTextDetailed(text, opts);
   }
 
   restoreJson(body: string, wire: Wire = "unknown", opts?: RestoreOptions): string {
