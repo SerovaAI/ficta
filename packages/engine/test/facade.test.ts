@@ -506,4 +506,28 @@ describe("validation and helpers", () => {
     await store.close();
     await expect(engine.redactMany(["x"], "rules")).rejects.toThrow(/closed/);
   });
+
+  it("restore does not proceed when close runs while it awaits the store", async () => {
+    const store = openStore();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const engine = await createEngine({
+      surrogateKey: SURROGATE_KEY,
+      profiles: PROFILES,
+      vault: {
+        ...instrumented(store),
+        load: async (scope) => {
+          await gate;
+          return store.load(scope);
+        },
+        // Keep the backing store open so only the facade's own closed check can stop restore.
+        close: async () => {},
+      },
+    });
+    const pending = engine.scope("owner").restore("nothing to restore");
+    await engine.close();
+    release();
+    await expect(pending).rejects.toThrow(/closed/);
+    await store.close();
+  });
 });

@@ -323,6 +323,8 @@ class Facade implements FictaEngine {
         } catch (err) {
           throw unavailable(err);
         }
+        // close() may have run while prepareRestore awaited the store.
+        this.assertOpen();
         return scope.restoreTextDetailed(text, { unknownToken: opts.unknownToken });
       },
     };
