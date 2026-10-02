@@ -1,5 +1,12 @@
 # @serovaai/ficta-contract
 
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [[`ac2aeb3`](https://github.com/SerovaAI/ficta/commit/ac2aeb37b379070826e814cca59568011bc0a1ef)]:
+  - @serovaai/ficta-protocol@0.5.0
+
 ## 0.2.0
 
 ### Minor Changes
