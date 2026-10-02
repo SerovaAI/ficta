@@ -97,12 +97,16 @@ export interface ProtectionEngineOptions {
   vault?: VaultStore;
 }
 
-/** Thrown by {@link ProtectionEngine} when no surrogate key is configured and none may be generated. */
+/**
+ * Thrown by {@link ProtectionEngine} when no surrogate key is configured and none may be generated,
+ * and by `createEngine` when `surrogateKey` is missing.
+ */
 export class MissingSurrogateKeyError extends Error {
-  constructor() {
+  constructor(message?: string) {
     super(
-      "ProtectionEngine needs a surrogate key: pass config.surrogate.key (a stable, high-entropy secret of at " +
-        "least 32 bytes), or set allowEphemeralKey: true to accept a random per-process key",
+      message ??
+        "ProtectionEngine needs a surrogate key: pass config.surrogate.key (a stable, high-entropy secret of at " +
+          "least 32 bytes), or set allowEphemeralKey: true to accept a random per-process key",
     );
     this.name = "MissingSurrogateKeyError";
   }

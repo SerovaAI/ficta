@@ -213,6 +213,7 @@ export const piiPlugin: DetectorPlugin = {
     const { backends } = resolveBackends(pii.backends);
     const values: ProtectedValue[] = [];
     const failures: string[] = [];
+    let firstFailure: { name: string; err: unknown } | undefined;
 
     // NLP/NER backends see Markdown-normalized text — a party name inside a `**heading**` is otherwise
     // missed or mis-bounded. Format-anchored regex recognizers keep the raw text (their email/SSN/card
@@ -232,11 +233,15 @@ export const piiPlugin: DetectorPlugin = {
       } catch (err) {
         const { reason, detail } = notePiiRecognizerFailure(runtime, name, err);
         failures.push(`${name}: ${detail ? `${reason} (${detail})` : reason}`);
+        firstFailure ??= { name, err };
       }
     }
 
     if (failures.length > 0 && detectorFailClosed(pii.failClosed, detection.failClosed)) {
-      throw new DetectorUnavailableError(PLUGIN_NAME, failures.join("; "));
+      throw new DetectorUnavailableError(PLUGIN_NAME, failures.join("; "), {
+        backend: firstFailure?.name,
+        cause: firstFailure?.err,
+      });
     }
     return mergeDetectedValues(values, runtime.config);
   },
