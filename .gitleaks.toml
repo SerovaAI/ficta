@@ -48,3 +48,10 @@ paths = [
   '''(^|.*/)packages/ficta/bench/fixtures/pii-legal-identity\.json$''',
   '''(^|.*/)packages/ficta/presidio/ficta_presidio/test_identity_recognizer\.py$''',
 ]
+
+[[allowlists]]
+description = "Synthetic labelled-password, card, and surrogate-key inputs in the destroy-disposition test."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexes = ['''Tr0ub4dor&3x''', '''4111 1111 1111 1111''', '''destroy-disposition-surrogate-key-32-bytes-min''']
+paths = ['''(^|.*/)packages/engine/test/destroy-disposition\.test\.ts$''']

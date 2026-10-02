@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
-import { type EngineConfig, type EngineConfigInput, type PluginRuntime, resolveEngineConfig } from "./config.js";
+import {
+  type EngineConfig,
+  type EngineConfigInput,
+  normalizeCategory,
+  type PluginRuntime,
+  resolveEngineConfig,
+} from "./config.js";
 import { detectorFailClosed } from "./detection-policy.js";
 import { noopWarnSink, type WarnSink } from "./diagnostics.js";
 import { type EntityLinkAnchorIndex, entityLinkAnchorIndex, linkDetectedEntityClaims } from "./entity-linker.js";
@@ -507,7 +513,6 @@ class ProtectionRequestScope implements RequestScope {
       surface: "body",
       runtime: this.runtime,
     });
-    if (seen && detection.complete) for (const hash of hashes) seen.add(hash);
 
     const { registryClaims, anchorIndex } = this.registryLinkingState();
     const detectedByValue = new Map<string, ProtectedValue>();
@@ -516,7 +521,13 @@ class ProtectionRequestScope implements RequestScope {
       const meta = metas[0];
       if (meta) detectedByValue.set(value, meta);
     }
-    for (const { value } of detection.detections) detectedByValue.set(value.value, value);
+    for (const { value } of detection.detections) {
+      // A value detected under several categories is destroyed if any of them is a destroy category:
+      // the irreversible disposition is the one that cannot leak a restorable mapping.
+      const current = detectedByValue.get(value.value);
+      if (current && this.destroyLabelFor(current) !== undefined && this.destroyLabelFor(value) === undefined) continue;
+      detectedByValue.set(value.value, value);
+    }
     const detectedClaims = linkDetectedEntityClaims(
       anchorIndex,
       claimsFromValues([...detectedByValue.values()], "detected"),
@@ -567,7 +578,7 @@ class ProtectionRequestScope implements RequestScope {
     if (occurrences.length > MAX_BODY_OCCURRENCES) {
       throw new RedactionInvariantError("body occurrence limit exceeded");
     }
-    const admissible = occurrences.filter((occurrence) => {
+    const admissible = this.outsideDestroyMarkers(document, occurrences).filter((occurrence) => {
       const leaf = document.leaves[occurrence.leaf];
       return leaf !== undefined && this.vault.isRedactableRange(leaf.text, occurrence.start, occurrence.end);
     });
@@ -577,9 +588,15 @@ class ProtectionRequestScope implements RequestScope {
     }
     const ambiguityDiagnostics = resolvedAmbiguityDiagnostics(admissible, resolved, this.protectionContextHash);
 
-    for (const { value } of detection.detections) remember(this.detectedMetadata, value);
+    for (const { value } of detection.detections) {
+      // Destroyed values never enter scope metadata: nothing retained could map back to them.
+      const chosen = detectedByValue.get(value.value) ?? value;
+      if (this.destroyLabelFor(chosen) === undefined) remember(this.detectedMetadata, value);
+    }
     const replacements = new Map<number, string>();
     const owners = new Map<string, EntityClaim>();
+    const destroyedOwners = new Map<string, EntityClaim>();
+    const destroyedLeaves = new Set<number>();
     const renderedSurrogates = new Map<string, string>();
     const found = new Set<string>();
     const resolvedTrace: ProtectionTraceOccurrence[] = [];
@@ -590,6 +607,30 @@ class ProtectionRequestScope implements RequestScope {
       const leaf = document.leaves[leafIndex];
       if (!leaf) continue;
       const rewritten = spliceResolvedOccurrences(leaf.text, claims, (occurrence) => {
+        const marker = this.destroyMarkerFor(occurrence);
+        if (marker !== undefined) {
+          // Irreversible: no vault registration, no metadata, no surrogate. Only the marker survives.
+          if (!destroyedOwners.has(occurrence.surface)) {
+            destroyedOwners.set(occurrence.surface, {
+              entity: occurrence.entity,
+              meta: occurrence.meta,
+              mention: occurrence.mention,
+            });
+          }
+          destroyedLeaves.add(occurrence.leaf);
+          if (traceOccurrences) {
+            resolvedTrace.push({
+              ...this.hitFromProtectedValue(occurrence.meta),
+              disposition: "destroy",
+              leaf: occurrence.leaf,
+              start: occurrence.start,
+              end: occurrence.end,
+              surrogate: marker,
+              origin: "detected",
+            });
+          }
+          return marker;
+        }
         const surface = {
           ...occurrence.meta,
           value: occurrence.surface,
@@ -652,6 +693,16 @@ class ProtectionRequestScope implements RequestScope {
       if (rewritten !== leaf.text) replacements.set(leafIndex, rewritten);
     }
 
+    // A keyed scope skips re-detecting leaves it has swept, relying on retained metadata to re-redact
+    // them. Destroyed values are deliberately not retained, so a leaf that held one must be detected
+    // again whenever it is re-sent (otherwise the raw value would pass through on the next turn).
+    if (seen && detection.complete) {
+      document.leaves.forEach((leaf, i) => {
+        const hash = hashes[i];
+        if (hash !== undefined && !destroyedLeaves.has(leaf.index)) seen.add(hash);
+      });
+    }
+
     const redactedBody = renderBodyDocument(document, replacements);
     this.safeFieldMemo.clear(); // every registration for this request is done; hit labels are checked below
     const leakValues = this.vault.leakValues(redactedBody);
@@ -667,14 +718,16 @@ class ProtectionRequestScope implements RequestScope {
       }
       preferOwner(leakOwners, surface, owner);
     }
+    const destroyedHits = [...destroyedOwners.values()].map((claim) => this.destroyedHit(claim.meta));
     const details: BodyRedactionDetails = {
       body: redactedBody,
-      count: found.size,
+      count: new Set([...found, ...destroyedOwners.keys()]).size,
       leaks: leakValues.length,
-      hits: this.hitsForEntities([...owners.values()]),
+      hits: [...this.hitsForEntities([...owners.values()]), ...destroyedHits],
       leakHits: this.hitsForOwnedValues(leakValues, leakOwners),
       ambiguousEntityLinks: ambiguityDiagnostics.length,
     };
+    if (destroyedOwners.size > 0) details.destroyed = destroyedOwners.size;
     if (detection.skipped.length > 0) details.skippedDetectors = [...detection.skipped];
     if (traceValues) {
       if (found.size > 0) details.traceValues = this.traceValuesForOwnedValues(found, owners, renderedSurrogates);
@@ -709,21 +762,35 @@ class ProtectionRequestScope implements RequestScope {
     // preservePaths defaults true (the query surface keeps real paths like redirect_uri intact); the
     // proxy passes false for headers so a secret inside a slash-path is redacted, not preserved.
     const { surface = "header", preservePaths = true, traceValues, ...rest } = ctx;
-    const skippedDetectors = await this.registerDetectedValues(text, {
-      ...rest,
-      surface,
-      runtime: this.runtime,
-    });
-    const redacted = this.vault.redactTextDetailed(text, preservePaths);
+    const detection = await this.detectValues(text, { ...rest, surface, runtime: this.runtime });
+    const destroy: ProtectedValue[] = [];
+    const reversible: ProtectedValue[] = [];
+    for (const value of detection.values) {
+      // An exact registered or caller-selected value keeps its surrogate (registered wins).
+      const registered = this.permanentMetadata.has(value.value) || this.userProtectedMetadata.has(value.value);
+      (!registered && this.destroyLabelFor(value) !== undefined ? destroy : reversible).push(value);
+    }
+    const destroyedValues = new Set(destroy.map((value) => value.value));
+    for (const value of reversible) {
+      if (destroyedValues.has(value.value)) continue; // another category of this value destroys it
+      remember(this.detectedMetadata, value);
+      this.vault.register([value]);
+    }
+    // Destroy first, so a destroyed value is replaced whole even if a shorter reversible value sits
+    // inside it; the vault then replaces registered and reversible values in what remains.
+    const destroyed = this.destroyInText(text, destroy, preservePaths);
+    const redacted = this.vault.redactTextDetailed(destroyed.text, preservePaths);
     this.safeFieldMemo.clear(); // detection registered above; hit labels are checked below
     const leakValues = this.vault.leakValues(redacted.text, preservePaths);
     const details: TextRedactionDetails = {
       text: redacted.text,
-      count: redacted.count,
+      count: redacted.count + destroyed.metas.length,
       leaks: leakValues.length,
-      hits: this.hitsFor(redacted.values),
+      hits: [...this.hitsFor(redacted.values), ...destroyed.metas.map((meta) => this.destroyedHit(meta))],
       leakHits: this.hitsFor(leakValues),
     };
+    if (destroyed.metas.length > 0) details.destroyed = destroyed.metas.length;
+    const skippedDetectors = [...detection.skipped];
     if (skippedDetectors.length > 0) details.skippedDetectors = skippedDetectors;
     if (traceValues) {
       if (redacted.values.length > 0) details.traceValues = this.traceValuesFor(redacted.values);
@@ -780,12 +847,125 @@ class ProtectionRequestScope implements RequestScope {
     return this.vault.surrogatesIn(text);
   }
 
-  /** Returns the detectors that did not run (skipped by a fail-open outage or crash); empty when all ran. */
-  private async registerDetectedValues(text: string, ctx: DetectTextContext): Promise<string[]> {
-    const detection = await this.detectValues(text, ctx);
-    for (const value of detection.values) remember(this.detectedMetadata, value);
-    this.vault.register(detection.values);
-    return [...detection.skipped];
+  /** The marker for a detection's category when that category is configured to be destroyed. */
+  private destroyLabelFor(value: ProtectedValue): string | undefined {
+    const { labels } = this.runtime.config.dispositions.destroy;
+    const category = normalizeCategory(value.name);
+    return Object.hasOwn(labels, category) ? labels[category] : undefined;
+  }
+
+  /**
+   * The marker for a resolved occurrence, or undefined when it keeps a surrogate. Only plain detector
+   * findings are destroyed: a registered value, a caller-selected value, or a detection linked to a
+   * registered entity keeps its exact-match surrogate (registered wins).
+   */
+  private destroyMarkerFor(occurrence: ResolvedOccurrence): string | undefined {
+    if (occurrence.mention.resolverAuthority !== "detected" || occurrence.entity.provenance !== "detector") {
+      return undefined;
+    }
+    if (this.userProtectedMetadata.has(occurrence.entity.canonical)) return undefined;
+    return this.destroyLabelFor(occurrence.meta);
+  }
+
+  private destroyedHit(meta: ProtectedValue): ProtectionHit {
+    return { ...this.hitFromProtectedValue(meta), disposition: "destroy" };
+  }
+
+  /** UTF-16 ranges of every configured destroy marker already present in `text`. */
+  private markerSpans(text: string): Array<readonly [number, number]> {
+    const spans: Array<readonly [number, number]> = [];
+    for (const label of new Set(Object.values(this.runtime.config.dispositions.destroy.labels))) {
+      for (let at = text.indexOf(label); at >= 0; at = text.indexOf(label, at + label.length)) {
+        spans.push([at, at + label.length]);
+      }
+    }
+    return spans;
+  }
+
+  /**
+   * Keep detector claims off destroy markers already in the text, so redacting redacted output is a
+   * no-op whatever a detector makes of a marker. A detected claim that overlaps a marker keeps only
+   * its non-whitespace remainder outside the marker (clipped), never the marker itself. Registry
+   * claims are untouched: an exact registered value is always replaced wherever it appears.
+   */
+  private outsideDestroyMarkers(document: BodyDocument, occurrences: readonly Occurrence[]): Occurrence[] {
+    if (this.runtime.config.dispositions.destroy.categories.length === 0) return [...occurrences];
+    const spansByLeaf = new Map<number, Array<readonly [number, number]>>();
+    const out: Occurrence[] = [];
+    for (const occurrence of occurrences) {
+      const leaf = document.leaves[occurrence.leaf];
+      if (!leaf || occurrence.mention.resolverAuthority !== "detected") {
+        out.push(occurrence);
+        continue;
+      }
+      let spans = spansByLeaf.get(occurrence.leaf);
+      if (!spans) {
+        spans = this.markerSpans(leaf.text);
+        spansByLeaf.set(occurrence.leaf, spans);
+      }
+      const overlapping = spans
+        .filter(([start, end]) => start < occurrence.end && end > occurrence.start)
+        .sort((a, b) => a[0] - b[0]);
+      if (overlapping.length === 0) {
+        out.push(occurrence);
+        continue;
+      }
+      let cursor = occurrence.start;
+      for (const [start, end] of [...overlapping, [occurrence.end, occurrence.end] as const]) {
+        const pieceEnd = Math.min(start, occurrence.end);
+        if (pieceEnd > cursor) {
+          const raw = leaf.text.slice(cursor, pieceEnd);
+          const leading = raw.length - raw.trimStart().length;
+          const surface = raw.trim();
+          if (surface) {
+            out.push({
+              ...occurrence,
+              start: cursor + leading,
+              end: cursor + leading + surface.length,
+              surface,
+              origin: "clipped",
+            });
+          }
+        }
+        cursor = Math.max(cursor, end);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Replace each destroy-category value in a header/query string by its marker, longest first, at
+   * every occurrence the vault would also replace (outside surrogates, existing markers, and preserved
+   * paths). Returns the distinct destroyed values' metadata only; the values are not retained.
+   */
+  private destroyInText(
+    text: string,
+    values: readonly ProtectedValue[],
+    preservePaths: boolean,
+  ): { text: string; metas: ProtectedValue[] } {
+    const metas: ProtectedValue[] = [];
+    let out = text;
+    const ordered = [...new Map(values.map((value) => [value.value, value])).values()].sort(
+      (a, b) => b.value.length - a.value.length,
+    );
+    for (const value of ordered) {
+      const marker = this.destroyLabelFor(value);
+      if (marker === undefined || !value.value) continue;
+      let replaced = false;
+      for (let at = out.indexOf(value.value); at >= 0;) {
+        const end = at + value.value.length;
+        const onMarker = this.markerSpans(out).some(([start, stop]) => start < end && stop > at);
+        if (!onMarker && this.vault.isRedactableRange(out, at, end, preservePaths)) {
+          out = `${out.slice(0, at)}${marker}${out.slice(end)}`;
+          replaced = true;
+          at = out.indexOf(value.value, at + marker.length);
+        } else {
+          at = out.indexOf(value.value, at + 1);
+        }
+      }
+      if (replaced) metas.push(value);
+    }
+    return { text: out, metas };
   }
 
   private async detectValues(text: string, ctx: DetectTextContext): Promise<DetectionPass> {

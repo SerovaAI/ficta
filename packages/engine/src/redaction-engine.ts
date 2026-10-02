@@ -211,6 +211,11 @@ export interface ProtectionHit {
   plugin?: string;
   kind?: ProtectedValue["kind"];
   confidence?: ProtectedValue["confidence"];
+  /**
+   * `"destroy"` when the value was irreversibly replaced by its category's marker (see
+   * `EngineConfig.dispositions.destroy`); absent for a reversible surrogate.
+   */
+  disposition?: "destroy";
 }
 
 /** Trace-only protected value detail. Contains raw values; never include in default stats/logs. */
@@ -226,6 +231,7 @@ export interface ProtectionTraceOccurrence extends ProtectionHit {
   leaf: number;
   start: number;
   end: number;
+  /** The replacement text: a surrogate token, or the destroy marker when `disposition` is `"destroy"`. */
   surrogate: string;
   origin: "registry" | "detected" | "user";
 }
@@ -281,8 +287,16 @@ export interface TextRedactionResult {
 }
 
 export interface BodyRedactionDetails extends BodyRedactionResult {
-  /** Safe metadata, one entry per distinct redacted value/surface (labels may repeat). */
+  /**
+   * Safe metadata, one entry per distinct redacted value or surface (labels may repeat). Destroyed
+   * values are included and carry `disposition: "destroy"`; `count` includes them too.
+   */
   hits: ProtectionHit[];
+  /**
+   * Distinct values irreversibly replaced by a destroy marker on this call (their categories are in
+   * `hits`); absent when none were. Never the values themselves.
+   */
+  destroyed?: number;
   /** Safe metadata, one entry per distinct surviving known value (labels may repeat). */
   leakHits: ProtectionHit[];
   /** Ambiguous inferred entity mentions that remained protected through the literal path. */
@@ -301,8 +315,16 @@ export interface ContentRedactionDetails extends Omit<BodyRedactionDetails, "bod
 }
 
 export interface TextRedactionDetails extends TextRedactionResult {
-  /** Safe metadata, one entry per distinct redacted value (labels may repeat). */
+  /**
+   * Safe metadata, one entry per distinct redacted value or surface (labels may repeat). Destroyed
+   * values are included and carry `disposition: "destroy"`; `count` includes them too.
+   */
   hits: ProtectionHit[];
+  /**
+   * Distinct values irreversibly replaced by a destroy marker on this call (their categories are in
+   * `hits`); absent when none were. Never the values themselves.
+   */
+  destroyed?: number;
   /** Safe metadata, one entry per distinct surviving known value (labels may repeat). */
   leakHits: ProtectionHit[];
   /** Detectors that did not run on this request under fail-open (outage or crash); absent when all ran. */
