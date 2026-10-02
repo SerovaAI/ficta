@@ -7,6 +7,8 @@
   "envMode": "loose",
   "globalDependencies": [".oxlintrc.json", ".oxfmtrc.json"],
   "globalPassThroughEnv": ["FICTA_DEV_ENV_READY"],
+  // Don't let turbo write its agent-guidance block into AGENTS.md on every agent-run command.
+  "agentGuidance": false,
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
