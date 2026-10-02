@@ -10,6 +10,7 @@ import { detectorFailClosed } from "./detection-policy.js";
 import { noopWarnSink, type WarnSink } from "./diagnostics.js";
 import { type EntityLinkAnchorIndex, entityLinkAnchorIndex, linkDetectedEntityClaims } from "./entity-linker.js";
 import { expandEntities, expansionSpans } from "./expander.js";
+import { BackgroundVaultWrites, KeyedScopePersistence } from "./keyed-vault.js";
 import {
   type EntityClaim,
   mapJoinedOffsets,
@@ -55,6 +56,7 @@ import {
 import { entityFamilySurrogateStrategy, ephemeralSurrogateKey, surrogateStrategy } from "./surrogate.js";
 import { type BodyLeaf, type ScopedVault, type SurrogateTable, Vault, visitBodyLeaves } from "./vault.js";
 import type { Wire } from "./wire.js";
+import type { VaultStore } from "./vault-store.js";
 import { bufferedRestoreAdapterFor, sseRestoreAdapterFor } from "./wire-restore.js";
 
 export interface ProtectionEngineOptions {
@@ -82,6 +84,14 @@ export interface ProtectionEngineOptions {
    * opts in, because it reports an ephemeral key at startup and can be told to refuse one.
    */
   allowEphemeralKey?: boolean;
+  /**
+   * Persist keyed scopes' value↔token mappings in this store (encrypted at rest), so another engine
+   * process with the same surrogate key and scope key can restore them, and they survive restarts.
+   * Only keyed scopes (`beginRequest(scopeKey)`) persist. The engine never closes the store: call
+   * {@link ProtectionEngine.flushVault} and then the store's `close()` when done. Requires a stable
+   * surrogate key, so it cannot be combined with `allowEphemeralKey` without `config.surrogate.key`.
+   */
+  vault?: VaultStore;
 }
 
 /** Thrown by {@link ProtectionEngine} when no surrogate key is configured and none may be generated. */
@@ -115,6 +125,8 @@ interface KeyedScopeState {
   tokenOnly: Set<string>;
   seenLeaves: Set<string>;
   lastUsedAt: number;
+  /** Present when the engine has a persistent vault store. */
+  persistence?: KeyedScopePersistence;
 }
 
 interface BodyDocument {
@@ -180,6 +192,8 @@ export class ProtectionEngine implements RedactionEngine {
   /** Persistent per-key scope state (detected layer + metadata + swept-content hashes), LRU-ordered. */
   private readonly keyedScopes = new Map<string, KeyedScopeState>();
   private defaultRequestScope?: ProtectionRequestScope;
+  private readonly store?: VaultStore;
+  private readonly vaultWrites: BackgroundVaultWrites;
 
   /** The trusted plugin set used at launch; kept so a live registry reload enforces the same fence. */
   private readonly trusted: ReadonlySet<FictaPluginBase>;
@@ -210,6 +224,10 @@ export class ProtectionEngine implements RedactionEngine {
   constructor(opts: ProtectionEngineOptions = {}) {
     this.runtime = { config: resolveEngineConfig(opts.config), warn: opts.onWarn ?? noopWarnSink };
     if (!this.runtime.config.surrogate.key && !opts.allowEphemeralKey) throw new MissingSurrogateKeyError();
+    // Tokens persisted under a per-process key could never be restored by another process.
+    if (opts.vault && !this.runtime.config.surrogate.key) throw new MissingSurrogateKeyError();
+    this.store = opts.vault;
+    this.vaultWrites = new BackgroundVaultWrites(this.runtime.warn);
     this.plugins = opts.plugins ?? defaultDetectors;
     this.trusted = opts.trusted ?? new Set(this.plugins);
     this.registrySnapshot = loadPluginRegistry(this.plugins, this.trusted, this.runtime);
@@ -344,7 +362,17 @@ export class ProtectionEngine implements RedactionEngine {
       state.tokenOnly,
       true,
       identifierHash(scopeKey),
+      undefined,
+      state.persistence,
     );
+  }
+
+  /**
+   * Wait for background vault writes (last-used updates recorded by restores) to finish. Call before
+   * closing the vault store. Redaction never leaves a write behind: it awaits its own appends.
+   */
+  flushVault(): Promise<void> {
+    return this.vaultWrites.flush();
   }
 
   private keyedScopeState(key: string): KeyedScopeState {
@@ -353,7 +381,15 @@ export class ProtectionEngine implements RedactionEngine {
     this.evictKeyedScopes(now);
     const existing = this.keyedScopes.get(key);
     if (existing) this.keyedScopes.delete(key); // re-insert below so map order stays least-recently-used-first
-    const state = existing ?? {
+    const state = existing ?? this.newKeyedScopeState(key, now);
+    state.lastUsedAt = now;
+    this.keyedScopes.set(key, state);
+    this.evictKeyedScopes(now);
+    return state;
+  }
+
+  private newKeyedScopeState(key: string, now: number): KeyedScopeState {
+    const state: KeyedScopeState = {
       detected: this.vault.newDetectedLayer(),
       registryDerived: this.vault.newRegistryDerivedLayer(),
       metadata: new Map<string, ProtectedValue[]>(),
@@ -361,9 +397,9 @@ export class ProtectionEngine implements RedactionEngine {
       seenLeaves: new Set<string>(),
       lastUsedAt: now,
     };
-    state.lastUsedAt = now;
-    this.keyedScopes.set(key, state);
-    this.evictKeyedScopes(now);
+    if (this.store) {
+      state.persistence = new KeyedScopePersistence(this.store, key, state, this.vaultWrites, this.runtime.warn);
+    }
     return state;
   }
 
@@ -466,7 +502,19 @@ class ProtectionRequestScope implements RequestScope {
     private readonly protectionContextHash?: string,
     /** Explicit caller selections are re-seeded per request, never retained by a keyed scope. */
     private readonly userProtectedMetadata: Map<string, ProtectedValue[]> = new Map(),
+    /** Present for keyed scopes of an engine with a persistent vault store. */
+    private readonly persistence?: KeyedScopePersistence,
   ) {}
+
+  async hydrate(opts: { refresh?: boolean } = {}): Promise<void> {
+    await this.persistence?.hydrate(opts.refresh);
+  }
+
+  async prepareRestore(text: string): Promise<number> {
+    if (!this.persistence) return 0;
+    await this.persistence.hydrate();
+    return this.persistence.hydrateTokens(this.vault.unmappedSurrogatesIn(text));
+  }
 
   registerProtectedValues(values: readonly ProtectedValue[]): void {
     let changed = false;
@@ -504,6 +552,7 @@ class ProtectionRequestScope implements RequestScope {
     ctx: BodyRedactionContext,
   ): Promise<BodyRedactionDetails> {
     const { traceValues, traceOccurrences, ...detectCtx } = ctx;
+    await this.persistence?.hydrate();
     const seen = this.seenLeaves;
     const hashes = seen ? document.leaves.map((leaf) => leafHash(leaf.text)) : [];
     const freshLeaves = seen ? document.leaves.filter((_, i) => !seen.has(hashes[i] ?? "")) : document.leaves;
@@ -739,6 +788,8 @@ class ProtectionRequestScope implements RequestScope {
     if (traceValues && ambiguityDiagnostics.length > 0) {
       details.traceAmbiguousEntityLinks = ambiguityDiagnostics;
     }
+    // Save new mappings before the caller can send their tokens anywhere a later process must restore.
+    await this.persistence?.persist(found, this.vault.surrogatesIn(redactedBody));
     return details;
   }
 
@@ -762,6 +813,7 @@ class ProtectionRequestScope implements RequestScope {
     // preservePaths defaults true (the query surface keeps real paths like redirect_uri intact); the
     // proxy passes false for headers so a secret inside a slash-path is redacted, not preserved.
     const { surface = "header", preservePaths = true, traceValues, ...rest } = ctx;
+    await this.persistence?.hydrate();
     const detection = await this.detectValues(text, { ...rest, surface, runtime: this.runtime });
     const destroy: ProtectedValue[] = [];
     const reversible: ProtectedValue[] = [];
@@ -796,23 +848,52 @@ class ProtectionRequestScope implements RequestScope {
       if (redacted.values.length > 0) details.traceValues = this.traceValuesFor(redacted.values);
       if (leakValues.length > 0) details.traceLeakValues = this.traceValuesFor(leakValues);
     }
+    await this.persistence?.persist(
+      reversible.map((value) => value.value),
+      this.vault.surrogatesIn(redacted.text),
+    );
     return details;
   }
 
   restoreText(text: string, opts?: RestoreOptions): string {
+    this.noteRestoreUse(text);
     return this.vault.restoreText(text, opts);
   }
 
   restoreJson(body: string, wire: Wire = "unknown", opts?: RestoreOptions): string {
+    this.noteRestoreUse(body);
     return this.vault.restoreJson(body, bufferedRestoreAdapterFor(wire), opts);
   }
 
   restoreStream(opts?: RestoreOptions): TransformStream<Uint8Array, Uint8Array> {
-    return this.vault.restoreStream(opts);
+    return this.noteStreamRestoreUse(this.vault.restoreStream(opts));
   }
 
   restoreEventStream(wire: Wire, opts?: RestoreOptions): TransformStream<Uint8Array, Uint8Array> {
-    return this.vault.restoreEventStream(sseRestoreAdapterFor(wire), bufferedRestoreAdapterFor(wire), opts);
+    return this.noteStreamRestoreUse(
+      this.vault.restoreEventStream(sseRestoreAdapterFor(wire), bufferedRestoreAdapterFor(wire), opts),
+    );
+  }
+
+  /** Record the persisted tokens a buffered restore is about to restore as used (last_used_at). */
+  private noteRestoreUse(text: string): void {
+    if (this.persistence) this.persistence.touchLater(this.vault.surrogatesIn(text));
+  }
+
+  /** Streaming twin of {@link noteRestoreUse}: records restored tokens once the stream ends. */
+  private noteStreamRestoreUse(
+    stream: TransformStream<Uint8Array, Uint8Array>,
+  ): TransformStream<Uint8Array, Uint8Array> {
+    const persistence = this.persistence;
+    if (!persistence) return stream;
+    const tokens = (): string[] =>
+      this.vault.traceRestoredValues().flatMap((entry) => (entry.surrogate === undefined ? [] : [entry.surrogate]));
+    return {
+      writable: stream.writable,
+      readable: stream.readable.pipeThrough(
+        new TransformStream<Uint8Array, Uint8Array>({ flush: () => persistence.touchLater(tokens()) }),
+      ),
+    } as TransformStream<Uint8Array, Uint8Array>;
   }
 
   get restoredCount(): number {

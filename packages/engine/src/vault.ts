@@ -6,6 +6,7 @@ import {
   type EntitySurrogate,
   RESIDUAL_MAX_LENGTH,
   residualSurrogatePattern,
+  type SurrogateHint,
   type SurrogateStrategy,
   surrogateStrategy,
 } from "./surrogate.js";
@@ -93,6 +94,31 @@ export const DEFAULT_VAULT_POLICY: VaultPolicy = { restoreIntoTools: "detected",
  */
 export type LayerProvenance = "permanent" | "detected";
 
+/** One entity-family token a {@link SurrogateTable} minted for a raw value. */
+export interface TableEntityMapping {
+  readonly entityId: string;
+  readonly entityType: "organization" | "person";
+  readonly entityTag: string;
+  readonly token: string;
+}
+
+/** A persisted literal mapping handed to {@link SurrogateTable.hydrate}. */
+export interface HydratedLiteral {
+  readonly value: string;
+  readonly token: string;
+  readonly hint: SurrogateHint;
+  readonly matchForm: boolean;
+  readonly wordBounded: boolean;
+}
+
+/** A persisted entity-family mapping handed to {@link SurrogateTable.hydrate}. */
+export interface HydratedEntity {
+  readonly value: string;
+  readonly token: string;
+  readonly entityId: string;
+  readonly entityType: "organization" | "person";
+}
+
 export class SurrogateTable {
   readonly values: string[] = []; // known values, longest first
   /** Bumped whenever a match form is admitted, so views can cache their merged value order. */
@@ -103,6 +129,15 @@ export class SurrogateTable {
   readonly toVal = new Map<string, string>();
   private readonly entityToSur = new Map<string, string>();
   private readonly entityTagOwners = new Map<string, string>();
+  /** The hint each literal token was minted with, so a persisted mapping can be re-verified. */
+  private readonly hints = new Map<string, SurrogateHint>();
+  /** Entity-family mappings per raw value, for persisting them (see {@link entityMappings}). */
+  private readonly entityByValue = new Map<string, TableEntityMapping[]>();
+  /**
+   * Raw values whose mapping changed since the last {@link takeChanged}. Only tracked once
+   * {@link trackChanges} is called (keyed scopes with a persistent store); undefined otherwise.
+   */
+  private changed?: Set<string>;
 
   constructor(
     readonly surrogate: SurrogateStrategy,
@@ -123,9 +158,14 @@ export class SurrogateTable {
   ensureToken(item: VaultValue): boolean {
     const value = item.value;
     if (!value || this.toSur.has(value)) return false;
-    const surrogate = this.surrogate.mint(value, { name: item.name, kind: item.kind });
+    const hint: SurrogateHint = {};
+    if (item.name !== undefined) hint.name = item.name;
+    if (item.kind !== undefined) hint.kind = item.kind;
+    const surrogate = this.surrogate.mint(value, hint);
     this.toSur.set(value, surrogate);
     this.toVal.set(surrogate, value);
+    this.hints.set(value, hint);
+    this.changed?.add(value);
     return true;
   }
 
@@ -135,6 +175,15 @@ export class SurrogateTable {
     this.entityToSur.set(key, surrogate.token);
     this.entityTagOwners.set(surrogate.entityTag, item.entityId);
     this.toVal.set(surrogate.token, item.value);
+    const mappings = this.entityByValue.get(item.value) ?? [];
+    mappings.push({
+      entityId: item.entityId,
+      entityType: item.entityType,
+      entityTag: surrogate.entityTag,
+      token: surrogate.token,
+    });
+    this.entityByValue.set(item.value, mappings);
+    this.changed?.add(item.value);
     // Keep toSur on the literal token: raw text surfaces and unlinked mentions deliberately stay
     // literal while resolved structured-body occurrences select their composite token via entityToSur.
     return true;
@@ -176,7 +225,7 @@ export class SurrogateTable {
     const value = item.value;
     if (!value) return false;
     if (this.matchForms.has(value)) {
-      if (item.wordBounded === false) this.wordBoundedForms.delete(value);
+      if (item.wordBounded === false && this.wordBoundedForms.delete(value)) this.changed?.add(value);
       return false;
     }
     this.ensureToken(item);
@@ -184,6 +233,7 @@ export class SurrogateTable {
     if (item.wordBounded) this.wordBoundedForms.add(value);
     this.values.push(value);
     this.version++;
+    this.changed?.add(value);
     return true;
   }
 
@@ -191,6 +241,104 @@ export class SurrogateTable {
     if (!this.matchForms.has(value)) return;
     if (wordBounded) this.wordBoundedForms.add(value);
     else this.wordBoundedForms.delete(value);
+    this.changed?.add(value);
+  }
+
+  /** Start recording which raw values gain or change a mapping (for an append-only persistent store). */
+  trackChanges(): void {
+    this.changed ??= new Set();
+  }
+
+  /** Raw values changed since the last call, clearing the record. Empty unless {@link trackChanges} ran. */
+  takeChanged(): string[] {
+    if (!this.changed || this.changed.size === 0) return [];
+    const out = [...this.changed];
+    this.changed.clear();
+    return out;
+  }
+
+  /** Re-mark values whose persistence failed, so the next flush retries them. */
+  markChanged(values: Iterable<string>): void {
+    if (!this.changed) return;
+    for (const value of values) this.changed.add(value);
+  }
+
+  /** The literal mapping for a raw value, with the hint it was minted under and its matching policy. */
+  literalMapping(
+    value: string,
+  ): { token: string; hint: SurrogateHint; matchForm: boolean; wordBounded: boolean } | undefined {
+    const token = this.toSur.get(value);
+    if (token === undefined) return undefined;
+    return {
+      token,
+      hint: this.hints.get(value) ?? {},
+      matchForm: this.matchForms.has(value),
+      wordBounded: this.wordBoundedForms.has(value),
+    };
+  }
+
+  /** Entity-family mappings minted for a raw value (one per entity it was resolved to). */
+  entityMappings(value: string): readonly TableEntityMapping[] {
+    return this.entityByValue.get(value) ?? [];
+  }
+
+  /**
+   * Re-admit persisted mappings in one pass (one sort). Each mapping is re-minted under this table's
+   * strategy first: when it reproduces the stored token, the mapping is admitted exactly as if it had
+   * been registered here (match form, word-bounded policy, entity-tag ownership). When it does not
+   * (the store was written under another surrogate key, style, or protection context) the stored
+   * token is kept restore-only and never steers redaction. Hydration is not recorded as a change.
+   * Returns how many mappings were restore-only.
+   */
+  hydrate(
+    literals: readonly HydratedLiteral[],
+    entities: readonly HydratedEntity[],
+    protectionContextId: string | undefined,
+  ): number {
+    const changed = this.changed;
+    this.changed = undefined;
+    let restoreOnly = 0;
+    let admitted = false;
+    try {
+      for (const literal of literals) {
+        const item: VaultValue = { value: literal.value, wordBounded: literal.wordBounded };
+        if (literal.hint.name !== undefined) item.name = literal.hint.name;
+        if (literal.hint.kind !== undefined) item.kind = literal.hint.kind;
+        const minted = this.toSur.get(literal.value) ?? this.surrogate.mint(literal.value, literal.hint);
+        if (minted !== literal.token) {
+          if (!this.toVal.has(literal.token)) this.toVal.set(literal.token, literal.value);
+          restoreOnly++;
+          continue;
+        }
+        if (literal.matchForm) admitted = this.admitMatchForm(item) || admitted;
+        else this.ensureToken(item);
+      }
+      for (const entity of entities) {
+        const minted =
+          protectionContextId === undefined
+            ? undefined
+            : this.surrogate.mintEntity?.({
+                protectionContextId,
+                entityId: entity.entityId,
+                entityType: entity.entityType,
+                exactSurface: entity.value,
+              });
+        const owner = minted ? this.entityTagOwners.get(minted.entityTag) : undefined;
+        if (!minted || minted.token !== entity.token || (owner !== undefined && owner !== entity.entityId)) {
+          if (!this.toVal.has(entity.token)) this.toVal.set(entity.token, entity.value);
+          restoreOnly++;
+          continue;
+        }
+        this.ensureEntityToken(
+          { value: entity.value, entityId: entity.entityId, entityType: entity.entityType },
+          minted,
+        );
+      }
+    } finally {
+      if (admitted) this.sortMatchForms();
+      this.changed = changed;
+    }
+    return restoreOnly;
   }
 
   hasMatchForm(value: string): boolean {
@@ -760,6 +908,19 @@ export abstract class VaultView {
       if (this.valueFor(token) !== undefined) out.push(token);
     }
     return out;
+  }
+
+  /**
+   * Distinct surrogate-shaped tokens in `text` (under this view's strategy) that no layer maps yet.
+   * A keyed scope with a persistent store looks these up there before a restore.
+   */
+  unmappedSurrogatesIn(text: string): string[] {
+    if (!text) return [];
+    const out = new Set<string>();
+    for (const match of text.matchAll(new RegExp(this.surrogate.pattern.source, "g"))) {
+      if (this.valueFor(match[0]) === undefined) out.add(match[0]);
+    }
+    return [...out];
   }
 
   protected assertEntitySurrogateAvailable(item: VaultEntityValue, surrogate: EntitySurrogate): void {
