@@ -9,6 +9,7 @@ import {
   type SurrogateHint,
   type SurrogateStrategy,
   surrogateStrategy,
+  tokenShapedSpans,
 } from "./surrogate.js";
 
 /**
@@ -55,6 +56,27 @@ interface RestoreMarkers {
 
 interface RestoreOptions {
   markers?: RestoreMarkers;
+}
+
+interface RestoreTextDetailedOptions extends RestoreOptions {
+  unknownToken?: string;
+}
+
+interface RestoreTextDetails {
+  text: string;
+  restoredCount: number;
+  unknownCount: number;
+}
+
+/**
+ * Validate a caller-supplied unknown-token placeholder: a non-empty string that can never itself be
+ * read as a surrogate token (so a second restore pass, or a later redaction, never treats it as one).
+ * The error message never includes the rejected string.
+ */
+export function assertUnknownTokenPlaceholder(placeholder: unknown): void {
+  if (typeof placeholder !== "string" || placeholder.length === 0 || /ficta_/iu.test(placeholder)) {
+    throw new TypeError("restore unknownToken must be a non-empty string that does not contain FICTA_");
+  }
 }
 
 /** Warning text for a configured surrogate key that looks low-entropy; undefined when fine or unset. */
@@ -656,6 +678,67 @@ export abstract class VaultView {
     const out = this.restoreTextExcept(text, EMPTY_SKIP, opts);
     this.noteResiduals(out);
     return out;
+  }
+
+  /**
+   * Restore a complete text and report what happened. Mapped tokens restore exactly as
+   * {@link restoreText} does. Every other token-shaped string ({@link tokenShapedSpans}: unmapped
+   * opaque, typed and entity-family tokens, entity wildcard references and truncated fragments, plus
+   * case-changed, shortened, lengthened or whitespace-split tokens) is counted as unknown and, when
+   * `unknownToken` is set, replaced by it. Unknown tokens are never mapped to a value. Text inside
+   * complete restore markers and destroy markers (`[REDACTED_…]`) is left alone. Counts are per
+   * occurrence in this call; the view's residual counter is fed as {@link restoreText} would.
+   */
+  restoreTextDetailed(text: string, opts: RestoreTextDetailedOptions = {}): RestoreTextDetails {
+    const { unknownToken, ...restoreOpts } = opts;
+    if (unknownToken !== undefined) assertUnknownTokenPlaceholder(unknownToken);
+    if (!text) return { text, restoredCount: 0, unknownCount: 0 };
+    const markerSpans = completeRestoreMarkerSpans(text, restoreOpts.markers);
+    const mapped: Array<{ start: number; end: number; value: string; surrogate: string }> = [];
+    if (this.hasSurrogates) {
+      for (const match of text.matchAll(new RegExp(this.surrogate.pattern.source, "g"))) {
+        const start = match.index;
+        const end = start + match[0].length;
+        if (overlapsSpan(markerSpans, start, end)) continue;
+        const value = this.valueFor(match[0]);
+        if (value !== undefined) mapped.push({ start, end, value, surrogate: match[0] });
+      }
+    }
+    const edits: Array<{ start: number; end: number; value?: string; surrogate?: string }> = [...mapped];
+    for (const [start, end] of tokenShapedSpans(text)) {
+      if (overlapsSpan(markerSpans, start, end)) continue;
+      if (mapped.some((edit) => edit.start < end && start < edit.end)) continue;
+      edits.push({ start, end });
+    }
+    edits.sort((a, b) => a.start - b.start);
+    let restored = ""; // unknown tokens left in place: exactly what restoreText returns
+    let out = "";
+    let cursor = 0;
+    let restoredCount = 0;
+    let unknownCount = 0;
+    for (const edit of edits) {
+      const between = text.slice(cursor, edit.start);
+      restored += between;
+      out += between;
+      if (edit.value !== undefined && edit.surrogate !== undefined) {
+        this.recordRestored(edit.value, edit.surrogate);
+        const origin = this.restoreOriginFor(edit.surrogate);
+        const value = markRestoredValue(edit.value, edit.surrogate, origin, restoreOpts.markers);
+        restored += value;
+        out += value;
+        restoredCount++;
+      } else {
+        const token = text.slice(edit.start, edit.end);
+        restored += token;
+        out += unknownToken ?? token;
+        unknownCount++;
+      }
+      cursor = edit.end;
+    }
+    restored += text.slice(cursor);
+    out += text.slice(cursor);
+    this.noteResiduals(restored);
+    return { text: out, restoredCount, unknownCount };
   }
 
   /**

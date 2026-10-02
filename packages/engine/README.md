@@ -7,8 +7,8 @@ surrogate tokens, and restores the real values in text that comes back.
 
 > **Experimental (0.x).** This package is the engine the ficta CLI and proxy run on, published so
 > other services can use it in-process. Its API may change in any minor release until 1.0. A smaller
-> library-facing facade (batch redaction, an explicit "redaction unavailable" error, restore with
-> counts) is planned; until then the entry point is `ProtectionEngine`.
+> library-facing facade (batch redaction, an explicit "redaction unavailable" error) is planned;
+> until then the entry point is `ProtectionEngine`.
 
 ## Install
 
@@ -60,9 +60,44 @@ engine.restoreText(text);
   header/query path, where NER does not run. `redactBodyDetailed` takes a JSON request body.
 - **Scopes.** `engine.beginRequest(scopeKey?)` opens a scope whose detected values are restored only
   within that scope (or, with a key, within that key's scopes).
+- **Restore with counts.** `restoreTextDetailed(text, { unknownToken })` (on the engine and on any
+  scope) returns `{ text, restoredCount, unknownCount }`. See [Unknown tokens](#unknown-tokens).
 - **Detector outages.** By default a detector that cannot run (for example an unreachable Presidio
   sidecar) is skipped and the text is redacted by the rest. Set `detection: { failClosed: true }` to
   make an outage throw `DetectorUnavailableError` instead.
+
+## Unknown tokens
+
+Restore is exact-match: a token restores only if the vault maps it, byte for byte. A model can echo a
+token it was never given, or change one on the way back (a case change, an inserted space, a dropped
+character, a wildcard such as `FICTA_ORG_<tag>_*` standing for a whole entity family). `restoreText`
+leaves such strings in the text as they are. `restoreTextDetailed` reports them and can replace them:
+
+```ts
+const { text, restoredCount, unknownCount } = scope.restoreTextDetailed(modelOutput, {
+  unknownToken: "[unrestored]",
+});
+```
+
+- **What counts as unknown.** Any token-shaped string the vault does not map: unmapped opaque, typed
+  and entity-family tokens, entity wildcard references and truncated entity fragments, and tokens
+  whose case changed, that lost or gained characters, or that one whitespace character split in
+  two. Prose that merely mentions the prefix (`FICTA_SURROGATE_KEY`) is not a token.
+- **Never decoded.** An unknown token is never mapped to a value, however close it is to a known one.
+  A near-miss restoring the wrong value would be worse than not restoring.
+- **Replacement is opt-in.** Without `unknownToken` the returned text is exactly what `restoreText`
+  returns; only the counts are added. The placeholder must be non-empty and must not contain
+  `FICTA_` (any case), so it can never be read back as a token; otherwise the call throws a
+  `TypeError`. Error messages and counts never include a token or a value.
+- **Counts** are occurrences in this call: `restoredCount` mapped tokens replaced by their value,
+  `unknownCount` unknown tokens.
+- **Markers are not tokens.** Destroy markers (`[REDACTED_…]`) and text inside restore markers are
+  left as they are and never counted.
+- **Persistent vaults.** With a [vault store](#persistent-vaults), "unknown" means not in this
+  process's memory. Call `await scope.prepareRestore(text)` first so that tokens another process
+  minted are fetched; a token whose entry was pruned or forgotten then counts as unknown.
+- **Complete texts only.** `restoreJson`, `restoreStream` and `restoreEventStream` are unchanged and
+  still leave unknown tokens in place (they are counted in `residualSurrogateCount`).
 
 ## Destroying values instead of surrogating them
 
@@ -187,7 +222,7 @@ await vault.close();
   not been emitted or restored since a date, and `forget(value, { scope? })` deletes every entry for
   one exact value. Both act on the file; an engine that already holds the mapping in memory keeps it
   until that scope is evicted or the process restarts. A pruned or forgotten token passes through
-  restore unchanged.
+  `restoreText` unchanged; `restoreTextDetailed` counts it as unknown and can replace it.
 - **Other backends.** `VaultStore` is a small async interface (`load`, `lookup`, `append`, `touch`,
   `prune`, `forget`, `close`) in domain terms. `VaultCipher` from the main entry gives any backend the
   same sealing as the SQLite store.

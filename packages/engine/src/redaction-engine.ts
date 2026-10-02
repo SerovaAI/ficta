@@ -37,6 +37,12 @@ export interface RedactionEngine {
   restoreText(text: string, opts?: RestoreOptions): string;
 
   /**
+   * Restore a complete text and report counts; with `unknownToken`, replace every token-shaped string
+   * the vault does not map. See {@link RequestScope.restoreTextDetailed}.
+   */
+  restoreTextDetailed(text: string, opts?: RestoreTextDetailedOptions): RestoreTextDetails;
+
+  /**
    * Restore surrogates in a JSON body, escaping each restored value for its string context. With a
    * known `wire`, tool-call arguments get the same restore-into-tools withholding as the SSE path.
    */
@@ -125,6 +131,17 @@ export interface RequestScope {
 
   /** Restore surrogates → real values in a chunk of text (scope-detected then permanent). */
   restoreText(text: string, opts?: RestoreOptions): string;
+
+  /**
+   * Restore a complete text (as {@link restoreText}) and report what happened. Every token-shaped
+   * string the scope does not map (an unknown, model-mutated, truncated, or invented token, or one
+   * whose mapping was pruned or forgotten) is counted in `unknownCount` and, when `unknownToken` is
+   * set, replaced by that placeholder; it is never mapped to a value. Without `unknownToken` the text
+   * is identical to {@link restoreText}'s. With a persistent vault, "unknown" means unknown in
+   * memory: call {@link prepareRestore} first so tokens another process minted are fetched.
+   * Synchronous and for complete texts only; the JSON and streaming restores are unchanged.
+   */
+  restoreTextDetailed(text: string, opts?: RestoreTextDetailedOptions): RestoreTextDetails;
 
   /**
    * Restore surrogates in a JSON body, escaping each restored value for its string context. With a
@@ -283,6 +300,25 @@ export interface RestoreOptions {
    * advertise restore-highlight support; callers must strip or render them before resending transcripts.
    */
   markers?: RestoreMarkers;
+}
+
+export interface RestoreTextDetailedOptions extends RestoreOptions {
+  /**
+   * Replacement for every token-shaped string the vault does not map. Must be non-empty and must not
+   * contain `FICTA_` (case-insensitive), so it can never be read back as a token; otherwise the call
+   * throws a `TypeError`. Omit it to leave unknown tokens in place and only count them.
+   */
+  unknownToken?: string;
+}
+
+/** Result of a reporting restore. Counts are occurrences in this call; no values or tokens. */
+export interface RestoreTextDetails {
+  /** The restored text. */
+  text: string;
+  /** Mapped tokens replaced by their real value. */
+  restoredCount: number;
+  /** Token-shaped strings with no mapping (replaced by `unknownToken` when one is set). */
+  unknownCount: number;
 }
 
 /** Mirrors the public protocol's ProtectionPreviewOrigin without coupling the engine boundary to product packages. */
