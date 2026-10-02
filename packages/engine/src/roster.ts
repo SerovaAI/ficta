@@ -46,6 +46,8 @@ export interface LoadedRoster {
 }
 
 /** Prefix keeping roster entity ids apart from every other registry or detector entity id. */
+/** The registry source name roster values carry as their `plugin` (and `source`). */
+export const ROSTER_PLUGIN = "roster";
 const ROSTER_ENTITY_PREFIX = "roster:";
 const MIN_SURFACE_LENGTH = 2;
 const MAX_ENTRIES = 100_000;
@@ -135,7 +137,7 @@ export function rosterRegistrySource(
   const records = roster.records;
   return {
     kind: "registry-source",
-    name: "roster",
+    name: ROSTER_PLUGIN,
     config: { bindings: [], sections: [], envDefaults: {} },
     setup: { registrySources: () => [] },
     discover: () => [],
@@ -198,8 +200,8 @@ function toRecord(entry: NormalizedEntry, ambiguous: ReadonlySet<string>): Regis
     meta: {
       name: entry.type,
       value: entry.canonical,
-      source: "roster",
-      plugin: "roster",
+      source: ROSTER_PLUGIN,
+      plugin: ROSTER_PLUGIN,
       kind: "pii",
       confidence: "exact",
     },

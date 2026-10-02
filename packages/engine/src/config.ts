@@ -73,9 +73,17 @@ export interface EngineConfig {
  * destroyed: they keep their surrogate and fail-closed leak check.
  */
 export interface DestroyDisposition {
-  /** Normalized category names (lowercase, `_` → `-`, deduped). Empty: nothing is destroyed. */
+  /**
+   * Every detector finding is destroyed, whatever its category (input `categories: "*"`), so a
+   * category a detector reports later can never become restorable. Registered values keep theirs.
+   */
+  readonly all: boolean;
+  /** Normalized category names (lowercase, `_` → `-`, deduped). Empty and not `all`: nothing is destroyed. */
   readonly categories: readonly string[];
-  /** Marker text per category: every entry of `categories` has one (default `[REDACTED_<CATEGORY>]`). */
+  /**
+   * Marker text per category: every entry of `categories` has one (default `[REDACTED_<CATEGORY>]`).
+   * Under `all`, only overridden categories appear here; every other category uses its default.
+   */
   readonly labels: Readonly<Record<string, string>>;
 }
 
@@ -108,7 +116,8 @@ export interface EngineConfigInput {
 
 /** Input form of {@link DestroyDisposition}: categories in any case/separator, labels optional. */
 export interface DestroyDispositionInput {
-  readonly categories?: readonly string[];
+  /** Category names to destroy, or `"*"` for every detector finding (registered values excepted). */
+  readonly categories?: readonly string[] | "*";
   /** Marker overrides per category; several categories may share one label. */
   readonly labels?: Readonly<Record<string, string>>;
 }
@@ -170,11 +179,23 @@ function resolveCategoryList(input: readonly string[] | undefined, setting: stri
 }
 
 function resolveDestroyDisposition(input: DestroyDispositionInput | undefined): DestroyDisposition {
-  const categories = resolveCategoryList(input?.categories, "dispositions.destroy.categories");
+  const requested = input?.categories;
+  const all = requested === "*" || (Array.isArray(requested) && requested.includes("*"));
+  if (typeof requested === "string" && requested !== "*") {
+    throw new InvalidEngineConfigError('dispositions.destroy.categories: expected a list of category names or "*"');
+  }
+  if (all && Array.isArray(requested) && requested.length !== 1) {
+    throw new InvalidEngineConfigError(
+      'dispositions.destroy.categories: "*" destroys every category and cannot be combined with category names',
+    );
+  }
+  const categories = all
+    ? []
+    : resolveCategoryList(requested as readonly string[] | undefined, "dispositions.destroy.categories");
   const overrides = new Map<string, string>();
   for (const [raw, label] of Object.entries(input?.labels ?? {})) {
     const category = normalizeCategory(raw);
-    if (!categories.includes(category)) {
+    if (all ? !CATEGORY_PATTERN.test(category) : !categories.includes(category)) {
       throw new InvalidEngineConfigError(
         `dispositions.destroy.labels: ${JSON.stringify(raw)} is not listed in dispositions.destroy.categories`,
       );
@@ -187,10 +208,32 @@ function resolveDestroyDisposition(input: DestroyDispositionInput | undefined): 
     }
     overrides.set(category, label);
   }
+  if (all) return { all, categories, labels: Object.fromEntries(overrides) };
   const labels: Record<string, string> = {};
   for (const category of categories) labels[category] = overrides.get(category) ?? defaultDestroyLabel(category);
-  return { categories, labels };
+  return { all, categories, labels };
 }
+
+/**
+ * The marker a detector finding of `category` becomes under `destroy`, or undefined when it keeps a
+ * surrogate. Under `all`, a category without an override gets its default marker, or `[REDACTED]`
+ * when the category name would not make a safe one.
+ */
+export function destroyLabel(destroy: DestroyDisposition, category: string): string | undefined {
+  const normalized = normalizeCategory(category);
+  if (Object.hasOwn(destroy.labels, normalized)) return destroy.labels[normalized];
+  if (!destroy.all) return undefined;
+  const label = defaultDestroyLabel(normalized);
+  return LABEL_PATTERN.test(label) ? label : "[REDACTED]";
+}
+
+/** Whether `destroy` replaces anything. */
+export function destroysAnything(destroy: DestroyDisposition): boolean {
+  return destroy.all || destroy.categories.length > 0;
+}
+
+/** Default-shaped destroy markers (`[REDACTED]`, `[REDACTED_<CATEGORY>]`), which `all` can emit for any category. */
+export const DEFAULT_DESTROY_MARKER_PATTERN = /\[REDACTED(?:_[A-Z0-9_]{1,55})?\]/g;
 
 /**
  * What a plugin sees of the engine that is calling it: that engine's config and warn sink. Passed

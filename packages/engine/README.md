@@ -88,7 +88,8 @@ try {
 - **Batches.** `redactMany` and `pseudonymiseMany` redact one item at a time, with one detector
   call per item, so context in one text (a keyword near a number, say) never affects another.
 - **`redactMany` is stateless.** Each item runs in a fresh scope and nothing is kept or written to
-  the vault afterwards, so any tokens it emits cannot be restored. Use it for one-way passes.
+  the vault afterwards, so any tokens it emits cannot be restored. Use it for one-way passes, and not
+  as the first of two passes when you need to restore roster names (see [Roster](#roster)).
 - **Keyed scopes.** `engine.scope(key)` gives reversible pseudonymisation: each redaction saves its
   new mappings to the vault before returning, and a value found once stays redacted in that scope's
   later texts. `scope.restore` fetches tokens other processes minted, then restores; unknown tokens
@@ -153,10 +154,40 @@ engine.rosterFingerprint; // compare across processes to check they loaded the s
 `FICTA_ORG_<entity>_<surface>`. The entity tag depends only on the surrogate key, the scope key and
 the entry's `id`; the surface tag adds the exact matched text. Roster order and the other entries
 never affect a token, so adding an entry does not change existing tokens; changing an entry's `id`
-does. Entity tags differ between scope keys. `redactMany` is stateless and has no scope key, so it
-does not render entity families: roster matches there get ordinary unlinked tokens
-(`FICTA_PERSON_<hex>` in the typed style), which, like everything `redactMany` emits, cannot be
-restored. They are never left in the text and never destroyed.
+does. Entity tags differ between scope keys. Within a scope, a surface matched once keeps its
+linked token and its word boundary on every later text, including after a restart or in another
+process on the same vault store, and even after its entry has left the roster.
+
+**Not with `redactMany`.** `redactMany` is stateless and has no scope key, so it does not render
+entity families: roster matches there get ordinary unlinked tokens (`FICTA_PERSON_<hex>` in the typed
+style) that, like everything `redactMany` emits, cannot be restored. They are never left in the text
+and never destroyed, but a later keyed pass never sees the names, so restoring its output yields
+unknown tokens where the names were. That is almost always a pipeline mistake, so the first time it
+happens `onWarn` reports it (profile name and item count only), and each such hit carries
+`roster: true`. Run any pass whose output must restore in a keyed scope, as below.
+
+**Two passes with a roster.** To destroy everything a detector finds in a first pass and still get
+linked, restorable roster tokens, run the destroy pass in the keyed scope with `categories: "*"`:
+
+```ts
+const engine = await createEngine({
+  surrogateKey,
+  vault,
+  roster,
+  profiles: {
+    // Every detector finding becomes a marker, whatever its category (including ones a backend adds
+    // later); only roster names become tokens, so they are the only mappings ever written to the vault.
+    rules: { destroy: { categories: "*", labels: { "password-label": "[REDACTED_SECRET]" } } },
+    pseudonymise: { entities: ["PERSON", "ORGANIZATION", "EMAIL_ADDRESS"], secretShapes: false },
+  },
+});
+const scope = engine.scope("owner");
+const pass1 = await scope.pseudonymiseMany(texts, "rules");
+const pass2 = await scope.pseudonymiseMany(pass1.texts, "pseudonymise");
+```
+
+With an explicit category list instead of `"*"`, a finding in a category the list does not name
+keeps a reversible token and is saved to the vault in a keyed scope; `"*"` rules that out.
 
 **Validation.** `createEngine` throws `InvalidEngineConfigError` for a missing or duplicate `id`, an
 unknown `type`, a missing or too-short canonical name or form, or a canonical name that another entry
@@ -286,6 +317,11 @@ const result = await engine.redactContentDetailed("Card 4111 1111 1111 1111, pas
   secret-shape categories (`secret-assignment`, `password-label`, `secret-json-value`, `secret-header`,
   `opaque-secret`, `credential-url`, `jwt`, `private-key`, and the vendor key names such as
   `github-token`). Category names in the config are matched case-insensitively, with `_` read as `-`.
+- **Everything: `categories: "*"`** destroys every detector finding, whatever its category, so a
+  category a detector or backend starts reporting later is destroyed too rather than surrogated.
+  Each finding gets its category's default marker (`[REDACTED]` if the name would not make a safe
+  one); `labels` may still override any category. `"*"` cannot be combined with category names.
+  Registered values (including a facade roster) still keep their surrogates.
 - **Labels** must be a bracketed marker of 1–64 letters, digits or `_ . : -` (`[REDACTED_CARD]`) and
   can never be a `FICTA_` token. Several categories may share a label. Invalid config throws
   `InvalidEngineConfigError` at construction.

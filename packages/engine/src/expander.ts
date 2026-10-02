@@ -93,7 +93,9 @@ function matchingForms(claim: EntityClaim): EntityForm[] {
   }
   const { entity } = claim;
   const forms = new Map<string, EntityForm>();
-  if (entity.canonical) forms.set(entity.canonical, { value: entity.canonical, boundary: "substring" });
+  if (entity.canonical) {
+    forms.set(entity.canonical, { value: entity.canonical, boundary: entity.canonicalBoundary ?? "substring" });
+  }
   for (const form of entity.forms) {
     if (!form.value) continue;
     const existing = forms.get(form.value);
