@@ -1,7 +1,7 @@
 {
   "name": "ficta-monorepo",
   "private": true,
-  "description": "Workspace root for ficta (packages/ficta) and its chat UI (apps/gateway). Not published.",
+  "description": "Workspace root for ficta (packages/ficta), its redaction engine (packages/engine) and its chat UI (apps/gateway). Not published.",
   "type": "module",
   "scripts": {
     "//turbo": "Turbo-managed: cached, parallel across all packages. See turbo.json",
@@ -29,7 +29,7 @@
     "web:typecheck": "pnpm --filter @serovaai/ficta-web typecheck",
     "dev:all": "turbo run dev",
     "update": "pnpm -r update -i -L",
-    "//release": "Releases are managed by Changesets. Author notes with `pnpm changeset`; CI (.github/workflows/publish.yml) opens a Version PR and, on merge, runs `release` to publish @serovaai/ficta + @serovaai/ficta-protocol together via npm OIDC.",
+    "//release": "Releases are managed by Changesets. Author notes with `pnpm changeset`; CI (.github/workflows/publish.yml) opens a Version PR and, on merge, runs `release` to publish @serovaai/ficta + @serovaai/ficta-protocol + @serovaai/ficta-engine together via npm OIDC.",
     "changeset": "changeset",
     "release": "changeset publish",
     "knip": "knip",

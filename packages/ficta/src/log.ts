@@ -1,8 +1,7 @@
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "./config.js";
-import { truncateRedactedText } from "./engine/text.js";
-import { type Wire, wireOf } from "./engine/wire.js";
+import { truncateRedactedText, type Wire, wireOf } from "@serovaai/ficta-engine";
 import { inspectionLines, inspectJson, inspectSse, inspectText, registeredValueCount } from "./inspection.js";
 import { log } from "./logger.js";
 

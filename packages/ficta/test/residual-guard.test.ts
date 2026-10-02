@@ -8,13 +8,9 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  entityFamilySurrogateStrategy,
-  hexSurrogateStrategy,
-  typedSurrogateStrategy,
-} from "../src/engine/surrogate.js";
-import { Vault } from "../src/engine/vault.js";
-import { sseRestoreAdapterFor } from "../src/engine/wire-restore.js";
+import { hexSurrogateStrategy, typedSurrogateStrategy, Vault } from "@serovaai/ficta-engine";
+import { entityFamilySurrogateStrategy } from "../../engine/src/surrogate.js";
+import { sseRestoreAdapterFor } from "../../engine/src/wire-restore.js";
 import { ProtectionStats, renderProtectionStatsSummary } from "../src/protection-stats.js";
 
 const KEY = "residual-guard-test-key-at-least-32-bytes!";

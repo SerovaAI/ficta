@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { choice, noul } from "@typesafe-ai/sdk";
-import { detectSecretShapes } from "../src/engine/plugins/secret-shapes/index.js";
+import { detectSecretShapes } from "@serovaai/ficta-engine";
 import { createJevJudge, ENV_API_KEY, estimateUsd, type JevJudge } from "./jev-judge.js";
 
 /**

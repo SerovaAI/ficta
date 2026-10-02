@@ -5,19 +5,17 @@ import {
   type ManagedRegistryEntityForm,
   type ManagedRegistryEntry,
 } from "@serovaai/ficta-protocol";
-import { envEnabled } from "../engine/env-flags.js";
-import type {
-  PluginDiscovery,
-  ProtectedValue,
-  RegistrySetupSource,
-  RegistrySourcePlugin,
-} from "../engine/plugins/types.js";
 import {
+  envEnabled,
+  type PluginDiscovery,
+  type ProtectedValue,
+  type RegistrySetupSource,
+  type RegistrySourcePlugin,
   type ProtectionRecord,
   protectionRecordSurfaces,
   type RegisteredEntityForm,
   type StructuredRegistrySourceCapabilities,
-} from "../engine/protection.js";
+} from "@serovaai/ficta-engine";
 
 interface ManagedRegistryFileStat {
   file: string;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ProtectionEngine } from "../src/engine/engine.js";
+import { ProtectionEngine } from "@serovaai/ficta-engine";
 import {
   detectSecretShapes,
   type ProtectedValue,
@@ -50,7 +50,11 @@ describe("secret-shape detector", () => {
     const assignment = detectSecretShapes(`CUSTOM_API_TOKEN=${GENERIC_SECRET}`);
     expect(assignment.map((value) => value.value)).toContain(GENERIC_SECRET);
 
-    const engine = new ProtectionEngine({ plugins: [secretShapesPlugin], config: engineConfigFromEnv() });
+    const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
+      plugins: [secretShapesPlugin],
+      config: engineConfigFromEnv(),
+    });
     process.env.FICTA_SECRET_SHAPES_ENABLED = "1";
     try {
       const body = JSON.stringify({ api_token: GENERIC_SECRET });
@@ -92,7 +96,11 @@ describe("secret-shape detector", () => {
   it("round-trips a pasted secret through the scoped engine layer", async () => {
     process.env.FICTA_SECRET_SHAPES_ENABLED = "1";
     try {
-      const engine = new ProtectionEngine({ plugins: [secretShapesPlugin], config: engineConfigFromEnv() });
+      const engine = new ProtectionEngine({
+        allowEphemeralKey: true,
+        plugins: [secretShapesPlugin],
+        config: engineConfigFromEnv(),
+      });
       const scope = engine.beginRequest("org:thread");
       const body = JSON.stringify({ messages: [{ role: "user", content: `new key ${OPENAI}` }] });
 
@@ -224,7 +232,11 @@ describe("secret-shape detector regressions (engine review)", () => {
   const credentialUrl = `postgresql${schemeSeparator}deploy:${password}@db.internal.test/app`;
 
   async function bodyCount(messages: unknown[]): Promise<number> {
-    const engine = new ProtectionEngine({ plugins: [secretShapesPlugin], config: engineConfigFromEnv() });
+    const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
+      plugins: [secretShapesPlugin],
+      config: engineConfigFromEnv(),
+    });
     return (await engine.beginRequest().redactBodyDetailed(JSON.stringify({ messages }))).count;
   }
 
@@ -317,7 +329,7 @@ describe("password labels in prose", () => {
     const text = "send the deck, password: s3cret!, by Thursday?";
     expect(passwordsIn(text)).toEqual(["s3cret!"]);
 
-    const engine = new ProtectionEngine({ plugins: [secretShapesPlugin] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [secretShapesPlugin] });
     const { text: redacted, count } = await engine.beginRequest().redactTextDetailed(text);
     expect(count).toBe(1);
     expect(redacted).toMatch(/^send the deck, password: FICTA_[0-9a-f]{32}, by Thursday\?$/);
@@ -358,10 +370,10 @@ describe("password labels in prose", () => {
       expect(detectSecretShapes(text)).toEqual([]);
     }
 
-    const engine = new ProtectionEngine({ plugins: [secretShapesPlugin] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [secretShapesPlugin] });
     const once = await engine.beginRequest().redactTextDetailed("Password: hunter2 and pwd=s3cret!");
     expect(once.count).toBe(2);
-    const twice = await new ProtectionEngine({ plugins: [secretShapesPlugin] })
+    const twice = await new ProtectionEngine({ allowEphemeralKey: true, plugins: [secretShapesPlugin] })
       .beginRequest()
       .redactTextDetailed(once.text);
     expect(twice.count).toBe(0);

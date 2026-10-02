@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sanitizeAgentEnv } from "./child-env.js";
 import { applyRuntimeEnvDefaults } from "./defaults.js";
-import { detectorFailClosed } from "./engine/detection-policy.js";
+import { detectorFailClosed } from "@serovaai/ficta-engine";
 import { detectionFailClosed, engineConfigFromEnv, surrogateStyle } from "./engine-env.js";
 import { isGloballyDisabled, setGlobalDisabled } from "./global-disable.js";
 import { defaultShimDir, findExecutable, installShims, uninstallShims } from "./install.js";
@@ -278,7 +278,7 @@ if (surrogate.generated && printStartupDiagnostics) {
 }
 
 const { startProxy } = await import("./server.js");
-const { surrogateKeyWarning } = await import("./engine/vault.js");
+const { surrogateKeyWarning } = await import("@serovaai/ficta-engine");
 // Every launched agent owns its loopback proxy, so one process-owned scope is the correct isolation
 // boundary. Keeping detected mappings across its model requests lets hidden compaction/subagent
 // calls echo a surrogate into a later tool call without turning that placeholder into file content.

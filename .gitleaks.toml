@@ -16,7 +16,7 @@ condition = "AND"
 regexes = ['''FICTA_(?:PERSON_)?[0-9a-f]{32}''']
 paths = [
   '''(^|.*/)apps/gateway/test/restore-validation\.test\.ts$''',
-  '''(^|.*/)packages/ficta/test/scope\.test\.ts$''',
+  '''(^|.*/)packages/engine/test/scope\.test\.ts$''',
 ]
 
 [[allowlists]]

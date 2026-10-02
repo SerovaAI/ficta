@@ -1,9 +1,8 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ProtectionEngine } from "../src/engine/engine.js";
-import { regexRecognizer } from "../src/engine/plugins/pii/regex-recognizer.js";
-import { DetectorUnavailableError } from "../src/engine/redaction-engine.js";
+import { ProtectionEngine, DetectorUnavailableError } from "@serovaai/ficta-engine";
+import { regexRecognizer } from "../../engine/src/plugins/pii/regex-recognizer.js";
 import { engineConfigFromEnv, pluginRuntimeFromEnv } from "../src/engine-env.js";
 import {
   activeBackend,
@@ -79,7 +78,11 @@ describe("pii detector plugin", () => {
 
   it("detects and round-trips PII through the engine when enabled", async () => {
     process.env[ENV] = "1";
-    const engine = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() });
+    const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
+      plugins: [piiPlugin],
+      config: engineConfigFromEnv(),
+    });
     const body = JSON.stringify({ content: `email ${EMAIL}` });
 
     const redacted = await engine.redactBodyDetailed(body);
@@ -92,7 +95,11 @@ describe("pii detector plugin", () => {
 
   it("counts distinct values restored back into a request's response", async () => {
     process.env[ENV] = "1";
-    const engine = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() });
+    const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
+      plugins: [piiPlugin],
+      config: engineConfigFromEnv(),
+    });
     const scope = engine.beginRequest();
     const body = JSON.stringify({ content: `emails ${EMAIL} and ${SSN}` });
 
@@ -111,12 +118,12 @@ describe("pii detector plugin", () => {
 
   it("reports `protecting` only when actually active, not merely present", () => {
     delete process.env[ENV];
-    const off = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() });
+    const off = new ProtectionEngine({ allowEphemeralKey: true, plugins: [piiPlugin], config: engineConfigFromEnv() });
     expect(off.enabled).toBe(true); // detector is present
     expect(off.protecting).toBe(false); // ...but disabled → pure passthrough, banner must not claim redaction
 
     process.env[ENV] = "1";
-    const on = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() });
+    const on = new ProtectionEngine({ allowEphemeralKey: true, plugins: [piiPlugin], config: engineConfigFromEnv() });
     expect(on.protecting).toBe(true);
   });
 
@@ -219,7 +226,11 @@ describe("pii backend selection", () => {
     process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
 
     try {
-      const engine = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() });
+      const engine = new ProtectionEngine({
+        allowEphemeralKey: true,
+        plugins: [piiPlugin],
+        config: engineConfigFromEnv(),
+      });
       const body = JSON.stringify({ content: `email ${EMAIL} for ${person}` });
       const redacted = await engine.redactBodyDetailed(body);
 
@@ -244,7 +255,11 @@ describe("pii backend selection", () => {
     process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
 
     try {
-      const engine = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() });
+      const engine = new ProtectionEngine({
+        allowEphemeralKey: true,
+        plugins: [piiPlugin],
+        config: engineConfigFromEnv(),
+      });
       const body = JSON.stringify({ content: `email ${EMAIL} for ${person}` });
       const redacted = await engine.redactBodyDetailed(body);
 
@@ -268,6 +283,7 @@ describe("pii backend selection", () => {
     process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
 
     const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
       plugins: [piiPlugin],
       config: engineConfigFromEnv(),
       onWarn: (fields, message) => warnings.push({ fields, message }),
@@ -297,6 +313,7 @@ describe("pii backend selection", () => {
 
     try {
       const engine = new ProtectionEngine({
+        allowEphemeralKey: true,
         plugins: [piiPlugin],
         config: engineConfigFromEnv(),
         onWarn: (fields, message) => warnings.push({ fields, message }),
@@ -329,7 +346,11 @@ describe("pii backend selection", () => {
     process.env.FICTA_PII_PRESIDIO_URL = `http://127.0.0.1:${port}`;
     const body = JSON.stringify({ content: `email ${EMAIL}` });
     const run = () =>
-      new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() }).redactBodyDetailed(body);
+      new ProtectionEngine({
+        allowEphemeralKey: true,
+        plugins: [piiPlugin],
+        config: engineConfigFromEnv(),
+      }).redactBodyDetailed(body);
 
     // global off + no per-plugin override → fail-open; the local regex floor still protects email.
     const openDefault = await run();

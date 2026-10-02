@@ -11,7 +11,7 @@ import {
   isRegistryReloadOk,
 } from "@serovaai/ficta-protocol";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ProtectionEngine } from "../src/engine/engine.js";
+import { ProtectionEngine } from "@serovaai/ficta-engine";
 import { managedRegistryFilePlugin, resetPluginCachesForTests } from "../src/plugins/index.js";
 
 const ENV_KEYS = [
@@ -82,7 +82,7 @@ describe("engine registry reload", () => {
     process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = file;
     writeManagedFile(file, ["Northstar Biologics"]);
 
-    const engine = new ProtectionEngine({ plugins: [managedRegistryFilePlugin] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [managedRegistryFilePlugin] });
     expect(engine.size).toBe(1);
 
     // Gateway "publish" rewrites the file with an extra entry. The stat-based cache key must pick the
@@ -112,7 +112,7 @@ describe("engine registry reload", () => {
     process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = file;
     writeManagedFile(file, ["Northstar Biologics"]);
 
-    const engine = new ProtectionEngine({ plugins: [managedRegistryFilePlugin] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [managedRegistryFilePlugin] });
     const key = "org-1:thread-1";
     // Turn 1 for this thread, before the reload.
     const before = await engine.beginRequest(key).redactBodyDetailed(JSON.stringify({ content: "Frog Trust memo" }));
@@ -132,7 +132,7 @@ describe("engine registry reload", () => {
     const file = join(dir, "protected-registry.json");
     process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = file;
     writeManagedFile(file, ["Northstar Biologics"]);
-    const engine = new ProtectionEngine({ plugins: [managedRegistryFilePlugin] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [managedRegistryFilePlugin] });
 
     writeManagedFile(file, ["Changed Northstar"]);
     expect(engine.reloadRegistryValues()).toEqual({ added: 0, total: 1, restartRequired: true });
@@ -153,7 +153,7 @@ describe("engine registry reload", () => {
     const file = join(dir, "protected-registry.json");
     process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = file;
     writeManagedFile(file, ["Northstar Biologics"]);
-    const engine = new ProtectionEngine({ plugins: [managedRegistryFilePlugin] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [managedRegistryFilePlugin] });
 
     writeFileSync(file, "not json", { mode: 0o600 });
     expect(() => engine.reloadRegistryValues()).toThrow("invalid managed registry file");
@@ -184,7 +184,7 @@ describe("engine registry reload", () => {
       }),
       { mode: 0o600 },
     );
-    const engine = new ProtectionEngine({ plugins: [managedRegistryFilePlugin] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [managedRegistryFilePlugin] });
     const body = JSON.stringify({ content: "Northstar Biologics, Northstar, and Northstarship" });
     const result = await engine.beginRequest().redactBodyDetailed(body, { traceOccurrences: true });
 

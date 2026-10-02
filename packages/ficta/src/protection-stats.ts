@@ -10,8 +10,7 @@ import type {
   ProtectionStatsSurface,
   ProtectionStatsTotals,
 } from "@serovaai/ficta-protocol";
-import { plural } from "./engine/text.js";
-import type { Wire } from "./engine/wire.js";
+import { plural, type Wire } from "@serovaai/ficta-engine";
 
 export type ProtectionSurface = ProtectionStatsSurface;
 export type { ProtectionStatsSnapshot };

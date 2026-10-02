@@ -14,10 +14,9 @@ import {
   FICTA_RESTORE_HIGHLIGHT_START,
 } from "@serovaai/ficta-protocol";
 import { afterEach, describe, expect, it } from "vitest";
-import { ProtectionEngine } from "../src/engine/engine.js";
-import { hexSurrogateStrategy } from "../src/engine/surrogate.js";
-import { ScopedVault, SurrogateTable, Vault } from "../src/engine/vault.js";
-import { bufferedRestoreAdapterFor, sseRestoreAdapterFor } from "../src/engine/wire-restore.js";
+import { ProtectionEngine, hexSurrogateStrategy, Vault } from "@serovaai/ficta-engine";
+import { ScopedVault, SurrogateTable } from "../../engine/src/vault.js";
+import { bufferedRestoreAdapterFor, sseRestoreAdapterFor } from "../../engine/src/wire-restore.js";
 import { vaultPolicyFromEnv } from "../src/engine-env.js";
 import { loadRegistryValues } from "../src/plugins/index.js";
 
@@ -192,7 +191,7 @@ describe("vault", () => {
   });
 
   it("leaves JSON number primitives for the fail-closed gate", async () => {
-    const engine = new ProtectionEngine({ plugins: [], values: [{ value: "12345678" }] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [], values: [{ value: "12345678" }] });
     const body = JSON.stringify({ pin: 12345678 });
     const redacted = await engine.redactBodyDetailed(body);
 

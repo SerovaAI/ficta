@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { hexSurrogateStrategy, typedSurrogateStrategy } from "../src/engine/surrogate.js";
+import { hexSurrogateStrategy, typedSurrogateStrategy } from "@serovaai/ficta-engine";
 
 export type SurrogateStyle = "opaque" | "typed" | "entity-family";
 export type EntityType = "ORG" | "PERSON";

@@ -1,41 +1,44 @@
 // The env adapter for the redaction engine.
 //
-// The engine (`src/engine/`) never reads `process.env` — `scripts/check-engine-boundary.mjs` enforces
-// that. Its settings arrive as an `EngineConfig` passed to each `ProtectionEngine`. This module is
-// the one place ficta turns its runtime environment (env vars, with config.toml and built-in
-// defaults already merged in by `loadUserConfig` / `applyRuntimeEnvDefaults`) into that config, plus
-// thin `process.env`-defaulting wrappers for the env-parsing helpers the CLI, doctor and the public
-// `@serovaai/ficta/plugins` API call without an explicit env.
+// The engine (`@serovaai/ficta-engine`, `packages/engine/`) never reads `process.env` — its
+// `scripts/check-engine-boundary.mjs` enforces that. Its settings arrive as an `EngineConfig` passed
+// to each `ProtectionEngine`. This module is the one place ficta turns its runtime environment (env
+// vars, with config.toml and built-in defaults already merged in by `loadUserConfig` /
+// `applyRuntimeEnvDefaults`) into that config, plus thin `process.env`-defaulting wrappers for the
+// env-parsing helpers the CLI, doctor and the public `@serovaai/ficta/plugins` API call without an
+// explicit env.
 //
-// It lives outside `src/engine/` on purpose: env is a host concern. When the engine ships as its own
-// package, this file stays with the CLI.
+// It lives in the CLI package, not the engine, on purpose: env is a host concern.
 
-import { type EngineConfig, type PluginRuntime, pluginRuntime, resolveEngineConfig } from "./engine/config.js";
-import { globalDetectionFailClosed } from "./engine/detection-policy.js";
-import type { WarnSink } from "./engine/diagnostics.js";
-import { type EnvSource, envFlag, restoreIntoToolsPolicy } from "./engine/env-flags.js";
-import { piiEnabled as parsePiiEnabled, piiFailClosed as parsePiiFailClosed } from "./engine/plugins/pii/index.js";
 import {
+  type EngineConfig,
+  type PluginRuntime,
+  pluginRuntime,
+  resolveEngineConfig,
+  globalDetectionFailClosed,
+  type WarnSink,
+  type EnvSource,
+  envFlag,
+  restoreIntoToolsPolicy,
+  piiEnabled as parsePiiEnabled,
+  piiFailClosed as parsePiiFailClosed,
   checkOpenmedHealth as checkOpenmedHealthFor,
   type OpenmedConfig,
   openmedConfig as parseOpenmedConfig,
-} from "./engine/plugins/pii/openmed-recognizer.js";
-import {
   checkPresidioHealth as checkPresidioHealthFor,
   type PresidioConfig,
   presidioConfig as parsePresidioConfig,
-} from "./engine/plugins/pii/presidio-recognizer.js";
-import {
   type BackendSelection,
   type BackendSetSelection,
   activeBackend as parseActiveBackend,
   activeBackends as parseActiveBackends,
   selectedBackendName as parseSelectedBackendName,
   selectedBackendNames as parseSelectedBackendNames,
-} from "./engine/plugins/pii/registry.js";
-import { secretShapesEnabled as parseSecretShapesEnabled } from "./engine/plugins/secret-shapes/index.js";
-import { surrogateStyle as parseSurrogateStyle, type SurrogateStyle } from "./engine/surrogate.js";
-import type { VaultPolicy } from "./engine/vault.js";
+  secretShapesEnabled as parseSecretShapesEnabled,
+  surrogateStyle as parseSurrogateStyle,
+  type SurrogateStyle,
+  type VaultPolicy,
+} from "@serovaai/ficta-engine";
 
 /**
  * Build an engine config from env-style settings (default: this process's environment). Read once,

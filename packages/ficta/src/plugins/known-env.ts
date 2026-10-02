@@ -1,11 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
-import { envEnabled } from "../engine/env-flags.js";
-import type {
-  PluginDiscovery,
-  ProtectedValue,
-  RegistrySetupSource,
-  RegistrySourcePlugin,
-} from "../engine/plugins/types.js";
+import {
+  envEnabled,
+  type PluginDiscovery,
+  type ProtectedValue,
+  type RegistrySetupSource,
+  type RegistrySourcePlugin,
+} from "@serovaai/ficta-engine";
 
 interface KnownEnvFileStat {
   file: string;

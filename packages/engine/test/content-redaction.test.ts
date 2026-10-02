@@ -1,9 +1,9 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { describe, expect, it, vi } from "vitest";
-import { ProtectionEngine } from "../src/engine/engine.js";
-import { DetectorUnavailableError } from "../src/engine/redaction-engine.js";
-import { piiPlugin } from "../src/plugins/index.js";
+import { ProtectionEngine } from "../src/engine.js";
+import { DetectorUnavailableError } from "../src/redaction-engine.js";
+import { piiPlugin } from "../src/index.js";
 
 // The plain-text content path: a string redacted as message content reaches the out-of-process
 // NER backend (Presidio), while the header/query text path keeps its regex-only behaviour.

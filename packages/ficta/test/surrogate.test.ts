@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ProtectionEngine } from "../src/engine/engine.js";
 import {
+  ProtectionEngine,
   hexSurrogateStrategy,
   surrogateStrategy,
   surrogateStyle,
   typedSurrogateStrategy,
-} from "../src/engine/surrogate.js";
-import { Vault } from "../src/engine/vault.js";
+  Vault,
+} from "@serovaai/ficta-engine";
 import { engineConfigFromEnv } from "../src/engine-env.js";
 
 const KEY = "test-surrogate-key-at-least-32-bytes-long!!";
@@ -103,6 +103,7 @@ describe("vault with typed surrogates end to end", () => {
     try {
       const email = "jane@example.com";
       const engine = new ProtectionEngine({
+        allowEphemeralKey: true,
         plugins: [],
         values: [{ value: email, name: "email-address", source: "test", kind: "pii" }],
         config: engineConfigFromEnv(),

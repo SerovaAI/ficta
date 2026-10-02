@@ -86,8 +86,9 @@ install -d -m 0750 "$ENV_DIR"
 printf '%s\n' "$DEPLOY_SHA" > "$ENV_DIR/deployed-revision"
 log "Deploying revision ${DEPLOY_SHA} (recorded in ${ENV_DIR}/deployed-revision)"
 
-log "pnpm install + build (proxy, protocol, gateway)"
+log "pnpm install + build (engine, proxy, protocol, gateway)"
 (cd "$REPO_DIR" && sudo -u "$FICTA_USER" env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm install --frozen-lockfile)
+(cd "$REPO_DIR/packages/engine" && sudo -u "$FICTA_USER" env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm build)
 (cd "$REPO_DIR/packages/ficta" && sudo -u "$FICTA_USER" env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm build)
 (cd "$REPO_DIR/apps/gateway" && sudo -u "$FICTA_USER" env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm build)
 

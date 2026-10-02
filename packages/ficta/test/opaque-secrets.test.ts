@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ProtectionEngine } from "../src/engine/engine.js";
+import { ProtectionEngine } from "@serovaai/ficta-engine";
 import { detectSecretShapes, secretShapesPlugin } from "../src/plugins/index.js";
 import { engineConfigFromEnv, pluginRuntimeFromEnv } from "../src/engine-env.js";
 
@@ -22,7 +22,11 @@ describe("opaque secret detection", () => {
 
   it("protects a bare paste in a real message body by default and restores it locally", async () => {
     vi.stubEnv("FICTA_SECRET_SHAPES_ENABLED", undefined);
-    const engine = new ProtectionEngine({ plugins: [secretShapesPlugin], config: engineConfigFromEnv() });
+    const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
+      plugins: [secretShapesPlugin],
+      config: engineConfigFromEnv(),
+    });
     const scope = engine.beginRequest("opaque-paste");
     const body = JSON.stringify({ messages: [{ role: "user", content: `${HEX}\n${OPAQUE}` }] });
     const result = await scope.redactBodyDetailed(body);

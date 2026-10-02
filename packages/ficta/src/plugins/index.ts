@@ -1,25 +1,24 @@
 import { pluginRuntimeFromEnv } from "../engine-env.js";
-import { piiPlugin, resetPiiRecognizerStateForTests } from "../engine/plugins/pii/index.js";
 import {
+  piiPlugin,
+  resetPiiRecognizerStateForTests,
   collectPluginConfigs,
   collectPluginSetups,
   loadPluginRegistry as loadPluginRegistryCore,
   type PluginRegistrySnapshot,
-} from "../engine/plugins/registry.js";
-import { secretShapesPlugin } from "../engine/plugins/secret-shapes/index.js";
-import type {
-  ConfigBinding,
-  ConfigSection,
-  FictaPluginBase,
-  PluginDiscovery,
-  PluginDiscoveryStatus,
-  ProtectedValue,
-  RedactionPlugin,
-  RegistryPolicy,
-  RegistrySetupDiscoveryContext,
-  RegistrySetupSource,
-} from "../engine/plugins/types.js";
-import { plural } from "../engine/text.js";
+  secretShapesPlugin,
+  type ConfigBinding,
+  type ConfigSection,
+  type FictaPluginBase,
+  type PluginDiscovery,
+  type PluginDiscoveryStatus,
+  type ProtectedValue,
+  type RedactionPlugin,
+  type RegistryPolicy,
+  type RegistrySetupDiscoveryContext,
+  type RegistrySetupSource,
+  plural,
+} from "@serovaai/ficta-engine";
 import type { AgentIntegration, AgentIntegrationPlugin } from "./agent-types.js";
 import { builtInAgentPlugin } from "./agents.js";
 import { dopplerPlugin, resetDopplerPluginCacheForTests } from "./doppler.js";
@@ -47,60 +46,58 @@ export {
   selectedBackendName,
   selectedBackendNames,
 } from "../engine-env.js";
-export { piiPlugin, resetPiiRecognizerStateForTests, resolveAgentPiiEnabled } from "../engine/plugins/pii/index.js";
-export { OpenmedUnavailableError } from "../engine/plugins/pii/openmed-recognizer.js";
-export { PresidioUnavailableError } from "../engine/plugins/pii/presidio-recognizer.js";
-export type { PiiRecognizer } from "../engine/plugins/pii/recognizer.js";
 export {
+  piiPlugin,
+  resetPiiRecognizerStateForTests,
+  resolveAgentPiiEnabled,
+  OpenmedUnavailableError,
+  PresidioUnavailableError,
+  type PiiRecognizer,
   backendHealthCheck,
   builtInBackendNames,
   DEFAULT_BACKEND,
   ENV_BACKEND,
   ENV_BACKENDS,
-} from "../engine/plugins/pii/registry.js";
-export type { UserExclusionParse, UserExclusionScope } from "../engine/plugins/policy.js";
-export {
+  type UserExclusionParse,
+  type UserExclusionScope,
   buildRegistryPolicy,
   parseUserExclusionRule,
   protectedValueExcludedBy,
   USER_EXCLUSION_PLUGIN,
   USER_EXCLUSION_RULE_ID,
   USER_PROJECT_EXCLUSION_RULE_ID,
-} from "../engine/plugins/policy.js";
-export { type PluginRegistrySnapshot, validatePluginBoundaries } from "../engine/plugins/registry.js";
-export {
+  type PluginRegistrySnapshot,
+  validatePluginBoundaries,
   detectSecretShapeLeaves,
   detectSecretShapes,
   resolveAgentSecretShapesEnabled,
   secretShapesPlugin,
-} from "../engine/plugins/secret-shapes/index.js";
-export type {
-  ConfigBinding,
-  ConfigBindingKind,
-  ConfigSection,
-  DetectorPlugin,
-  DetectTextContext,
-  EffectiveRegistryExclusionRule,
-  EngineConfig,
-  PluginDiscovery,
-  PluginDiscoveryStatus,
-  PluginRuntime,
-  ProtectedValue,
-  ProtectedValueKind,
-  ProtectedValueSpan,
-  ProtectionConfidence,
-  RedactionPlugin,
-  RegistryExclusionKind,
-  RegistryExclusionRule,
-  RegistryPluginConfig,
-  RegistryPluginSetup,
-  RegistryPolicy,
-  RegistryPolicyContribution,
-  RegistrySetupDiscoveryContext,
-  RegistrySetupPromptContext,
-  RegistrySetupSource,
-  RegistrySourcePlugin,
-} from "../engine/plugins/types.js";
+  type ConfigBinding,
+  type ConfigBindingKind,
+  type ConfigSection,
+  type DetectorPlugin,
+  type DetectTextContext,
+  type EffectiveRegistryExclusionRule,
+  type EngineConfig,
+  type PluginDiscovery,
+  type PluginDiscoveryStatus,
+  type PluginRuntime,
+  type ProtectedValue,
+  type ProtectedValueKind,
+  type ProtectedValueSpan,
+  type ProtectionConfidence,
+  type RedactionPlugin,
+  type RegistryExclusionKind,
+  type RegistryExclusionRule,
+  type RegistryPluginConfig,
+  type RegistryPluginSetup,
+  type RegistryPolicy,
+  type RegistryPolicyContribution,
+  type RegistrySetupDiscoveryContext,
+  type RegistrySetupPromptContext,
+  type RegistrySetupSource,
+  type RegistrySourcePlugin,
+} from "@serovaai/ficta-engine";
 export type {
   AgentBypassContext,
   AgentIntegration,

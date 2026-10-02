@@ -10,8 +10,9 @@ User=ficta
 Group=ficta
 WorkingDirectory=@REPO_DIR@/packages/ficta
 EnvironmentFile=-/etc/ficta/proxy.env
-# Same as `pnpm start` (tsx src/server.ts) without depending on pnpm/corepack at runtime.
-ExecStart=@REPO_DIR@/packages/ficta/node_modules/.bin/tsx src/server.ts
+# Same as `pnpm start` (tsx src/server.ts) without depending on pnpm/corepack at runtime. The
+# `development` condition loads workspace packages (@serovaai/ficta-engine) from source, like `pnpm start`.
+ExecStart=@REPO_DIR@/packages/ficta/node_modules/.bin/tsx --conditions=development src/server.ts
 Restart=on-failure
 RestartSec=3
 # Hardening

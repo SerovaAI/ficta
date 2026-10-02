@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { defaultLogDir } from "./defaults.js";
-import { envEnabled, envFlag } from "./engine/env-flags.js";
+import { envEnabled, envFlag } from "@serovaai/ficta-engine";
 import { type LogLevel, parseLogLevel } from "./log-level.js";
 import { loadUserConfig, wasLoadedFromUserConfig } from "./user-config.js";
 

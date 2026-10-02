@@ -8,7 +8,7 @@ import type {
 import { normalizePiiBackends, normalizeRestoreIntoToolsPolicy } from "@serovaai/ficta-protocol";
 import type { Config } from "./config.js";
 import { configPosture } from "./config-posture.js";
-import { parseBoolean, restoreIntoToolsPolicy } from "./engine/env-flags.js";
+import { parseBoolean, restoreIntoToolsPolicy } from "@serovaai/ficta-engine";
 import { configPath, readUserConfig, wasLoadedFromUserConfig, writeUserConfig } from "./user-config.js";
 
 const FIELD_ENV: Record<EditableProxyConfigKey, string> = {

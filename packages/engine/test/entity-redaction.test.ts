@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { ProtectionEngine } from "../src/engine/engine.js";
-import type { DetectorPlugin, ProtectedValue } from "../src/plugins/index.js";
+import { ProtectionEngine } from "../src/engine.js";
+import type { DetectorPlugin, ProtectedValue } from "../src/index.js";
 
 describe("occurrence-based body redaction", () => {
   it("lets a registry entity own an inner span and redacts the detector's clipped residual", async () => {
     const registry = "Project Copper Kite";
     const detected = "Project:** Project Copper Kite";
     const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
       plugins: [spanDetector(detected, "organization")],
       values: [{ name: "PROJECT", value: registry, source: "env-file", kind: "secret", confidence: "exact" }],
     });
@@ -31,6 +32,7 @@ describe("occurrence-based body redaction", () => {
     for (const style of ["opaque", "typed"] as const) {
       const value = "Proxima Medical\nSupplies CC";
       const engine = new ProtectionEngine({
+        allowEphemeralKey: true,
         config: { surrogate: { style } },
         plugins: [spanDetector(value, "organization")],
         values: [
@@ -67,7 +69,7 @@ describe("occurrence-based body redaction", () => {
         return start === -1 ? [] : [pii("organization", surface, [{ start, end: start + surface.length }])];
       },
     };
-    const engine = new ProtectionEngine({ plugins: [detector] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [detector] });
     const body = JSON.stringify({ secretStructuralKey: "Proxima", next: "Medical" });
     const redacted = await engine.redactBodyDetailed(body);
 
@@ -85,7 +87,7 @@ describe("occurrence-based body redaction", () => {
       name: "spanless-detector",
       detectText: () => [pii("person", "Avery Example")],
     };
-    const engine = new ProtectionEngine({ plugins: [detector] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [detector] });
     const body = JSON.stringify({ content: "Avery Example signed; AVERY EXAMPLE approved." });
     const redacted = await engine.redactBodyDetailed(body);
     expect(redacted.count).toBe(2);
@@ -97,6 +99,7 @@ describe("occurrence-based body redaction", () => {
   it("keeps registry and expansion coverage on structural keys", async () => {
     const value = "Confidential Client";
     const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
       plugins: [],
       values: [{ name: "CLIENT", value, source: "fixture", kind: "secret", confidence: "exact" }],
     });
@@ -112,6 +115,7 @@ describe("occurrence-based body redaction", () => {
     for (const style of ["opaque", "typed"] as const) {
       for (const surface of ["tagCOPPER KITEtag", "tagCopper Kitetag"]) {
         const engine = new ProtectionEngine({
+          allowEphemeralKey: true,
           config: { surrogate: { style } },
           plugins: [],
           values: [{ name: "PROJECT", value, source: "fixture", kind: "secret", confidence: "exact" }],
@@ -137,7 +141,7 @@ describe("occurrence-based body redaction", () => {
         return start === -1 ? [] : [pii("person", value, [{ start, end: start + value.length }])];
       },
     };
-    const sameRequest = new ProtectionEngine({ plugins: [sameRequestDetector] });
+    const sameRequest = new ProtectionEngine({ allowEphemeralKey: true, plugins: [sameRequestDetector] });
     const body = JSON.stringify({ content: `${value}; tagCOPPER KITEtag` });
     const first = await sameRequest.redactBodyDetailed(body);
     expect(first.count).toBe(2);
@@ -152,7 +156,7 @@ describe("occurrence-based body redaction", () => {
       name: "fixture-detector",
       detectText: () => (++calls === 1 ? [pii("person", value)] : []),
     };
-    const persisted = new ProtectionEngine({ plugins: [onceDetector] });
+    const persisted = new ProtectionEngine({ allowEphemeralKey: true, plugins: [onceDetector] });
     const key = "org:embedded-detected";
     await persisted.beginRequest(key).redactBodyDetailed(JSON.stringify({ content: value }));
     for (const surface of ["tagCOPPER KITEtag", "tagCopper Kitetag"]) {
@@ -168,6 +172,7 @@ describe("occurrence-based body redaction", () => {
     const registry = "Project Copper Kite";
     const detected = "Project:** Project Copper Kite";
     const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
       plugins: [spanDetector(detected, "organization")],
       values: [{ name: "PROJECT", value: registry, source: "env-file", kind: "secret", confidence: "exact" }],
     });
@@ -188,6 +193,7 @@ describe("occurrence-based body redaction", () => {
       const right = `RIGHT${i}${Math.floor(random() * 10_000)}Y`;
       const detected = `${left}  ${registry}  ${right}`;
       const engine = new ProtectionEngine({
+        allowEphemeralKey: true,
         plugins: [spanDetector(detected, "organization")],
         values: [{ name: "REGISTERED", value: registry, source: "fixture", kind: "secret", confidence: "exact" }],
       });
@@ -215,6 +221,7 @@ describe("occurrence-based body redaction", () => {
       const right = wordEdges[Math.floor(random() * wordEdges.length)] ?? "tag";
       const surface = `${left}${form}${right}`;
       const engine = new ProtectionEngine({
+        allowEphemeralKey: true,
         plugins: [],
         values: [{ name: "PROJECT", value: canonical, source: "fixture", kind: "secret", confidence: "exact" }],
       });

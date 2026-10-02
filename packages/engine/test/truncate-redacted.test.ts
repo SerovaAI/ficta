@@ -4,9 +4,9 @@ import {
   hexSurrogateStrategy,
   residualSurrogatePattern,
   typedSurrogateStrategy,
-} from "../src/engine/surrogate.js";
-import { truncateRedactedText } from "../src/engine/text.js";
-import { Vault } from "../src/engine/vault.js";
+} from "../src/surrogate.js";
+import { truncateRedactedText } from "../src/text.js";
+import { Vault } from "../src/vault.js";
 
 const KEY = "truncate-redacted-test-key-at-least-32-bytes!";
 const HEX = hexSurrogateStrategy(KEY).mint("alice@example.com");

@@ -1,0 +1,65 @@
+{
+  "name": "@serovaai/ficta-engine",
+  "version": "0.4.0",
+  "private": false,
+  "description": "Experimental: the Ficta redaction engine as a library — detect sensitive values, replace them with surrogates, restore them",
+  "keywords": [
+    "llm",
+    "pii",
+    "privacy",
+    "redaction",
+    "secrets",
+    "surrogates"
+  ],
+  "homepage": "https://ficta.sh",
+  "bugs": {
+    "url": "https://github.com/SerovaAI/ficta/issues"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SerovaAI/ficta.git",
+    "directory": "packages/engine"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "development": "./src/index.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js",
+        "default": "./dist/index.js"
+      }
+    },
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "pnpm check:static && pnpm typecheck && pnpm test",
+    "check:static": "node scripts/check-engine-boundary.mjs && oxlint . && oxfmt --check .",
+    "prepack": "pnpm build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

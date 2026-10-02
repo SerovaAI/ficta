@@ -1,8 +1,8 @@
 name: CI and Release
 
 # One workflow owns verification, secret scanning, and Changesets releases.
-# Keep it at `.github/workflows/publish.yml`: npm trusted publishing binds all three
-# published packages to this filename and the `npm-publish` environment.
+# Keep it at `.github/workflows/publish.yml`: npm trusted publishing binds every
+# published package to this filename and the `npm-publish` environment.
 # Publishing uses OIDC; do not add NODE_AUTH_TOKEN or NPM_TOKEN because even an
 # empty token makes npm/pnpm skip trusted publishing.
 

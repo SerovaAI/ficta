@@ -42,12 +42,12 @@ import { type Config, loadConfig, resolveTarget, upstreamPolicyIssue } from "./c
 import { checkSurrogateKey, SurrogateKeyError } from "./user-config.js";
 import { configPosture } from "./config-posture.js";
 import { createFictaControlRouter } from "./control-plane.js";
-import type { EngineConfig } from "./engine/config.js";
-import { detectorFailClosed } from "./engine/detection-policy.js";
-import { ProtectionEngine } from "./engine/engine.js";
-import type { ProtectedValue } from "./engine/plugins/types.js";
-import { withPreservationInstruction } from "./engine/preserve-literals.js";
 import {
+  type EngineConfig,
+  detectorFailClosed,
+  ProtectionEngine,
+  type ProtectedValue,
+  withPreservationInstruction,
   type AmbiguousEntityLinkDiagnostic,
   DetectorUnavailableError,
   type ProtectionHit,
@@ -57,10 +57,11 @@ import {
   RedactionInvariantError,
   type RequestScope,
   type RestoreTraceDetails,
-} from "./engine/redaction-engine.js";
-import { surrogateKeyWarning } from "./engine/vault.js";
+  surrogateKeyWarning,
+  type Wire,
+  wireOf,
+} from "@serovaai/ficta-engine";
 import { detectionFailClosed, engineConfigFromEnv } from "./engine-env.js";
-import { type Wire, wireOf } from "./engine/wire.js";
 import {
   currentRunDir,
   logDir,
@@ -138,6 +139,9 @@ export async function startProxy(opts: StartProxyOptions = {}): Promise<ProxyHan
   const engine: RedactionEngine = new ProtectionEngine({
     plugins: opts.plugins ?? defaultRedactionPlugins,
     config: engineConfig,
+    // The CLI keeps the ephemeral-key fallback: without a configured key it mints under a random
+    // per-process key, reports that at startup, and `require_stable_key` turns it into a refusal.
+    allowEphemeralKey: true,
     // Route the engine's detector-domain warnings (e.g. a PII backend being unavailable) to the
     // proxy's pino logger. The engine itself carries no logger dependency (see diagnostics.ts); this
     // covers both the standalone proxy and the agent-launch path (cli.ts → startProxy).

@@ -11,8 +11,7 @@ process.env.FICTA_REGISTRY_MIN_LEN = "6";
 process.env.FICTA_REDACT_PATHS = "0"; // default: path-skip active (so preservePaths actually matters)
 
 import { describe, expect, it } from "vitest";
-import { ProtectionEngine } from "../src/engine/engine.js";
-import { Vault } from "../src/engine/vault.js";
+import { ProtectionEngine, Vault } from "@serovaai/ficta-engine";
 
 const REGION = "eu-central-1"; // low-entropy registered value that legitimately appears in paths
 const PATHY = `/Users/alice/src/acme/${REGION}-prod`; // the value embedded in a real filesystem path
@@ -48,7 +47,8 @@ describe("vault preservePaths flag (the mechanism)", () => {
 });
 
 describe("engine scope applies the per-surface policy", () => {
-  const engine = (): ProtectionEngine => new ProtectionEngine({ plugins: [], values: [{ value: REGION }] });
+  const engine = (): ProtectionEngine =>
+    new ProtectionEngine({ allowEphemeralKey: true, plugins: [], values: [{ value: REGION }] });
 
   it("body preserves a path-embedded value (agent tool calls must not be mangled)", async () => {
     const scope = engine().beginRequest();

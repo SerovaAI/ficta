@@ -9,12 +9,15 @@ import type { SurrogateStyle } from "./surrogate.js";
  * Everything the redaction engine is configured by, passed to `new ProtectionEngine({ config })`.
  *
  * The engine never reads `process.env`: a host builds this object (the ficta CLI/proxy does it from
- * env + config.toml in `src/engine-env.ts`) and hands it to each engine instance, so several engines
+ * env + config.toml in `packages/ficta/src/engine-env.ts`) and hands it to each engine instance, so several engines
  * in one process can run with different settings. Settings are fixed for the engine's lifetime.
  */
 export interface EngineConfig {
   readonly surrogate: {
-    /** HMAC key for surrogate tokens. Unset → a random key generated once per process (ephemeral). */
+    /**
+     * HMAC key for surrogate tokens. Required by `ProtectionEngine` unless `allowEphemeralKey` is set,
+     * in which case unset means a random key generated once per process (ephemeral).
+     */
     readonly key?: string;
     /** Token shape: opaque `FICTA_<hex>` (default) or typed `FICTA_<TYPE>_<hex>`. */
     readonly style: SurrogateStyle;

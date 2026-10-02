@@ -1,13 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
-import { envEnabled, parseBoolean } from "../engine/env-flags.js";
-import type {
-  PluginDiscovery,
-  ProtectedValue,
-  RegistrySetupSource,
-  RegistrySourcePlugin,
-} from "../engine/plugins/types.js";
+import {
+  envEnabled,
+  parseBoolean,
+  type PluginDiscovery,
+  type ProtectedValue,
+  type RegistrySetupSource,
+  type RegistrySourcePlugin,
+} from "@serovaai/ficta-engine";
 import { findExecutable } from "../install.js";
 
 type DopplerRegistryMode = "auto" | "enabled" | "disabled";

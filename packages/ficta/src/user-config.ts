@@ -2,8 +2,13 @@ import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import { envFlag, parseBoolean } from "./engine/env-flags.js";
-import type { ConfigBinding, ConfigBindingKind, ConfigSection } from "./engine/plugins/types.js";
+import {
+  envFlag,
+  parseBoolean,
+  type ConfigBinding,
+  type ConfigBindingKind,
+  type ConfigSection,
+} from "@serovaai/ficta-engine";
 import { pluginConfigBindings, pluginConfigSections } from "./plugins/index.js";
 import { projectRoot, projectsFilePath, readProjectExcludeNames } from "./project-config.js";
 

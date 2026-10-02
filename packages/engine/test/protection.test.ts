@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { expandEntities } from "../src/engine/expander.js";
-import { resolveOccurrences } from "../src/engine/occurrence.js";
+import { expandEntities } from "../src/expander.js";
+import { resolveOccurrences } from "../src/occurrence.js";
 import {
   entityClaimsFromProtectionRecords,
   literalProtectionRecords,
   type RegisteredEntityProtection,
-} from "../src/engine/protection.js";
-import type { ProtectedValue } from "../src/plugins/index.js";
+} from "../src/protection.js";
+import type { ProtectedValue } from "../src/index.js";
 
 describe("internal protection records", () => {
   it("adapts public ProtectedValue inputs into behavior-compatible literal claims", () => {

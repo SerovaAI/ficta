@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { ProtectionEngine } from "../src/engine/engine.js";
+import { ProtectionEngine } from "@serovaai/ficta-engine";
 import { engineConfigFromEnv } from "../src/engine-env.js";
 import { piiPlugin } from "../src/plugins/index.js";
 
@@ -176,7 +176,11 @@ assert.deepEqual(
 
 // One-time codes: labelled codes (English and German) are tokenized end to end, and unlabelled or
 // formatted numbers stay byte-identical through the full default request.
-const otpEngine = new ProtectionEngine({ plugins: [piiPlugin] });
+const otpEngine = new ProtectionEngine({
+  plugins: [piiPlugin],
+  config: engineConfigFromEnv(),
+  allowEphemeralKey: true,
+});
 for (const [text, code] of [
   ["verification code 7731", "7731"],
   ["Your one-time PIN: 55120931", "55120931"],
@@ -201,7 +205,11 @@ for (const text of [
   // A fresh engine: the shared one already holds the positive codes, which it would (correctly)
   // keep redacting wherever they reappear.
   const body = JSON.stringify({ content: text });
-  const result = await new ProtectionEngine({ plugins: [piiPlugin] }).redactBodyDetailed(body);
+  const result = await new ProtectionEngine({
+    plugins: [piiPlugin],
+    config: engineConfigFromEnv(),
+    allowEphemeralKey: true,
+  }).redactBodyDetailed(body);
   assert.equal(result.body, body, `an unlabelled number was redacted: ${JSON.stringify(text)}`);
 }
 
@@ -219,7 +227,7 @@ const fixture = corpus.find(({ name }) => name === "synthetic-legal-loan");
 assert.ok(fixture, "synthetic legal-loan fixture is missing");
 const text = fixture.text;
 
-const engine = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv() });
+const engine = new ProtectionEngine({ plugins: [piiPlugin], config: engineConfigFromEnv(), allowEphemeralKey: true });
 const body = JSON.stringify({ content: text });
 const redacted = await engine.redactBodyDetailed(body, { traceValues: true });
 

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ProtectionEngine } from "../src/engine/engine.js";
-import { type BodyLeaf, visitBodyLeaves } from "../src/engine/vault.js";
+import { ProtectionEngine } from "../src/engine.js";
+import { type BodyLeaf, visitBodyLeaves } from "../src/vault.js";
 
 describe("visitBodyLeaves", () => {
   it("preserves prototype-named JSON properties while redacting and restoring", async () => {
     const secret = "test-secret-value-12345";
     const body = `{"__proto__":{"content":"keep me"},"content":"${secret}"}`;
-    const engine = new ProtectionEngine({ plugins: [], values: [{ value: secret }] });
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [], values: [{ value: secret }] });
     const redacted = await engine.redactBodyDetailed(body);
     expect(redacted.count).toBe(1);
     expect(redacted.body).not.toContain(secret);

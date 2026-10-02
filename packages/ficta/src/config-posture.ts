@@ -1,8 +1,6 @@
 import type { ProxyConfigPosture } from "@serovaai/ficta-protocol";
 import type { Config } from "./config.js";
-import { detectorFailClosed } from "./engine/detection-policy.js";
-import { envFlag, restoreIntoToolsPolicy } from "./engine/env-flags.js";
-import { surrogateStyle } from "./engine/surrogate.js";
+import { detectorFailClosed, envFlag, restoreIntoToolsPolicy, surrogateStyle } from "@serovaai/ficta-engine";
 import { detectionFailClosed } from "./engine-env.js";
 import { isGloballyDisabled } from "./global-disable.js";
 import {
