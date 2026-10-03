@@ -45,7 +45,8 @@ The script is idempotent — re-running it converges the host. It performs, in o
 1. **Host packages** — Docker Engine + compose v2 plugin from Docker's apt repo; Node 22 from
    NodeSource; corepack-managed pnpm; git.
 2. **Service user** — a `ficta` system user (home `/var/lib/ficta`, holding `.ficta/config.toml`,
-   the shared managed-registry file, and PGlite-free runtime state).
+   the surrogate key `.ficta/surrogate.key`, the shared managed-registry file, and PGlite-free
+   runtime state).
 3. **Checkout + build** — clone/update to `/opt/ficta`, `pnpm install`, build the proxy
    (`packages/ficta`) and the Gateway (`apps/gateway` → `.output/`).
 4. **Sidecars** — build and start `document-converter` + `presidio-analyzer` via the root
@@ -55,7 +56,10 @@ The script is idempotent — re-running it converges the host. It performs, in o
 5. **Config** — install `/etc/ficta/gateway.env` and `/etc/ficta/proxy.env` from the templates in
    `deploy/env/` (only if absent — your edits are never overwritten), and the proxy policy
    `~ficta/.ficta/config.toml` from `deploy/ficta-config.toml` (fail-closed POC policy:
-   `registry.require`, `secret_shapes`, `pii.fail_closed`).
+   `registry.require`, `secret_shapes`, `pii.fail_closed`, and a required stable surrogate key).
+   Generate the surrogate key `/var/lib/ficta/.ficta/surrogate.key` once (see "Surrogate key"),
+   then preflight it: the script stops if the key is missing, not a regular file, not owned by
+   `ficta`, readable by group/others, or not 64 hex characters.
 6. **systemd** — install and enable `ficta-proxy.service` and `ficta-gateway.service`.
 
 After the first run, **edit the env files** (they are installed with placeholder values and the
@@ -70,7 +74,8 @@ Then: `sudo systemctl restart ficta-proxy ficta-gateway`.
 ## Verify (do this before trusting the deployment)
 
 ```sh
-# 1. Proxy protection state — expect "N protected values" and require-registry: on
+# 1. Proxy protection state — expect "N protected values", require-registry: on, and
+#    "surrogate key: stable (config.toml surrogate.key_file: /var/lib/ficta/.ficta/surrogate.key)"
 sudo -u ficta node /opt/ficta/packages/ficta/bin/ficta.mjs doctor
 
 # 2. Health endpoints
@@ -102,8 +107,8 @@ systemctl status ficta-proxy ficta-gateway            # after reboot
 docker ps                                             # sidecars up (+ postgres on local-container deployments)
 ```
 
-**Backup** (contains sensitive data — restored transcripts and the surrogate mapping; store per
-the firm's policy)
+**Backup** (contains sensitive data — restored chat transcripts, the protected registry, and the
+surrogate key; store per the firm's policy)
 
 Database — local Postgres container deployments:
 
@@ -121,6 +126,10 @@ sudo tar czf ficta-config-$(date +%F).tgz /etc/ficta /var/lib/ficta/.ficta \
     /var/lib/ficta/protected-registry.json
 ```
 
+The configuration archive includes the surrogate key (`/var/lib/ficta/.ficta/surrogate.key`).
+Escrow the key separately as well, like `FICTA_GATEWAY_KEY_ENCRYPTION_SECRET`, so a lost host can be
+rebuilt with the same key.
+
 `FICTA_GATEWAY_KEY_ENCRYPTION_SECRET` must be escrowed separately from the database backup —
 backups contain encrypted workspace provider keys and are useless without it.
 
@@ -130,9 +139,34 @@ backups contain encrypted workspace provider keys and are useless without it.
 sudo systemctl stop ficta-gateway ficta-proxy
 # local Postgres container deployments (managed DATABASE_URL: restore via your provider instead):
 gunzip -c ficta-db-<date>.sql.gz | docker exec -i ficta-postgres psql -U ficta ficta
-sudo tar xzf ficta-config-<date>.tgz -C /
+sudo tar xzf ficta-config-<date>.tgz -C /   # restores the surrogate key over the one install.sh generated
 sudo systemctl start ficta-proxy ficta-gateway
 ```
+
+Restore the surrogate key before starting the proxy, and keep it `ficta`-owned and mode `0600`
+(`tar` run as root preserves both).
+
+**Surrogate key**
+
+The proxy turns every protected value into a token with a keyed HMAC, so the key decides which token
+each value gets. `install.sh` creates it once at `/var/lib/ficta/.ficta/surrogate.key` (64 hex
+characters from `openssl rand -hex 32`, owner `ficta`, mode `0600`), never prints it, and never
+overwrites an existing one. `deploy/ficta-config.toml` points `surrogate.key_file` at it and sets
+`surrogate.require_stable_key = true`, so a missing or unusable key stops the proxy at startup
+(exit status 2) instead of silently using a random per-process key that changes every token on
+restart.
+
+- **Back it up and escrow it** with the other deployment secrets. Never commit it or paste it into a
+  ticket.
+- **Losing or rotating it changes every surrogate.** Tokens minted under the old key can no longer
+  be restored: a response in flight across the change, or a model echoing a token from before it,
+  comes back unrestored. Stored chat history is unaffected — the Gateway stores the
+  transcript after the proxy has restored it, as plaintext, not as surrogates.
+- **To rotate deliberately** (for example after suspected exposure), stop the proxy, replace the
+  file with a new key (same owner and mode), and start it again during a quiet period.
+- **Hosts installed before the key existed** keep their old `config.toml` (it is never
+  overwritten); `install.sh` creates the key and warns until you add the `[surrogate]` block from
+  `deploy/ficta-config.toml`.
 
 **Upgrade**
 
@@ -159,4 +193,5 @@ Gateway/proxy hop — is loopback. Remember the WorkOS endpoints if `AUTH_PROVID
 | `env/gateway.env.example`       | Gateway environment template → `/etc/ficta/gateway.env` |
 | `env/proxy.env.example`         | Proxy environment template → `/etc/ficta/proxy.env`     |
 | `ficta-config.toml`             | Fail-closed proxy policy → `~ficta/.ficta/config.toml`  |
+| `surrogate-key.sh`              | Surrogate key creation + preflight (used by install.sh) |
 | `Caddyfile.example`             | Internal-TLS reverse proxy example                      |
