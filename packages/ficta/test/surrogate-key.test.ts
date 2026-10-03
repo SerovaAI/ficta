@@ -1,6 +1,7 @@
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { hexSurrogateStrategy } from "@serovaai/ficta-engine";
 import { engineConfigFromEnv } from "../src/engine-env.js";
@@ -203,5 +204,29 @@ describe("surrogate.require_stable_key", () => {
   it("makes the proxy fail at startup on an unusable key file", async () => {
     process.env.FICTA_SURROGATE_KEY_FILE = writeKeyFile("surrogate.key", "not-a-key");
     await expect(startProxy({ port: 0, plugins: [] })).rejects.toThrow(/64 hex characters/);
+  });
+});
+
+describe("reference deployment config (deploy/ficta-config.toml)", () => {
+  const deployConfig = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "deploy", "ficta-config.toml");
+
+  it("names the installer's key file and requires a stable key", () => {
+    const values = readUserConfig(deployConfig);
+    expect(values.FICTA_SURROGATE_KEY_FILE).toBe("/var/lib/ficta/.ficta/surrogate.key");
+    expect(values.FICTA_REQUIRE_STABLE_SURROGATE_KEY).toBe("1");
+    expect(values.FICTA_SURROGATE_KEY).toBeUndefined();
+  });
+
+  it("makes the proxy refuse to start when that key file is missing", async () => {
+    const values = readUserConfig(deployConfig);
+    process.env.FICTA_REQUIRE_STABLE_SURROGATE_KEY = values.FICTA_REQUIRE_STABLE_SURROGATE_KEY;
+    process.env.FICTA_SURROGATE_KEY_FILE = join(dir, "surrogate.key"); // same setting, absent file
+    await expect(startProxy({ port: 0, plugins: [] })).rejects.toThrow(SurrogateKeyError);
+  });
+
+  it("keeps surrogates stable once the installer's key file exists", () => {
+    process.env.FICTA_REQUIRE_STABLE_SURROGATE_KEY = readUserConfig(deployConfig).FICTA_REQUIRE_STABLE_SURROGATE_KEY;
+    process.env.FICTA_SURROGATE_KEY_FILE = writeKeyFile("surrogate.key", `${FILE_KEY}\n`);
+    expect(checkSurrogateKey(path)).toMatchObject({ stable: true, source: "env-key-file" });
   });
 });

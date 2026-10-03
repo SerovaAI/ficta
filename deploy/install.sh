@@ -120,7 +120,7 @@ else
 fi
 
 # --- 5. Config files (never overwritten) ------------------------------------
-log "Config: ${ENV_DIR}/*.env and ~${FICTA_USER}/.ficta/config.toml"
+log "Config: ${ENV_DIR}/*.env, ~${FICTA_USER}/.ficta/config.toml and surrogate key"
 install -d -m 0750 "$ENV_DIR"
 for f in gateway.env proxy.env; do
   if [ ! -f "$ENV_DIR/$f" ]; then
@@ -137,6 +137,30 @@ done
 if [ ! -f "$FICTA_HOME/.ficta/config.toml" ]; then
   install -o "$FICTA_USER" -g "$FICTA_USER" -m 0640 \
     "$REPO_DIR/deploy/ficta-config.toml" "$FICTA_HOME/.ficta/config.toml"
+fi
+
+# Stable surrogate key. The proxy derives every surrogate from it; without one it would mint under a
+# random per-process key and every restart would change every token. Created once and NEVER
+# regenerated or overwritten: a new key changes every surrogate, so tokens minted under the old one
+# (in-flight streams, preview tickets) can no longer be restored. The key is never printed. Back it up
+# and escrow it like FICTA_GATEWAY_KEY_ENCRYPTION_SECRET (deploy/README.md -> Backup).
+SURROGATE_KEY_FILE="$FICTA_HOME/.ficta/surrogate.key"
+# shellcheck source=deploy/surrogate-key.sh
+. "$REPO_DIR/deploy/surrogate-key.sh"
+if [ ! -e "$SURROGATE_KEY_FILE" ] && [ ! -L "$SURROGATE_KEY_FILE" ]; then
+  log "Generating surrogate key ${SURROGATE_KEY_FILE} (0600, ${FICTA_USER}) — back it up"
+fi
+surrogate_key_ensure "$SURROGATE_KEY_FILE" "$FICTA_USER" "$FICTA_USER" ||
+  die "could not create or secure the surrogate key ${SURROGATE_KEY_FILE}"
+surrogate_key_check "$SURROGATE_KEY_FILE" "$FICTA_USER" ||
+  die "surrogate key preflight failed; restore ${SURROGATE_KEY_FILE} from backup (do not regenerate it under a running deployment)"
+if ! grep -Eq '^[[:space:]]*key_file[[:space:]]*=' "$FICTA_HOME/.ficta/config.toml"; then
+  # config.toml is never overwritten, so a host installed before this key existed keeps its old file.
+  log "WARNING: ${FICTA_HOME}/.ficta/config.toml does not set surrogate.key_file"
+  echo "    The proxy will use a per-process key and change every surrogate on restart. Add:"
+  echo "      [surrogate]"
+  echo "      key_file = \"${SURROGATE_KEY_FILE}\""
+  echo "      require_stable_key = true"
 fi
 # --- 6. systemd units -------------------------------------------------------
 log "systemd units"

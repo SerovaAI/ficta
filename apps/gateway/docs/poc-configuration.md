@@ -55,6 +55,30 @@ enables local secret-shape detection, and blocks rather than forwarding unscreen
 selected Presidio sidecar is unavailable. Coding-agent detection remains off unless the separate
 `agents` settings are enabled.
 
+### Surrogate key
+
+The proxy derives every surrogate from a local HMAC key. Give the deployment a stable key file so
+tokens survive proxy restarts, and make startup fail without it:
+
+```toml
+[surrogate]
+key_file = "/var/lib/ficta/.ficta/surrogate.key"
+require_stable_key = true
+```
+
+The file holds 64 hex characters (`openssl rand -hex 32`), is owned by the proxy's service user, and
+must not be readable by group or others (`chmod 600`); the proxy refuses it otherwise. The reference
+deployment's `deploy/install.sh` creates it once at that path and never overwrites it. Without a key
+the proxy falls back to a random per-process key and every restart changes every token;
+`require_stable_key` turns that fallback into a startup failure (exit status 2). An inline
+`surrogate.key` written by `ficta setup` is also stable and takes precedence over `key_file`; keep
+only one of them. `ficta doctor` reports which key is active and whether it is stable.
+
+Treat the key like `FICTA_GATEWAY_KEY_ENCRYPTION_SECRET`: back it up, escrow it, and never commit it.
+Losing or rotating it changes every surrogate, so a token minted under the old key (a response in
+flight across the change, or a model echoing an earlier token) can no longer be restored. Stored chat
+history is unaffected: Gateway saves the transcript after the proxy restores it, as plaintext.
+
 Run the Presidio analyzer under the installer-controlled process or container supervisor at its
 default `http://127.0.0.1:5002` address. Populate the Gateway Protected Registry with representative
 client names, matter identifiers, account numbers, or other high-value exact values before testing
@@ -63,7 +87,7 @@ provider traffic.
 ## Settings intentionally omitted
 
 Local defaults already cover the proxy and sidecar URLs, ports, embedded PGlite storage, managed
-registry file, surrogate-key generation, logging, and fail-closed exact-value redaction. Do not copy
+registry file, logging, and fail-closed exact-value redaction. Do not copy
 their defaults into the environment merely to make them explicit.
 
 Use environment variables only when the deployment topology changes—for example `FICTA_PROXY_URL`,

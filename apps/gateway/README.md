@@ -119,6 +119,9 @@ Minimum production-like posture:
   history stores the restored user-visible transcript and must be treated as sensitive data.
 - Protect `FICTA_GATEWAY_KEY_ENCRYPTION_SECRET` separately from the database. Postgres/PGlite backups
   can contain encrypted workspace provider keys, and this secret is required to decrypt them.
+- Give the proxy a stable surrogate key file with `surrogate.require_stable_key = true`, and back it
+  up and escrow it like the encryption secret; see the
+  [POC configuration](./docs/poc-configuration.md#surrogate-key).
 - Define retention, deletion, backup, and access-review policy for chat history.
 - Run Presidio as an explicit sidecar under your process/container supervisor. Do not rely on
   source-checkout managed sidecar behavior in production.
