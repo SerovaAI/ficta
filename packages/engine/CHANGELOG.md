@@ -1,5 +1,19 @@
 # @serovaai/ficta-engine
 
+## 0.9.0
+
+### Minor Changes
+
+- [`5cd450f`](https://github.com/SerovaAI/ficta/commit/5cd450f06b3e6e6c57c83df919d0e8d7b559c428) Thanks [@steflsd](https://github.com/steflsd)! - Bring engine policies and roster validation into the proxy, replace unknown Gateway response references before delivery, and persist restoration counts with active-registry fingerprints.
+
+### Patch Changes
+
+- [#123](https://github.com/SerovaAI/ficta/pull/123) [`8b898e3`](https://github.com/SerovaAI/ficta/commit/8b898e35894bfa1b36a8d8b85d5a3a74cb356b2a) Thanks [@steflsd](https://github.com/steflsd)! - A value a keyed scope already holds a token for keeps that token in a destroying profile instead of becoming a destroy marker. Previously a narrowed first pass under `destroy: { categories: "*" }` destroyed names a second pass had tokenised once a later run reopened the vault, so the same text got a token in one run and a marker in the next.
+
+- [`2275437`](https://github.com/SerovaAI/ficta/commit/2275437e1e3ea4099316a9fd96fd37e726820866) Thanks [@steflsd](https://github.com/steflsd)! - Make permanent removal of detected categories an opt-in setting editable from the control plane (`destroyCategories`, mapped to `dispositions.destroy.categories`; `"*"` stays TOML/env-only and locks the field), and turn it off in the Gateway reference deployment so detected values are restored by default.
+
+- [`a6ec67b`](https://github.com/SerovaAI/ficta/commit/a6ec67b9cd9b96c10a100a1622463db2f561caa5) Thanks [@steflsd](https://github.com/steflsd)! - A roster or managed-registry form shared by more than one entry is no longer dropped: it links to no entry but stays registered as an exact-match, whole-word value with its own unlinked token.
+
 ## 0.8.0
 
 ### Minor Changes
