@@ -493,6 +493,51 @@ describe("roster: two-pass flow (destroy everything detected, then pseudonymise)
   });
 });
 
+describe("roster: two-pass flow with a narrowed rules pass", () => {
+  // The rules pass names its own entity types, so a name it does not look for reaches the
+  // pseudonymise pass, which tokenises it and saves it to the vault. A later rules pass in the same
+  // scope must not destroy that remembered name: it already has a token, so it keeps it.
+  const NARROWED: CreateEngineOptions["profiles"] = {
+    rules: { entities: ["EMAIL_ADDRESS"], secretShapes: false, destroy: { categories: "*" } },
+    pseudonymise: { entities: ["PERSON", "EMAIL_ADDRESS"], secretShapes: false },
+  };
+  const TEXT = `Mail from ${UNREGISTERED} (someone.else@example.org) about lunch.`;
+
+  async function run(engine: FictaEngine): Promise<string> {
+    const scope = engine.scope(SCOPE);
+    const pass1 = await scope.pseudonymiseMany([TEXT], "rules");
+    const pass2 = await scope.pseudonymiseMany(pass1.texts, "pseudonymise");
+    return pass2.texts[0] ?? "";
+  }
+
+  it("keeps a remembered name's token on a rerun in the same process", async () => {
+    const engine = await facade({ vault: openStore(), profiles: NARROWED });
+    const first = await run(engine);
+    expect(first).toMatch(/^Mail from FICTA_PERSON_[0-9a-f]{32} \(\[REDACTED_EMAIL(?:_ADDRESS)?\]\) about lunch\.$/);
+    expect(await run(engine)).toBe(first);
+  });
+
+  it("keeps a remembered name's token when another process reopens the vault", async () => {
+    const first = await run(await facade({ vault: openStore(), profiles: NARROWED }));
+    expect(first).toContain("FICTA_PERSON_");
+    const engine = await facade({ vault: openStore(), profiles: NARROWED });
+    const second = await run(engine);
+    expect(second).toBe(first);
+    const restored = await engine.scope(SCOPE).restore(second);
+    expect(restored.unknownCount).toBe(0);
+    expect(restored.text).toContain(UNREGISTERED);
+  });
+
+  it("keeps the token even when the rules pass detects the remembered name itself", async () => {
+    const first = await run(await facade({ vault: openStore(), profiles: NARROWED }));
+    const widened: CreateEngineOptions["profiles"] = {
+      ...NARROWED,
+      rules: { secretShapes: false, destroy: { categories: "*" } },
+    };
+    expect(await run(await facade({ vault: openStore(), profiles: widened }))).toBe(first);
+  });
+});
+
 describe("roster: re-applying values a keyed scope already holds", () => {
   const BARE: CreateEngineOptions["profiles"] = { none: { pii: false, secretShapes: false } };
   const LATER = `Annabel and Joanna came. ${ANNA_SHORT} too.`;

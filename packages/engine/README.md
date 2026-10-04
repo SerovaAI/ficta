@@ -187,7 +187,10 @@ const pass2 = await scope.pseudonymiseMany(pass1.texts, "pseudonymise");
 ```
 
 With an explicit category list instead of `"*"`, a finding in a category the list does not name
-keeps a reversible token and is saved to the vault in a keyed scope; `"*"` rules that out.
+keeps a reversible token and is saved to the vault in a keyed scope; `"*"` rules that out. If the
+`rules` profile narrows `entities`, a value it does not look for reaches the second pass, which
+tokenises it and saves it. Later `rules` passes in the scope, including other processes on the same
+vault, then keep that token rather than destroying it (see [Destroying values](#destroying-values-instead-of-surrogating-them)).
 
 **Validation.** `createEngine` throws `InvalidEngineConfigError` for a missing or duplicate `id`, an
 unknown `type`, a missing or too-short canonical name or form, or a canonical name that another entry
@@ -339,6 +342,11 @@ const result = await engine.redactContentDetailed("Card 4111 1111 1111 1111, pas
 - **Registered values win.** An exact registered value (or one passed to
   `scope.registerProtectedValues`) keeps its surrogate and the fail-closed leak check, even when a
   detector also reports it in a destroy category. Destroy applies to detector findings only.
+- **Tokens already held stay tokens.** A value a keyed scope already holds a token for (from
+  another profile, an earlier request, or a persistent vault) keeps that token in a destroying
+  profile, whether a detector finds it again or the scope re-applies it. Destroying it would remove
+  nothing the vault does not keep, and the same text would get a token in one run and a marker in
+  the next. To retire a held value, delete it from the vault.
 - **Several categories, one value.** When one value is reported under a destroy category and a
   surrogate category, it is destroyed, whichever detector reported it first. Partly overlapping
   findings resolve exactly as they do for surrogates (registry first, then confidence, then span
