@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdtempSync,
@@ -10,7 +11,12 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { AgentIntegration, AgentIntegrationPlugin, AgentPreflightNotice } from "./agent-types.js";
+import type {
+  AgentBypassContext,
+  AgentIntegration,
+  AgentIntegrationPlugin,
+  AgentPreflightNotice,
+} from "./agent-types.js";
 
 export const claudeAgent: AgentIntegration = {
   id: "builtin/claude",
@@ -34,7 +40,8 @@ export const codexAgent: AgentIntegration = {
   description: "Injects a temporary custom provider config for OpenAI/Codex traffic",
   shouldBypass: commonNonModelCommand,
   isMachineReadable: codexMachineReadableCommand,
-  configureLaunch: ({ baseUrl, args, realExecutable, env }) => {
+  configureLaunch: (ctx) => {
+    const { baseUrl, realExecutable, env } = ctx;
     const overrides = [
       `model_provider="ficta"`,
       `model_providers.ficta.name="ficta"`,
@@ -47,19 +54,43 @@ export const codexAgent: AgentIntegration = {
     if (codexUsesChatgptAuth(env)) overrides.push("model_providers.ficta.requires_openai_auth=true");
     return {
       executable: realExecutable,
-      args: [...overrides.flatMap((o) => ["-c", o]), ...args],
+      args: codexConfigOverrideArgs(overrides, ctx),
       env,
     };
   },
-  configureBypass: ({ args, realExecutable, env }) => {
+  configureBypass: (ctx) => {
+    const { realExecutable, env } = ctx;
     const cleanup = codexPersistedFictaCleanupOverrides(env);
     return {
       executable: realExecutable,
-      args: [...cleanup.flatMap((o) => ["-c", o]), ...args],
+      args: codexConfigOverrideArgs(cleanup, ctx),
       env,
     };
   },
 };
+
+function codexConfigOverrideArgs(overrides: readonly string[], ctx: AgentBypassContext): string[] {
+  const { args, realExecutable, env, cwd } = ctx;
+  if (overrides.length === 0) return args;
+
+  // Per-process provider overrides cannot run on Codex's shared daemon. Explicitly select embedded
+  // mode to avoid its fallback warning, but probe help so older CLIs never receive an unknown flag.
+  let modeArgs: string[] = [];
+  if (!args.includes("--no-daemon")) {
+    const help = spawnSync(realExecutable, ["--help"], {
+      env,
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 2_000,
+      maxBuffer: 256 * 1024,
+    });
+    if (help.status === 0 && /(?:^|\s)--no-daemon(?:\s|$)/m.test(help.stdout ?? "")) {
+      modeArgs = ["--no-daemon"];
+    }
+  }
+  return [...modeArgs, ...overrides.flatMap((o) => ["-c", o]), ...args];
+}
 
 const PI_AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
 

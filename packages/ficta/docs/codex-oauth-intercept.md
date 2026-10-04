@@ -53,6 +53,14 @@ For API-key Codex, ficta injects the simpler OpenAI-compatible provider override
 
 Every wrapped launch also sets `analytics.enabled=false` (see [Housekeeping traffic](#housekeeping-traffic)).
 
+On Codex versions that support `--no-daemon`, ficta also passes that flag to explicitly use embedded
+mode. The shared background server cannot apply the temporary `-c` provider overrides. Without the
+flag, Codex falls back to embedded mode and prints `Running without the shared background server:
+command-line configuration overrides (-c, --enable, --disable, or --search) requires embedded mode.`
+This is a fallback warning; the model traffic still uses ficta. Older Codex versions keep their
+existing launch arguments. Bypasses use normal Codex behavior unless ficta needs temporary overrides
+to neutralize stale persisted routing settings.
+
 ## Housekeeping traffic
 
 ficta does **not** override `chatgpt_base_url`. Codex 0.156+ validates it as the "workspace

@@ -14,6 +14,23 @@ import {
 
 const BASE = "http://127.0.0.1:8787";
 
+function codexExecutable(home: string, supportsNoDaemon: boolean, helpExitCode = 0): string {
+  const executable = join(home, "codex");
+  writeFileSync(
+    executable,
+    [
+      "#!/bin/sh",
+      'if [ "$1" = "--help" ]; then',
+      `  printf '%s\\n' 'Usage: codex [OPTIONS]' '${supportsNoDaemon ? "  --no-daemon  Run without the shared background server" : "  --no-alt-screen  Disable alternate screen mode"}'`,
+      `  exit ${helpExitCode}`,
+      "fi",
+      "exit 1",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  return executable;
+}
+
 describe("agent integration plugins", () => {
   it("exposes built-in agent commands through the plugin registry", () => {
     expect(agentCommands()).toEqual(expect.arrayContaining(["claude", "codex", "pi"]));
@@ -113,6 +130,59 @@ describe("agent integration plugins", () => {
     expect(plan.args).toContain("analytics.enabled=false");
   });
 
+  it.each([{ args: [] }, { args: ["resume", "--last"] }, { args: ["exec", "--json", "hello"] }])(
+    "explicitly selects embedded Codex mode when supported for args %j",
+    ({ args }) => {
+      const home = mkdtempSync(join(tmpdir(), "ficta-codex-daemon-home-"));
+      const env = { CODEX_HOME: home };
+      const plan = codexAgent.configureLaunch({
+        baseUrl: BASE,
+        args,
+        realExecutable: codexExecutable(home, true),
+        env,
+        cwd: process.cwd(),
+      });
+
+      expect(plan.args[0]).toBe("--no-daemon");
+      expect(plan.args).toContain('model_provider="ficta"');
+      expect(plan.args).toContain(`model_providers.ficta.base_url="${BASE}/v1"`);
+      expect(plan.args).toContain("analytics.enabled=false");
+      expect(plan.args.slice(plan.args.length - args.length)).toEqual(args);
+      expect(plan.env).toBe(env);
+    },
+  );
+
+  it.each([
+    { supported: false, exitCode: 0 },
+    { supported: true, exitCode: 1 },
+  ])("keeps Codex compatible when help reports %j", ({ supported, exitCode }) => {
+    const home = mkdtempSync(join(tmpdir(), "ficta-codex-legacy-home-"));
+    const plan = codexAgent.configureLaunch({
+      baseUrl: BASE,
+      args: [],
+      realExecutable: codexExecutable(home, supported, exitCode),
+      env: { CODEX_HOME: home },
+      cwd: process.cwd(),
+    });
+
+    expect(plan.args).not.toContain("--no-daemon");
+    expect(plan.args).toContain('model_provider="ficta"');
+  });
+
+  it("preserves an explicit Codex --no-daemon without duplicating it", () => {
+    const home = mkdtempSync(join(tmpdir(), "ficta-codex-explicit-home-"));
+    const plan = codexAgent.configureLaunch({
+      baseUrl: BASE,
+      args: ["--no-daemon", "resume", "--last"],
+      realExecutable: codexExecutable(home, true),
+      env: { CODEX_HOME: home },
+      cwd: process.cwd(),
+    });
+
+    expect(plan.args.filter((arg) => arg === "--no-daemon")).toHaveLength(1);
+    expect(plan.args.slice(-3)).toEqual(["--no-daemon", "resume", "--last"]);
+  });
+
   it("neutralizes stale persisted Codex ficta routing on FICTA_DISABLE bypass", () => {
     const home = mkdtempSync(join(tmpdir(), "ficta-codex-stale-home-"));
     writeFileSync(
@@ -182,12 +252,25 @@ describe("agent integration plugins", () => {
 
     const plan = codexAgent.configureBypass?.({
       args: ["exec", "hello"],
-      realExecutable: "/bin/codex",
+      realExecutable: codexExecutable(home, true),
       env: { CODEX_HOME: home },
       cwd: process.cwd(),
     });
 
     expect(plan?.args).toEqual(["exec", "hello"]);
+  });
+
+  it("selects embedded Codex mode for stale-routing cleanup overrides on bypass", () => {
+    const home = mkdtempSync(join(tmpdir(), "ficta-codex-bypass-daemon-home-"));
+    writeFileSync(join(home, "config.toml"), 'model_provider = "ficta"\n');
+    const plan = codexAgent.configureBypass?.({
+      args: ["resume", "--last"],
+      realExecutable: codexExecutable(home, true),
+      env: { CODEX_HOME: home },
+      cwd: process.cwd(),
+    });
+
+    expect(plan?.args).toEqual(["--no-daemon", "-c", 'model_provider="openai"', "resume", "--last"]);
   });
 
   it("routes Pi through an ephemeral PI_CODING_AGENT_DIR with a ficta models.json", async () => {
