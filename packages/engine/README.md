@@ -282,8 +282,10 @@ const { text, restoredCount, unknownCount } = scope.restoreTextDetailed(modelOut
 - **Persistent vaults.** With a [vault store](#persistent-vaults), "unknown" means not in this
   process's memory. Call `await scope.prepareRestore(text)` first so that tokens another process
   minted are fetched; a token whose entry was pruned or forgotten then counts as unknown.
-- **Complete texts only.** `restoreJson`, `restoreStream` and `restoreEventStream` are unchanged and
-  still leave unknown tokens in place (they are counted in `residualSurrogateCount`).
+- **Wire restores.** `restoreText`, `restoreJson`, `restoreStream` and `restoreEventStream` also
+  accept `{ unknownToken }`. Streaming restores reassemble split references before replacing them.
+  Known tokens withheld from tool arguments stay intact. Without this option, unknown references
+  still pass through unchanged; `residualSurrogateCount` reports distinct unknown references.
 
 ## Destroying values instead of surrogating them
 
@@ -473,3 +475,11 @@ What the engine does and does not protect against is described in ficta's
 ## License
 
 MIT
+
+### Shared profile configuration
+
+`profileEngineConfig(profile, sharedSettings)` maps a library profile to the same `EngineConfig`
+used by the proxy. It retains the library defaults: PII and secret shapes on, path redaction on,
+and detector outages fail-closed. Transport adapters may choose different defaults explicitly.
+`buildRoster(entries, surrogateKey)` exports the roster validation mechanism for registry adapters;
+applications still own roster storage and refresh.

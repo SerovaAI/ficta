@@ -347,3 +347,20 @@ PII and fake secret-shaped values.
 
 `src/lib/model-adapter.ts` is the single place provider/model/key/base-URL are wired. Swapping
 providers or pointing at a different gateway is a change there, not throughout the UI.
+
+## Engine policy and restoration
+
+Gateway requires a proxy advertising `restore-unknown`. Unmapped model references become
+`[unrestored reference]` before the browser receives or saves them. Thread receipts retain the
+proxy's restoration counts and active-registry fingerprint; no raw values are added to evidence.
+Existing answers are not rewritten. DOCX export keeps its residual-reference guard for historical
+or otherwise unguarded content.
+
+The reference proxy policy redacts paths, fails closed on detector outages, prioritizes validated
+South African IDs over card claims, and permanently removes detected card/ID numbers. Registered
+identifiers stay reversible. Operators can inspect effective categories and priority in Admin
+settings and configure them in the proxy TOML; restart after changing them.
+
+Mappings remain in memory. Gateway stores restored history and re-redacts it on each turn, so
+persistent mappings are not required to reload conversations. Registry changes/removals still need
+a proxy restart; shared ambiguous aliases are dropped rather than linked to the wrong entity.

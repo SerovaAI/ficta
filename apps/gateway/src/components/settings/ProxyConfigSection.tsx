@@ -349,6 +349,22 @@ function ConfigEditor({
         </div>
       </SettingRow>
 
+      <SettingRow
+        label="Permanently removed categories"
+        description="Detected values in these categories cannot be restored. Registered values remain reversible. Configured by the operator; restart the proxy to apply changes."
+      >
+        <span className="text-sm">
+          {config.config.dispositions?.destroy.all
+            ? "All detected categories"
+            : config.config.dispositions?.destroy.categories.join(", ") || "None"}
+        </span>
+      </SettingRow>
+      <SettingRow
+        label="Detection priority"
+        description="Category order when detectors classify the same value differently. Configured by the operator."
+      >
+        <span className="text-sm">{detection.entityPriority?.join(", ") || "Default"}</span>
+      </SettingRow>
       <GroupHeading>Detection</GroupHeading>
       <SettingRow label="PII detection" description="Detect and tokenize PII in chat traffic through this gateway.">
         <BooleanControl

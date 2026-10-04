@@ -12,6 +12,7 @@
 
 import {
   type EngineConfig,
+  InvalidEngineConfigError,
   type PluginRuntime,
   pluginRuntime,
   resolveEngineConfig,
@@ -48,7 +49,10 @@ import {
 export function engineConfigFromEnv(env: EnvSource = process.env): EngineConfig {
   return resolveEngineConfig({
     surrogate: { key: env.FICTA_SURROGATE_KEY || undefined, style: parseSurrogateStyle(env) },
-    detection: { failClosed: globalDetectionFailClosed(env) },
+    detection: { failClosed: globalDetectionFailClosed(env), entityPriority: commaList(env.FICTA_ENTITY_PRIORITY) },
+    dispositions: {
+      destroy: { categories: commaList(env.FICTA_DESTROY_CATEGORIES), labels: destroyLabels(env.FICTA_DESTROY_LABELS) },
+    },
     pii: {
       enabled: parsePiiEnabled(env),
       failClosed: parsePiiFailClosed(env),
@@ -135,4 +139,22 @@ export function activeBackend(env: EnvSource = process.env): BackendSelection {
 
 export function activeBackends(env: EnvSource = process.env): BackendSetSelection {
   return parseActiveBackends(env);
+}
+
+function destroyLabels(raw: string | undefined): Record<string, string> {
+  if (!raw) return {};
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.values(value).every((label) => typeof label === "string")
+    ) {
+      return value as Record<string, string>;
+    }
+  } catch {
+    /* Report the setting, never its contents. */
+  }
+  throw new InvalidEngineConfigError("dispositions.destroy.labels: expected a JSON object of marker strings");
 }

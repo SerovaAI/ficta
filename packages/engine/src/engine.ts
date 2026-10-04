@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import {
   type EngineConfig,
   type EngineConfigInput,
@@ -190,6 +190,9 @@ interface BodyDetectionPass {
  * "one process, one session" case (CLI agents, direct callers, tests).
  */
 export class ProtectionEngine implements RedactionEngine {
+  private readonly registryFingerprintKey: Buffer;
+  private readonly optionRecords: readonly ProtectionRecord[];
+  private registryFingerprint = "";
   private readonly plugins: readonly RedactionPlugin[];
   private readonly hasDetectors: boolean;
   private readonly vault: Vault;
@@ -221,6 +224,7 @@ export class ProtectionEngine implements RedactionEngine {
   /** Safe registry-source diagnostics (refreshed by {@link reloadRegistryValues}); never raw values. */
   get registryStatus(): EngineRegistryStatus {
     return {
+      fingerprint: this.registryFingerprint,
       discoveries: this.registrySnapshot.discoveries,
       registryPolicy: this.registrySnapshot.registryPolicy,
       policyExcluded: this.registrySnapshot.policyExcluded,
@@ -252,11 +256,14 @@ export class ProtectionEngine implements RedactionEngine {
     const values = [...this.registrySnapshot.values, ...admittedOptions];
     for (const value of values) remember(this.metadataByValue, value);
     const optionRecords = literalProtectionRecords(admittedOptions, "registry");
+    this.optionRecords = optionRecords;
     this.permanentClaims = entityClaimsFromProtectionRecords([...this.registrySnapshot.records, ...optionRecords]);
     for (const record of this.registrySnapshot.records) this.activeRegistryRecords.set(recordKey(record), record);
     this.registrySize = values.length;
     const { surrogate, restore, redactPaths } = this.runtime.config;
     const key = surrogate.key || ephemeralSurrogateKey();
+    this.registryFingerprintKey = createHmac("sha256", key).update("ficta.registry-fingerprint.v1").digest();
+    this.updateRegistryFingerprint();
     this.vault = new Vault(
       values,
       entityFamilySurrogateStrategy(surrogateStrategy({ style: surrogate.style, key }), key),
@@ -299,8 +306,18 @@ export class ProtectionEngine implements RedactionEngine {
     this.permanentClaims.push(...entityClaimsFromProtectionRecords(newRecords));
     for (const record of newRecords) this.activeRegistryRecords.set(recordKey(record), record);
     applyRecordBoundaries(this.vault, [...this.activeRegistryRecords.values()]);
+    this.updateRegistryFingerprint();
     this.registrySnapshot = snapshot; // discovery/policyExcluded lines in /__ficta/status reflect the reload
     return { added, total: this.vault.size, restartRequired };
+  }
+
+  private updateRegistryFingerprint(): void {
+    const records = [...this.activeRegistryRecords.values(), ...this.optionRecords]
+      .map((record) => [recordKey(record), recordFingerprint(record)])
+      .sort((a, b) => (a[0] ?? "").localeCompare(b[0] ?? ""));
+    this.registryFingerprint = createHmac("sha256", this.registryFingerprintKey)
+      .update(JSON.stringify(records))
+      .digest("hex");
   }
 
   get size(): number {

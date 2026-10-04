@@ -774,6 +774,16 @@
                         "redactedValues": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
                         "survivingValues": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
                         "ambiguousEntityLinks": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                        "registryFingerprint": { "type": "string" },
+                        "restore": {
+                          "type": "object",
+                          "properties": {
+                            "restoredValues": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                            "unknownTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+                          },
+                          "required": ["restoredValues", "unknownTokens"],
+                          "additionalProperties": false
+                        },
                         "labels": {
                           "type": "array",
                           "items": {
@@ -1007,9 +1017,31 @@
                           ],
                           "additionalProperties": false
                         },
+                        "dispositions": {
+                          "type": "object",
+                          "properties": {
+                            "destroy": {
+                              "type": "object",
+                              "properties": {
+                                "all": { "type": "boolean" },
+                                "categories": { "type": "array", "items": { "type": "string" } },
+                                "labels": {
+                                  "type": "object",
+                                  "propertyNames": { "type": "string" },
+                                  "additionalProperties": { "type": "string" }
+                                }
+                              },
+                              "required": ["all", "categories", "labels"],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": ["destroy"],
+                          "additionalProperties": false
+                        },
                         "detection": {
                           "type": "object",
                           "properties": {
+                            "entityPriority": { "type": "array", "items": { "type": "string" } },
                             "pii": {
                               "type": "object",
                               "properties": {
@@ -1515,6 +1547,8 @@
                         "filesMissing": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
                         "filesErrored": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
                         "revision": { "type": "string" },
+                        "fingerprint": { "type": "string" },
+                        "ambiguousForms": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
                         "restartRequired": { "type": "boolean" }
                       },
                       "required": ["added", "total"],

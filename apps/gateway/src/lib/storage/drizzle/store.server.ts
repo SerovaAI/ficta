@@ -281,6 +281,8 @@ export function createStorage(): Storage {
           redactedValues: proof.redactedValues,
           survivingValues: proof.survivingValues,
           ambiguousEntityLinks: proof.ambiguousEntityLinks,
+          registryFingerprint: proof.registryFingerprint,
+          restore: proof.restore,
           labels: proof.labels,
           previousHash,
           eventHash,
@@ -1092,6 +1094,8 @@ function toThreadEgressEvent(row: typeof threadEgressEvents.$inferSelect): Threa
     redactedValues: row.redactedValues,
     survivingValues: row.survivingValues,
     ambiguousEntityLinks: row.ambiguousEntityLinks,
+    ...(row.registryFingerprint ? { registryFingerprint: row.registryFingerprint } : {}),
+    ...(row.restore ? { restore: row.restore } : {}),
     labels: row.labels,
     ...(row.previousHash ? { previousHash: row.previousHash } : {}),
     eventHash: row.eventHash,
@@ -1110,7 +1114,9 @@ function egressEventHash({
   return createHash("sha256")
     .update(
       JSON.stringify({
-        version: 2,
+        version: proof.restore || proof.registryFingerprint ? 3 : 2,
+        ...(proof.registryFingerprint ? { registryFingerprint: proof.registryFingerprint } : {}),
+        ...(proof.restore ? { restore: proof.restore } : {}),
         threadId,
         eventId: proof.eventId,
         at: proof.at,

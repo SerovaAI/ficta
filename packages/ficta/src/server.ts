@@ -15,6 +15,7 @@ import {
   FICTA_PROTECTION_TICKET_HEADER,
   FICTA_REGISTRY_RELOAD_PATH,
   FICTA_REGISTRY_REVISION_HEADER,
+  FICTA_UNKNOWN_TOKEN_HEADER,
   FICTA_RESTORE_HIGHLIGHT_END,
   FICTA_RESTORE_HIGHLIGHT_HEADER,
   FICTA_RESTORE_HIGHLIGHT_METADATA,
@@ -515,7 +516,12 @@ async function handleRegistryReloadRoute(state: ProxyState, c: ProxyContext, met
   const response: RegistryReloadOk = {
     ok: true,
     service: "ficta",
-    registry: { ...reloaded, ...managed, ...(revision ? { revision } : {}) },
+    registry: {
+      ...reloaded,
+      ...managed,
+      fingerprint: engine.registryStatus.fingerprint,
+      ...(revision ? { revision } : {}),
+    },
   };
   return c.json(response);
 }
@@ -585,6 +591,7 @@ function beginProtectedRequest(
     eventId: egressEventIdFrom(c),
     protectedRequest: protect,
     proofs: egressProofs,
+    registryFingerprint: engine.registryStatus.fingerprint,
   });
   let preparedProtectionTicket: ProtectionTicket | undefined;
   if (requestedProtectionTicket) {
@@ -625,7 +632,10 @@ function beginProtectedRequest(
     traceCapture,
     captureRawBodies: traceCapture.bodyLogged,
     captureTraceAudit: traceCapture.valueAuditLogged,
-    restoreHighlightOptions: restoreHighlightMarkers ? { markers: restoreHighlightMarkers } : undefined,
+    restoreHighlightOptions: {
+      markers: restoreHighlightMarkers,
+      unknownToken: c.req.header(FICTA_UNKNOWN_TOKEN_HEADER) === "replace" ? "[unrestored reference]" : undefined,
+    },
     requestedProtectionTicket,
     preparedProtectionTicket,
   };
@@ -1071,8 +1081,13 @@ async function restoreUpstreamResponse(
   // wire, the response is that wire's event stream, so restore it instead of passing surrogates
   // through verbatim (which would leak FICTA_ placeholders into the agent's output).
   const treatAsEventStream = isEventStreamContentType(contentType) || (contentType === "" && wire !== "unknown");
-  const restoreResponse = protect && (isRestorableContentType(contentType) || treatAsEventStream);
-  const logRestore = () => recordRestoreOutcome(req, n);
+  const restoreResponse =
+    (protect || restoreHighlightOptions?.unknownToken !== undefined) &&
+    (isRestorableContentType(contentType) || treatAsEventStream);
+  const logRestore = () => {
+    recordRestoreOutcome(req, n);
+    req.egressEvidence?.restored(scope);
+  };
 
   if (upstreamRes.body) {
     const [toClient, toLog] = upstreamRes.body.tee();
@@ -1116,7 +1131,9 @@ async function restoreUpstreamResponse(
       });
     }
     return new Response(
-      toClient.pipeThrough(scope.restoreStream()).pipeThrough(restoredBodyTap(n, logRestore, captureRawBodies)),
+      toClient
+        .pipeThrough(scope.restoreStream(restoreHighlightOptions))
+        .pipeThrough(restoredBodyTap(n, logRestore, captureRawBodies)),
       {
         status: upstreamRes.status,
         headers: resHeaders,
@@ -1523,6 +1540,7 @@ interface ProtectionTicket {
 interface EgressEvidence {
   record(redaction: SurfaceRedaction): void;
   detectorUnavailable(): void;
+  restored(scope: RequestScope): void;
   finish(outcome: EgressProof["outcome"], model?: string): void;
 }
 
@@ -1531,11 +1549,13 @@ function createEgressEvidence({
   eventId,
   protectedRequest,
   proofs,
+  registryFingerprint,
 }: {
   scopeKey: string | undefined;
   eventId: string | undefined;
   protectedRequest: boolean;
   proofs: Map<string, EgressProof>;
+  registryFingerprint?: string;
 }): EgressEvidence | undefined {
   if (!scopeKey || !eventId) return undefined;
   let redactedValues = 0;
@@ -1563,6 +1583,10 @@ function createEgressEvidence({
     detectorUnavailable() {
       screening = "detector_unavailable";
     },
+    restored(scope) {
+      const proof = proofs.get(egressProofKey(scopeKey, eventId));
+      if (proof) proof.restore = { restoredValues: scope.restoredCount, unknownTokens: scope.residualSurrogateCount };
+    },
     finish(outcome, model = "unknown") {
       if (finished) return;
       finished = true;
@@ -1576,6 +1600,7 @@ function createEgressEvidence({
         redactedValues,
         survivingValues,
         ambiguousEntityLinks,
+        registryFingerprint,
         labels: [...labels.values()],
       });
     },

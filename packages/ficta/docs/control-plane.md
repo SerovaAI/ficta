@@ -450,3 +450,17 @@ clients MUST buffer incomplete markers across chunks, display restored text with
 annotation, and remove framing before copy, export, or resending history. These annotations describe
 restoration and are not authenticated egress evidence. Clients that do not implement framing MUST
 omit the opt-in header; ordinary native provider responses remain unannotated.
+
+### Restoration and registry evidence extensions
+
+The `restore-unknown` capability supports the internal request header
+`x-ficta-unknown-tokens: replace`. Gateway requires this capability and requests replacement of
+unmapped references with `[unrestored reference]`. The header is stripped before upstream egress.
+The scoped egress proof's optional `restore` summary contains `restoredValues` and `unknownTokens`
+(distinct counts), published after the response finishes restoring. Clients must not treat a missing
+summary on an interrupted/older response as zero failures. Counts use the scoped egress-proof
+endpoint because streaming response headers are sent before final restoration counts are known.
+
+Registry reload additionally reports `ambiguousForms` and a keyed `fingerprint` of the active
+registry. Egress proofs include that fingerprint as `registryFingerprint`. Config posture includes
+read-only `detection.entityPriority` and `dispositions.destroy`; TOML/env changes require restart.

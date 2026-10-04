@@ -21,3 +21,16 @@ fail_closed = true
 [surrogate]
 key_file = "/var/lib/ficta/.ficta/surrogate.key"
 require_stable_key = true
+
+# Keep protected values inside paths covered in Gateway document/chat traffic.
+[redaction]
+redact_paths = true
+
+# Resolve overlapping identifier classifications consistently in this reference profile.
+[detection]
+fail_closed = true
+entity_priority = ["za-id-number", "credit-card"]
+
+# Remove detected financial/national identifiers permanently; registered identifiers still restore.
+[dispositions.destroy]
+categories = ["credit-card", "za-id-number"]

@@ -2,6 +2,7 @@ import {
   FICTA_EGRESS_EVENT_HEADER,
   FICTA_PROTECTION_TICKET_HEADER,
   FICTA_RESTORE_HIGHLIGHT_HEADER,
+  FICTA_UNKNOWN_TOKEN_HEADER,
   FICTA_SCOPE_HEADER,
   FICTA_TRACE_CAPTURE_HEADER,
 } from "@serovaai/ficta-protocol";
@@ -49,6 +50,7 @@ export function createModelAdapter({
     // always knows how). It's an internal handshake header (the proxy strips it before upstream), so
     // it's sent unconditionally and remains independent from sensitive raw trace/audit capture.
     [FICTA_RESTORE_HIGHLIGHT_HEADER]: "1",
+    [FICTA_UNKNOWN_TOKEN_HEADER]: "replace",
     [FICTA_TRACE_CAPTURE_HEADER]: traceEnabled ? "1" : "0",
     ...(protectionTicket ? { [FICTA_PROTECTION_TICKET_HEADER]: protectionTicket } : {}),
     ...(fictaScope ? { [FICTA_SCOPE_HEADER]: fictaScope } : {}),

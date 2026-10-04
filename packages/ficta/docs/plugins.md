@@ -814,3 +814,19 @@ Shim installation is derived from the registered agent integrations, not a hardc
 
 External/community plugins should be explicit opt-in later. Built-ins are trusted and loaded by
 default.
+
+### Managed entity ambiguity and registry fingerprints
+
+Managed people and organization entries share the engine roster's validation rules. A canonical
+name claimed by another entry, or a literal conflicting with an entity surface, rejects the load.
+An alias shared by multiple entities is dropped from every claimant, across all configured files;
+it then relies on best-effort detection. Error messages do not disclose identifiers or values.
+Reload reports `ambiguousForms` and a keyed `fingerprint` of the records actually active in the
+process. Additions apply live; changes and removals still require restart. The fingerprint reflects
+the retained records until that restart and is included in scoped egress proofs.
+
+Proxy operators can configure `detection.entity_priority` and `dispositions.destroy.categories`
+with optional `[dispositions.destroy.labels]` overrides. Their environment equivalents are
+`FICTA_ENTITY_PRIORITY` and `FICTA_DESTROY_CATEGORIES` (comma-separated), and `FICTA_DESTROY_LABELS`
+(a JSON object of marker strings). Defaults preserve all detected values reversibly. Destroy
+changes disposition after detection, not detection coverage; registered values always restore.

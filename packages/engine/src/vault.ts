@@ -55,6 +55,8 @@ interface RestoreMarkers {
 }
 
 interface RestoreOptions {
+  /** Replace unknown surrogate-shaped references; known withheld tool arguments are preserved. */
+  unknownToken?: string;
   markers?: RestoreMarkers;
 }
 
@@ -746,7 +748,40 @@ export abstract class VaultView {
    * per-event deep sweep uses this so a surrogate deliberately withheld from a tool-call argument is
    * not silently re-restored when the whole event object is mapped. See {@link createSseRestoreStream}.
    */
+  /** Sanitize before inserting raw values, so token-like text in restored values is never rewritten. */
+  private replaceUnknownTokens(
+    text: string,
+    opts: RestoreOptions,
+    json = false,
+    nested: ReadonlyArray<readonly [number, number]> = NO_SPANS,
+  ): string {
+    if (opts.unknownToken === undefined) return text;
+    assertUnknownTokenPlaceholder(opts.unknownToken);
+    const markers = completeRestoreMarkerSpans(text, opts.markers, { includeJsonEscaped: json });
+    const known = [...text.matchAll(new RegExp(this.surrogate.pattern.source, "g"))]
+      .filter((match) => this.valueFor(match[0]) !== undefined)
+      .map((match) => [match.index, match.index + match[0].length] as const);
+    let out = "";
+    let cursor = 0;
+    for (const [start, end] of tokenShapedSpans(text)) {
+      if (overlapsSpan(markers, start, end) || overlapsSpan(known, start, end)) continue;
+      this.residualSurrogates.add(text.slice(start, end));
+      let replacement = opts.unknownToken;
+      if (json) replacement = jsonStringEscape(replacement);
+      if (json && overlapsSpan(nested, start, end)) replacement = jsonStringEscape(replacement);
+      out += text.slice(cursor, start) + replacement;
+      cursor = end;
+    }
+    return out + text.slice(cursor);
+  }
+
+  /**
+   * Shared restore with a skip set: surrogates in `skip` are left verbatim, all others restore. The
+   * per-event deep sweep uses this so a surrogate deliberately withheld from a tool-call argument is
+   * not silently re-restored when the whole event object is mapped. See {@link createSseRestoreStream}.
+   */
   private restoreTextExcept(text: string, skip: ReadonlySet<string>, opts: RestoreOptions = {}): string {
+    text = this.replaceUnknownTokens(text, opts);
     if (!this.hasSurrogates || !text) return text;
     const markerSpans = completeRestoreMarkerSpans(text, opts.markers);
     return text.replace(this.surrogate.pattern, (m, index: number) => {
@@ -810,7 +845,7 @@ export abstract class VaultView {
     adapter: BufferedRestoreAdapter = NOOP_BUFFERED_RESTORE_ADAPTER,
     opts: RestoreOptions = {},
   ): string {
-    if (!this.hasSurrogates || !body) {
+    if ((!this.hasSurrogates && opts.unknownToken === undefined) || !body) {
       this.noteResiduals(body); // an empty vault still observes token debris in complete bodies
       return body;
     }
@@ -894,23 +929,44 @@ export abstract class VaultView {
     opts: RestoreOptions = {},
     nestedJsonSpans: ReadonlyArray<readonly [number, number]> = NO_SPANS,
   ): string {
-    if (!this.hasSurrogates || !text) {
-      this.noteResiduals(text); // an empty vault still observes token debris in complete payloads
-      return text;
-    }
+    if (opts.unknownToken !== undefined) assertUnknownTokenPlaceholder(opts.unknownToken);
     const markerSpans = completeRestoreMarkerSpans(text, opts.markers, { includeJsonEscaped: true });
-    const out = text.replace(this.surrogate.pattern, (m, index: number) => {
-      if (overlapsSpan(markerSpans, index, index + m.length)) return m;
-      if (skip.has(m)) return m;
+    const edits: Array<{ start: number; end: number; replacement: string }> = [];
+    for (const match of text.matchAll(new RegExp(this.surrogate.pattern.source, "g"))) {
+      const m = match[0],
+        index = match.index;
+      if (overlapsSpan(markerSpans, index, index + m.length) || skip.has(m)) continue;
       const value = this.valueFor(m);
-      if (value === undefined) return m;
+      if (value === undefined) continue;
       const nested = overlapsSpan(nestedJsonSpans, index, index + m.length);
       if (nested) this.recordRestoredIntoTools(value, m);
       else this.recordRestored(value, m);
       const escaped = jsonStringEscape(markRestoredValue(value, m, this.restoreOriginFor(m), opts.markers));
-      // Inner escape first (the nested document), then the enclosing literal.
-      return nested ? jsonStringEscape(escaped) : escaped;
-    });
+      edits.push({ start: index, end: index + m.length, replacement: nested ? jsonStringEscape(escaped) : escaped });
+    }
+    if (opts.unknownToken !== undefined) {
+      for (const [start, end] of tokenShapedSpans(text)) {
+        if (overlapsSpan(markerSpans, start, end) || edits.some((edit) => edit.start < end && start < edit.end))
+          continue;
+        const token = text.slice(start, end);
+        if (this.valueFor(token) !== undefined) continue;
+        this.residualSurrogates.add(token);
+        const escaped = jsonStringEscape(opts.unknownToken);
+        edits.push({
+          start,
+          end,
+          replacement: overlapsSpan(nestedJsonSpans, start, end) ? jsonStringEscape(escaped) : escaped,
+        });
+      }
+    }
+    edits.sort((a, b) => a.start - b.start);
+    let out = "",
+      cursor = 0;
+    for (const edit of edits) {
+      out += text.slice(cursor, edit.start) + edit.replacement;
+      cursor = edit.end;
+    }
+    out += text.slice(cursor);
     this.noteResiduals(out); // callers pass complete JSON payloads (whole bodies / whole SSE records)
     return out;
   }
@@ -1041,6 +1097,7 @@ export abstract class VaultView {
   restoreStream(opts: RestoreOptions = {}): TransformStream<Uint8Array, Uint8Array> {
     const decoder = new TextDecoder();
     const encoder = new TextEncoder();
+    if (opts.unknownToken !== undefined) assertUnknownTokenPlaceholder(opts.unknownToken);
     const HOLD = this.surrogate.maxLength - 1; // max partial surrogate; a full token is maxLength chars
     let buf = "";
     // Residuals are scanned on the EMITTED output, not the working buffer: the buffer tail can end
@@ -1049,6 +1106,18 @@ export abstract class VaultView {
     return new TransformStream<Uint8Array, Uint8Array>({
       transform: (chunk, controller) => {
         // Restore complete surrogates in the full buffer; only a partial token can remain at the tail.
+        if (opts.unknownToken !== undefined) {
+          const { emit, hold } = splitForPotentialSurrogate(
+            buf + decoder.decode(chunk, { stream: true }),
+            this.surrogate,
+            true,
+          );
+          const restored = this.restoreTextExcept(emit, EMPTY_SKIP, opts);
+          residuals.feed(restored);
+          if (restored) controller.enqueue(encoder.encode(restored));
+          buf = hold;
+          return;
+        }
         buf = this.restoreTextExcept(buf + decoder.decode(chunk, { stream: true }), EMPTY_SKIP, opts);
         if (buf.length > HOLD) {
           const emitted = buf.slice(0, buf.length - HOLD);
@@ -1097,7 +1166,9 @@ export abstract class VaultView {
     // Non-scanning restores: SSE fragment reassembly calls these on pending-tail + fragment text
     // whose end can be mid-token, so residual observation happens on the encoded OUTPUT instead
     // (every emitted byte funnels through the stream's single encode point).
-    const plainText = (text: string) => this.restoreTextExcept(text, EMPTY_SKIP);
+    if (opts.unknownToken !== undefined) assertUnknownTokenPlaceholder(opts.unknownToken);
+    const plainOpts = { unknownToken: opts.unknownToken };
+    const plainText = (text: string) => this.restoreTextExcept(text, EMPTY_SKIP, plainOpts);
     const displayText = opts.markers ? (text: string) => this.restoreTextExcept(text, EMPTY_SKIP, opts) : plainText;
     return createSseRestoreStream(
       plainText,
@@ -1110,11 +1181,13 @@ export abstract class VaultView {
         restoreExcept: (text, skip) => this.restoreTextExcept(text, skip, opts),
         // No-fragment metadata/replay path (the request-echo events): plain, so `instructions` and
         // other non-output fields are restored without highlight decoration.
-        restoreReplayJson: (text, data) => this.restoreJsonBody(text, buffered, data, policy),
-        restoreToolArg: (text, withheldSink) => this.restoreToolArgText(text, policy, withheldSink),
+        restoreReplayJson: (text, data) => this.restoreJsonBody(text, buffered, data, policy, plainOpts),
+        restoreToolArg: (text, withheldSink) =>
+          this.restoreToolArgText(this.replaceUnknownTokens(text, plainOpts, true), policy, withheldSink),
       },
       displayText,
       this.residualScanner(),
+      opts.unknownToken !== undefined,
     );
   }
 }
@@ -1307,6 +1380,7 @@ interface SseRecord {
 
 interface PendingSseFragment {
   value: string;
+  restore?: (text: string) => string;
   eventName?: string;
   flushData: (value: string) => Record<string, unknown>;
 }
@@ -1383,6 +1457,7 @@ function createSseRestoreStream(
   /** Residual-surrogate observer fed every emitted byte (tokens never split across emitted records:
    *  fragment reassembly stitches them before emission), finalized when the stream flushes. */
   residuals?: { feed(text: string): void; end(): void },
+  guardUnknown = false,
 ): TransformStream<Uint8Array, Uint8Array> {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
@@ -1404,7 +1479,7 @@ function createSseRestoreStream(
         const record = buf.slice(0, boundary.index + boundary.length);
         buf = buf.slice(boundary.index + boundary.length);
         encode(
-          restoreSseRecord(record, pending, restoreText, adapter, surrogate, tool, restoreDisplayText),
+          restoreSseRecord(record, pending, restoreText, adapter, surrogate, tool, restoreDisplayText, guardUnknown),
           controller,
         );
       }
@@ -1412,7 +1487,10 @@ function createSseRestoreStream(
     flush(controller) {
       buf += decoder.decode();
       if (buf) {
-        encode(restoreSseRecord(buf, pending, restoreText, adapter, surrogate, tool, restoreDisplayText), controller);
+        encode(
+          restoreSseRecord(buf, pending, restoreText, adapter, surrogate, tool, restoreDisplayText, guardUnknown),
+          controller,
+        );
       }
       encode(flushPendingSseFragments(pending, restoreText), controller);
       residuals?.end();
@@ -1428,6 +1506,7 @@ function restoreSseRecord(
   surrogate: SurrogateStrategy,
   tool: ToolRestorePolicy,
   restoreDisplayText: (text: string) => string,
+  guardUnknown = false,
 ): string {
   const parsed = parseSseRecord(record);
   if (parsed.data?.trim() === "[DONE]") {
@@ -1464,6 +1543,7 @@ function restoreSseRecord(
   // Tokens withheld from tool-call arguments in this event; the deep sweep below must not restore
   // them either (a single delta can carry a whole surrogate, not just a split fragment).
   const withheld = tool.withhold ? new Set<string>() : undefined;
+  const emitted: string[] = [];
   for (const fragment of fragments) {
     // Tool fragments take the SAME pending-reassembly as text: a surrogate split across several
     // `input_json_delta` chunks is stitched back to a whole token here, then `restoreToolArg`
@@ -1484,23 +1564,39 @@ function restoreSseRecord(
           ? restoreDisplayText
           : restoreText;
     const combined = (pending.get(fragment.key)?.value ?? "") + fragment.value;
-    const restored = restore(combined);
-    const { emit, hold } = splitForPotentialSurrogate(restored, surrogate);
-    if (hold) pending.set(fragment.key, { value: hold, eventName: fragment.eventName, flushData: fragment.flushData });
+    const split = guardUnknown ? splitForPotentialSurrogate(combined, surrogate, true) : undefined;
+    const restored = restore(split ? split.emit : combined);
+    const { emit, hold } = split
+      ? { emit: restored, hold: split.hold }
+      : splitForPotentialSurrogate(restored, surrogate);
+    if (hold)
+      pending.set(fragment.key, {
+        value: hold,
+        eventName: fragment.eventName,
+        flushData: fragment.flushData,
+        restore: guardUnknown ? restore : undefined,
+      });
     else pending.delete(fragment.key);
-    fragment.setValue(emit);
+    emitted.push(emit);
+    // Exclude already-restored fragments from the sibling sweep. Restored values can themselves
+    // contain token-shaped literals, which must not be restored or sanitized a second time.
+    fragment.setValue("");
   }
 
-  // Fragment fields now hold restored text (any partial-surrogate tail lives in `pending`), so a
+  // Fragment fields are temporarily empty (any partial-surrogate tail lives in `pending`), so a
   // deep restore over the parsed record only touches sibling fields the adapter does not name
   // (e.g. an OpenAI delta's reasoning_content/refusal). Those siblings are still assistant output, so
   // this fragment-path sweep restores WITH markers (`restoreExcept`/`displayText` are marker-aware:
   // they decorate a genuinely restored sibling and skip surrogates already wrapped by the fragment
-  // loop above). JSON serialization re-escapes them. Tool fragments left a placeholder in place; the
-  // deep sweep skips those withheld tokens so it cannot undo the withholding.
+  // loop above). JSON serialization re-escapes them. The deep sweep also skips withheld tokens
+  // repeated in sibling fields so it cannot undo the withholding.
   const deepRestore =
     withheld && withheld.size > 0 ? (text: string) => tool.restoreExcept(text, withheld) : restoreDisplayText;
-  return prefix + renderSseJsonRecord(parsed, mapStrings(data, deepRestore));
+  const restoredData = mapStrings(data, deepRestore);
+  for (const [index, fragment] of adapter.fragments(restoredData, parsed.eventName).entries()) {
+    fragment.setValue(emitted[index] ?? "");
+  }
+  return prefix + renderSseJsonRecord(parsed, restoredData);
 }
 
 function flushPendingSseFragments(
@@ -1511,14 +1607,32 @@ function flushPendingSseFragments(
   let out = "";
   for (const [key, fragment] of pending) {
     if (keyPrefix && !key.startsWith(keyPrefix)) continue;
-    const value = restoreText(fragment.value);
+    const value = (fragment.restore ?? restoreText)(fragment.value);
     if (value) out += renderSseDataEvent(fragment.eventName, fragment.flushData(value));
     pending.delete(key);
   }
   return out;
 }
 
-function splitForPotentialSurrogate(text: string, surrogate: SurrogateStrategy): { emit: string; hold: string } {
+function splitForPotentialSurrogate(
+  text: string,
+  surrogate: SurrogateStrategy,
+  guardUnknown = false,
+): { emit: string; hold: string } {
+  if (guardUnknown) {
+    // Wait for right context even after a full token: the next delta may mutate its suffix or
+    // complete a whitespace-split reference. Bound the retained tail for adversarial output.
+    const tail = text.slice(-160);
+    const candidate = tail.match(/(?<![0-9A-Za-z_])ficta_[0-9A-Za-z_*]*(?:\s[0-9A-Fa-f]*)?$/iu);
+    if (candidate) {
+      const at = text.length - tail.length + (candidate.index ?? 0);
+      return { emit: text.slice(0, at), hold: text.slice(at) };
+    }
+    for (let length = 5; length > 0; length--) {
+      if ("ficta_".startsWith(text.slice(-length).toLowerCase()))
+        return { emit: text.slice(0, -length), hold: text.slice(-length) };
+    }
+  }
   const max = Math.min(surrogate.maxLength - 1, text.length);
   for (let length = max; length > 0; length -= 1) {
     const suffix = text.slice(text.length - length);
@@ -1621,7 +1735,8 @@ function nestedJsonStringSpans(
 ): ReadonlyArray<readonly [number, number]> {
   if (regions.length === 0) return NO_SPANS;
   const wanted = new Set<string>();
-  for (const region of regions) if (region.match(surrogate.pattern)) wanted.add(region);
+  for (const region of regions)
+    if (region.match(surrogate.pattern) || tokenShapedSpans(region).length > 0) wanted.add(region);
   if (wanted.size === 0) return NO_SPANS;
 
   const spans: Array<readonly [number, number]> = [];
@@ -1638,7 +1753,7 @@ function nestedJsonStringSpans(
     const close = cursor;
     cursor += 1;
     const literal = text.slice(open, close + 1);
-    if (!literal.match(surrogate.pattern)) continue; // no surrogate inside: escaping depth is moot
+    if (!literal.match(surrogate.pattern) && tokenShapedSpans(literal).length === 0) continue; // no surrogate inside: escaping depth is moot
     let decoded: unknown;
     try {
       decoded = JSON.parse(literal);

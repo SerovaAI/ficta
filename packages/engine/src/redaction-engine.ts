@@ -87,6 +87,8 @@ export interface RedactionEngine {
 
 /** Values-free engine diagnostics consumed by the proxy status, banner, and returned handle. */
 export interface EngineRegistryStatus {
+  /** Keyed fingerprint of the registry records actually active in this process. */
+  readonly fingerprint?: string;
   readonly discoveries: readonly PluginDiscovery[];
   readonly registryPolicy: RegistryPolicy;
   readonly policyExcluded: number;
@@ -139,7 +141,7 @@ export interface RequestScope {
    * set, replaced by that placeholder; it is never mapped to a value. Without `unknownToken` the text
    * is identical to {@link restoreText}'s. With a persistent vault, "unknown" means unknown in
    * memory: call {@link prepareRestore} first so tokens another process minted are fetched.
-   * Synchronous and for complete texts only; the JSON and streaming restores are unchanged.
+   * Synchronous and for complete texts; JSON and streaming restores also accept `unknownToken`.
    */
   restoreTextDetailed(text: string, opts?: RestoreTextDetailedOptions): RestoreTextDetails;
 
@@ -295,6 +297,8 @@ export interface RestoreMarkers {
 }
 
 export interface RestoreOptions {
+  /** Replace unknown references in complete, JSON and streaming responses. Known withheld tokens stay intact. */
+  unknownToken?: string;
   /**
    * Optional client-facing markers around restored human text. Used by clients that explicitly
    * advertise restore-highlight support; callers must strip or render them before resending transcripts.

@@ -43,6 +43,16 @@ restore_into_tools = "detected"
 # Detector-backend outages default to fail-open (skip detection and forward).
 # This is separate from redaction.fail_closed, which covers registered exact-secret leaks.
 fail_closed = false
+# Category order when detectors disagree about the same value. Empty = default ordering.
+entity_priority = [] # e.g. ["za-id-number", "credit-card"]
+
+[dispositions.destroy]
+# Irreversible replacement for detections only. Registered values stay reversible.
+# Empty = off; "*" removes every detector finding. Detection remains best-effort.
+categories = [] # e.g. ["credit-card", "za-id-number"]
+# Optional overrides; only categories listed above (or any category with "*").
+# [dispositions.destroy.labels]
+# credit-card = "[REMOVED_CARD]"
 
 [secret_shapes]
 # Web / standalone proxy request-time detection for newly pasted token shapes not present in the

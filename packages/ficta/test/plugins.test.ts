@@ -305,7 +305,7 @@ describe("registry plugin discovery", () => {
     expect(() => loadPluginRegistry()).toThrow("unsupported json");
   });
 
-  it("validates ids and normalized entity-form ownership across every configured file", () => {
+  it("drops shared aliases across every configured file", () => {
     const dir = mkdtempSync(join(tmpdir(), "ficta-managed-registry-conflict-"));
     const first = join(dir, "first.json");
     const second = join(dir, "second.json");
@@ -330,7 +330,12 @@ describe("registry plugin discovery", () => {
     process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "1";
     process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = `${first}:${second}`;
 
-    expect(() => loadPluginRegistry()).toThrow(`managed registry value in ${second}`);
+    const snapshot = loadPluginRegistry();
+    expect(snapshot.values.map((value) => value.value)).toEqual(
+      expect.arrayContaining(["Northstar Biologics", "Proxima Medical"]),
+    );
+    expect(snapshot.values.map((value) => value.value)).not.toContain("Northstar");
+    expect(snapshot.values.map((value) => value.value)).not.toContain("  NORTHSTAR  ");
   });
 
   it("rejects literal/entity value ownership conflicts across configured files", () => {
@@ -372,10 +377,10 @@ describe("registry plugin discovery", () => {
     process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "1";
     process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = `${first}:${second}`;
 
-    expect(() => loadPluginRegistry()).toThrow(`managed registry value in ${second}`);
+    expect(() => loadPluginRegistry()).toThrow("managed registry value is assigned to more than one entry");
   });
 
-  it("identifies the offending file for duplicate ids across configured files", () => {
+  it("rejects duplicate ids across configured files without disclosing them", () => {
     const dir = mkdtempSync(join(tmpdir(), "ficta-managed-registry-id-conflict-"));
     const first = join(dir, "first.json");
     const second = join(dir, "second.json");
@@ -392,7 +397,7 @@ describe("registry plugin discovery", () => {
     process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "1";
     process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = `${first}:${second}`;
 
-    expect(() => loadPluginRegistry()).toThrow(`duplicate managed registry id duplicate-id in ${second}`);
+    expect(() => loadPluginRegistry()).toThrow("duplicate managed registry entry id");
   });
 
   it("refuses Doppler commands resolved inside the current working tree", () => {

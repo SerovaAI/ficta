@@ -1,6 +1,7 @@
 import {
   type DestroyDispositionInput,
   type EngineConfigInput,
+  type EngineConfig,
   InvalidEngineConfigError,
   normalizeCategory,
   resolveEngineConfig,
@@ -246,18 +247,10 @@ export async function createEngine(options: CreateEngineOptions): Promise<FictaE
         name,
         new ProtectionEngine({
           plugins,
-          config: {
+          config: profileEngineConfig(profile, {
             ...shared,
-            pii: {
-              enabled: pii,
-              failClosed: true,
-              backends,
-              presidio: { ...options.presidio, entities: entities ?? [] },
-              openmed: { ...options.openmed },
-            },
-            secretShapes: { enabled: profile.secretShapes ?? true },
-            dispositions: { destroy: profile.destroy ?? {} },
-          },
+            pii: { backends, presidio: { ...options.presidio, entities: entities ?? [] }, openmed: options.openmed },
+          }),
           onWarn: options.onWarn,
           vault: store,
         }),
@@ -282,6 +275,23 @@ export async function createEngine(options: CreateEngineOptions): Promise<FictaE
     },
     options.onWarn ?? noopWarnSink,
   );
+}
+
+/** Map a library profile onto the same resolved config consumed by transport adapters. */
+export function profileEngineConfig(profile: ProfileConfig, shared: EngineConfigInput = {}): EngineConfig {
+  return resolveEngineConfig({
+    ...shared,
+    detection: { ...shared.detection, failClosed: true },
+    redactPaths: true,
+    pii: {
+      ...shared.pii,
+      enabled: profile.pii ?? true,
+      failClosed: true,
+      presidio: { ...shared.pii?.presidio, entities: profile.entities ?? shared.pii?.presidio?.entities ?? [] },
+    },
+    secretShapes: { enabled: profile.secretShapes ?? true },
+    dispositions: { destroy: profile.destroy ?? {} },
+  });
 }
 
 function profileEntities(name: string, entities: readonly string[] | undefined): string[] | undefined {

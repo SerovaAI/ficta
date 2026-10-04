@@ -83,6 +83,12 @@ function Receipt({ receipt }: { receipt: ThreadEgressReceipt }) {
               {event.model} · {event.screening.replaceAll("_", " ")} · {event.redactedValues} values tokenized ·{" "}
               {event.survivingValues} known values left
             </p>
+            {event.restore ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {event.restore.restoredValues} values restored · {event.restore.unknownTokens} unrecognized references
+                replaced
+              </p>
+            ) : null}
             {event.labels.length > 0 ? (
               <p className="mt-1 text-xs text-muted-foreground">Labels: {formatLabelCounts(event.labels)}</p>
             ) : null}

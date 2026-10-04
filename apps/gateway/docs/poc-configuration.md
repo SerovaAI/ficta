@@ -48,6 +48,16 @@ enabled = true
 enabled = true
 backends = ["presidio"]
 fail_closed = true
+
+[redaction]
+redact_paths = true
+
+[detection]
+fail_closed = true
+entity_priority = ["za-id-number", "credit-card"]
+
+[dispositions.destroy]
+categories = ["credit-card", "za-id-number"]
 ```
 
 This keeps provider traffic paused until an enabled registry source is healthy and non-empty,

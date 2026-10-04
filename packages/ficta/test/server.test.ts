@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -7,6 +8,7 @@ import {
   FICTA_EGRESS_EVENT_HEADER,
   FICTA_EGRESS_PROOF_PATH,
   FICTA_RESTORE_HIGHLIGHT_HEADER,
+  FICTA_UNKNOWN_TOKEN_HEADER,
   FICTA_SCOPE_HEADER,
   FICTA_TRACE_CAPTURE_HEADER,
   FICTA_TRACE_CAPTURE_PATH,
@@ -2153,3 +2155,76 @@ describe("buffered tool-call withholding", () => {
     }
   });
 });
+
+it.each(["buffered", "streamed"])(
+  "replaces unknown %s references before delivery and records restoration evidence",
+  async (mode) => {
+    vi.stubEnv("FICTA_LOG_LEVEL", "silent");
+    vi.stubEnv("FICTA_ALLOW_CUSTOM_UPSTREAM", "1");
+    const registry: RegistrySourcePlugin = {
+      kind: "registry-source",
+      name: "restore-evidence-fixture",
+      config: { bindings: [], sections: [], envDefaults: {} },
+      setup: { registrySources: () => [] },
+      discover: () => [],
+      loadValues: () => [{ name: "example", value: PROOF_SECRET, source: "fixture" }],
+    };
+    let internalHeader: string | string[] | undefined;
+    const upstream = createServer((request, response) => {
+      internalHeader = request.headers[FICTA_UNKNOWN_TOKEN_HEADER];
+      let body = "";
+      request.on("data", (chunk) => {
+        body += chunk;
+      });
+      request.on("end", () => {
+        const token = JSON.parse(body).messages[0].content as string;
+        const bad = token.slice(0, -1);
+        if (mode === "buffered") {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(JSON.stringify({ choices: [{ message: { content: token + " / " + bad } }] }));
+        } else {
+          response.writeHead(200, { "content-type": "text/event-stream" });
+          const delta = (content: string) =>
+            `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content } }] })}\n\n`;
+          response.write(delta(token + " / " + bad.slice(0, 12)));
+          response.write(delta(bad.slice(12)));
+          response.end("data: [DONE]\n\n");
+        }
+      });
+    });
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
+    try {
+      const upstreamPort = await listen(upstream);
+      vi.stubEnv("FICTA_UPSTREAM", `http://127.0.0.1:${upstreamPort}`);
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0, plugins: [registry] });
+      const eventId = randomUUID(),
+        scope = "restore-evidence-scope";
+      const result = await fetch(`http://127.0.0.1:${proxy.port}/v1/chat/completions`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          [FICTA_UNKNOWN_TOKEN_HEADER]: "replace",
+          [FICTA_SCOPE_HEADER]: scope,
+          [FICTA_EGRESS_EVENT_HEADER]: eventId,
+        },
+        body: JSON.stringify({ model: "test-model", messages: [{ role: "user", content: PROOF_SECRET }] }),
+      });
+      expect(result.status).toBe(200);
+      const output = await result.text();
+      expect(output).toContain(PROOF_SECRET);
+      expect(output).toContain("[unrestored reference]");
+      expect(output).not.toMatch(/FICTA_[0-9a-f]/);
+      expect(internalHeader).toBeUndefined();
+      const receipt = await fetch(`http://127.0.0.1:${proxy.port}${FICTA_EGRESS_PROOF_PATH}`, {
+        headers: { [FICTA_SCOPE_HEADER]: scope, [FICTA_EGRESS_EVENT_HEADER]: eventId },
+      }).then((response) => response.json());
+      expect(receipt.proof.restore).toEqual({ restoredValues: 1, unknownTokens: 1 });
+      expect(receipt.proof.registryFingerprint).toMatch(/^[a-f0-9]{64}$/);
+    } finally {
+      if (proxy) await proxy.close();
+      await close(upstream);
+      vi.unstubAllEnvs();
+    }
+  },
+);

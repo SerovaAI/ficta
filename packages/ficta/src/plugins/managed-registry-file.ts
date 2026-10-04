@@ -7,6 +7,7 @@ import {
 } from "@serovaai/ficta-protocol";
 import {
   envEnabled,
+  buildRoster,
   type PluginDiscovery,
   type ProtectedValue,
   type RegistrySetupSource,
@@ -35,6 +36,7 @@ interface ManagedRegistryStats {
   filesMissing: number;
   filesErrored: number;
   revisions: string[];
+  ambiguousForms: number;
   files: ManagedRegistryFileStat[];
 }
 
@@ -137,6 +139,34 @@ function loadManagedRegistryValues(): ProtectedValue[] {
   }
 
   try {
+    const entities = parsedFiles.flatMap(({ registry }) =>
+      registry.entries.filter((entry) => entry.protectionKind === "entity"),
+    );
+    // Share the engine roster's conflict rules. Its validation-only fingerprint is discarded;
+    // the engine exposes a keyed fingerprint of the records actually active after reload.
+    const roster = buildRoster(
+      entities.map((entry) => ({
+        id: entry.id,
+        type: entry.entityType,
+        canonical: entry.canonicalValue,
+        forms: entry.forms.map((form) => form.value),
+      })),
+      "managed-registry-validation-only",
+    );
+    stats.ambiguousForms = roster.ambiguousForms;
+    const admitted = new Map(
+      roster.records.map((record, index) => [
+        entities[index]?.id,
+        new Set(record.forms.map((form) => normalizeForm(form.value))),
+      ]),
+    );
+    for (const { registry } of parsedFiles) {
+      registry.entries = registry.entries.map((entry) =>
+        entry.protectionKind === "entity"
+          ? { ...entry, forms: entry.forms.filter((form) => admitted.get(entry.id)?.has(normalizeForm(form.value))) }
+          : entry,
+      );
+    }
     validateManagedRegistrySet(parsedFiles);
   } catch (error) {
     stats.filesErrored++;
@@ -193,6 +223,7 @@ export function managedRegistryLoadCounts(): {
   filesMissing: number;
   filesErrored: number;
   revisions: string[];
+  ambiguousForms: number;
 } {
   const stats = loadManagedRegistryStats();
   return {
@@ -201,6 +232,7 @@ export function managedRegistryLoadCounts(): {
     filesMissing: stats.filesMissing,
     filesErrored: stats.filesErrored,
     revisions: [...stats.revisions],
+    ambiguousForms: stats.ambiguousForms,
   };
 }
 
@@ -410,9 +442,7 @@ function validateManagedRegistrySet(files: readonly ParsedManagedRegistryFile[])
       const idOwner = idOwners.get(entry.id);
       if (idOwner) {
         stat.error = "registry conflict";
-        throw new Error(
-          `duplicate managed registry id ${entry.id} in ${stat.file} (already declared in ${idOwner.file})`,
-        );
+        throw new Error("duplicate managed registry entry id; use distinct identifiers");
       }
       idOwners.set(entry.id, stat);
       const values =
@@ -424,9 +454,7 @@ function validateManagedRegistrySet(files: readonly ParsedManagedRegistryFile[])
         const owner = valueOwners.get(normalized);
         if (owner !== undefined && owner.entryId !== entry.id) {
           stat.error = "registry conflict";
-          throw new Error(
-            `managed registry value in ${stat.file} is assigned to both ${owner.entryId} (${owner.stat.file}) and ${entry.id}`,
-          );
+          throw new Error("managed registry value is assigned to more than one entry; merge or disambiguate them");
         }
         valueOwners.set(normalized, { entryId: entry.id, stat });
       }
@@ -453,6 +481,7 @@ function emptyStats(): ManagedRegistryStats {
     filesMissing: 0,
     filesErrored: 0,
     revisions: [],
+    ambiguousForms: 0,
     files: [],
   };
 }

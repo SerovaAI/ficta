@@ -38,7 +38,9 @@ describe("configPosture", () => {
         restoreIntoTools: "detected",
         surrogateStyle: "opaque",
       },
+      dispositions: { destroy: { all: false, categories: [], labels: {} } },
       detection: {
+        entityPriority: [],
         pii: {
           standalone: false,
           agents: false,

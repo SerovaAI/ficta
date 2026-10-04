@@ -17,6 +17,7 @@ export const FICTA_EXTENSION_CAPABILITIES = [
   "trace-capture",
   "registry-reload",
   "restore-highlights",
+  "restore-unknown",
 ] as const;
 export type FictaExtensionCapability = (typeof FICTA_EXTENSION_CAPABILITIES)[number];
 const count = z.number().int().nonnegative();
@@ -66,8 +67,17 @@ export const configSchema = z
             surrogateStyle: z.enum(["opaque", "typed"]),
           })
           .strict(),
+        dispositions: z
+          .object({
+            destroy: z
+              .object({ all: z.boolean(), categories: z.array(z.string()), labels: z.record(z.string(), z.string()) })
+              .strict(),
+          })
+          .strict()
+          .optional(),
         detection: z
           .object({
+            entityPriority: z.array(z.string()).optional(),
             pii: z
               .object({
                 standalone: z.boolean(),
@@ -110,6 +120,8 @@ export const registryReloadSchema = z
         filesMissing: count.optional(),
         filesErrored: count.optional(),
         revision: z.string().optional(),
+        fingerprint: z.string().optional(),
+        ambiguousForms: count.optional(),
         restartRequired: z.boolean().optional(),
       })
       .strict(),
@@ -128,6 +140,8 @@ export const egressProofSchema = z
         redactedValues: count,
         survivingValues: count,
         ambiguousEntityLinks: count,
+        registryFingerprint: z.string().optional(),
+        restore: z.object({ restoredValues: count, unknownTokens: count }).strict().optional(),
         labels: z.array(
           protectionHitSchema.extend({ redactedValues: count.optional(), survivingValues: count.optional() }),
         ),

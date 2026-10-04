@@ -115,6 +115,7 @@ export const Route = createFileRoute("/api/chat")({
             admin: isAdmin(auth),
           });
           await gatewayFictaControlClient({ requiredCapability: "restore-highlights" });
+          await gatewayFictaControlClient({ requiredCapability: "restore-unknown" });
           if (egressEventId) await gatewayFictaControlClient({ requiredCapability: "egress-proof" });
           if (traceEnabled) await gatewayFictaControlClient({ requiredCapability: "trace-capture" });
           stream = chat({

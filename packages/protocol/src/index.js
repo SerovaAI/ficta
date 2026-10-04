@@ -13,6 +13,7 @@ export const FICTA_SCOPE_HEADER = "x-ficta-scope";
 /** Correlates a Gateway audit record with one proxy request. Never forwarded upstream. */
 export const FICTA_EGRESS_EVENT_HEADER = "x-ficta-egress-event";
 export const FICTA_TRACE_CAPTURE_HEADER = "x-ficta-trace-capture";
+export const FICTA_UNKNOWN_TOKEN_HEADER = "x-ficta-unknown-tokens";
 export const FICTA_RESTORE_HIGHLIGHT_HEADER = "x-ficta-restore-highlights";
 export const FICTA_RESTORE_HIGHLIGHT_START = "\u001eFICTA_RESTORE_START\u001e";
 export const FICTA_RESTORE_HIGHLIGHT_ORIGIN = "\u001eFICTA_RESTORE_ORIGIN\u001e";
@@ -65,6 +66,14 @@ export function isProxyConfigOk(value) {
     typeof protection.redactPaths === "boolean" &&
     isRestoreIntoToolsPolicy(protection.restoreIntoTools) &&
     (protection.surrogateStyle === "opaque" || protection.surrogateStyle === "typed") &&
+    (detection.entityPriority === undefined || isStringArray(detection.entityPriority)) &&
+    (value.config.dispositions === undefined ||
+      (isRecord(value.config.dispositions) &&
+        isRecord(value.config.dispositions.destroy) &&
+        typeof value.config.dispositions.destroy.all === "boolean" &&
+        isStringArray(value.config.dispositions.destroy.categories) &&
+        isRecord(value.config.dispositions.destroy.labels) &&
+        Object.values(value.config.dispositions.destroy.labels).every((label) => typeof label === "string"))) &&
     typeof detection.pii.standalone === "boolean" &&
     typeof detection.pii.agents === "boolean" &&
     typeof detection.pii.configuredBackend === "string" &&
@@ -116,6 +125,8 @@ export function isRegistryReloadOk(value) {
     (value.registry.filesRead === undefined || isNonNegativeInteger(value.registry.filesRead)) &&
     (value.registry.filesMissing === undefined || isNonNegativeInteger(value.registry.filesMissing)) &&
     (value.registry.filesErrored === undefined || isNonNegativeInteger(value.registry.filesErrored)) &&
+    (value.registry.fingerprint === undefined || typeof value.registry.fingerprint === "string") &&
+    (value.registry.ambiguousForms === undefined || isNonNegativeInteger(value.registry.ambiguousForms)) &&
     (value.registry.revision === undefined || typeof value.registry.revision === "string") &&
     (value.registry.restartRequired === undefined || typeof value.registry.restartRequired === "boolean")
   );
@@ -155,13 +166,18 @@ export function isManagedRegistryFile(value) {
     ids.add(entry.id);
     const surfaces =
       entry.protectionKind === "entity"
-        ? [entry.canonicalValue, ...entry.forms.map((item) => item.value)]
-        : [entry.value];
+        ? [
+            { value: entry.canonicalValue, primary: true },
+            ...entry.forms.map((item) => ({ value: item.value, primary: false })),
+          ]
+        : [{ value: entry.value, primary: true }];
     for (const surface of surfaces) {
-      const normalized = normalizeManagedRegistryForm(surface);
+      const normalized = normalizeManagedRegistryForm(surface.value);
       const owner = valueOwners.get(normalized);
-      if (owner !== undefined && owner !== entry.id) return false;
-      valueOwners.set(normalized, entry.id);
+      // Shared aliases are accepted; the engine drops them from every claimant. A canonical name
+      // or literal must still identify exactly one entry.
+      if (owner !== undefined && owner.id !== entry.id && (owner.primary || surface.primary)) return false;
+      valueOwners.set(normalized, { id: entry.id, primary: surface.primary || owner?.primary === true });
     }
   }
   return true;
@@ -361,6 +377,11 @@ export function isEgressProofOk(value) {
     typeof proof.redactedValues === "number" &&
     typeof proof.survivingValues === "number" &&
     isNonNegativeInteger(proof.ambiguousEntityLinks) &&
+    (proof.registryFingerprint === undefined || typeof proof.registryFingerprint === "string") &&
+    (proof.restore === undefined ||
+      (isRecord(proof.restore) &&
+        isNonNegativeInteger(proof.restore.restoredValues) &&
+        isNonNegativeInteger(proof.restore.unknownTokens))) &&
     Array.isArray(proof.labels) &&
     proof.labels.every(isEgressProofLabel)
   );

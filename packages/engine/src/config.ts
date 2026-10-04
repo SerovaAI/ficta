@@ -116,6 +116,8 @@ export interface EngineConfigInput {
 
 /** Input form of {@link DestroyDisposition}: categories in any case/separator, labels optional. */
 export interface DestroyDispositionInput {
+  /** Present on a resolved disposition; keeps config resolution idempotent across host adapters. */
+  readonly all?: boolean;
   /** Category names to destroy, or `"*"` for every detector finding (registered values excepted). */
   readonly categories?: readonly string[] | "*";
   /** Marker overrides per category; several categories may share one label. */
@@ -180,11 +182,11 @@ function resolveCategoryList(input: readonly string[] | undefined, setting: stri
 
 function resolveDestroyDisposition(input: DestroyDispositionInput | undefined): DestroyDisposition {
   const requested = input?.categories;
-  const all = requested === "*" || (Array.isArray(requested) && requested.includes("*"));
+  const all = input?.all === true || requested === "*" || (Array.isArray(requested) && requested.includes("*"));
   if (typeof requested === "string" && requested !== "*") {
     throw new InvalidEngineConfigError('dispositions.destroy.categories: expected a list of category names or "*"');
   }
-  if (all && Array.isArray(requested) && requested.length !== 1) {
+  if (all && Array.isArray(requested) && requested.length > 0 && (requested.length !== 1 || requested[0] !== "*")) {
     throw new InvalidEngineConfigError(
       'dispositions.destroy.categories: "*" destroys every category and cannot be combined with category names',
     );

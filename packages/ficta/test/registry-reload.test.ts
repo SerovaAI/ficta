@@ -346,6 +346,8 @@ describe("proxy registry reload endpoint", () => {
       expect(isRegistryReloadOk(json)).toBe(true);
       if (isRegistryReloadOk(json)) {
         expect(json.registry).toEqual({
+          fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+          ambiguousForms: 0,
           added: 2,
           total: 3,
           restartRequired: false,
@@ -401,4 +403,48 @@ describe("proxy registry reload endpoint", () => {
       await new Promise<void>((resolve, reject) => upstream.close((err) => (err ? reject(err) : resolve())));
     }
   });
+});
+
+it("drops shared roster aliases and fingerprints only the active registry", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ficta-roster-reload-"));
+  const file = join(dir, "registry.json");
+  process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = file;
+  const entries = ["Anna Berg", "Anna Stone"].map((canonicalValue, index) => ({
+    id: `person-${index}`,
+    protectionKind: "entity",
+    entityType: "person",
+    canonicalValue,
+    forms: [{ value: "Anna", kind: "alias", boundary: "token" }],
+  }));
+  const publish = (values: unknown[]) =>
+    writeFileSync(
+      file,
+      JSON.stringify({
+        schema: FICTA_MANAGED_REGISTRY_SCHEMA,
+        revision: "roster-revision",
+        generatedBy: "test",
+        generatedAt: "2026-07-14T00:00:00.000Z",
+        entries: values,
+      }),
+    );
+  publish(entries);
+  const options = {
+    plugins: [managedRegistryFilePlugin],
+    config: { surrogate: { key: "registry-fingerprint-test-key-at-least-32-bytes" } },
+  };
+  const engine = new ProtectionEngine(options);
+  const fingerprint = engine.registryStatus.fingerprint;
+  expect(fingerprint).toMatch(/^[a-f0-9]{64}$/);
+  const out = await engine.beginRequest("thread").redactContentDetailed("Anna Berg met Anna Stone; Anna replied.");
+  expect(out.text).not.toContain("Anna Berg");
+  expect(out.text).not.toContain("Anna Stone");
+  expect(out.text).toContain("Anna replied.");
+  publish([...entries].reverse());
+  engine.reloadRegistryValues();
+  expect(engine.registryStatus.fingerprint).toBe(fingerprint);
+  publish([]);
+  expect(engine.reloadRegistryValues().restartRequired).toBe(true);
+  expect(engine.registryStatus.fingerprint).toBe(fingerprint);
+  const fresh = new ProtectionEngine(options);
+  expect(fresh.registryStatus.fingerprint).not.toBe(fingerprint);
 });

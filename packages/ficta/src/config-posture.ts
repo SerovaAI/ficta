@@ -1,7 +1,7 @@
 import type { ProxyConfigPosture } from "@serovaai/ficta-protocol";
 import type { Config } from "./config.js";
 import { detectorFailClosed, envFlag, restoreIntoToolsPolicy, surrogateStyle } from "@serovaai/ficta-engine";
-import { detectionFailClosed } from "./engine-env.js";
+import { detectionFailClosed, engineConfigFromEnv } from "./engine-env.js";
 import { isGloballyDisabled } from "./global-disable.js";
 import {
   piiEnabled,
@@ -38,7 +38,9 @@ export function configPosture(
       restoreIntoTools: restoreIntoToolsPolicy(env.FICTA_RESTORE_INTO_TOOLS),
       surrogateStyle: surrogateStyle(env),
     },
+    dispositions: engineConfigFromEnv(env).dispositions,
     detection: {
+      entityPriority: [...engineConfigFromEnv(env).detection.entityPriority],
       pii: {
         standalone: piiEnabled(env),
         // Posture, not a per-run override, so the agent gate is evaluated with no shell value.

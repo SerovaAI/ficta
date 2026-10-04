@@ -61,7 +61,7 @@ describe("isRegistryReloadOk", () => {
     expect(rendered.body).not.toContain("gateway-local-matter");
   });
 
-  it("rejects normalized entity-form conflicts before publication", () => {
+  it("accepts shared aliases for engine-side ambiguity filtering", () => {
     expect(() =>
       renderManagedRegistryFile([
         registryEntry(),
@@ -71,7 +71,7 @@ describe("isRegistryReloadOk", () => {
           forms: [{ value: "  NORTHSTAR  ", kind: "alias", boundary: "substring" }],
         }),
       ]),
-    ).toThrow("conflicting entity forms");
+    ).not.toThrow();
   });
 
   it("accepts the proxy's counts-only success payload", () => {

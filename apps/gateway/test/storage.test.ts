@@ -968,3 +968,29 @@ it("rolls back the revision and transcript together when a message write fails",
   expect(loaded?.thread.revision).toBe(revision);
   expect(loaded?.messages[0]?.parts).toEqual(original.parts);
 });
+
+it("persists values-free restoration counts and registry fingerprint in thread receipts", async () => {
+  const orgId = "org-engine-evidence",
+    userId = "owner",
+    threadId = "engine-evidence-thread";
+  await saveCurrentSnapshot(userId, orgId, threadId, [textMessage("evidence-message", "user", "example")]);
+  const proof = {
+    eventId: "engine-evidence",
+    at: new Date().toISOString(),
+    outcome: "forwarded" as const,
+    screening: "completed" as const,
+    model: "test-model",
+    redactedValues: 2,
+    survivingValues: 0,
+    ambiguousEntityLinks: 0,
+    labels: [],
+    registryFingerprint: "evidence-fingerprint",
+    restore: { restoredValues: 1, unknownTokens: 1 },
+  };
+  await store.appendThreadEgressEvent(userId, orgId, threadId, proof);
+  await store.appendThreadEgressEvent(userId, orgId, threadId, proof);
+  const receipt = await store.getThreadEgressReceipt(userId, orgId, threadId);
+  expect(receipt.events).toHaveLength(1);
+  expect(receipt.events[0]).toMatchObject({ restore: proof.restore, registryFingerprint: proof.registryFingerprint });
+  await expect(store.getThreadEgressReceipt("other", orgId, threadId)).rejects.toThrow("thread not found");
+});

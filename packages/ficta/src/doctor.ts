@@ -70,6 +70,8 @@ export interface DoctorReport {
     };
     /** Restore-into-tools policy (FICTA_RESTORE_INTO_TOOLS; default `detected`). */
     restoreIntoTools: RestoreIntoToolsPolicy;
+    entityPriority?: readonly string[];
+    destroyCategories?: readonly string[] | "*";
     upstreams: { anthropic: string; openai: string; chatgpt: string };
     forcedUpstream?: string;
     allowCustomUpstream: boolean;
@@ -248,6 +250,8 @@ export async function collectDoctorReport(opts: DoctorOptions = {}): Promise<Doc
         requireStable: surrogateKey.requireStable,
       },
       restoreIntoTools: posture.protection.restoreIntoTools,
+      entityPriority: posture.detection.entityPriority,
+      destroyCategories: posture.dispositions?.destroy.all ? "*" : posture.dispositions?.destroy.categories,
       upstreams: posture.transport.upstreams,
       forcedUpstream: posture.transport.forcedUpstream,
       allowCustomUpstream: posture.transport.allowCustomUpstream,
@@ -350,6 +354,10 @@ export function renderDoctorReport(report: DoctorReport): string {
   );
   lines.push(surrogateKeyLine(report.config.surrogateKey));
   lines.push(restoreIntoToolsLine(report.config.restoreIntoTools));
+  lines.push(`  entity priority: ${report.config.entityPriority?.join(", ") || "default"}`);
+  lines.push(
+    `  destroy detected: ${report.config.destroyCategories === "*" ? "all" : report.config.destroyCategories?.join(", ") || "off"}`,
+  );
   lines.push("");
 
   lines.push("registry");

@@ -25,6 +25,7 @@ export { detectorFailClosed, globalDetectionFailClosed } from "./detection-polic
 export {
   type BatchResult,
   createEngine,
+  profileEngineConfig,
   type CreateEngineOptions,
   type FictaEngine,
   type FictaRestoreOptions,
@@ -37,7 +38,7 @@ export {
   type TruncateOptions,
   UnknownProfileError,
 } from "./facade.js";
-export type { RosterEntry, RosterSource } from "./roster.js";
+export { buildRoster, type LoadedRoster, type RosterEntry, type RosterSource } from "./roster.js";
 export { noopWarnSink, type WarnFields, type WarnSink } from "./diagnostics.js";
 export { MissingSurrogateKeyError, ProtectionEngine, type ProtectionEngineOptions } from "./engine.js";
 export {

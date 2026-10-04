@@ -206,6 +206,8 @@ export const threadEgressEvents = pgTable(
     redactedValues: integer("redacted_values").notNull(),
     survivingValues: integer("surviving_values").notNull(),
     ambiguousEntityLinks: integer("ambiguous_entity_links").notNull().default(0),
+    registryFingerprint: text("registry_fingerprint"),
+    restore: jsonb("restore").$type<NonNullable<ThreadEgressEvent["restore"]>>(),
     labels: jsonb("labels").$type<ThreadEgressEvent["labels"]>().notNull().default([]),
     previousHash: text("previous_hash"),
     eventHash: text("event_hash").notNull(),

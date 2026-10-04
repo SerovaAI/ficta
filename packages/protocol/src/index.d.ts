@@ -13,6 +13,7 @@ export declare const FICTA_SCOPE_HEADER = "x-ficta-scope";
 /** Correlates a Gateway audit record with one proxy request. Never forwarded upstream. */
 export declare const FICTA_EGRESS_EVENT_HEADER = "x-ficta-egress-event";
 export declare const FICTA_TRACE_CAPTURE_HEADER = "x-ficta-trace-capture";
+export declare const FICTA_UNKNOWN_TOKEN_HEADER = "x-ficta-unknown-tokens";
 export declare const FICTA_RESTORE_HIGHLIGHT_HEADER = "x-ficta-restore-highlights";
 export declare const FICTA_RESTORE_HIGHLIGHT_START = "\u001eFICTA_RESTORE_START\u001e";
 export declare const FICTA_RESTORE_HIGHLIGHT_ORIGIN = "\u001eFICTA_RESTORE_ORIGIN\u001e";
@@ -236,6 +237,9 @@ export interface EgressProofLabel extends ProtectionHit {
 }
 
 export interface EgressProof {
+  registryFingerprint?: string;
+  /** Counts published after response restoration completes; absent for interrupted/older runs. */
+  restore?: { restoredValues: number; unknownTokens: number };
   eventId: string;
   at: string;
   outcome: "forwarded" | "blocked" | "upstream_error";
@@ -258,6 +262,7 @@ export interface EgressProofOk {
 export declare function isEgressProofOk(value: unknown): value is EgressProofOk;
 
 export interface ProxyConfigPosture {
+  dispositions?: { destroy: { all: boolean; categories: readonly string[]; labels: Readonly<Record<string, string>> } };
   protection: {
     failClosed: boolean;
     requireRegistry: boolean;
@@ -267,6 +272,7 @@ export interface ProxyConfigPosture {
     surrogateStyle: "opaque" | "typed";
   };
   detection: {
+    entityPriority?: readonly string[];
     pii: {
       standalone: boolean;
       agents: boolean;
@@ -369,6 +375,8 @@ export interface RegistryReloadOk {
     filesErrored?: number;
     /** The caller's expected file revision, only when that exact revision was parsed by the proxy. */
     revision?: string;
+    fingerprint?: string;
+    ambiguousForms?: number;
     /** True when the file is valid but modifies/removes a record already active in this process. */
     restartRequired?: boolean;
   };

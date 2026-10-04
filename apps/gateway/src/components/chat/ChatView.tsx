@@ -57,7 +57,6 @@ import {
   type RestoreHighlightDisplayMode,
   withProtectionAnnotations,
 } from "@/lib/restore-highlights";
-import { reportRestoreValidation } from "@/lib/restore-validation";
 import { uiToStored } from "@/lib/storage/messages";
 import { suggestProtectedRegistryEntries } from "@/lib/storage/protected-registry";
 import { invalidateThreads, threadKeys } from "@/lib/storage/threadQueries";
@@ -224,7 +223,6 @@ export function ChatView({
     initialMessages,
     onFinish: (message) => {
       persist(message);
-      reportRestoreValidation(message); // gateway-only telemetry: flag any surrogate that reached the user un-restored
     },
   });
 
