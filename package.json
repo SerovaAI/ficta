@@ -6,7 +6,7 @@
   "scripts": {
     "//turbo": "Turbo-managed: cached, parallel across all packages. See turbo.json",
     "build": "turbo run build",
-    "check": "node scripts/sidecars.mjs check --advisory && pnpm check:static && pnpm check:sidecar-scripts && turbo run check",
+    "check": "node scripts/sidecars.mjs check --advisory && pnpm check:static && pnpm check:sidecar-scripts && pnpm check:deploy-scripts && turbo run check",
     "check:static": "oxlint . && oxfmt --check .",
     "check:entity-fidelity-live": "pnpm --filter @serovaai/ficta check:entity-fidelity-live",
     "typecheck": "turbo run typecheck",
@@ -36,7 +36,8 @@
     "sidecars:check": "node scripts/sidecars.mjs check",
     "sidecars:update": "node scripts/sidecars.mjs update",
     "check:with-sidecars": "pnpm check",
-    "check:sidecar-scripts": "node --test scripts/sidecars.test.mjs"
+    "check:sidecar-scripts": "node --test scripts/sidecars.test.mjs",
+    "check:deploy-scripts": "node --test scripts/deploy-surrogate-key.test.mjs"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^1.0.1",

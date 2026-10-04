@@ -13,3 +13,11 @@ enabled = true
 enabled = true
 backends = ["presidio"]
 fail_closed = true
+
+# Stable surrogate key, created once by deploy/install.sh (64 hex characters, owner ficta, mode 0600).
+# require_stable_key makes the proxy exit at startup (status 2) when the key is missing or unusable,
+# instead of falling back to a random per-process key that changes every surrogate on restart.
+# Back the key up with the other deployment secrets; never regenerate it under a running deployment.
+[surrogate]
+key_file = "/var/lib/ficta/.ficta/surrogate.key"
+require_stable_key = true
