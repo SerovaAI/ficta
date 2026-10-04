@@ -305,7 +305,7 @@ describe("registry plugin discovery", () => {
     expect(() => loadPluginRegistry()).toThrow("unsupported json");
   });
 
-  it("drops shared aliases across every configured file", () => {
+  it("keeps shared aliases across every configured file registered, as unlinked literals", () => {
     const dir = mkdtempSync(join(tmpdir(), "ficta-managed-registry-conflict-"));
     const first = join(dir, "first.json");
     const second = join(dir, "second.json");
@@ -334,7 +334,8 @@ describe("registry plugin discovery", () => {
     expect(snapshot.values.map((value) => value.value)).toEqual(
       expect.arrayContaining(["Northstar Biologics", "Proxima Medical"]),
     );
-    expect(snapshot.values.map((value) => value.value)).not.toContain("Northstar");
+    // Linked to neither entity, but never dropped: the shared alias stays an exact-match value.
+    expect(snapshot.values.map((value) => value.value)).toEqual(expect.arrayContaining(["Northstar", "NORTHSTAR"]));
     expect(snapshot.values.map((value) => value.value)).not.toContain("  NORTHSTAR  ");
   });
 

@@ -819,8 +819,10 @@ default.
 
 Managed people and organization entries share the engine roster's validation rules. A canonical
 name claimed by another entry, or a literal conflicting with an entity surface, rejects the load.
-An alias shared by multiple entities is dropped from every claimant, across all configured files;
-it then relies on best-effort detection. Error messages do not disclose identifiers or values.
+An alias shared by multiple entities, across all configured files, is linked to none of them but
+stays registered: it is matched exactly, as a whole word, with its own unlinked token, so it never
+falls back to best-effort detection. Error messages name the files involved, never entry ids or
+values.
 Reload reports `ambiguousForms` and a keyed `fingerprint` of the records actually active in the
 process. Additions apply live; changes and removals still require restart. The fingerprint reflects
 the retained records until that restart and is included in scoped egress proofs.

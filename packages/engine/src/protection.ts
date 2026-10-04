@@ -11,6 +11,8 @@ export interface LiteralProtection {
   readonly authority: "registry" | "detected";
   readonly confidence: ProtectionConfidence;
   readonly meta: ProtectedValue;
+  /** `"token"` matches only as a whole word; the default matches anywhere, like every literal. */
+  readonly boundary?: "token";
 }
 
 export interface RegisteredEntityCanonicalForm {
@@ -110,6 +112,7 @@ function literalClaim(record: LiteralProtection): EntityClaim {
       protectionKind: "literal",
       provenance: record.authority === "registry" ? "registry" : "detector",
       canonical: record.value,
+      ...(record.boundary === "token" ? { canonicalBoundary: "token" as const } : {}),
       forms: [],
     },
     meta: record.meta,

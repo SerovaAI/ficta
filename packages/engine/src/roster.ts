@@ -1,7 +1,8 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { InvalidEngineConfigError } from "./config.js";
 import type { RegistrySourcePlugin } from "./plugins/types.js";
 import {
+  type LiteralProtection,
   protectionRecordSurfaces,
   type RegisteredEntityForm,
   type RegisteredEntityProtection,
@@ -37,9 +38,14 @@ export interface RosterSource {
 /** A validated roster, ready for the engine. Holds values: keep it in memory only. */
 export interface LoadedRoster {
   readonly records: readonly RegisteredEntityProtection[];
+  /**
+   * Forms more than one entry claimed. They link to no entry, but stay registered: each is an
+   * exact-match, whole-word literal with its own unlinked token, so sharing a form never unprotects it.
+   */
+  readonly ambiguousRecords: readonly LiteralProtection[];
   /** Entries accepted. */
   readonly size: number;
-  /** Distinct forms dropped because more than one entry claimed them. */
+  /** Distinct forms more than one entry claimed: unlinked, still protected (`ambiguousRecords`). */
   readonly ambiguousForms: number;
   /** Keyed, order-independent hash of the normalized roster; reveals no names. */
   readonly fingerprint: string;
@@ -124,17 +130,49 @@ export function buildRoster(entries: unknown, surrogateKey: string): LoadedRoste
   const records = normalized.map((entry) => toRecord(entry, ambiguous));
   return {
     records,
+    ambiguousRecords: ambiguousRecords(normalized, ambiguous),
     size: records.length,
     ambiguousForms: ambiguous.size,
     fingerprint: rosterFingerprint(normalized, surrogateKey),
   };
 }
 
+/**
+ * One unlinked, whole-word literal per distinct surface of each shared form. Its id is a hash of the
+ * normalized form, so it is stable across processes and reveals nothing; its token comes from the value.
+ */
+function ambiguousRecords(entries: readonly NormalizedEntry[], ambiguous: ReadonlySet<string>): LiteralProtection[] {
+  const out = new Map<string, LiteralProtection>();
+  for (const entry of entries) {
+    for (const value of entry.forms) {
+      const key = surfaceKey(value);
+      if (!ambiguous.has(key) || out.has(value)) continue;
+      out.set(value, {
+        protectionKind: "literal",
+        protectionId: `roster-shared:${createHash("sha256").update(key).digest("hex")}`,
+        value,
+        authority: "registry",
+        confidence: "exact",
+        boundary: "token",
+        meta: {
+          name: entry.type,
+          value,
+          source: ROSTER_PLUGIN,
+          plugin: ROSTER_PLUGIN,
+          kind: "pii",
+          confidence: "exact",
+        },
+      });
+    }
+  }
+  return [...out.values()];
+}
+
 /** A registry source for the engine's existing structured-registry path. */
 export function rosterRegistrySource(
   roster: LoadedRoster,
 ): RegistrySourcePlugin & StructuredRegistrySourceCapabilities {
-  const records = roster.records;
+  const records = [...roster.records, ...roster.ambiguousRecords];
   return {
     kind: "registry-source",
     name: ROSTER_PLUGIN,

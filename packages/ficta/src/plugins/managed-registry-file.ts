@@ -138,6 +138,8 @@ function loadManagedRegistryValues(): ProtectedValue[] {
     parsedFiles.push({ stat, registry: parsed.registry });
   }
 
+  // Forms more than one entity claims: linked to neither entity, but still registered as literals.
+  let shared: readonly ProtectionRecord[] = [];
   try {
     const entities = parsedFiles.flatMap(({ registry }) =>
       registry.entries.filter((entry) => entry.protectionKind === "entity"),
@@ -154,6 +156,16 @@ function loadManagedRegistryValues(): ProtectedValue[] {
       "managed-registry-validation-only",
     );
     stats.ambiguousForms = roster.ambiguousForms;
+    shared = roster.ambiguousRecords.map((record) => ({
+      ...record,
+      meta: {
+        ...record.meta,
+        name: "managed-registry:shared-form",
+        source: "managed-registry-file",
+        plugin: PLUGIN_NAME,
+        kind: "custom",
+      },
+    }));
     const admitted = new Map(
       roster.records.map((record, index) => [
         entities[index]?.id,
@@ -186,6 +198,14 @@ function loadManagedRegistryValues(): ProtectedValue[] {
         values.push(surface);
         stat.loaded++;
       }
+    }
+  }
+  for (const record of shared) {
+    records.push(record);
+    for (const surface of protectionRecordSurfaces(record)) {
+      if (seenValues.has(surface.value)) continue;
+      seenValues.add(surface.value);
+      values.push(surface);
     }
   }
 
@@ -442,7 +462,10 @@ function validateManagedRegistrySet(files: readonly ParsedManagedRegistryFile[])
       const idOwner = idOwners.get(entry.id);
       if (idOwner) {
         stat.error = "registry conflict";
-        throw new Error("duplicate managed registry entry id; use distinct identifiers");
+        // File names locate the conflict for the operator; entry ids and values stay out of the message.
+        throw new Error(
+          `duplicate managed registry entry id in ${stat.file} (also declared in ${idOwner.file}); use distinct identifiers`,
+        );
       }
       idOwners.set(entry.id, stat);
       const values =
@@ -454,7 +477,9 @@ function validateManagedRegistrySet(files: readonly ParsedManagedRegistryFile[])
         const owner = valueOwners.get(normalized);
         if (owner !== undefined && owner.entryId !== entry.id) {
           stat.error = "registry conflict";
-          throw new Error("managed registry value is assigned to more than one entry; merge or disambiguate them");
+          throw new Error(
+            `managed registry value is assigned to more than one entry (in ${owner.stat.file} and ${stat.file}); merge or disambiguate them`,
+          );
         }
         valueOwners.set(normalized, { entryId: entry.id, stat });
       }

@@ -363,4 +363,5 @@ settings and configure them in the proxy TOML; restart after changing them.
 
 Mappings remain in memory. Gateway stores restored history and re-redacts it on each turn, so
 persistent mappings are not required to reload conversations. Registry changes/removals still need
-a proxy restart; shared ambiguous aliases are dropped rather than linked to the wrong entity.
+a proxy restart; a shared alias is linked to no entity but stays registered as its own exact-match
+value, rather than being linked to the wrong entity.

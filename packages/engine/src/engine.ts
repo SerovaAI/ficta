@@ -1424,7 +1424,8 @@ function applyRecordBoundaries(vault: Vault, records: readonly ProtectionRecord[
   const policies = new Map<string, boolean>();
   for (const record of records) {
     if (record.protectionKind === "literal") {
-      policies.set(record.value, false);
+      if (record.boundary !== "token") policies.set(record.value, false);
+      else if (policies.get(record.value) !== false) policies.set(record.value, true);
       continue;
     }
     policies.set(record.canonical.value, false);

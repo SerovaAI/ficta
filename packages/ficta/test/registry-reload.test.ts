@@ -204,6 +204,39 @@ describe("engine registry reload", () => {
     const scoped = await scope.redactBodyDetailed(body);
     expect(scope.restoreText(scoped.body)).toBe(body);
   });
+
+  it("keeps a form two entities share registered: unlinked, whole-word, never dropped", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ficta-shared-form-"));
+    const file = join(dir, "protected-registry.json");
+    process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = file;
+    const entity = (id: string, canonicalValue: string) => ({
+      id,
+      protectionKind: "entity",
+      entityType: "organization",
+      canonicalValue,
+      forms: [{ value: "Northstar", kind: "short_name", boundary: "token" }],
+    });
+    writeFileSync(
+      file,
+      JSON.stringify({
+        schema: FICTA_MANAGED_REGISTRY_SCHEMA,
+        revision: "shared-form-1",
+        generatedBy: "ficta-test",
+        generatedAt: "2026-10-04T00:00:00.000Z",
+        entries: [entity("entity:a", "Northstar Biologics"), entity("entity:b", "Northstar Freight")],
+      }),
+      { mode: 0o600 },
+    );
+    const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [managedRegistryFilePlugin] });
+    const body = JSON.stringify({ content: "Northstar called; Northstarship did not." });
+    const scope = engine.beginRequest();
+    const result = await scope.redactBodyDetailed(body);
+
+    expect(result.body).not.toMatch(/Northstar called/u);
+    expect(result.body).toContain("Northstarship");
+    expect(result.leaks).toBe(0);
+    expect(scope.restoreText(result.body)).toBe(body);
+  });
 });
 
 describe("proxy registry reload endpoint", () => {
@@ -405,7 +438,7 @@ describe("proxy registry reload endpoint", () => {
   });
 });
 
-it("drops shared roster aliases and fingerprints only the active registry", async () => {
+it("keeps shared roster aliases registered (unlinked) and fingerprints only the active registry", async () => {
   const dir = mkdtempSync(join(tmpdir(), "ficta-roster-reload-"));
   const file = join(dir, "registry.json");
   process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = file;
@@ -438,7 +471,9 @@ it("drops shared roster aliases and fingerprints only the active registry", asyn
   const out = await engine.beginRequest("thread").redactContentDetailed("Anna Berg met Anna Stone; Anna replied.");
   expect(out.text).not.toContain("Anna Berg");
   expect(out.text).not.toContain("Anna Stone");
-  expect(out.text).toContain("Anna replied.");
+  // The shared alias links to neither person but stays registered: never left in the text.
+  expect(out.text).not.toMatch(/\bAnna replied/u);
+  expect(engine.beginRequest("thread").restoreText(out.text)).toBe("Anna Berg met Anna Stone; Anna replied.");
   publish([...entries].reverse());
   engine.reloadRegistryValues();
   expect(engine.registryStatus.fingerprint).toBe(fingerprint);

@@ -280,16 +280,23 @@ describe("roster: ambiguity", () => {
     const linked = entityTokens(result.text);
     expect(linked).toHaveLength(2);
     expect(linked[0]?.entity).not.toBe(linked[1]?.entity);
-    // The bare first name was found by detection only: an unlinked literal token.
+    // The shared first name stays registered, as an unlinked literal token.
     expect(result.text).not.toMatch(/\bAnna\b/);
     expect(result.text.match(LITERAL_TOKEN)).toHaveLength(1);
   });
 
-  it("leaves an ambiguous form to detection when the detector misses it", async () => {
+  it("keeps an ambiguous form protected without detection: unlinked, whole-word, restorable", async () => {
     stub.persons = [];
     const engine = await facade({ roster: SHARED });
-    const result = await engine.scope(SCOPE).pseudonymise(`${ANNA_SHORT} left.`, "pseudonymise");
-    expect(result.text).toBe(`${ANNA_SHORT} left.`);
+    const scope = engine.scope(SCOPE);
+    const result = await scope.pseudonymise(`${ANNA_SHORT} left. Annabel stayed.`, "pseudonymise");
+    const [literal] = result.text.match(LITERAL_TOKEN) ?? [];
+    expect(result.text).toBe(`${literal} left. Annabel stayed.`);
+    expect(entityTokens(result.text)).toHaveLength(0);
+    expect((await scope.restore(result.text)).text).toBe(`${ANNA_SHORT} left. Annabel stayed.`);
+    // Batch (unkeyed) redaction protects it too.
+    const batch = await engine.redactMany([`${ANNA_SHORT} left.`], "pseudonymise");
+    expect(batch.texts[0]).not.toMatch(/\bAnna\b/);
   });
 
   it("rejects a canonical name claimed by another entry, without echoing it", async () => {
@@ -510,19 +517,27 @@ describe("roster: re-applying values a keyed scope already holds", () => {
     const token = await firstMention(first);
     await first.close();
 
-    // The same roster; the entry removed; and the short form made ambiguous by a new entry (dropped
-    // from the registry, yet still linked to its original entry within this scope).
-    const ambiguous = [
-      ...ROSTER,
-      { id: "contact-5", type: "person" as const, canonical: "Anna Lund", forms: ["Anna"] },
-    ];
-    for (const roster of [ROSTER, ROSTER.slice(1), ambiguous]) {
+    // The same roster, and the entry removed: the scope's retained link still applies.
+    for (const roster of [ROSTER, ROSTER.slice(1)]) {
       const fresh = await facade({ vault: openStore(), profiles: BARE, roster });
       const { text } = await fresh.scope(SCOPE).pseudonymise(LATER, "none");
       expect(text).toBe(`Annabel and Joanna came. ${token} too.`);
       expect((await fresh.scope(SCOPE).restore(text)).text).toBe(LATER);
       await fresh.close();
     }
+    // The short form made ambiguous by a new entry: a later mention could be either person, so it
+    // gets an unlinked token, still whole-word and still restorable. The old linked token restores too.
+    const ambiguous = [
+      ...ROSTER,
+      { id: "contact-5", type: "person" as const, canonical: "Anna Lund", forms: ["Anna"] },
+    ];
+    const fresh = await facade({ vault: openStore(), profiles: BARE, roster: ambiguous });
+    const { text } = await fresh.scope(SCOPE).pseudonymise(LATER, "none");
+    const [literal] = text.match(LITERAL_TOKEN) ?? [];
+    expect(text).toBe(`Annabel and Joanna came. ${literal} too.`);
+    expect((await fresh.scope(SCOPE).restore(text)).text).toBe(LATER);
+    expect((await fresh.scope(SCOPE).restore(`${token}`)).text).toBe("Anna");
+    await fresh.close();
   });
 
   it("still re-applies a detected (non-roster) value as before: a literal token, matched as a substring", async () => {

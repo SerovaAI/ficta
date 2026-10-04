@@ -195,8 +195,10 @@ also claims (as its canonical name or as a form): merge or disambiguate those en
 name entry indexes, never ids or values.
 
 **Ambiguous forms.** A form claimed by more than one entry (compared case-insensitively) is linked to
-none of them: it is dropped from every claiming entry, `rosterAmbiguousForms` counts it, and `onWarn`
-reports the count, never the value. Such a form is then protected only by detection.
+none of them, but it stays registered: it is matched exactly, as a whole word, and gets its own
+unlinked token, so sharing a form never leaves it to detection. `rosterAmbiguousForms` counts it,
+and `onWarn` reports the count, never the value. Within a keyed scope, a mention that already got a
+linked token before the form became ambiguous still restores; later mentions get the unlinked token.
 
 **Persistence and reload.** Mappings minted from the roster in keyed scopes are saved to the vault
 store like any other (encrypted, as the registry layer), so a token keeps restoring after its entry
