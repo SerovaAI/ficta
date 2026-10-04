@@ -135,6 +135,21 @@ describe("Ficta control-plane schemas", () => {
       "x-ficta-max-utf8-bytes": PROTECTION_PREVIEW_VALUES_MAX_BYTES,
     });
   });
+
+  it("documents destroyCategories as an editable string list", async () => {
+    const raw = await readFile(new URL("../openapi/ficta-control-plane.openapi.json", import.meta.url), "utf8");
+    const specification = JSON.parse(raw) as {
+      paths: Record<
+        string,
+        Record<
+          string,
+          { requestBody?: { content?: Record<string, { schema?: { properties?: Record<string, unknown> } }> } }
+        >
+      >;
+    };
+    const patch = specification.paths["/__ficta/config"]?.patch?.requestBody?.content?.["application/json"]?.schema;
+    expect(patch?.properties?.destroyCategories).toEqual({ type: "array", items: { type: "string" } });
+  });
 });
 
 const preview = {

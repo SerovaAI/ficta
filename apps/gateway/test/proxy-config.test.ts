@@ -1,5 +1,8 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { isProxyConfigOk, isProxyConfigUpdateOk } from "@/lib/proxy-config";
+import { DestroyCategoriesControl, toggleDestroyCategory } from "@/components/settings/ProxyConfigSection";
+import { DESTROY_CATEGORY_OPTIONS, isProxyConfigOk, isProxyConfigUpdateOk } from "@/lib/proxy-config";
 
 function validPayload() {
   return {
@@ -55,6 +58,7 @@ function validPayload() {
         surrogateStyle: "opaque",
         restoreIntoTools: "detected",
         allowCustomUpstream: false,
+        destroyCategories: [],
       },
       locked: {},
     },
@@ -123,5 +127,54 @@ describe("isProxyConfigOk", () => {
   it("accepts proxy config update responses with edit metadata", () => {
     expect(isProxyConfigUpdateOk({ ok: true, service: "ficta", edit: validPayload().edit })).toBe(true);
     expect(isProxyConfigUpdateOk({ ok: true, service: "ficta", edit: { disabled: false } })).toBe(false);
+  });
+});
+
+const disabledCheckboxes = (html: string) => html.match(/<button[^>]*role="checkbox"[^>]*\sdisabled=""/g)?.length ?? 0;
+
+describe("Remove permanently control", () => {
+  const render = (props: Partial<Parameters<typeof DestroyCategoriesControl>[0]> = {}) =>
+    renderToStaticMarkup(createElement(DestroyCategoriesControl, { selected: [], onChange: () => {}, ...props }));
+
+  it("offers only detector category names and warns that removal is irreversible", () => {
+    expect(DESTROY_CATEGORY_OPTIONS.map((option) => option.category)).toEqual([
+      "credit-card",
+      "iban-code",
+      "account-number",
+      "us-bank-number",
+      "za-id-number",
+      "us-ssn",
+    ]);
+    const html = render();
+    expect(html).toContain(
+      "Irreversible: removed values never appear in answers, exports or restored text. Registered values are never removed.",
+    );
+    for (const { category } of DESTROY_CATEGORY_OPTIONS) expect(html).toContain(`id="proxy-destroy-${category}"`);
+    expect(html).not.toContain('aria-checked="true"');
+  });
+
+  it("shows selected categories and keeps categories configured outside the offered set", () => {
+    const html = render({ selected: ["credit-card", "uk-nino"] });
+    expect(html.match(/aria-checked="true"/g)).toHaveLength(1);
+    expect(html).toContain("Also removed (set in config.toml)");
+    expect(html).toContain("uk-nino");
+    expect(toggleDestroyCategory(["uk-nino"], "credit-card", true)).toEqual(["uk-nino", "credit-card"]);
+    expect(toggleDestroyCategory(["uk-nino", "credit-card"], "credit-card", false)).toEqual(["uk-nino"]);
+  });
+
+  it("renders read-only with the lock reason when the proxy reports the field locked", () => {
+    const html = render({
+      selected: ["credit-card"],
+      disabled: true,
+      locked: "FICTA_DESTROY_CATEGORIES is set in the proxy environment.",
+    });
+    expect(html).toContain("FICTA_DESTROY_CATEGORIES is set in the proxy environment.");
+    expect(disabledCheckboxes(html)).toBe(DESTROY_CATEGORY_OPTIONS.length);
+  });
+
+  it("renders a destroy-everything policy as all categories, read-only", () => {
+    const html = render({ selected: ["*"] });
+    expect(html).toContain("All detected categories");
+    expect(disabledCheckboxes(html)).toBe(DESTROY_CATEGORY_OPTIONS.length);
   });
 });

@@ -356,10 +356,11 @@ proxy's restoration counts and active-registry fingerprint; no raw values are ad
 Existing answers are not rewritten. DOCX export keeps its residual-reference guard for historical
 or otherwise unguarded content.
 
-The reference proxy policy redacts paths, fails closed on detector outages, prioritizes validated
-South African IDs over card claims, and permanently removes detected card/ID numbers. Registered
-identifiers stay reversible. Operators can inspect effective categories and priority in Admin
-settings and configure them in the proxy TOML; restart after changing them.
+The reference proxy policy redacts paths, fails closed on detector outages, and prioritizes
+validated South African IDs over card claims. It permanently removes nothing: detected values are
+restored into answers. Permanent removal is an opt-in firm policy that administrators can turn on
+per category under **Remove permanently** in Admin settings (or in the proxy TOML); removed values
+never come back, and registered identifiers are never removed. Restart the proxy after changing it.
 
 Mappings remain in memory. Gateway stores restored history and re-redacts it on each turn, so
 persistent mappings are not required to reload conversations. Registry changes/removals still need

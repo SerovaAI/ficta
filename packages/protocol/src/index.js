@@ -41,6 +41,7 @@ export const EDITABLE_PROXY_CONFIG_KEYS = [
   "surrogateStyle",
   "restoreIntoTools",
   "allowCustomUpstream",
+  "destroyCategories",
 ];
 
 const EDITABLE_PROXY_CONFIG_KEY_SET = new Set(EDITABLE_PROXY_CONFIG_KEYS);
@@ -245,7 +246,9 @@ export function isEditableProxyConfigValues(value) {
     typeof value.secretShapesEnabled === "boolean" &&
     (value.surrogateStyle === "opaque" || value.surrogateStyle === "typed") &&
     isRestoreIntoToolsPolicy(value.restoreIntoTools) &&
-    typeof value.allowCustomUpstream === "boolean"
+    typeof value.allowCustomUpstream === "boolean" &&
+    Array.isArray(value.destroyCategories) &&
+    value.destroyCategories.every((category) => typeof category === "string")
   );
 }
 

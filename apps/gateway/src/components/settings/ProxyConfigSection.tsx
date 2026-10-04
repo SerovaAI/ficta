@@ -4,6 +4,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
+  DESTROY_CATEGORY_OPTIONS,
   type EditableProxyConfigKey,
   type EditableProxyConfigPatch,
   type EditableProxyConfigValues,
@@ -350,14 +351,17 @@ function ConfigEditor({
       </SettingRow>
 
       <SettingRow
-        label="Permanently removed categories"
-        description="Detected values in these categories cannot be restored. Registered values remain reversible. Configured by the operator; restart the proxy to apply changes."
+        label="Remove permanently"
+        description="Off by default: detected values are restored into answers. A firm may choose categories to remove irreversibly instead."
       >
-        <span className="text-sm">
-          {config.config.dispositions?.destroy.all
-            ? "All detected categories"
-            : config.config.dispositions?.destroy.categories.join(", ") || "None"}
-        </span>
+        <DestroyCategoriesControl
+          selected={draft.destroyCategories}
+          disabled={isDisabled("destroyCategories", edit, disabled)}
+          locked={edit.locked.destroyCategories}
+          onChange={(category, checked) =>
+            set("destroyCategories", toggleDestroyCategory(draft.destroyCategories, category, checked))
+          }
+        />
       </SettingRow>
       <SettingRow
         label="Detection priority"
@@ -593,6 +597,68 @@ function BackendCheckboxGroup({
       <LockedText>{locked}</LockedText>
     </div>
   );
+}
+
+/**
+ * Checkboxes for the fixed set of categories a firm may remove irreversibly. Categories configured
+ * outside that set (or "*") are shown read-only and kept untouched by toggles.
+ */
+export function DestroyCategoriesControl({
+  selected,
+  disabled,
+  locked,
+  onChange,
+}: {
+  selected: readonly string[];
+  disabled?: boolean;
+  locked?: string;
+  onChange: (category: string, checked: boolean) => void;
+}) {
+  const all = selected.includes("*");
+  const offered = new Set<string>(DESTROY_CATEGORY_OPTIONS.map((option) => option.category));
+  const others = selected.filter((category) => category !== "*" && !offered.has(category));
+  return (
+    <div className="space-y-2">
+      <p className="max-w-72 text-right text-xs leading-relaxed text-amber-800 dark:text-amber-200">
+        Irreversible: removed values never appear in answers, exports or restored text. Registered values are never
+        removed.
+      </p>
+      {all ? (
+        <p className="text-right text-sm font-medium text-amber-700 dark:text-amber-300">All detected categories</p>
+      ) : null}
+      {DESTROY_CATEGORY_OPTIONS.map(({ category, label }) => {
+        const id = `proxy-destroy-${category}`;
+        const checked = all || selected.includes(category);
+        return (
+          <label
+            key={category}
+            htmlFor={id}
+            className="flex cursor-pointer items-center justify-end gap-2.5 text-right text-sm [@media(pointer:coarse)]:min-h-11"
+          >
+            <span className={checked ? "font-medium" : "text-muted-foreground"}>{label}</span>
+            <Checkbox
+              id={id}
+              checked={checked}
+              disabled={disabled || all}
+              onCheckedChange={(state) => onChange(category, state === true)}
+            />
+          </label>
+        );
+      })}
+      {others.length > 0 ? (
+        <p className="max-w-64 text-right text-xs text-muted-foreground">
+          Also removed (set in config.toml): <span className="font-mono">{others.join(", ")}</span>
+        </p>
+      ) : null}
+      <LockedText>{locked}</LockedText>
+    </div>
+  );
+}
+
+/** The destroy list after toggling one offered category; categories outside the offered set are kept. */
+export function toggleDestroyCategory(current: readonly string[], category: string, checked: boolean): string[] {
+  const rest = current.filter((entry) => entry !== category);
+  return checked ? [...rest, category] : rest;
 }
 
 function BooleanControl({

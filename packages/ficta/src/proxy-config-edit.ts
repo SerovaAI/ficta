@@ -8,7 +8,13 @@ import type {
 import { normalizePiiBackends, normalizeRestoreIntoToolsPolicy } from "@serovaai/ficta-protocol";
 import type { Config } from "./config.js";
 import { configPosture } from "./config-posture.js";
-import { parseBoolean, restoreIntoToolsPolicy } from "@serovaai/ficta-engine";
+import {
+  InvalidEngineConfigError,
+  normalizeCategory,
+  parseBoolean,
+  resolveEngineConfig,
+  restoreIntoToolsPolicy,
+} from "@serovaai/ficta-engine";
 import { configPath, readUserConfig, wasLoadedFromUserConfig, writeUserConfig } from "./user-config.js";
 
 const FIELD_ENV: Record<EditableProxyConfigKey, string> = {
@@ -22,9 +28,16 @@ const FIELD_ENV: Record<EditableProxyConfigKey, string> = {
   surrogateStyle: "FICTA_SURROGATE_STYLE",
   restoreIntoTools: "FICTA_RESTORE_INTO_TOOLS",
   allowCustomUpstream: "FICTA_ALLOW_CUSTOM_UPSTREAM",
+  destroyCategories: "FICTA_DESTROY_CATEGORIES",
 };
 
 const LEGACY_BACKEND_ENV = "FICTA_PII_BACKEND";
+/** TOML-only destroy labels; an edit drops labels for categories it stops destroying. */
+const DESTROY_LABELS_ENV = "FICTA_DESTROY_LABELS";
+/** Reported (never accepted) value of a destroy-everything policy configured in TOML/env. */
+const DESTROY_ALL = "*";
+const DESTROY_ALL_LOCK =
+  'dispositions.destroy.categories is "*" (every detected category) in config.toml; edit it there and restart.';
 
 const EDITABLE_KEYS = new Set<EditableProxyConfigKey>(Object.keys(FIELD_ENV) as EditableProxyConfigKey[]);
 
@@ -41,7 +54,7 @@ export function proxyConfigEditState(
   if (!path) return { disabled: true, restartRequired: false, values: effective, locked: {} };
 
   const fileValues = readUserConfig(path);
-  const locked = startupLocked;
+  const locked = withDestroyAllLock(startupLocked, fileValues, effective.destroyCategories);
   const values: EditableProxyConfigValues = {
     failClosed: boolValue("failClosed", fileValues, effective.failClosed, locked),
     piiEnabled: boolValue("piiEnabled", fileValues, effective.piiEnabled, locked),
@@ -53,6 +66,7 @@ export function proxyConfigEditState(
     surrogateStyle: surrogateStyleValue(fileValues, effective.surrogateStyle, locked),
     restoreIntoTools: restoreIntoToolsValue(fileValues, effective.restoreIntoTools, locked),
     allowCustomUpstream: boolValue("allowCustomUpstream", fileValues, effective.allowCustomUpstream, locked),
+    destroyCategories: destroyCategoriesValue(fileValues, effective.destroyCategories, startupLocked),
   };
 
   return {
@@ -82,7 +96,8 @@ export function applyProxyConfigPatch(
   const validation = validatePatch(patch);
   if (!validation.ok) return validation;
 
-  const locked = startupLocked;
+  const envValues = readUserConfig(path);
+  const locked = withDestroyAllLock(startupLocked, envValues, effectiveEditableValues(cfg).destroyCategories);
   for (const field of Object.keys(validation.patch) as EditableProxyConfigKey[]) {
     if (locked[field]) {
       return {
@@ -95,10 +110,10 @@ export function applyProxyConfigPatch(
     }
   }
 
-  const envValues = readUserConfig(path);
   for (const [field, value] of Object.entries(validation.patch) as Array<[EditableProxyConfigKey, EditableValue]>) {
     envValues[FIELD_ENV[field]] = envString(field, value);
     if (field === "piiBackends") delete envValues[LEGACY_BACKEND_ENV];
+    if (field === "destroyCategories") pruneDestroyLabels(envValues, value as string[]);
   }
   writeUserConfig(envValues, path);
 
@@ -162,6 +177,37 @@ function validateField(
     case "piiPresidioUrl":
     case "piiOpenmedUrl":
       return validateUrlField(field, value);
+    case "destroyCategories":
+      return validateDestroyCategories(value);
+  }
+}
+
+/**
+ * Destroy categories go through the engine's own validation, so an edit can never write a value the
+ * proxy would refuse at startup. `"*"` (destroy every detector finding) is refused here on purpose:
+ * permanent removal is irreversible, so the control plane only turns it on for categories an
+ * administrator names one by one. Operators who really want everything set it in TOML/env. Messages
+ * never echo the submitted entries.
+ */
+function validateDestroyCategories(
+  value: unknown,
+): { ok: true; value: string[] } | Extract<PatchValidation, { ok: false }> {
+  const field = "destroyCategories";
+  if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) {
+    return invalid("destroyCategories must be a list of detection category names.", field);
+  }
+  if (value.some((entry) => entry.trim() === DESTROY_ALL)) {
+    return invalid(
+      'destroyCategories cannot be "*" from the control plane; name each category, or set dispositions.destroy.categories in config.toml.',
+      field,
+    );
+  }
+  try {
+    const { destroy } = resolveEngineConfig({ dispositions: { destroy: { categories: value } } }).dispositions;
+    return { ok: true, value: [...destroy.categories] };
+  } catch (error) {
+    if (!(error instanceof InvalidEngineConfigError)) throw error;
+    return invalid("destroyCategories must list detection category names such as credit-card.", field);
   }
 }
 
@@ -211,7 +257,57 @@ function effectiveEditableValues(cfg: Config): EditableProxyConfigValues {
     surrogateStyle: posture.protection.surrogateStyle,
     restoreIntoTools: posture.protection.restoreIntoTools,
     allowCustomUpstream: posture.transport.allowCustomUpstream,
+    destroyCategories: destroyCategoriesOf(posture.dispositions?.destroy),
   };
+}
+
+function destroyCategoriesOf(destroy: { all: boolean; categories: readonly string[] } | undefined): string[] {
+  if (!destroy) return [];
+  return destroy.all ? [DESTROY_ALL] : [...destroy.categories];
+}
+
+/** The saved destroy categories (`["*"]` for destroy-everything), or `fallback` when unset or unusable. */
+function destroyCategoriesValue(
+  values: Record<string, string>,
+  fallback: string[],
+  locked: Partial<Record<EditableProxyConfigKey, string>>,
+): string[] {
+  if (locked.destroyCategories) return fallback;
+  const raw = values[FIELD_ENV.destroyCategories];
+  if (raw === undefined) return fallback;
+  try {
+    const categories = raw ? raw.split(",") : [];
+    return destroyCategoriesOf(resolveEngineConfig({ dispositions: { destroy: { categories } } }).dispositions.destroy);
+  } catch {
+    return fallback;
+  }
+}
+
+/** Lock the field while the saved (or, when unsaved, running) policy destroys every category. */
+function withDestroyAllLock(
+  locked: Partial<Record<EditableProxyConfigKey, string>>,
+  values: Record<string, string>,
+  effective: string[],
+): Partial<Record<EditableProxyConfigKey, string>> {
+  if (locked.destroyCategories) return locked;
+  const saved = destroyCategoriesValue(values, effective, locked);
+  return saved.includes(DESTROY_ALL) ? { ...locked, destroyCategories: DESTROY_ALL_LOCK } : locked;
+}
+
+/** Drop TOML labels for categories no longer destroyed, which the engine would otherwise refuse. */
+function pruneDestroyLabels(values: Record<string, string>, categories: string[]): void {
+  const raw = values[DESTROY_LABELS_ENV];
+  if (!raw) return;
+  let labels: unknown;
+  try {
+    labels = JSON.parse(raw);
+  } catch {
+    return; // leave a malformed setting for the proxy to report
+  }
+  if (!isRecord(labels)) return;
+  const kept = Object.entries(labels).filter(([category]) => categories.includes(normalizeCategory(category)));
+  if (kept.length === 0) delete values[DESTROY_LABELS_ENV];
+  else values[DESTROY_LABELS_ENV] = JSON.stringify(Object.fromEntries(kept));
 }
 
 function boolValue(
@@ -274,7 +370,8 @@ function envString(field: EditableProxyConfigKey, value: EditableValue): string 
     case "allowCustomUpstream":
       return value ? "1" : "0";
     case "piiBackends":
-      return (value as PiiBackendName[]).join(",");
+    case "destroyCategories":
+      return (value as string[]).join(",");
     case "restoreIntoTools":
     case "surrogateStyle":
     case "piiPresidioUrl":
@@ -287,9 +384,15 @@ function editableValuesEqual(a: EditableProxyConfigValues, b: EditableProxyConfi
   return (Object.keys(FIELD_ENV) as EditableProxyConfigKey[]).every((key) => {
     const av = a[key];
     const bv = b[key];
+    // Destroy categories are a set: the same categories in another order need no restart.
+    if (key === "destroyCategories") return sameSet(a.destroyCategories, b.destroyCategories);
     if (Array.isArray(av) && Array.isArray(bv)) return av.length === bv.length && av.every((item, i) => item === bv[i]);
     return av === bv;
   });
+}
+
+function sameSet(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((item) => b.includes(item));
 }
 
 function normalizeConfiguredPiiBackends(values: readonly string[]): PiiBackendName[] {

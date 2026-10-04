@@ -359,7 +359,7 @@ function envValueToToml(value: string, kind: ConfigBindingKind): TomlValue {
           .split(",")
           .map((part) => part.trim())
           .filter(Boolean);
-      return trimmed;
+      return trimmed === "" ? [] : trimmed;
     }
     case "string":
       return value;

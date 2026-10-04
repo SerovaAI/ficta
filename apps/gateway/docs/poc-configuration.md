@@ -55,15 +55,18 @@ redact_paths = true
 [detection]
 fail_closed = true
 entity_priority = ["za-id-number", "credit-card"]
-
-[dispositions.destroy]
-categories = ["credit-card", "za-id-number"]
 ```
 
 This keeps provider traffic paused until an enabled registry source is healthy and non-empty,
 enables local secret-shape detection, and blocks rather than forwarding unscreened text when the
 selected Presidio sidecar is unavailable. Coding-agent detection remains off unless the separate
 `agents` settings are enabled.
+
+Detected values are restored into answers by default. Permanent removal of detected categories (for
+example card numbers) is an opt-in firm policy: an administrator can turn it on per category under
+**Remove permanently** in Admin settings, or set `[dispositions.destroy] categories` in the TOML.
+Removed values never appear in answers, exports or restored text; registered values are never
+removed. Restart the proxy after changing it.
 
 ### Surrogate key
 

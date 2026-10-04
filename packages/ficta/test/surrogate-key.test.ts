@@ -224,6 +224,16 @@ describe("reference deployment config (deploy/ficta-config.toml)", () => {
     await expect(startProxy({ port: 0, plugins: [] })).rejects.toThrow(SurrogateKeyError);
   });
 
+  it("leaves permanent removal off (an opt-in firm policy) while keeping entity priority", () => {
+    const values = readUserConfig(deployConfig);
+    expect(values.FICTA_DESTROY_CATEGORIES).toBeUndefined();
+    expect(values.FICTA_DESTROY_LABELS).toBeUndefined();
+    expect(values.FICTA_ENTITY_PRIORITY).toBe("za-id-number,credit-card");
+    const engine = engineConfigFromEnv({ ...values, FICTA_SURROGATE_KEY: FILE_KEY });
+    expect(engine.dispositions.destroy).toEqual({ all: false, categories: [], labels: {} });
+    expect(engine.detection.entityPriority).toEqual(["za-id-number", "credit-card"]);
+  });
+
   it("keeps surrogates stable once the installer's key file exists", () => {
     process.env.FICTA_REQUIRE_STABLE_SURROGATE_KEY = readUserConfig(deployConfig).FICTA_REQUIRE_STABLE_SURROGATE_KEY;
     process.env.FICTA_SURROGATE_KEY_FILE = writeKeyFile("surrogate.key", `${FILE_KEY}\n`);

@@ -1969,6 +1969,7 @@ describe("config posture endpoint", () => {
             surrogateStyle: expect.stringMatching(/^(opaque|typed)$/),
             restoreIntoTools: expect.stringMatching(/^(all|none|detected)$/),
             allowCustomUpstream: expect.any(Boolean),
+            destroyCategories: expect.any(Array),
           },
           locked: expect.any(Object),
         },

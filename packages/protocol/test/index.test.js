@@ -128,6 +128,7 @@ function configPayload() {
         surrogateStyle: "opaque",
         restoreIntoTools: "detected",
         allowCustomUpstream: false,
+        destroyCategories: [],
       },
       locked: {},
     },
@@ -257,6 +258,14 @@ describe("runtime guards", () => {
     const badConfig = configPayload();
     badConfig.config.transport.traceAudit = "false";
     assert.equal(isProxyConfigOk(badConfig), false);
+
+    const missingDestroy = configPayload();
+    delete missingDestroy.edit.values.destroyCategories;
+    assert.equal(isProxyConfigOk(missingDestroy), false);
+
+    const badDestroy = configPayload();
+    badDestroy.edit.values.destroyCategories = [42];
+    assert.equal(isProxyConfigOk(badDestroy), false);
 
     const badStats = statsPayload();
     badStats.stats.events[0].surface = "headers";

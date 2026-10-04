@@ -464,3 +464,9 @@ endpoint because streaming response headers are sent before final restoration co
 Registry reload additionally reports `ambiguousForms` and a keyed `fingerprint` of the active
 registry. Egress proofs include that fingerprint as `registryFingerprint`. Config posture includes
 read-only `detection.entityPriority` and `dispositions.destroy`; TOML/env changes require restart.
+The editable config includes `destroyCategories` (`dispositions.destroy.categories` /
+`FICTA_DESTROY_CATEGORIES`): a list of detection category names, validated like the TOML setting.
+`"*"` (destroy everything) is rejected over the control plane and must be set in TOML or env; when
+it is configured, or `FICTA_DESTROY_CATEGORIES` is set in the proxy environment, the field is
+reported locked. Destroy labels stay TOML-only; labels for categories removed by an edit are
+dropped. Edits are written to `config.toml` and require a restart.

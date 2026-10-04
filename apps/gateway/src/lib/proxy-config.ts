@@ -30,6 +30,20 @@ export type { EditableProxyConfigKey, EditableProxyConfigValues, PiiBackendName 
 export { isProxyConfigOk, isProxyConfigUpdateOk, PII_BACKEND_NAMES };
 
 const CONFIG_TIMEOUT_MS = 1500;
+
+/**
+ * Detection categories an administrator may choose to remove permanently, in display order. Names
+ * are the categories the detectors emit (Presidio entity types lowercased with `_` → `-`, plus the
+ * regex floor's `credit-card` and `us-ssn`). Anything else stays a TOML-only operator choice.
+ */
+export const DESTROY_CATEGORY_OPTIONS = [
+  { category: "credit-card", label: "Payment card numbers" },
+  { category: "iban-code", label: "IBANs" },
+  { category: "account-number", label: "Bank account numbers" },
+  { category: "us-bank-number", label: "US bank account numbers" },
+  { category: "za-id-number", label: "South African ID numbers" },
+  { category: "us-ssn", label: "US Social Security numbers" },
+] as const;
 const EDITABLE_PROXY_CONFIG_KEY_SET = new Set<string>(EDITABLE_PROXY_CONFIG_KEYS);
 
 /**
@@ -186,6 +200,13 @@ function validateEditablePatch(input: unknown): EditableProxyConfigPatch {
       case "piiPresidioUrl":
       case "piiOpenmedUrl":
         if (typeof value !== "string") throw new Error("invalid proxy config url");
+        patch[field] = value;
+        break;
+      case "destroyCategories":
+        // The proxy validates names; "*" (destroy everything) is never sent from the Gateway.
+        if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string" && entry.trim() !== "*")) {
+          throw new Error("invalid proxy config destroy categories");
+        }
         patch[field] = value;
         break;
     }

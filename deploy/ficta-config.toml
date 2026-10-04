@@ -31,6 +31,10 @@ redact_paths = true
 fail_closed = true
 entity_priority = ["za-id-number", "credit-card"]
 
-# Remove detected financial/national identifiers permanently; registered identifiers still restore.
-[dispositions.destroy]
-categories = ["credit-card", "za-id-number"]
+# Permanent removal ("destroy") is an opt-in firm policy and is off here. A destroyed value becomes a
+# fixed marker such as [REDACTED_CREDIT_CARD] and never comes back: not in answers, exports or
+# restored text. Registered values are never destroyed. Turn it on from Gateway Admin settings
+# ("Remove permanently"), or uncomment and restart the proxy, e.g. for card numbers:
+#
+# [dispositions.destroy]
+# categories = ["credit-card"]

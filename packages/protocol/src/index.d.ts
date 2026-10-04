@@ -310,7 +310,8 @@ export type EditableProxyConfigKey =
   | "secretShapesEnabled"
   | "surrogateStyle"
   | "restoreIntoTools"
-  | "allowCustomUpstream";
+  | "allowCustomUpstream"
+  | "destroyCategories";
 
 export declare const EDITABLE_PROXY_CONFIG_KEYS: readonly EditableProxyConfigKey[];
 
@@ -325,6 +326,12 @@ export interface EditableProxyConfigValues {
   surrogateStyle: "opaque" | "typed";
   restoreIntoTools: RestoreIntoToolsPolicy;
   allowCustomUpstream: boolean;
+  /**
+   * Detection categories whose values are destroyed (replaced by a fixed marker, never restored).
+   * Normalized names such as `credit-card`; empty means off. `["*"]` reports a destroy-everything
+   * policy configured in TOML/env; the field is then locked and edits cannot set `"*"`.
+   */
+  destroyCategories: string[];
 }
 
 export interface ProxyConfigEditState {

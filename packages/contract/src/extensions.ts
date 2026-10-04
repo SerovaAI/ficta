@@ -39,6 +39,8 @@ export const editableConfigSchema = z
     surrogateStyle: z.enum(["opaque", "typed"]),
     restoreIntoTools: restorePolicy,
     allowCustomUpstream: z.boolean(),
+    /** Detection categories destroyed (never restored); empty is off. The engine validates names and refuses "*" here. */
+    destroyCategories: z.array(z.string()),
   })
   .strict();
 const editState = z
