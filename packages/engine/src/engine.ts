@@ -596,6 +596,9 @@ class ProtectionRequestScope implements RequestScope {
       runtime: this.runtime,
     });
 
+    // Values this scope already holds a token for (from an earlier request, another profile, or the
+    // store). They keep that token: destroying one now would remove nothing the vault does not hold.
+    const held = new Set(this.detectedMetadata.keys());
     const linking = this.registryLinkingState();
     const { anchorIndex } = linking;
     const retained = this.retainedClaims(linking.registryClaims, linking.activeEntities);
@@ -692,7 +695,7 @@ class ProtectionRequestScope implements RequestScope {
       const leaf = document.leaves[leafIndex];
       if (!leaf) continue;
       const rewritten = spliceResolvedOccurrences(leaf.text, claims, (occurrence) => {
-        const marker = this.destroyMarkerFor(occurrence);
+        const marker = this.destroyMarkerFor(occurrence, held);
         if (marker !== undefined) {
           // Irreversible: no vault registration, no metadata, no surrogate. Only the marker survives.
           if (!destroyedOwners.has(occurrence.surface)) {
@@ -948,8 +951,12 @@ class ProtectionRequestScope implements RequestScope {
     const destroy: ProtectedValue[] = [];
     const reversible: ProtectedValue[] = [];
     for (const value of detection.values) {
-      // An exact registered or caller-selected value keeps its surrogate (registered wins).
-      const registered = this.permanentMetadata.has(value.value) || this.userProtectedMetadata.has(value.value);
+      // An exact registered or caller-selected value keeps its surrogate (registered wins), and so does
+      // a value this scope already holds a token for.
+      const registered =
+        this.permanentMetadata.has(value.value) ||
+        this.userProtectedMetadata.has(value.value) ||
+        this.detectedMetadata.has(value.value);
       (!registered && this.destroyLabelFor(value) !== undefined ? destroy : reversible).push(value);
     }
     const destroyedValues = new Set(destroy.map((value) => value.value));
@@ -1073,13 +1080,16 @@ class ProtectionRequestScope implements RequestScope {
   /**
    * The marker for a resolved occurrence, or undefined when it keeps a surrogate. Only plain detector
    * findings are destroyed: a registered value, a caller-selected value, or a detection linked to a
-   * registered entity keeps its exact-match surrogate (registered wins).
+   * registered entity keeps its exact-match surrogate (registered wins). So does a value the scope
+   * already `held` a token for before this request, however it was found: the vault keeps it either
+   * way, and the same text must not get a token in one run and a marker in the next.
    */
-  private destroyMarkerFor(occurrence: ResolvedOccurrence): string | undefined {
+  private destroyMarkerFor(occurrence: ResolvedOccurrence, held: ReadonlySet<string>): string | undefined {
     if (occurrence.mention.resolverAuthority !== "detected" || occurrence.entity.provenance !== "detector") {
       return undefined;
     }
     if (this.userProtectedMetadata.has(occurrence.entity.canonical)) return undefined;
+    if (held.has(occurrence.surface) || held.has(occurrence.entity.canonical)) return undefined;
     return this.destroyLabelFor(occurrence.meta);
   }
 
