@@ -41,11 +41,11 @@
   "devDependencies": {
     "@changesets/changelog-github": "^1.0.1",
     "@changesets/cli": "^3.0.3",
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.4",
     "knip": "^6.39.0",
     "oxfmt": "^0.71.0",
     "oxlint": "^1.86.0",
-    "turbo": "^2.11.5",
+    "turbo": "^2.11.7",
     "typescript": "^7.0.2"
   },
   "engines": {
