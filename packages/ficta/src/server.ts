@@ -80,6 +80,7 @@ import {
   activeBackends,
   backendHealthCheck,
   defaultRedactionPlugins,
+  FICTA_LAUNCH_TOKEN_HEADER,
   managedRegistryLoadCounts,
   type PluginDiscovery,
   piiEnabled,
@@ -285,6 +286,12 @@ function matchLaunchToken(pathname: string, token: string): string | undefined {
   return slash === -1 ? "/" : rest.slice(slash);
 }
 
+/** True when the request carries the launch token in the x-ficta-launch header (Codex path). */
+function headerLaunchTokenValid(c: ProxyContext, token: string): boolean {
+  const header = c.req.raw.headers.get(FICTA_LAUNCH_TOKEN_HEADER);
+  return header !== null && timingSafeEqualStr(header, token);
+}
+
 async function handleProxyRequest(state: ProxyState, c: ProxyContext): Promise<Response> {
   const url = new URL(c.req.url);
   const method = c.req.method;
@@ -301,12 +308,11 @@ async function handleProxyRequest(state: ProxyState, c: ProxyContext): Promise<R
   // is refused — except a bare health probe, kept open for liveness.
   if (state.launchToken) {
     const stripped = matchLaunchToken(url.pathname, state.launchToken);
-    if (stripped === undefined) {
-      if (url.pathname !== FICTA_HEALTH_PATH) {
-        return c.json({ error: { type: "forbidden", message: "ficta: missing or invalid launch token" } }, 403);
-      }
-    } else {
+    if (stripped !== undefined) {
       url.pathname = stripped;
+    } else if (!headerLaunchTokenValid(c, state.launchToken) && url.pathname !== FICTA_HEALTH_PATH) {
+      // No valid token in the path prefix or the x-ficta-launch header. Health is exempt (liveness).
+      return c.json({ error: { type: "forbidden", message: "ficta: missing or invalid launch token" } }, 403);
     }
   }
   const control = await handleControlRoute(state, c, url, method);

@@ -113,6 +113,25 @@ describe("agent integration plugins", () => {
     ]);
   });
 
+  it("keeps the launch token out of Codex argv, delivering it via an env-mapped header", () => {
+    const token = "tok-secret-abc123";
+    const plan = codexAgent.configureLaunch({
+      baseUrl: `${BASE}/__ficta_l/${token}`,
+      args: ["exec", "hello"],
+      realExecutable: "/bin/codex",
+      env: {},
+      cwd: process.cwd(),
+    });
+
+    // The token must never appear on the command line (ps-visible); base_url uses the bare origin.
+    expect(plan.args.some((a) => a.includes(token))).toBe(false);
+    expect(plan.args.some((a) => a.includes("__ficta_l"))).toBe(false);
+    expect(plan.args).toContain(`model_providers.ficta.base_url="${BASE}/v1"`);
+    // The header override references the env var *name*, and the token value rides in the child env.
+    expect(plan.args.some((a) => a.includes("env_http_headers") && a.includes("x-ficta-launch"))).toBe(true);
+    expect(plan.env.FICTA_CODEX_LAUNCH_TOKEN).toBe(token);
+  });
+
   it("configures Codex ChatGPT/OAuth mode when auth.json says chatgpt", () => {
     const home = mkdtempSync(join(tmpdir(), "ficta-codex-home-"));
     writeFileSync(join(home, "auth.json"), JSON.stringify({ auth_mode: "chatgpt" }));

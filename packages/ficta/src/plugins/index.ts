@@ -106,6 +106,7 @@ export type {
   AgentLaunchPlan,
 } from "./agent-types.js";
 // --- Re-exports: the public plugin API surface (kept stable across the engine/product split). ---
+export { FICTA_LAUNCH_TOKEN_HEADER } from "./agent-types.js";
 export { claudeAgent, codexAgent, codexPersistedFictaCleanupOverrides, piAgent, piModelsConfig } from "./agents.js";
 export { dopplerPlugin } from "./doppler.js";
 export {

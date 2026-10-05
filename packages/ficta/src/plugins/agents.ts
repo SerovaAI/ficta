@@ -11,12 +11,26 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type {
-  AgentBypassContext,
-  AgentIntegration,
-  AgentIntegrationPlugin,
-  AgentPreflightNotice,
+import {
+  type AgentBypassContext,
+  type AgentIntegration,
+  type AgentIntegrationPlugin,
+  type AgentPreflightNotice,
+  FICTA_LAUNCH_TOKEN_HEADER,
 } from "./agent-types.js";
+
+/** Env var Codex maps to the launch-token header, so the token value stays out of argv. */
+const CODEX_LAUNCH_TOKEN_ENV = "FICTA_CODEX_LAUNCH_TOKEN";
+
+/**
+ * Split a ficta base URL into its origin and (optional) launch token. The CLI appends the token as
+ * `…/__ficta_l/<token>`; agents that carry it in the URL path keep the whole string, while Codex
+ * uses the origin plus a header (see its configureLaunch).
+ */
+function splitLaunchBaseUrl(baseUrl: string): { origin: string; token?: string } {
+  const m = baseUrl.match(/^(.*)\/__ficta_l\/([^/]+)\/?$/);
+  return m ? { origin: m[1] ?? baseUrl, token: m[2] } : { origin: baseUrl };
+}
 
 export const claudeAgent: AgentIntegration = {
   id: "builtin/claude",
@@ -42,20 +56,32 @@ export const codexAgent: AgentIntegration = {
   isMachineReadable: codexMachineReadableCommand,
   configureLaunch: (ctx) => {
     const { baseUrl, realExecutable, env } = ctx;
+    // Deliver the per-launch token via an env-mapped header rather than in base_url. Codex passes
+    // provider overrides on the command line (-c …), so a token in base_url would sit in argv, which
+    // ps exposes (to the same user everywhere, and to other users on default-configured Linux). With
+    // env_http_headers only the env var *name* is on argv; the token value lives in the child env.
+    const { origin, token } = splitLaunchBaseUrl(baseUrl);
     const overrides = [
       `model_provider="ficta"`,
       `model_providers.ficta.name="ficta"`,
-      `model_providers.ficta.base_url="${baseUrl}/v1"`,
+      `model_providers.ficta.base_url="${origin}/v1"`,
       // chatgpt_base_url can't point at ficta (Codex >=0.156 requires an HTTPS workspace backend), so
       // its traffic goes direct. Analytics event bodies there can carry registered values; switch
       // them off. The rest (account/plugin/usage GETs) carries no conversation content.
       "analytics.enabled=false",
     ];
     if (codexUsesChatgptAuth(env)) overrides.push("model_providers.ficta.requires_openai_auth=true");
+    let launchEnv = env;
+    if (token !== undefined) {
+      overrides.push(
+        `model_providers.ficta.env_http_headers={ "${FICTA_LAUNCH_TOKEN_HEADER}" = "${CODEX_LAUNCH_TOKEN_ENV}" }`,
+      );
+      launchEnv = { ...env, [CODEX_LAUNCH_TOKEN_ENV]: token };
+    }
     return {
       executable: realExecutable,
       args: codexConfigOverrideArgs(overrides, ctx),
-      env,
+      env: launchEnv,
     };
   },
   configureBypass: (ctx) => {

@@ -95,12 +95,19 @@ close that local "echo oracle":
   sending a deliberately malformed request. Error bodies pass through with the placeholder intact — a
   surrogate is not secret.
 - **A per-launch caller token gates the per-agent proxy.** When ficta launches an agent it mints a
-  random token and bakes it into the agent's base URL; the proxy refuses any provider-bound request
-  that does not carry it (only a health probe is exempt). The launched agent carries the token
-  transparently, but another process sharing the loopback port cannot use the proxy. The token is
-  stripped before routing and never forwarded upstream. This does not constrain the launched agent
-  itself — a compromised agent still holds the token, which is the tool-execution exfiltration case
-  above, out of scope here.
+  random token and routes it to the agent — in the base-URL path (`claude`, `pi`) or, for `codex`
+  (whose provider overrides are command-line arguments), in an env-mapped `x-ficta-launch` header so
+  the token value never appears in `ps`-visible argv. The proxy refuses any provider-bound request
+  that carries neither (only a health probe is exempt); the token is stripped/swept before routing
+  and never forwarded upstream.
+
+  What this does and does not cover: it stops a process that can reach the loopback port but does not
+  inspect the launched agent — a sandboxed tool with network access but no process visibility, or a
+  different-user process. It does **not** defend against a same-user process that reads the token out
+  of the agent's environment, arguments, or config files, nor against the launched agent itself: a
+  secret the same user can reach by inspecting their own processes is the same-user / tool-execution
+  boundary that is out of scope above. The token raises the bar against casual local reuse of the
+  proxy as a restore oracle; it is not a same-user isolation mechanism.
 
 The proxy binds loopback by default; `FICTA_HOST` can widen that but then also exposes the forwarded
 provider auth headers, so it stays opt-in.
