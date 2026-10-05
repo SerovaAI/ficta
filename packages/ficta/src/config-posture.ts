@@ -1,6 +1,12 @@
 import type { ProxyConfigPosture } from "@serovaai/ficta-protocol";
 import type { Config } from "./config.js";
-import { detectorFailClosed, envFlag, restoreIntoToolsPolicy, surrogateStyle } from "@serovaai/ficta-engine";
+import {
+  detectorFailClosed,
+  envFlag,
+  restoreIntoToolsPolicy,
+  restoreProsePolicy,
+  surrogateStyle,
+} from "@serovaai/ficta-engine";
 import { detectionFailClosed, engineConfigFromEnv } from "./engine-env.js";
 import { isGloballyDisabled } from "./global-disable.js";
 import {
@@ -36,6 +42,7 @@ export function configPosture(
       globallyDisabled: opts.globallyDisabled ?? isGloballyDisabled(),
       redactPaths: envFlag(env.FICTA_REDACT_PATHS),
       restoreIntoTools: restoreIntoToolsPolicy(env.FICTA_RESTORE_INTO_TOOLS),
+      restoreProse: restoreProsePolicy(env.FICTA_RESTORE_PROSE),
       surrogateStyle: surrogateStyle(env),
     },
     dispositions: engineConfigFromEnv(env).dispositions,

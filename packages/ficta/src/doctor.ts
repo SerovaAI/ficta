@@ -70,6 +70,8 @@ export interface DoctorReport {
     };
     /** Restore-into-tools policy (FICTA_RESTORE_INTO_TOOLS; default `detected`). */
     restoreIntoTools: RestoreIntoToolsPolicy;
+    /** Restore-into-prose policy for assistant free text (FICTA_RESTORE_PROSE; default `all`). */
+    restoreProse: RestoreIntoToolsPolicy;
     entityPriority?: readonly string[];
     destroyCategories?: readonly string[] | "*";
     upstreams: { anthropic: string; openai: string; chatgpt: string };
@@ -250,6 +252,7 @@ export async function collectDoctorReport(opts: DoctorOptions = {}): Promise<Doc
         requireStable: surrogateKey.requireStable,
       },
       restoreIntoTools: posture.protection.restoreIntoTools,
+      restoreProse: posture.protection.restoreProse,
       entityPriority: posture.detection.entityPriority,
       destroyCategories: posture.dispositions?.destroy.all ? "*" : posture.dispositions?.destroy.categories,
       upstreams: posture.transport.upstreams,
@@ -354,6 +357,7 @@ export function renderDoctorReport(report: DoctorReport): string {
   );
   lines.push(surrogateKeyLine(report.config.surrogateKey));
   lines.push(restoreIntoToolsLine(report.config.restoreIntoTools));
+  lines.push(restoreProseLine(report.config.restoreProse));
   lines.push(`  entity priority: ${report.config.entityPriority?.join(", ") || "default"}`);
   lines.push(
     `  destroy detected: ${report.config.destroyCategories === "*" ? "all" : report.config.destroyCategories?.join(", ") || "off"}`,
@@ -425,6 +429,19 @@ function restoreIntoToolsLine(policy: RestoreIntoToolsPolicy): string {
       return "  - restore into tools: none — every tool-call argument keeps placeholder surrogates (FICTA_RESTORE_INTO_TOOLS=none)";
     case "detected":
       return "  - restore into tools: detected — locally-read content restored into tool-call arguments; registry secrets kept as placeholders (default)";
+  }
+}
+
+function restoreProseLine(policy: RestoreIntoToolsPolicy): string {
+  switch (policy) {
+    case "all":
+      // The default. Flagged because it leaves the prose/transcript rehydration path open: a model
+      // can narrate a registry secret back into text. See docs/threat-model.md.
+      return "  ! restore into prose: all — registry secrets are rehydrated into assistant text (default; set FICTA_RESTORE_PROSE=detected to withhold them)";
+    case "none":
+      return "  - restore into prose: none — every surrogate is withheld from assistant text as [ficta:withheld] (FICTA_RESTORE_PROSE=none)";
+    case "detected":
+      return "  - restore into prose: detected — locally-read content restored in text; registry secrets shown as [ficta:withheld] (FICTA_RESTORE_PROSE=detected)";
   }
 }
 

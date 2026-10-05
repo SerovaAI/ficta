@@ -269,6 +269,7 @@ export interface ProxyConfigPosture {
     globallyDisabled: boolean;
     redactPaths: boolean;
     restoreIntoTools: RestoreIntoToolsPolicy;
+    restoreProse: RestoreIntoToolsPolicy;
     surrogateStyle: "opaque" | "typed";
   };
   detection: {

@@ -36,6 +36,7 @@ describe("configPosture", () => {
         globallyDisabled: false,
         redactPaths: false,
         restoreIntoTools: "detected",
+        restoreProse: "all",
         surrogateStyle: "opaque",
       },
       dispositions: { destroy: { all: false, categories: [], labels: {} } },
@@ -76,6 +77,7 @@ describe("configPosture", () => {
         FICTA_REQUIRE_REGISTRY: "1",
         FICTA_REDACT_PATHS: "1",
         FICTA_RESTORE_INTO_TOOLS: "1",
+        FICTA_RESTORE_PROSE: "detected",
         FICTA_SURROGATE_STYLE: "typed",
         FICTA_PII_ENABLED: "1",
         FICTA_PII_AGENTS: "1",
@@ -95,6 +97,7 @@ describe("configPosture", () => {
       globallyDisabled: true,
       redactPaths: true,
       restoreIntoTools: "all",
+      restoreProse: "detected",
       surrogateStyle: "typed",
     });
     expect(posture.detection.pii).toEqual({
