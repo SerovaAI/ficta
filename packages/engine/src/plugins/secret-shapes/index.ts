@@ -240,6 +240,7 @@ export function detectSecretShapes(text: string, ctx: { header?: string } = {}):
   // eslint-disable-next-line no-control-regex -- U+0000 is the engine structural leaf delimiter.
   for (const match of text.matchAll(/(?<![^\s\u0000"'`])([A-Za-z0-9_+/-]{32,512}={0,2})(?![^\s\u0000"'`])/g)) {
     const value = match[1]!;
+    if (isLabelledDigest(value, text.slice(Math.max(0, match.index - 96), match.index))) continue;
     if (isOpaqueSecret(value)) addCandidate(out, seen, "opaque-secret", value, "probabilistic");
   }
 
@@ -375,6 +376,32 @@ function isOpaqueSecret(value: string): boolean {
   // characters (5 bits), and a flat 4.5-bit bar rejected a third of genuinely random 32-char tokens.
   const threshold = Math.min(4.5, 0.85 * Math.log2(value.length));
   return /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value) && entropy >= threshold;
+}
+
+/**
+ * A label that names the following value as a digest: `sha256: …`, `"commit": "…"`, `checksum=…`,
+ * `enrichment_skill_sha256: …`, `commit …` (git log). The digest word must end the key, so
+ * `hash_secret` or `digest_token` is not a digest label.
+ */
+const DIGEST_LABEL =
+  // eslint-disable-next-line no-control-regex -- U+0000 is the engine structural leaf delimiter.
+  /(?:^|[^A-Za-z0-9])(?:[A-Za-z0-9]+[_.-])*(?:sha(?:1|224|256|384|512)?|sha3(?:[_-]?\d{3})?|md5|blake2b?|blake3|hash|digest|checksum|commit|etag|integrity|oid)["'`]?[ \t]*[:=]?[ \t]*["'`]?[ \t]*\u0000?[ \t]*["'`]?$/i;
+
+/** Subresource Integrity values (`sha512-<base64>`) carry their own label and an exact length. */
+const SRI_DIGEST = /^(?:sha256-[A-Za-z0-9+/]{43}=|sha384-[A-Za-z0-9+/]{64}|sha512-[A-Za-z0-9+/]{86}==)$/;
+
+/**
+ * Hex digests (commit SHAs, content hashes, checksums) are indistinguishable from hex session
+ * credentials by shape, so a bare one is still treated as opaque. When the text immediately before
+ * it on the same line labels it as a digest, it is a hash the agent needs verbatim — rewriting it
+ * breaks exact-match edits and checksum verification — and is skipped. A label that also names a
+ * secret (`api_key_sha256`, `secret_hash`) keeps the value suspicious.
+ */
+function isLabelledDigest(value: string, before: string): boolean {
+  if (SRI_DIGEST.test(value)) return true;
+  if (!/^[a-f0-9]{32,512}$/i.test(value)) return false;
+  const label = DIGEST_LABEL.exec(before.slice(before.lastIndexOf("\n") + 1))?.[0];
+  return label !== undefined && !SECRETISH_NAME.test(label);
 }
 
 function isLikelySecretValue(raw: string): boolean {

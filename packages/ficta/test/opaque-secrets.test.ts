@@ -74,4 +74,50 @@ describe("opaque secret detection", () => {
   it("treats a bare random-looking digest as ambiguous rather than claiming verification", () => {
     expect(detectSecretShapes(HEX)[0]?.confidence).toBe("probabilistic");
   });
+
+  it("leaves a hex digest alone when its label names it as one", () => {
+    const sha256 = HEX + HEX.slice(0, 24);
+    for (const text of [
+      `enrichment_skill_sha256: ${sha256}\n`,
+      `sha256=${sha256}`,
+      `"checksum": "${sha256}"`,
+      `commit ${HEX}\nAuthor: someone`,
+      `  integrity: '${sha256}'`,
+      `etag: "${HEX}"`,
+      `sha256\u0000${sha256}`,
+      `      integrity: sha512-${OPAQUE.repeat(2)}${OPAQUE.slice(0, 22)}==`,
+    ]) {
+      expect(detectSecretShapes(text), text).toEqual([]);
+    }
+  });
+
+  it("still flags a hex value whose label is not a digest name, or names a secret", () => {
+    for (const text of [
+      `here it is: ${HEX}`,
+      `session: ${HEX}`,
+      `sha256 of the session cookie\n${HEX}`,
+      `hash_secret: ${HEX}`,
+      `api_key_sha256: ${HEX}`,
+      `secret_hash: ${HEX}`,
+    ]) {
+      expect(
+        detectSecretShapes(text).map((v) => v.value),
+        text,
+      ).toContain(HEX);
+    }
+  });
+
+  it("keeps a labelled digest in a JSON body intact through the proxy path", async () => {
+    vi.stubEnv("FICTA_SECRET_SHAPES_ENABLED", undefined);
+    const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
+      plugins: [secretShapesPlugin],
+      config: engineConfigFromEnv(),
+    });
+    const scope = engine.beginRequest("labelled-digest");
+    const body = JSON.stringify({ messages: [{ role: "user", content: "x" }], metadata: { sha256: HEX } });
+    const result = await scope.redactBodyDetailed(body);
+    expect(result.count).toBe(0);
+    expect(result.body).toContain(HEX);
+  });
 });
