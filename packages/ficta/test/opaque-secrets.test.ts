@@ -84,7 +84,6 @@ describe("opaque secret detection", () => {
       `commit ${HEX}\nAuthor: someone`,
       `  integrity: '${sha256}'`,
       `etag: "${HEX}"`,
-      `sha256\u0000${sha256}`,
       `      integrity: sha512-${OPAQUE.repeat(2)}${OPAQUE.slice(0, 22)}==`,
     ]) {
       expect(detectSecretShapes(text), text).toEqual([]);
@@ -99,6 +98,13 @@ describe("opaque secret detection", () => {
       `hash_secret: ${HEX}`,
       `api_key_sha256: ${HEX}`,
       `secret_hash: ${HEX}`,
+      `session token hash: ${HEX}`,
+      // A label in the previous structural leaf (key or prose value) never vouches for this one.
+      `sha256\u0000${HEX}`,
+      `please check the hash\u0000${HEX}`,
+      // A secret-ish word beyond the inspected line prefix must not be dropped from view.
+      `${"x".repeat(150)}_session_token_${"y".repeat(40)}_sha256: ${HEX}`,
+      `session_token_${"y".repeat(160)}_sha256: ${HEX}`,
     ]) {
       expect(
         detectSecretShapes(text).map((v) => v.value),
@@ -107,7 +113,7 @@ describe("opaque secret detection", () => {
     }
   });
 
-  it("keeps a labelled digest in a JSON body intact through the proxy path", async () => {
+  it("keeps a labelled digest in message text intact through the proxy path", async () => {
     vi.stubEnv("FICTA_SECRET_SHAPES_ENABLED", undefined);
     const engine = new ProtectionEngine({
       allowEphemeralKey: true,
@@ -115,9 +121,25 @@ describe("opaque secret detection", () => {
       config: engineConfigFromEnv(),
     });
     const scope = engine.beginRequest("labelled-digest");
-    const body = JSON.stringify({ messages: [{ role: "user", content: "x" }], metadata: { sha256: HEX } });
+    const content = `---\nenrichment_skill_sha256: ${HEX}\n---\nsee also ${OPAQUE}`;
+    const body = JSON.stringify({ messages: [{ role: "user", content }] });
     const result = await scope.redactBodyDetailed(body);
-    expect(result.count).toBe(0);
+    expect(result.count).toBe(1);
     expect(result.body).toContain(HEX);
+    expect(result.body).not.toContain(OPAQUE);
+  });
+
+  it("does not let a prose value in one leaf exempt a bare hex value in the next", async () => {
+    vi.stubEnv("FICTA_SECRET_SHAPES_ENABLED", undefined);
+    const engine = new ProtectionEngine({
+      allowEphemeralKey: true,
+      plugins: [secretShapesPlugin],
+      config: engineConfigFromEnv(),
+    });
+    const scope = engine.beginRequest("cross-leaf-label");
+    // Adjacent array elements are adjacent value leaves in the joined detection text.
+    const body = JSON.stringify({ input: ["here is the hash", HEX] });
+    const result = await scope.redactBodyDetailed(body);
+    expect(result.body).not.toContain(HEX);
   });
 });
