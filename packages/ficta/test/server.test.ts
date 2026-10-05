@@ -1181,6 +1181,76 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
     }
   });
 
+  it("prose withholding: FICTA_RESTORE_PROSE gates whether a registered secret is restored into assistant text", async () => {
+    const originalEnv = {
+      FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,
+      FICTA_LOG_LEVEL: process.env.FICTA_LOG_LEVEL,
+      FICTA_LOG_DIR: process.env.FICTA_LOG_DIR,
+      FICTA_RESTORE_PROSE: process.env.FICTA_RESTORE_PROSE,
+    };
+    const SECRET = "registered-prose-secret-9f3a7c21";
+    // The upstream echoes whatever surrogate the request carried back inside assistant prose.
+    const upstream = createServer((req, res) => {
+      let body = "";
+      req.setEncoding("utf8");
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        const tok = body.match(/FICTA_[0-9a-f]{32}/)?.[0] ?? "none";
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: `your key is ${tok}` } }] }));
+      });
+    });
+    const fixture = {
+      kind: "registry-source" as const,
+      name: "fixture-registry",
+      config: { bindings: [], sections: [], envDefaults: {} },
+      setup: { registrySources: () => [] },
+      discover: () => [],
+      loadValues: () => [{ name: "KEY", value: SECRET, source: "fixture", kind: "secret" as const, confidence: "exact" as const }],
+    };
+    const call = async () => {
+      const { startProxy } = await import("../src/server.js");
+      const proxy = await startProxy({ port: 0, plugins: [fixture] });
+      try {
+        const res = await fetch(`http://127.0.0.1:${proxy.port}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ messages: [{ role: "user", content: `deploy with ${SECRET}` }] }),
+        });
+        return await res.text();
+      } finally {
+        proxy.close();
+      }
+    };
+    const upstreamPort = await listen(upstream);
+    try {
+      process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
+      process.env.FICTA_LOG_LEVEL = "silent";
+      process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-test-"));
+
+      // Default (`all`): the registered secret round-trips into assistant prose as before.
+      delete process.env.FICTA_RESTORE_PROSE;
+      vi.resetModules();
+      const def = await call();
+      expect(def).toContain(SECRET);
+      expect(def).not.toContain("[ficta:withheld]");
+
+      // Opt-in (`detected`): the registered secret the model only saw as a placeholder is withheld.
+      process.env.FICTA_RESTORE_PROSE = "detected";
+      vi.resetModules();
+      const withheld = await call();
+      expect(withheld).not.toContain(SECRET);
+      expect(withheld).toContain("[ficta:withheld]");
+    } finally {
+      await close(upstream);
+      for (const [k, v] of Object.entries(originalEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      vi.resetModules();
+    }
+  });
+
   it("residual guard: replaces an unmapped surrogate in a protected response with the neutral marker (default, no header)", async () => {
     const originalEnv = {
       FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,

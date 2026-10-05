@@ -57,6 +57,12 @@ interface RestoreMarkers {
 interface RestoreOptions {
   /** Replace unknown surrogate-shaped references; known withheld tool arguments are preserved. */
   unknownToken?: string;
+  /**
+   * Replacement for a mapped surrogate the prose policy withholds (a registry/env secret under
+   * `detected`, or any mapped token under `none`). Omit to rehydrate every mapped token as before —
+   * withholding only happens when this marker is supplied, so non-proxy callers restore in full.
+   */
+  withheldToken?: string;
   markers?: RestoreMarkers;
 }
 
@@ -97,11 +103,17 @@ export function surrogateKeyWarning(key: string | undefined): string | undefined
 export interface VaultPolicy {
   /** Restore-into-tools policy (env `FICTA_RESTORE_INTO_TOOLS`). */
   readonly restoreIntoTools: RestoreIntoToolsPolicy;
+  /** Restore-into-prose policy for assistant free text (env `FICTA_RESTORE_PROSE`). */
+  readonly restoreProse: RestoreIntoToolsPolicy;
   /** Redact values even inside filesystem-path-like tokens (env `FICTA_REDACT_PATHS`). */
   readonly redactPaths: boolean;
 }
 
-export const DEFAULT_VAULT_POLICY: VaultPolicy = { restoreIntoTools: "detected", redactPaths: false };
+export const DEFAULT_VAULT_POLICY: VaultPolicy = {
+  restoreIntoTools: "detected",
+  restoreProse: "all",
+  redactPaths: false,
+};
 
 /**
  * A mutable surrogate store: the deterministic value↔surrogate dictionary plus the longest-first
@@ -781,6 +793,7 @@ export abstract class VaultView {
    * not silently re-restored when the whole event object is mapped. See {@link createSseRestoreStream}.
    */
   private restoreTextExcept(text: string, skip: ReadonlySet<string>, opts: RestoreOptions = {}): string {
+    if (opts.withheldToken !== undefined) assertUnknownTokenPlaceholder(opts.withheldToken);
     text = this.replaceUnknownTokens(text, opts);
     if (!this.hasSurrogates || !text) return text;
     const markerSpans = completeRestoreMarkerSpans(text, opts.markers);
@@ -789,9 +802,26 @@ export abstract class VaultView {
       if (skip.has(m)) return m;
       const value = this.valueFor(m);
       if (value === undefined) return m;
+      const origin = this.restoreOriginFor(m);
+      // Prose withholding: a registry/env secret the model only ever saw as a placeholder is not
+      // rehydrated into free text (closes the prose + transcript-echo leak). Only acts when the
+      // caller supplies a withheld marker, so non-proxy restore stays a full round-trip.
+      if (opts.withheldToken !== undefined && this.prosePolicyWithholds(origin)) return opts.withheldToken;
       this.recordRestored(value, m);
-      return markRestoredValue(value, m, this.restoreOriginFor(m), opts.markers);
+      return markRestoredValue(value, m, origin, opts.markers);
     });
+  }
+
+  /** Whether the prose policy withholds a mapped token of the given restore origin from free text. */
+  private prosePolicyWithholds(origin: RestoreOrigin | undefined): boolean {
+    switch (this.policy.restoreProse) {
+      case "all":
+        return false;
+      case "none":
+        return true;
+      default: // "detected": rehydrate content-derived detections, withhold registry/env secrets
+        return origin !== "detected";
+    }
   }
 
   /**
@@ -939,9 +969,16 @@ export abstract class VaultView {
       const value = this.valueFor(m);
       if (value === undefined) continue;
       const nested = overlapsSpan(nestedJsonSpans, index, index + m.length);
+      const origin = this.restoreOriginFor(m);
+      // Prose withholding for the content surface only — a nested span is a tool-call argument,
+      // which the restore-into-tools policy (via `skip`) already governs. See restoreTextExcept.
+      if (!nested && opts.withheldToken !== undefined && this.prosePolicyWithholds(origin)) {
+        edits.push({ start: index, end: index + m.length, replacement: jsonStringEscape(opts.withheldToken) });
+        continue;
+      }
       if (nested) this.recordRestoredIntoTools(value, m);
       else this.recordRestored(value, m);
-      const escaped = jsonStringEscape(markRestoredValue(value, m, this.restoreOriginFor(m), opts.markers));
+      const escaped = jsonStringEscape(markRestoredValue(value, m, origin, opts.markers));
       edits.push({ start: index, end: index + m.length, replacement: nested ? jsonStringEscape(escaped) : escaped });
     }
     if (opts.unknownToken !== undefined) {

@@ -38,6 +38,11 @@ redact_paths = false
 # Restore locally-read detected content into tool-call arguments while keeping registry secrets as
 # placeholders. Alternatives: "all" restores every value; "none" restores no values into tools.
 restore_into_tools = "detected"
+# Prose (assistant free text) is ficta's core restore surface, so it defaults to "all": registered
+# secrets round-trip into the model's reply as usual. Opt into withholding for high-assurance
+# deployments: "detected" keeps locally-read detected content but renders registry/env secrets the
+# model only ever saw as placeholders as `[ficta:withheld]`; "none" withholds every mapped value.
+restore_prose = "all"
 
 [detection]
 # Detector-backend outages default to fail-open (skip detection and forward).

@@ -26,6 +26,7 @@ const CORE_CONFIG_BINDINGS: readonly ConfigBinding[] = [
   { env: "FICTA_FAIL_CLOSED_DETECTION", path: ["detection", "fail_closed"], kind: "boolean" },
   { env: "FICTA_REDACT_PATHS", path: ["redaction", "redact_paths"], kind: "boolean" },
   { env: "FICTA_RESTORE_INTO_TOOLS", path: ["redaction", "restore_into_tools"], kind: "string" },
+  { env: "FICTA_RESTORE_PROSE", path: ["redaction", "restore_prose"], kind: "string" },
   { env: "FICTA_LOG_MAX_BYTES", path: ["logging", "max_bytes"], kind: "number" },
   { env: "FICTA_LOG_ROOT", path: ["logging", "log_root"], kind: "string" },
   { env: "FICTA_LOG_DIR", path: ["logging", "log_dir"], kind: "string" },
@@ -43,7 +44,7 @@ const CORE_CONFIG_BINDINGS: readonly ConfigBinding[] = [
 
 const CORE_SECTION_ORDER: readonly ConfigSection[] = [
   { path: ["registry"], keys: ["min_len", "exclude_names", "require"] },
-  { path: ["redaction"], keys: ["fail_closed", "redact_paths", "restore_into_tools"] },
+  { path: ["redaction"], keys: ["fail_closed", "redact_paths", "restore_into_tools", "restore_prose"] },
   { path: ["detection"], keys: ["fail_closed", "entity_priority"] },
   { path: ["dispositions", "destroy"], keys: ["categories"] },
   { path: ["logging"], keys: ["max_bytes", "log_root", "log_dir"] },

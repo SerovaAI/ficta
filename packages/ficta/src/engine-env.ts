@@ -21,6 +21,7 @@ import {
   type EnvSource,
   envFlag,
   restoreIntoToolsPolicy,
+  restoreProsePolicy,
   piiEnabled as parsePiiEnabled,
   piiFailClosed as parsePiiFailClosed,
   checkOpenmedHealth as checkOpenmedHealthFor,
@@ -61,7 +62,10 @@ export function engineConfigFromEnv(env: EnvSource = process.env): EngineConfig 
       openmed: parseOpenmedConfig(env),
     },
     secretShapes: { enabled: parseSecretShapesEnabled(env) },
-    restore: { intoTools: restoreIntoToolsPolicy(env.FICTA_RESTORE_INTO_TOOLS) },
+    restore: {
+      intoTools: restoreIntoToolsPolicy(env.FICTA_RESTORE_INTO_TOOLS),
+      prose: restoreProsePolicy(env.FICTA_RESTORE_PROSE),
+    },
     redactPaths: envFlag(env.FICTA_REDACT_PATHS),
     registry: {
       excludeNames: commaList(env.FICTA_REGISTRY_EXCLUDE_NAMES),
@@ -73,7 +77,7 @@ export function engineConfigFromEnv(env: EnvSource = process.env): EngineConfig 
 /** The vault restore/redaction policy from env-style settings (for vaults built outside an engine). */
 export function vaultPolicyFromEnv(env: EnvSource = process.env): VaultPolicy {
   const { restore, redactPaths } = engineConfigFromEnv(env);
-  return { restoreIntoTools: restore.intoTools, redactPaths };
+  return { restoreIntoTools: restore.intoTools, restoreProse: restore.prose, redactPaths };
 }
 
 /** A plugin runtime from env-style settings, for plugin calls made outside an engine (doctor, review). */
