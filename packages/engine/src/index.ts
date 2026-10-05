@@ -48,6 +48,7 @@ export {
   parseBoolean,
   type RestoreIntoToolsPolicy,
   restoreIntoToolsPolicy,
+  restoreProsePolicy,
 } from "./env-flags.js";
 export {
   piiEnabled,

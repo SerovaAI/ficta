@@ -300,6 +300,12 @@ export interface RestoreOptions {
   /** Replace unknown references in complete, JSON and streaming responses. Known withheld tokens stay intact. */
   unknownToken?: string;
   /**
+   * Replacement for a mapped surrogate the prose policy (`FICTA_RESTORE_PROSE`) withholds from
+   * assistant free text — a registry/env secret under `detected`, or any mapped token under `none`.
+   * Omit it to rehydrate every mapped token; withholding only happens when this marker is supplied.
+   */
+  withheldToken?: string;
+  /**
    * Optional client-facing markers around restored human text. Used by clients that explicitly
    * advertise restore-highlight support; callers must strip or render them before resending transcripts.
    */

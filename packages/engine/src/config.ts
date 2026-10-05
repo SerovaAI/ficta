@@ -50,6 +50,8 @@ export interface EngineConfig {
   readonly restore: {
     /** How surrogates inside tool-call arguments are restored (see {@link RestoreIntoToolsPolicy}). */
     readonly intoTools: RestoreIntoToolsPolicy;
+    /** How surrogates in assistant prose (free text) are restored (see {@link RestoreIntoToolsPolicy}). */
+    readonly prose: RestoreIntoToolsPolicy;
   };
   /** Redact protected values even inside filesystem-path-like tokens (off: paths are preserved). */
   readonly redactPaths: boolean;
@@ -143,7 +145,7 @@ export function resolveEngineConfig(input: EngineConfigInput = {}): EngineConfig
       openmed: { ...openmedConfig({}), ...input.pii?.openmed },
     },
     secretShapes: { enabled: input.secretShapes?.enabled ?? true },
-    restore: { intoTools: input.restore?.intoTools ?? "detected" },
+    restore: { intoTools: input.restore?.intoTools ?? "detected", prose: input.restore?.prose ?? "all" },
     redactPaths: input.redactPaths ?? false,
     registry: {
       excludeNames: input.registry?.excludeNames ?? [],

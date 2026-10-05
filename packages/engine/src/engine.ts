@@ -269,6 +269,7 @@ export class ProtectionEngine implements RedactionEngine {
       entityFamilySurrogateStrategy(surrogateStrategy({ style: surrogate.style, key }), key),
       {
         restoreIntoTools: restore.intoTools,
+        restoreProse: restore.prose,
         redactPaths,
       },
     );

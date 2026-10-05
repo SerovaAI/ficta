@@ -62,3 +62,19 @@ export function restoreIntoToolsPolicy(value: string | undefined): RestoreIntoTo
   if (bool === false) return "none";
   return "detected";
 }
+
+/**
+ * Parse `FICTA_RESTORE_PROSE` — the restore-into-tools policy's analogue for assistant **prose**
+ * (free text the model emits, not tool-call arguments). `all` rehydrates every surrogate, `none`
+ * withholds every mapped surrogate, and `detected` (the default) rehydrates content-derived
+ * detections the agent already read locally while withholding registry/environment secrets the model
+ * only ever saw as placeholders. Same spellings and boolean back-compat as
+ * {@link restoreIntoToolsPolicy}.
+ */
+export function restoreProsePolicy(value: string | undefined): RestoreIntoToolsPolicy {
+  // Default `all` (opt-in): unlike tool arguments, assistant prose is ficta's core restore surface —
+  // registered secrets round-trip there by design. Withholding is opt-in via `detected`/`none`.
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return "all";
+  return restoreIntoToolsPolicy(value);
+}

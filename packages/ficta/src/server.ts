@@ -267,6 +267,15 @@ const LAUNCH_TOKEN_PREFIX = "__ficta_l";
  */
 const RESIDUAL_MARKER = "[ficta:unrestored]";
 
+/**
+ * Marker that replaces a registry/env surrogate the prose policy withholds from assistant free text
+ * (`FICTA_RESTORE_PROSE`, default `detected`) — a value the model only ever saw as a placeholder, so
+ * it is never rehydrated into narration (closing the prose + transcript-echo leak). Distinct from
+ * {@link RESIDUAL_MARKER}: this is a deliberate withhold, not a restore failure. Must not contain
+ * `FICTA_`.
+ */
+const WITHHELD_MARKER = "[ficta:withheld]";
+
 /** Constant-time string compare that never short-circuits on length. */
 function timingSafeEqualStr(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -713,6 +722,11 @@ function beginProtectedRequest(
       // engine, so this only ever rewrites genuine debris. The client header can still force it in
       // passthrough mode for preview tooling.
       unknownToken: protect || c.req.header(FICTA_UNKNOWN_TOKEN_HEADER) === "replace" ? RESIDUAL_MARKER : undefined,
+      // Fix #3: when protecting, withhold registry/env secrets from assistant prose per
+      // FICTA_RESTORE_PROSE (default `detected`). The engine renders a withheld token as this marker
+      // instead of rehydrating a value the model only ever saw as a placeholder. Content-derived
+      // detections still restore; tool-call arguments are governed separately by FICTA_RESTORE_INTO_TOOLS.
+      withheldToken: protect ? WITHHELD_MARKER : undefined,
     },
     requestedProtectionTicket,
     preparedProtectionTicket,
