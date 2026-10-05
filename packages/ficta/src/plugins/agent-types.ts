@@ -18,6 +18,15 @@ export interface AgentLaunchContext extends AgentBypassContext {
   baseUrl: string;
 }
 
+/**
+ * Header carrying the per-launch caller token, as an alternative to the `/__ficta_l/<token>/…`
+ * base-URL path segment. Used for agents (Codex) that would otherwise expose the token on the
+ * `ps`-visible command line: the token value rides in an env var the agent maps to this header, so
+ * only the env var *name* appears in argv. It is an `x-ficta-*` header, so the proxy's existing
+ * header sweep strips it before any request reaches the upstream vendor.
+ */
+export const FICTA_LAUNCH_TOKEN_HEADER = "x-ficta-launch";
+
 export interface AgentLaunchPlan {
   executable: string;
   args: string[];

@@ -1181,6 +1181,101 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
     }
   });
 
+  it("launch token: accepts the token via the x-ficta-launch header and never forwards it upstream", async () => {
+    const originalEnv = {
+      FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,
+      FICTA_LOG_LEVEL: process.env.FICTA_LOG_LEVEL,
+      FICTA_LOG_DIR: process.env.FICTA_LOG_DIR,
+    };
+    let upstreamSawLaunchHeader = true;
+    let upstreamHits = 0;
+    const upstream = createServer((req, res) => {
+      upstreamHits += 1;
+      upstreamSawLaunchHeader = req.headers["x-ficta-launch"] !== undefined;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end("{}");
+    });
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
+    try {
+      const upstreamPort = await listen(upstream);
+      process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
+      process.env.FICTA_LOG_LEVEL = "silent";
+      process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-test-"));
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0, launchToken: "tok-abc123" });
+      const base = `http://127.0.0.1:${proxy.port}`;
+
+      // No path prefix, token supplied in the header (the Codex delivery path).
+      const ok = await fetch(`${base}/v1/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-ficta-launch": "tok-abc123" },
+        body: "{}",
+      });
+      const wrong = await fetch(`${base}/v1/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-ficta-launch": "nope" },
+        body: "{}",
+      });
+
+      expect(ok.status).toBe(200);
+      expect(wrong.status).toBe(403);
+      expect(upstreamHits).toBe(1); // only the valid request reached the upstream
+      expect(upstreamSawLaunchHeader).toBe(false); // x-ficta-* is swept before forwarding
+    } finally {
+      proxy?.close();
+      await close(upstream);
+      for (const [k, v] of Object.entries(originalEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
+  it("launch token: never writes the token into the proxy log directory", async () => {
+    const originalEnv = {
+      FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,
+      FICTA_LOG_LEVEL: process.env.FICTA_LOG_LEVEL,
+      FICTA_LOG_DIR: process.env.FICTA_LOG_DIR,
+    };
+    const upstream = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end("{}");
+    });
+    const token = "tok-must-not-be-logged-7f3a9c";
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
+    const logDir = mkdtempSync(join(tmpdir(), "ficta-test-logscan-"));
+    try {
+      const upstreamPort = await listen(upstream);
+      process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
+      process.env.FICTA_LOG_LEVEL = "debug"; // most verbose; still must not leak the token
+      process.env.FICTA_LOG_DIR = logDir;
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0, launchToken: token });
+
+      await fetch(`http://127.0.0.1:${proxy.port}/__ficta_l/${token}/v1/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ messages: [] }),
+      });
+
+      // Scan every file ficta wrote under the log dir; the token must appear in none of them.
+      const scan = (dir: string): string[] =>
+        readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+          const p = join(dir, e.name);
+          return e.isDirectory() ? scan(p) : [readFileSync(p, "utf8")];
+        });
+      const anyHasToken = scan(logDir).some((contents) => contents.includes(token));
+      expect(anyHasToken).toBe(false);
+    } finally {
+      proxy?.close();
+      await close(upstream);
+      for (const [k, v] of Object.entries(originalEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
   it("restores surrogates split across Anthropic SSE tool-input events (opt-in FICTA_RESTORE_INTO_TOOLS=1)", async () => {
     const secret = "corova-control-plane";
     const originalEnv = {
