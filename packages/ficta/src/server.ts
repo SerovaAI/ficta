@@ -259,6 +259,14 @@ function createControlHandler(engine: RedactionEngine, stats: ProtectionStats, t
 /** Leading path segment that carries the per-launch caller token: `/__ficta_l/<token>/…`. */
 const LAUNCH_TOKEN_PREFIX = "__ficta_l";
 
+/**
+ * Neutral marker that replaces a surrogate-shaped token which survived restore (a mutated, invented,
+ * or unresolvable reference) in client-visible text — see the residual-surrogate guard. Must not
+ * contain `FICTA_`, or the engine would reject it as a would-be surrogate. Its sibling for
+ * deliberately withheld values (fix #3) will be `[ficta:withheld]`.
+ */
+const RESIDUAL_MARKER = "[ficta:unrestored]";
+
 /** Constant-time string compare that never short-circuits on length. */
 function timingSafeEqualStr(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -697,7 +705,14 @@ function beginProtectedRequest(
     captureTraceAudit: traceCapture.valueAuditLogged,
     restoreHighlightOptions: {
       markers: restoreHighlightMarkers,
-      unknownToken: c.req.header(FICTA_UNKNOWN_TOKEN_HEADER) === "replace" ? "[unrestored reference]" : undefined,
+      // Residual-surrogate guard (Phase 2): once we are protecting, a surrogate-shaped token that
+      // survives restore is a known restore failure (the model mutated/invented it) or an
+      // unresolvable cross-scope reference — never a value. Replace it in client-visible text with a
+      // neutral marker so the agent never sees a raw FICTA_… string it might echo into a file.
+      // Mapped tokens (including deliberately withheld tool-call placeholders) are skipped by the
+      // engine, so this only ever rewrites genuine debris. The client header can still force it in
+      // passthrough mode for preview tooling.
+      unknownToken: protect || c.req.header(FICTA_UNKNOWN_TOKEN_HEADER) === "replace" ? RESIDUAL_MARKER : undefined,
     },
     requestedProtectionTicket,
     preparedProtectionTicket,
