@@ -6,6 +6,7 @@
   "scripts": {
     "//turbo": "Turbo-managed: cached, parallel across all packages. See turbo.json",
     "build": "turbo run build",
+    "prepare": "git config core.hooksPath .githooks",
     "check": "node scripts/sidecars.mjs check --advisory && pnpm check:static && pnpm check:sidecar-scripts && pnpm check:deploy-scripts && turbo run check",
     "check:static": "oxlint . && oxfmt --check .",
     "check:entity-fidelity-live": "pnpm --filter @serovaai/ficta check:entity-fidelity-live",

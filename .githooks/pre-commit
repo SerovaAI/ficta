@@ -1,0 +1,20 @@
+#!/bin/sh
+# Auto-format staged files with oxfmt so local commits match CI's `oxfmt --check .` gate
+# (root package.json → `pnpm check` → `check:static`). Installed by the root `prepare` script
+# (`git config core.hooksPath .githooks`), so `pnpm install` turns it on for every contributor.
+#
+# It only touches files already staged for this commit, reformats them in place, and re-stages the
+# result — it never formats the rest of the tree. Bypass with `git commit -n` when you must; CI's
+# check stays the real gate, so a bypassed or missing hook still cannot merge unformatted code.
+set -eu
+
+# Staged, still-present files (added/copied/modified) in the formats oxfmt handles.
+files=$(git diff --cached --name-only --diff-filter=ACM | grep -Ei '\.(ts|mts|cts|tsx|js|mjs|cjs|jsx|json|jsonc|md|mdx)$' || true)
+[ -z "$files" ] && exit 0
+
+# oxfmt respects .gitignore, so a staged-but-ignored path is skipped. Pass the set in one go;
+# repo paths contain no whitespace. SC2086: intentional word-splitting of the newline list.
+# shellcheck disable=SC2086
+pnpm exec oxfmt --write $files
+# shellcheck disable=SC2086
+git add $files
