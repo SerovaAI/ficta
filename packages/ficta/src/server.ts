@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { argv } from "node:process";
 import { fileURLToPath } from "node:url";
 import { type HttpBindings, serve } from "@hono/node-server";
@@ -127,6 +127,15 @@ export interface StartProxyOptions {
    * caller scope. Omit it for the standalone/multi-tenant proxy.
    */
   defaultScopeKey?: string;
+  /**
+   * Per-launch caller token for a dedicated single-agent proxy. When set, every provider-bound
+   * request must arrive under the `/<LAUNCH_TOKEN_PREFIX>/<token>` path prefix (the CLI bakes it
+   * into the agent's base URL); the prefix is stripped before routing and never forwarded upstream.
+   * Requests without it are refused with 403, so another process sharing the loopback port cannot
+   * use the proxy as a restore oracle. Only health stays reachable without the token. Omit it for
+   * the standalone/multi-tenant proxy, which gates on caller scope instead.
+   */
+  launchToken?: string;
 }
 
 /** Start the redaction proxy. Returns the bound port + a handle to close it. */
@@ -160,6 +169,7 @@ export async function startProxy(opts: StartProxyOptions = {}): Promise<ProxyHan
     protectionTickets,
     egressProofs: new Map<string, EgressProof>(),
     defaultScopeKey: normalizeScopeKey(opts.defaultScopeKey),
+    launchToken: opts.launchToken || undefined,
     runtimeTraceCapture: { enabled: false },
     controlHandler: createControlHandler(engine, stats, protectionTickets),
   };
@@ -180,6 +190,8 @@ interface ProxyState {
   egressProofs: Map<string, EgressProof>;
   /** Trusted process-owned scope for a dedicated single-agent proxy (see StartProxyOptions). */
   defaultScopeKey: string | undefined;
+  /** Per-launch caller token required on provider-bound requests (see StartProxyOptions). */
+  launchToken: string | undefined;
   /** Toggled at runtime by a loopback administrator through FICTA_TRACE_CAPTURE_PATH. */
   runtimeTraceCapture: { enabled: boolean };
   controlHandler: ReturnType<typeof createControlHandler>;
@@ -243,6 +255,36 @@ function createControlHandler(engine: RedactionEngine, stats: ProtectionStats, t
  * sequences them. Phase order is load-bearing — see the comments on each phase for what it assumes
  * has already happened.
  */
+/** Leading path segment that carries the per-launch caller token: `/__ficta_l/<token>/…`. */
+const LAUNCH_TOKEN_PREFIX = "__ficta_l";
+
+/** Constant-time string compare that never short-circuits on length. */
+function timingSafeEqualStr(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) {
+    // Still run a compare against self to avoid leaking length via early return timing.
+    timingSafeEqual(ab, ab);
+    return false;
+  }
+  return timingSafeEqual(ab, bb);
+}
+
+/**
+ * If `pathname` carries the launch-token prefix with the expected token, return the pathname with
+ * that prefix removed (what routing, logging and the upstream should see). Return undefined when the
+ * prefix is absent or the token does not match — the caller then decides health-vs-403.
+ */
+function matchLaunchToken(pathname: string, token: string): string | undefined {
+  const prefix = `/${LAUNCH_TOKEN_PREFIX}/`;
+  if (!pathname.startsWith(prefix)) return undefined;
+  const rest = pathname.slice(prefix.length);
+  const slash = rest.indexOf("/");
+  const seg = slash === -1 ? rest : rest.slice(0, slash);
+  if (!timingSafeEqualStr(seg, token)) return undefined;
+  return slash === -1 ? "/" : rest.slice(slash);
+}
+
 async function handleProxyRequest(state: ProxyState, c: ProxyContext): Promise<Response> {
   const url = new URL(c.req.url);
   const method = c.req.method;
@@ -251,6 +293,21 @@ async function handleProxyRequest(state: ProxyState, c: ProxyContext): Promise<R
   // with an HTTP fallback (e.g. Pi's Codex transport) retry over SSE immediately.
   if (c.req.raw.headers.get("upgrade")?.toLowerCase() === "websocket") {
     return refusedWebSocketUpgradeResponse(c, url.pathname);
+  }
+  // Per-launch caller token (dedicated single-agent proxy only). The CLI bakes the token into the
+  // agent's base URL as a leading path segment; strip and verify it here, before routing or logging,
+  // so the token never reaches the upstream and downstream sees the real path. A request that does
+  // not carry it (another process on the loopback port, trying to use the proxy as a restore oracle)
+  // is refused — except a bare health probe, kept open for liveness.
+  if (state.launchToken) {
+    const stripped = matchLaunchToken(url.pathname, state.launchToken);
+    if (stripped === undefined) {
+      if (url.pathname !== FICTA_HEALTH_PATH) {
+        return c.json({ error: { type: "forbidden", message: "ficta: missing or invalid launch token" } }, 403);
+      }
+    } else {
+      url.pathname = stripped;
+    }
   }
   const control = await handleControlRoute(state, c, url, method);
   if (control) return control;
@@ -1081,7 +1138,19 @@ async function restoreUpstreamResponse(
   // wire, the response is that wire's event stream, so restore it instead of passing surrogates
   // through verbatim (which would leak FICTA_ placeholders into the agent's output).
   const treatAsEventStream = isEventStreamContentType(contentType) || (contentType === "" && wire !== "unknown");
+  // Only rehydrate surrogates on a successful (2xx) response. A provider error body carries the
+  // provider's own error text, never the agent's tool content — so the only surrogate that can
+  // appear there is one the *request* smuggled in and the upstream reflected back (e.g.
+  // `"model: FICTA_… not found"`). Restoring that turns the proxy into an echo oracle: any caller
+  // who knows a placeholder gets the real value back through a deliberately-malformed request, with
+  // no provider auth required (every provider we route to reflects the field before the auth check:
+  // OpenRouter 400, OpenAI 404, Anthropic 404). Leaving placeholders intact in an error body is
+  // harmless — a surrogate is not secret. Successful round-trips on non-standard (unknown-wire)
+  // routes are still restored; that is an intended robustness feature, and a 2xx body is the agent's
+  // content, not a reflected request field.
+  const restorableOutcome = upstreamRes.status >= 200 && upstreamRes.status < 300;
   const restoreResponse =
+    restorableOutcome &&
     (protect || restoreHighlightOptions?.unknownToken !== undefined) &&
     (isRestorableContentType(contentType) || treatAsEventStream);
   const logRestore = () => {

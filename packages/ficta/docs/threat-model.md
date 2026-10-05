@@ -82,6 +82,29 @@ If a future Cursor build routes **all** model traffic (including Agent/Edit/Tab)
 user-controlled base URL, revisit this — full coverage would make the same exact-match promise
 honest there too.
 
+## The local proxy restores real values, so access to it is controlled
+
+The proxy holds the registry in memory and restores surrogates to their real values on the response
+path. That makes the running proxy a sensitive local endpoint: a process that can reach it and get a
+response to echo a known placeholder back could otherwise read the real value out. Two properties
+close that local "echo oracle":
+
+- **Error and non-model responses are never restored.** Surrogates are rehydrated only on a
+  successful (2xx) response body. A provider error reflects request fields back (e.g.
+  `model: FICTA_… not found`), so restoring error bodies would let a caller decode a placeholder by
+  sending a deliberately malformed request. Error bodies pass through with the placeholder intact — a
+  surrogate is not secret.
+- **A per-launch caller token gates the per-agent proxy.** When ficta launches an agent it mints a
+  random token and bakes it into the agent's base URL; the proxy refuses any provider-bound request
+  that does not carry it (only a health probe is exempt). The launched agent carries the token
+  transparently, but another process sharing the loopback port cannot use the proxy. The token is
+  stripped before routing and never forwarded upstream. This does not constrain the launched agent
+  itself — a compromised agent still holds the token, which is the tool-execution exfiltration case
+  above, out of scope here.
+
+The proxy binds loopback by default; `FICTA_HOST` can widen that but then also exposes the forwarded
+provider auth headers, so it stays opt-in.
+
 ## Remote MCP servers are a second egress path
 
 ficta redacts the **model API** channel. An agent's MCP servers are a separate channel, and their
