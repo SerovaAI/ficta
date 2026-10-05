@@ -1206,7 +1206,9 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
       config: { bindings: [], sections: [], envDefaults: {} },
       setup: { registrySources: () => [] },
       discover: () => [],
-      loadValues: () => [{ name: "KEY", value: SECRET, source: "fixture", kind: "secret" as const, confidence: "exact" as const }],
+      loadValues: () => [
+        { name: "KEY", value: SECRET, source: "fixture", kind: "secret" as const, confidence: "exact" as const },
+      ],
     };
     const call = async () => {
       const { startProxy } = await import("../src/server.js");
