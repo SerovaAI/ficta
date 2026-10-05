@@ -1211,7 +1211,13 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
             setup: { registrySources: () => [] },
             discover: () => [],
             loadValues: () => [
-              { name: "FIXTURE", value: "a-registered-secret-value", source: "fixture", kind: "secret", confidence: "exact" },
+              {
+                name: "FIXTURE",
+                value: "a-registered-secret-value",
+                source: "fixture",
+                kind: "secret",
+                confidence: "exact",
+              },
             ],
           },
         ],
