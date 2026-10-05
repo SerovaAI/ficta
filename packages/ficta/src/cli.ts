@@ -2,6 +2,7 @@
 // Starts an ephemeral redaction proxy and launches the agent pointed at it.
 // `ficta install` adds shell shims so users can keep typing `claude` / `codex` / `pi`.
 import { type ChildProcess, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -282,15 +283,26 @@ const { surrogateKeyWarning } = await import("@serovaai/ficta-engine");
 // Every launched agent owns its loopback proxy, so one process-owned scope is the correct isolation
 // boundary. Keeping detected mappings across its model requests lets hidden compaction/subagent
 // calls echo a surrogate into a later tool call without turning that placeholder into file content.
-const proxy = await startProxy({ port: 0, defaultScopeKey: `agent:${agent.command}:${logInstanceId}` });
-const base = `http://127.0.0.1:${proxy.port}`;
+// Per-launch caller token: baked into the agent's base URL so only this launched agent can reach
+// the proxy. Any other process on the shared loopback port (which could otherwise bounce a known
+// placeholder off the proxy to recover its real value) is refused. The agents treat the base URL as
+// an opaque prefix, so the token rides along with no per-agent plumbing.
+const launchToken = randomBytes(24).toString("base64url");
+const proxy = await startProxy({
+  port: 0,
+  defaultScopeKey: `agent:${agent.command}:${logInstanceId}`,
+  launchToken,
+});
+const base = `http://127.0.0.1:${proxy.port}/__ficta_l/${launchToken}`;
+// For display only — the banner shows the origin, never the token-bearing path.
+const baseOrigin = `http://127.0.0.1:${proxy.port}`;
 
 if (printStartupDiagnostics) {
   process.stderr.write(
     renderStartupBanner({
       protectedValues: proxy.protectedValues,
       agentCommand: agent.command,
-      baseUrl: base,
+      baseUrl: baseOrigin,
       discoveries: proxy.registry,
       policyExcluded: proxy.policyExcluded,
       policyExcludedBySource: proxy.policyExcludedBySource,

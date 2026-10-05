@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import {
   FICTA_EGRESS_EVENT_HEADER,
   FICTA_EGRESS_PROOF_PATH,
+  FICTA_HEALTH_PATH,
   FICTA_RESTORE_HIGHLIGHT_HEADER,
   FICTA_UNKNOWN_TOKEN_HEADER,
   FICTA_SCOPE_HEADER,
@@ -1026,6 +1027,150 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
       expect(surrogate).toBeTruthy();
       expect(text).toContain(AWS);
       expect(text).not.toContain(surrogate);
+    } finally {
+      proxy?.close();
+      await close(upstream);
+      for (const [k, v] of Object.entries(originalEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
+  it("does NOT restore a surrogate echoed back in a non-2xx error body (echo-oracle guard)", async () => {
+    // A caller who knows a placeholder could otherwise decode it by sending a malformed request and
+    // letting the provider reflect the surrogate into its error text (e.g. "model: FICTA_… not
+    // found"). Real providers do reflect the field (OpenRouter 400, OpenAI 404, Anthropic 404), so
+    // restoring non-2xx bodies turns the proxy into a decryption oracle. Error bodies must pass
+    // through with the placeholder intact — a surrogate is not secret.
+    const originalEnv = {
+      FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,
+      FICTA_REGISTRY_ENV_FILE_ENABLED: process.env.FICTA_REGISTRY_ENV_FILE_ENABLED,
+      FICTA_REGISTRY_ENV_FILE_PATHS: process.env.FICTA_REGISTRY_ENV_FILE_PATHS,
+      FICTA_REGISTRY_MIN_LEN: process.env.FICTA_REGISTRY_MIN_LEN,
+      FICTA_LOG_LEVEL: process.env.FICTA_LOG_LEVEL,
+      FICTA_LOG_DIR: process.env.FICTA_LOG_DIR,
+    };
+
+    // The upstream reflects whatever surrogate the request carried into a 400 error body — the
+    // model-not-found shape every provider produces.
+    const upstream = createServer((req, res) => {
+      let body = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        const surrogate = body.match(/FICTA_[0-9a-f]{32}/)?.[0] ?? "none";
+        res.writeHead(400, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: { type: "invalid_request_error", message: `model: ${surrogate} not found` } }));
+      });
+    });
+
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
+    try {
+      const upstreamPort = await listen(upstream);
+      process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
+      process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "1";
+      process.env.FICTA_REGISTRY_ENV_FILE_PATHS = "test/fixtures/secrets.env";
+      process.env.FICTA_REGISTRY_MIN_LEN = "6";
+      process.env.FICTA_LOG_LEVEL = "silent";
+      process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-test-"));
+
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0 });
+
+      // The request puts the real secret in the model field; the proxy redacts it to a surrogate
+      // outbound, the upstream reflects that surrogate into its 400, and the guard must leave it be.
+      const res = await fetch(`http://127.0.0.1:${proxy.port}/v1/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: AWS, messages: [] }),
+      });
+      const text = await res.text();
+
+      expect(res.status).toBe(400);
+      expect(text).not.toContain(AWS); // the real secret must NOT be rehydrated into the error body
+      expect(text).toMatch(/FICTA_[0-9a-f]{32}/); // the harmless placeholder passes through instead
+    } finally {
+      proxy?.close();
+      await close(upstream);
+      for (const [k, v] of Object.entries(originalEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
+  it("launch token: forwards a request under the valid prefix and strips it before the upstream", async () => {
+    const originalEnv = {
+      FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,
+      FICTA_LOG_LEVEL: process.env.FICTA_LOG_LEVEL,
+      FICTA_LOG_DIR: process.env.FICTA_LOG_DIR,
+    };
+    let upstreamPathSeen = "";
+    const upstream = createServer((req, res) => {
+      upstreamPathSeen = req.url ?? "";
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end("{}");
+    });
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
+    try {
+      const upstreamPort = await listen(upstream);
+      process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
+      process.env.FICTA_LOG_LEVEL = "silent";
+      process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-test-"));
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0, launchToken: "tok-abc123" });
+
+      const res = await fetch(`http://127.0.0.1:${proxy.port}/__ficta_l/tok-abc123/v1/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ messages: [] }),
+      });
+      expect(res.status).toBe(200);
+      // The upstream must see the real path, with the token prefix removed.
+      expect(upstreamPathSeen).toBe("/v1/messages");
+    } finally {
+      proxy?.close();
+      await close(upstream);
+      for (const [k, v] of Object.entries(originalEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
+  it("launch token: refuses a provider-bound request with a missing or wrong token (403), health stays open", async () => {
+    const originalEnv = {
+      FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,
+      FICTA_LOG_LEVEL: process.env.FICTA_LOG_LEVEL,
+      FICTA_LOG_DIR: process.env.FICTA_LOG_DIR,
+    };
+    let upstreamHits = 0;
+    const upstream = createServer((_req, res) => {
+      upstreamHits += 1;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end("{}");
+    });
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
+    try {
+      const upstreamPort = await listen(upstream);
+      process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
+      process.env.FICTA_LOG_LEVEL = "silent";
+      process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-test-"));
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0, launchToken: "tok-abc123" });
+      const base = `http://127.0.0.1:${proxy.port}`;
+
+      const noToken = await fetch(`${base}/v1/messages`, { method: "POST", body: "{}" });
+      const wrongToken = await fetch(`${base}/__ficta_l/tok-WRONG/v1/messages`, { method: "POST", body: "{}" });
+      const health = await fetch(`${base}${FICTA_HEALTH_PATH}`);
+
+      expect(noToken.status).toBe(403);
+      expect(wrongToken.status).toBe(403);
+      expect(health.status).toBe(200); // liveness probe never needs the token
+      expect(upstreamHits).toBe(0); // nothing reached the provider
     } finally {
       proxy?.close();
       await close(upstream);
