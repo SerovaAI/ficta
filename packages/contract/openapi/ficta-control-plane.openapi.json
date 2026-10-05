@@ -1008,6 +1008,7 @@
                             "globallyDisabled": { "type": "boolean" },
                             "redactPaths": { "type": "boolean" },
                             "restoreIntoTools": { "enum": ["all", "none", "detected"], "type": "string" },
+                            "restoreProse": { "enum": ["all", "none", "detected"], "type": "string" },
                             "surrogateStyle": { "enum": ["opaque", "typed"], "type": "string" }
                           },
                           "required": [
@@ -1016,6 +1017,7 @@
                             "globallyDisabled",
                             "redactPaths",
                             "restoreIntoTools",
+                            "restoreProse",
                             "surrogateStyle"
                           ],
                           "additionalProperties": false

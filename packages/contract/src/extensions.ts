@@ -66,6 +66,7 @@ export const configSchema = z
             globallyDisabled: z.boolean(),
             redactPaths: z.boolean(),
             restoreIntoTools: restorePolicy,
+            restoreProse: restorePolicy,
             surrogateStyle: z.enum(["opaque", "typed"]),
           })
           .strict(),
