@@ -1181,6 +1181,62 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
     }
   });
 
+  it("residual guard: replaces an unmapped surrogate in a protected response with the neutral marker (default, no header)", async () => {
+    const originalEnv = {
+      FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,
+      FICTA_LOG_LEVEL: process.env.FICTA_LOG_LEVEL,
+      FICTA_LOG_DIR: process.env.FICTA_LOG_DIR,
+    };
+    // A surrogate-shaped token the vault never issued — the model mutated or invented it.
+    const bogus = "FICTA_deadbeefdeadbeefdeadbeefdeadbeef";
+    const upstream = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: `ref is ${bogus} ok` } }] }));
+    });
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
+    try {
+      const upstreamPort = await listen(upstream);
+      process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
+      process.env.FICTA_LOG_LEVEL = "silent";
+      process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-test-"));
+      const { startProxy } = await import("../src/server.js");
+      // A loaded registry value puts the proxy in protecting mode (protect === true).
+      proxy = await startProxy({
+        port: 0,
+        plugins: [
+          {
+            kind: "registry-source",
+            name: "fixture-registry",
+            config: { bindings: [], sections: [], envDefaults: {} },
+            setup: { registrySources: () => [] },
+            discover: () => [],
+            loadValues: () => [
+              { name: "FIXTURE", value: "a-registered-secret-value", source: "fixture", kind: "secret", confidence: "exact" },
+            ],
+          },
+        ],
+      });
+
+      const res = await fetch(`http://127.0.0.1:${proxy.port}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ messages: [{ role: "user", content: "go" }] }),
+      });
+      const text = await res.text();
+
+      expect(res.status).toBe(200);
+      expect(text).toContain("[ficta:unrestored]"); // the debris token is marked, no header needed
+      expect(text).not.toContain(bogus); // the raw FICTA_… string never reaches the client
+    } finally {
+      proxy?.close();
+      await close(upstream);
+      for (const [k, v] of Object.entries(originalEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
   it("launch token: accepts the token via the x-ficta-launch header and never forwards it upstream", async () => {
     const originalEnv = {
       FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,
@@ -2454,7 +2510,7 @@ it.each(["buffered", "streamed"])(
       expect(result.status).toBe(200);
       const output = await result.text();
       expect(output).toContain(PROOF_SECRET);
-      expect(output).toContain("[unrestored reference]");
+      expect(output).toContain("[ficta:unrestored]");
       expect(output).not.toMatch(/FICTA_[0-9a-f]/);
       expect(internalHeader).toBeUndefined();
       const receipt = await fetch(`http://127.0.0.1:${proxy.port}${FICTA_EGRESS_PROOF_PATH}`, {

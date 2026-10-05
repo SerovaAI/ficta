@@ -327,7 +327,8 @@ describe("loopback PII round-trip through the real proxy", () => {
       expect(textA).toContain(EMAIL); // A round-trips normally
 
       // Request B contains no PII, but the model's reply echoes A's token. B's fresh scope has no
-      // mapping for it, so restore must leave the token untouched and never surface A's email.
+      // mapping for it, so restore never surfaces A's email; the residual guard rewrites the
+      // unmappable cross-scope reference to the neutral marker instead of leaking raw token debris.
       forceReply = JSON.stringify({ note: `an unrelated response mentioning ${tokenForEmail}` });
       const resB = await fetch(`http://127.0.0.1:${proxy.port}/v1/chat/completions`, {
         method: "POST",
@@ -337,8 +338,9 @@ describe("loopback PII round-trip through the real proxy", () => {
       const textB = await resB.text();
 
       expect(resB.status).toBe(200);
-      expect(textB).toContain(tokenForEmail ?? "<none>"); // token passes through unrestored
-      expect(textB).not.toContain(EMAIL); // A's PII never leaks into B's response
+      expect(textB).not.toContain(tokenForEmail ?? "<none>"); // raw cross-scope token never reaches B's client
+      expect(textB).toContain("[ficta:unrestored]"); // surfaced as the neutral residual marker instead
+      expect(textB).not.toContain(EMAIL); // A's PII never leaks into B's response (the core claim)
     } finally {
       proxy?.close();
       await close(upstream);
