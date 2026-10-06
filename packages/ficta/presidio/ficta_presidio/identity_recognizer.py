@@ -90,6 +90,27 @@ NON_IDENTITY_ROLE_WORDS = {
 }
 
 LEGAL_CONCEPT_HEADS = {"interest", "sum"}
+# Office and rank titles. A span made only of these ("Acting Judge", "Constable") names a role, not a
+# person; the same words inside a longer span ("Judge Lindiwe Dube") do not veto it. Words that are
+# also common given names ("Justice") are deliberately absent: a lone name must never be vetoed.
+TITLE_WORDS = {
+    "acting",
+    "advocate",
+    "attorney",
+    "captain",
+    "clerk",
+    "constable",
+    "counsel",
+    "detective",
+    "inspector",
+    "judge",
+    "magistrate",
+    "officer",
+    "registrar",
+    "sergeant",
+    "sheriff",
+    "warrant",
+}
 COURT_WORDS = {"court", "tribunal"}
 NON_IDENTITY_FIELD_CUE = re.compile(
     r"\b(?:project|matter|product|facility|access|reference|clause)\s+"
@@ -203,11 +224,20 @@ class _FictaIdentityMixin:
     """Apply the same final-candidate policy to spaCy and GLiNER evidence."""
 
     name: str
+    # Score at which a PERSON/ORGANIZATION candidate skips the name-shape gates and only has to pass
+    # the non-identity vetoes. None for spaCy, whose shape gates exist because it tags many ordinary
+    # capitalised words; a PII-tuned model's confident spans (lowercase chat names, lone first names,
+    # organisations without a designator) are exactly what those gates would discard.
+    trust_score: float | None = None
 
     def _finalize(self, text: str, candidates: Iterable[Candidate], entities: list[str]) -> list[RecognizerResult]:
         requested = set(entities or IDENTITY_ENTITIES)
         raw = [candidate for candidate in candidates if candidate.entity_type in requested]
-        accepted = [candidate for candidate in raw if _accepts_identity_candidate(text, candidate)]
+        accepted = [
+            candidate
+            for candidate in raw
+            if _accepts_identity_candidate(text, candidate) or self._trusted(text, candidate)
+        ]
 
         known_person_words = {
             _normalize_word(word)
@@ -241,6 +271,16 @@ class _FictaIdentityMixin:
         accepted.extend(_ocr_identity_fields(text, requested))
         return [_result(self.name, candidate) for candidate in _dedupe(accepted)]
 
+    def _trusted(self, text: str, candidate: Candidate) -> bool:
+        if self.trust_score is None or candidate.score < self.trust_score:
+            return False
+        if candidate.entity_type not in {"PERSON", "ORGANIZATION"}:
+            return False
+        words = _words(text[candidate.start : candidate.end])
+        if not words or _is_non_identity_phrase(words):
+            return False
+        return not NON_IDENTITY_FIELD_CUE.search(_context_before_on_line(text, candidate.start))
+
 
 class FictaSpacyIdentityRecognizer(_FictaIdentityMixin, LocalRecognizer):
     """Use spaCy spans from Presidio's NLP artifacts, admitting identity contexts only."""
@@ -263,9 +303,14 @@ class FictaSpacyIdentityRecognizer(_FictaIdentityMixin, LocalRecognizer):
 
 
 class FictaGlinerIdentityRecognizer(_FictaIdentityMixin, GLiNERRecognizer):
-    """Optional GLiNER candidate source used by the benchmark/reference sidecar."""
+    """GLiNER candidate source, an alternative to spaCy NER in the same identity policy."""
 
-    def __init__(self, model_name: str, threshold: float) -> None:
+    def __init__(
+        self,
+        model_name: str,
+        threshold: float,
+        trust_score: float | None = None,
+    ) -> None:
         super().__init__(
             name="FictaGlinerIdentityRecognizer",
             model_name=model_name,
@@ -283,10 +328,17 @@ class FictaGlinerIdentityRecognizer(_FictaIdentityMixin, GLiNERRecognizer):
             threshold=threshold,
             map_location="cpu",
         )
+        self.trust_score = trust_score
         self.supported_entities.append("COMPANY_REGISTRATION")
 
     def analyze(self, text: str, entities: list[str], nlp_artifacts=None) -> list[RecognizerResult]:
-        raw = super().analyze(text, entities, nlp_artifacts)
+        # Upstream appends every requested entity it has no mapping for (ZA_ID_NUMBER, CREDIT_CARD, ...)
+        # as an extra GLiNER label, and inference cost grows with the label count. Structured types
+        # belong to the pattern recognizers, so only the identity entities reach the model.
+        identity = [entity for entity in (entities or IDENTITY_ENTITIES) if entity in IDENTITY_ENTITIES]
+        if not identity:
+            return []
+        raw = super().analyze(text, identity, nlp_artifacts)
         candidates = [Candidate(item.entity_type, item.start, item.end, float(item.score)) for item in raw]
         return self._finalize(text, candidates, entities)
 
@@ -346,6 +398,8 @@ def _is_non_identity_phrase(words: list[str]) -> bool:
     """Reject roles and legal concepts without vetoing those words inside explicit company names."""
     normalized = [_normalize_word(word) for word in words]
     if any(word in COURT_WORDS for word in normalized):
+        return True
+    if all(word in TITLE_WORDS for word in normalized):
         return True
     if normalized[-1] in LEGAL_CONCEPT_HEADS:
         return True
