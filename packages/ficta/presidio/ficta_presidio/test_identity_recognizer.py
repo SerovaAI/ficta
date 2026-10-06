@@ -286,5 +286,56 @@ class IdentityRecognizerTest(unittest.TestCase):
         self.assertFalse(any(value in {"12345/2024", "Victoria Road"} for _, value in found))
 
 
+class TrustedCandidateTest(unittest.TestCase):
+    """A PII-tuned NER source's confident spans skip the name-shape gates, not the vetoes."""
+
+    def finalize(self, trust_score, text, candidates):
+        recognizer = FictaSpacyIdentityRecognizer()
+        recognizer.trust_score = trust_score
+        results = recognizer._finalize(text, candidates, [])
+        return {(result.entity_type, text[result.start : result.end]) for result in results}
+
+    def candidates(self, text, values):
+        return [
+            Candidate(entity_type, text.index(value), text.index(value) + len(value), score)
+            for value, entity_type, score in values
+        ]
+
+    def test_confident_spans_bypass_shape_gates(self):
+        text = "spoke to sizwe ngcobo from amandla mutual. Lwazi signed. Ndlovu Haulage owes us."
+        values = [
+            ("sizwe ngcobo", "PERSON", 0.9),
+            ("amandla mutual", "ORGANIZATION", 0.9),
+            ("Lwazi", "PERSON", 0.9),
+            ("Ndlovu Haulage", "ORGANIZATION", 0.9),
+        ]
+        trusted = self.finalize(0.7, text, self.candidates(text, values))
+        for value, entity_type, _ in values:
+            self.assertIn((entity_type, value), trusted)
+        # Without a trust score (spaCy) the same evidence stays gated.
+        self.assertEqual(self.finalize(None, text, self.candidates(text, values)), set())
+
+    def test_low_scores_and_non_identity_spans_stay_gated(self):
+        text = "Acting Judge presided. The Constable noted it. The Western Cape High Court sat. lucky break."
+        values = [
+            ("Acting Judge", "PERSON", 0.95),
+            ("Constable", "PERSON", 0.95),
+            ("Western Cape High Court", "ORGANIZATION", 0.95),
+            ("lucky", "PERSON", 0.6),
+        ]
+        self.assertEqual(self.finalize(0.7, text, self.candidates(text, values)), set())
+
+    def test_a_title_inside_a_name_does_not_veto_it(self):
+        text = "Before Judge Lindiwe Dube."
+        found = self.finalize(0.7, text, self.candidates(text, [("Judge Lindiwe Dube", "PERSON", 0.9)]))
+        self.assertIn(("PERSON", "Judge Lindiwe Dube"), found)
+
+
+    def test_a_given_name_that_is_also_a_title_is_kept(self):
+        text = "Tell Justice we won't settle."
+        found = self.finalize(None, text, self.candidates(text, [("Justice", "PERSON", 0.9)]))
+        self.assertIn(("PERSON", "Justice"), found)
+
+
 if __name__ == "__main__":
     unittest.main()

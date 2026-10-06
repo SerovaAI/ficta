@@ -73,6 +73,7 @@ def create_app():
         recognizer = FictaGlinerIdentityRecognizer(
             model_name=os.environ.get("FICTA_PRESIDIO_GLINER_MODEL", "urchade/gliner_multi_pii-v1"),
             threshold=_float_env("FICTA_PRESIDIO_GLINER_THRESHOLD", 0.5),
+            trust_score=_float_env("FICTA_PRESIDIO_GLINER_TRUST_SCORE", 0.7),
         )
     else:
         raise ValueError("FICTA_PRESIDIO_NER must be 'spacy' or 'gliner'")

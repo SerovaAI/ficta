@@ -451,6 +451,19 @@ source checkout, build with `--build-arg INSTALL_GLINER=1`, run it with
 checked-in legal corpus recommends GLiNER only when it improves both identity recall and legal-text
 precision by at least two percentage points; the current corpus keeps spaCy.
 
+GLiNER spans scoring at least `FICTA_PRESIDIO_GLINER_TRUST_SCORE` (default `0.7`) skip the
+name-shape checks written for spaCy, so lowercase names, lone first names and organisations without a
+company designator survive. They still pass the court, role-word and field-label vetoes. Only the
+identity entities are sent to the model as labels; structured types stay with the pattern
+recognizers. GLiNER is several times slower than spaCy on CPU (seconds for a multi-kilobyte
+request), so raise `FICTA_PII_PRESIDIO_TIMEOUT_MS` (and the analyzer's gunicorn worker timeout for
+very large requests) when you run it.
+
+**Known limitation:** the GLiNER mode uses Presidio's character chunker, which keeps a long unbroken
+string (for example a large base64 blob) as one chunk. The model then processes it in a single pass
+and can exhaust the sidecar's memory. Treat this mode as evaluation only; do not expose it to
+untrusted input.
+
 ### The `openmed` backend
 
 For medical workspaces, run the upstream [OpenMed](https://github.com/maziyarpanahi/openmed) REST
