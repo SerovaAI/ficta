@@ -52,10 +52,15 @@ export async function requireUserId(): Promise<string> {
   return (await requireScope()).userId;
 }
 
-/** Asserts the caller may edit instance-wide settings; returns the auth state for convenience. */
+/**
+ * Asserts the caller may edit instance-wide settings; returns the auth state for convenience. Also
+ * requires a workspace scope: `isAdmin` treats a WorkOS user with no organization as admin of their
+ * personal fallback, and that must never reach deployment-wide (proxy-global) settings.
+ */
 export async function requireAdmin(): Promise<AuthState> {
   const auth = await requireAuthState();
   if (!isAdmin(auth)) throw new Error("forbidden");
+  if (!scopeFromAuth(auth)) throw new Error("unauthorized");
   return auth;
 }
 
