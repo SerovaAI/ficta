@@ -23,8 +23,12 @@ const STATUS_TIMEOUT_MS = 1500;
  */
 export const fetchProtectionStatus = createServerFn({ method: "GET" }).handler(async (): Promise<ProtectionStatus> => {
   const { proxyBaseUrl } = await import("@/lib/proxy-base.server");
-  const { fictaControlErrorStatus, GatewayFictaCompatibilityError, gatewayFictaControlClient } =
-    await import("@/lib/ficta-control-client.server");
+  const {
+    fictaControlErrorStatus,
+    GatewayFictaCompatibilityError,
+    gatewayFictaControlClient,
+    isFictaResponseShapeError,
+  } = await import("@/lib/ficta-control-client.server");
   const proxyUrl = proxyBaseUrl();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), STATUS_TIMEOUT_MS);
@@ -45,6 +49,14 @@ export const fetchProtectionStatus = createServerFn({ method: "GET" }).handler(a
     }
     return json;
   } catch (err) {
+    if (isFictaResponseShapeError(err)) {
+      return {
+        ok: false,
+        proxyUrl,
+        status: "bad_response",
+        message: "ficta proxy status response was not understood; update ficta and Gateway together.",
+      };
+    }
     if (err instanceof GatewayFictaCompatibilityError) {
       return {
         ok: false,

@@ -143,6 +143,24 @@ describe("registry substitution", () => {
     expect(Object.keys(prepared.questions).sort()).toEqual(["c0", "c1", "c2", "f0", "p0", "p1", "p2"]);
   });
 
+  it("never places a user-selected value in the request state", () => {
+    const text = "Signed by Alice Example for Project Bluebird";
+    const at = (value: string, origin: ProtectionPreviewFinding["origin"], surrogate: string) => {
+      const start = text.indexOf(value);
+      return { ...DETECTED, origin, surrogate, start, end: start + value.length };
+    };
+    const user = at("Project Bluebird", "user", "FICTA_USER_EEEEEEEEEEEE_FFFFFFFFFFFF");
+    const detected = at("Alice Example", "detected", DETECTED.surrogate);
+    // Detected inside a user selection: judging it would send the selected text.
+    const nested = at("Bluebird", "detected", "[ficta:unrestored]");
+    const prepared = prepareSecondOpinion(text, [user, detected, nested]);
+    if ("skipped" in prepared) throw new Error("unexpected skip");
+    expect(JSON.stringify(prepared.state)).not.toContain("Bluebird");
+    expect(prepared.state.candidates).toEqual([
+      { id: 0, span: "Alice Example", line: `Signed by Alice Example for ${user.surrogate}` },
+    ]);
+  });
+
   it("skips oversize input and blank lines", () => {
     const many = Array.from({ length: SECOND_OPINION_LINES_MAX + 1 }, () => "x").join("\n");
     expect(prepareSecondOpinion(many, [])).toEqual({ skipped: "too_many_lines" });

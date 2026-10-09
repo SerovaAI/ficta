@@ -61,7 +61,14 @@ import {
   type TextRedactionDetails,
 } from "./redaction-engine.js";
 import { entityFamilySurrogateStrategy, ephemeralSurrogateKey, surrogateStrategy } from "./surrogate.js";
-import { type BodyLeaf, type ScopedVault, type SurrogateTable, Vault, visitBodyLeaves } from "./vault.js";
+import {
+  type BodyLeaf,
+  type ScopedVault,
+  stripRestoreMarkers,
+  type SurrogateTable,
+  Vault,
+  visitBodyLeaves,
+} from "./vault.js";
 import type { Wire } from "./wire.js";
 import type { VaultStore } from "./vault-store.js";
 import { bufferedRestoreAdapterFor, sseRestoreAdapterFor } from "./wire-restore.js";
@@ -995,19 +1002,25 @@ class ProtectionRequestScope implements RequestScope {
     return details;
   }
 
+  // Upstream text enters restore here (buffered) or in the vault's stream decoders, so model-written
+  // restore markers are neutralized at these boundaries only — the vault re-scans its own marked output.
   restoreText(text: string, opts?: RestoreOptions): string {
     this.noteRestoreUse(text);
-    return this.vault.restoreText(text, opts);
+    return this.vault.restoreText(stripRestoreMarkers(text, opts?.markers), opts);
   }
 
   restoreTextDetailed(text: string, opts?: RestoreTextDetailedOptions): RestoreTextDetails {
     this.noteRestoreUse(text);
-    return this.vault.restoreTextDetailed(text, opts);
+    return this.vault.restoreTextDetailed(stripRestoreMarkers(text, opts?.markers), opts);
   }
 
   restoreJson(body: string, wire: Wire = "unknown", opts?: RestoreOptions): string {
     this.noteRestoreUse(body);
-    return this.vault.restoreJson(body, bufferedRestoreAdapterFor(wire), opts);
+    return this.vault.restoreJson(
+      stripRestoreMarkers(body, opts?.markers, true),
+      bufferedRestoreAdapterFor(wire),
+      opts,
+    );
   }
 
   restoreStream(opts?: RestoreOptions): TransformStream<Uint8Array, Uint8Array> {

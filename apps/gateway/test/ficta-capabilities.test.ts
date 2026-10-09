@@ -72,3 +72,14 @@ it("does not call an optional interface when the proxy omits its capability", as
     requireGatewayFictaCapability(client, "http://ficta-no-operator-profile", "registry-reload"),
   ).rejects.toThrow('does not advertise the "registry-reload"');
 });
+
+describe("isFictaResponseShapeError", () => {
+  it("tells a malformed response apart from a connection failure", async () => {
+    const { isFictaResponseShapeError } = await import("@/lib/ficta-control-client.server");
+    const { capabilitiesSchema } = await import("@serovaai/ficta-contract");
+    const parsed = capabilitiesSchema.safeParse({ ok: true });
+    expect(parsed.success).toBe(false);
+    expect(isFictaResponseShapeError(parsed.error)).toBe(true);
+    expect(isFictaResponseShapeError(new TypeError("fetch failed"))).toBe(false);
+  });
+});

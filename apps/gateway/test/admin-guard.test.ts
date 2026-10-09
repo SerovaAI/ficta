@@ -59,4 +59,27 @@ describe("admin guard", () => {
     const { requireRecordsScope } = await import("@/lib/auth/guards.server");
     await expect(requireRecordsScope("retained-threads:list")).rejects.toThrow("forbidden");
   });
+
+  it("keeps users outside the deployment organization away from proxy-global settings", async () => {
+    // isAdmin() treats a WorkOS user with no organization as admin of a personal fallback.
+    authState = {
+      provider: "workos",
+      requiresAuth: true,
+      organizationMode: "single",
+      organizationAllowed: false,
+      user: { id: "stray_1", email: "stray@example.com" },
+    };
+    const { requireAdmin, requireAdminScope } = await import("@/lib/auth/guards.server");
+    await expect(requireAdmin()).rejects.toThrow("unauthorized");
+    await expect(requireAdminScope()).rejects.toThrow("unauthorized");
+
+    authState = {
+      provider: "workos",
+      requiresAuth: true,
+      organizationMode: "single",
+      organizationAllowed: false,
+      user: { id: "other_1", email: "other@example.com", organizationId: "org_other", role: "admin" },
+    };
+    await expect(requireAdmin()).rejects.toThrow("unauthorized");
+  });
 });

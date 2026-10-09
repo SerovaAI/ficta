@@ -197,8 +197,11 @@ export function hasRestoreHighlightMarkers(content: string): boolean {
  *
  * Incomplete markers mid-stream are handled like the strip path — a trailing partial marker or an
  * incomplete surrogate/metadata prefix contributes no visible text and no restoration until it completes.
+ * A START that cannot open a genuine group — another START arrives before its END, its prefix cannot be
+ * a surrogate, or (with `final`, for a complete message) it never closes — is dropped as a stray
+ * delimiter and the text after it stays visible, so one bad marker never swallows the rest of a message.
  */
-export function parseRestoreHighlightText(content: string): ParsedRestoreText {
+export function parseRestoreHighlightText(content: string, opts: { final?: boolean } = {}): ParsedRestoreText {
   let visibleText = "";
   const restorations: RestoreHighlight[] = [];
   const seen = new Set<string>();
@@ -207,13 +210,22 @@ export function parseRestoreHighlightText(content: string): ParsedRestoreText {
   for (;;) {
     const start = content.indexOf(FICTA_RESTORE_HIGHLIGHT_START, cursor);
     if (start === -1) {
-      visibleText += stripTrailingMarkerPrefix(stripOrphanEndMarkers(content.slice(cursor)));
+      visibleText += stripTrailingMarkerPrefix(stripStrayDelimiters(content.slice(cursor)));
       return { visibleText, restorations };
     }
 
-    visibleText += stripOrphanEndMarkers(content.slice(cursor, start));
+    visibleText += stripStrayDelimiters(content.slice(cursor, start));
     const valueStart = start + FICTA_RESTORE_HIGHLIGHT_START.length;
+    const nextStart = content.indexOf(FICTA_RESTORE_HIGHLIGHT_START, valueStart);
     const end = content.indexOf(FICTA_RESTORE_HIGHLIGHT_END, valueStart);
+    if (nextStart !== -1 && (end === -1 || nextStart < end)) {
+      cursor = valueStart; // stray START: a genuine group never nests another
+      continue;
+    }
+    if (end === -1 && (opts.final || !isPlausiblePartialPayload(content.slice(valueStart)))) {
+      cursor = valueStart; // stray START: it can no longer become a genuine group
+      continue;
+    }
     const payload = end === -1 ? stripTrailingMarkerPrefix(content.slice(valueStart)) : content.slice(valueStart, end);
     const parsed = parseHighlightPayload(payload);
     visibleText += parsed.value;
@@ -538,12 +550,42 @@ function cloneWithoutRestoreHighlightMarkers<T>(value: T): T {
   return out as T;
 }
 
-function stripOrphanEndMarkers(content: string): string {
-  return content.replaceAll(FICTA_RESTORE_HIGHLIGHT_END, "");
+const RESTORE_HIGHLIGHT_DELIMITERS = [
+  FICTA_RESTORE_HIGHLIGHT_START,
+  FICTA_RESTORE_HIGHLIGHT_ORIGIN,
+  FICTA_RESTORE_HIGHLIGHT_METADATA,
+  FICTA_RESTORE_HIGHLIGHT_END,
+] as const;
+
+/** Delimiters outside a genuine group carry no meaning; drop them so they never render. */
+function stripStrayDelimiters(content: string): string {
+  let out = content;
+  for (const delimiter of RESTORE_HIGHLIGHT_DELIMITERS) out = out.replaceAll(delimiter, "");
+  return out;
 }
 
+/** Strip runs over complete stored or sent messages, where an unclosed START can never complete. */
 function stripRestoreHighlightMarkersFromString(content: string): string {
-  return parseRestoreHighlightText(content).visibleText;
+  return parseRestoreHighlightText(content, { final: true }).visibleText;
+}
+
+/** Longest surrogate the proxy emits, with headroom; a longer prefix cannot be a surrogate. */
+const SURROGATE_PREFIX_MAX = 64;
+
+/**
+ * Whether an unclosed group could still be a genuine one mid-stream. The surrogate and origin are
+ * short and fixed-alphabet, so prose after a stray START is rejected as soon as it arrives.
+ */
+function isPlausiblePartialPayload(payload: string): boolean {
+  const partial = stripTrailingMarkerPrefix(payload);
+  const originAt = partial.indexOf(FICTA_RESTORE_HIGHLIGHT_ORIGIN);
+  const surrogate = originAt === -1 ? partial : partial.slice(0, originAt);
+  if (originAt === -1) return surrogate.length <= SURROGATE_PREFIX_MAX && /^[A-Za-z0-9_]*$/.test(surrogate);
+  if (!isSurrogateToken(surrogate)) return false;
+  const afterOrigin = partial.slice(originAt + FICTA_RESTORE_HIGHLIGHT_ORIGIN.length);
+  const metadataAt = afterOrigin.indexOf(FICTA_RESTORE_HIGHLIGHT_METADATA);
+  if (metadataAt === -1) return ["registry", "detected", "user"].some((origin) => origin.startsWith(afterOrigin));
+  return isProtectionOrigin(afterOrigin.slice(0, metadataAt));
 }
 
 interface ParsedHighlightPayload {

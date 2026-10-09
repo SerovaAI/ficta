@@ -179,4 +179,18 @@ describe("portable response validation", () => {
     });
     await expect(client.protectionPreview({ text: "test" })).rejects.toThrow();
   });
+  it("tolerates additive fields from a newer engine without accepting malformed responses", async () => {
+    const capabilities = {
+      ok: true,
+      service: "ficta",
+      protocolVersion: FICTA_CONTROL_PROTOCOL_VERSION,
+      capabilities: [],
+    };
+    const client = createFictaControlClient({
+      baseUrl: "http://newer-engine",
+      fetch: async () => Response.json({ ...capabilities, addedLater: { nested: true } }),
+    });
+    await expect(client.capabilities()).resolves.toEqual(capabilities);
+    expect(capabilitiesSchema.safeParse({ ...capabilities, protocolVersion: 2 }).success).toBe(false);
+  });
 });

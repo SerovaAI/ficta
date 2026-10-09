@@ -290,10 +290,12 @@ export function ProtectedRegistrySection({ showHeader = true }: { showHeader?: b
             className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs leading-relaxed"
             role="status"
           >
-            <p>
-              {publishResult.values} value{publishResult.values === 1 ? "" : "s"} written to{" "}
-              <code className="break-all font-mono">{publishResult.path}</code>
-            </p>
+            {publishResult.reload.ok || !publishResult.reload.rolledBack ? (
+              <p>
+                {publishResult.values} value{publishResult.values === 1 ? "" : "s"} written to{" "}
+                <code className="break-all font-mono">{publishResult.path}</code>
+              </p>
+            ) : null}
             {publishResult.reload.ok ? (
               <>
                 <p className="pt-1 text-emerald-600 dark:text-emerald-400">
@@ -314,6 +316,11 @@ export function ProtectedRegistrySection({ showHeader = true }: { showHeader?: b
                   </p>
                 ) : null}
               </>
+            ) : publishResult.reload.rolledBack ? (
+              <p className="pt-1 text-amber-600 dark:text-amber-400">
+                The proxy rejected this registry: {publishResult.reload.message} The previous file was restored, so the
+                proxy keeps its current protection and will still start.
+              </p>
             ) : (
               <p className="pt-1 text-amber-600 dark:text-amber-400">
                 File written, but not verified on proxy: {publishResult.reload.message}

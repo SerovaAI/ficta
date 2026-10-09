@@ -91,6 +91,31 @@ describe("parseRestoreHighlightText", () => {
   });
 });
 
+describe("stray restore delimiters", () => {
+  const surrogate = ["FICTA", "PERSON", "1234567890abcdef1234567890abcdef"].join("_");
+
+  it("never lets a stray START capture a later genuine group", () => {
+    const content = `Note ${FICTA_RESTORE_HIGHLIGHT_START}see below. ${marked(surrogate, "Jane Doe", "registry")} signed.`;
+    expect(parseRestoreHighlightText(content)).toEqual({
+      visibleText: "Note see below. Jane Doe signed.",
+      restorations: [{ value: "Jane Doe", surrogate, origin: "registry" }],
+    });
+  });
+
+  it("keeps prose after a START that can no longer open a group, even mid-stream", () => {
+    const content = `Before ${FICTA_RESTORE_HIGHLIGHT_START}this is plain prose that keeps going`;
+    expect(parseRestoreHighlightText(content).visibleText).toBe("Before this is plain prose that keeps going");
+  });
+
+  it("drops an unclosed group's delimiters but keeps its text in a complete message", () => {
+    const content = `Before ${FICTA_RESTORE_HIGHLIGHT_START}${surrogate}${FICTA_RESTORE_HIGHLIGHT_ORIGIN}user${FICTA_RESTORE_HIGHLIGHT_METADATA}tail`;
+    // Mid-stream this is a genuine group still arriving: show the value so far.
+    expect(parseRestoreHighlightText(content).visibleText).toBe("Before tail");
+    // A stored or sent message is complete, so nothing after the stray START may disappear.
+    expect(stripRestoreHighlightMarkers({ text: content })).toEqual({ text: `Before ${surrogate}usertail` });
+  });
+});
+
 describe("renderVisibleHighlights", () => {
   it("wraps the restored value in a safe custom tag by default", () => {
     const result = renderVisibleHighlights("The client is Jane & <Doe>.", [

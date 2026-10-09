@@ -36,7 +36,7 @@ specific way:
 - **What is sent.** For each message under review, the gateway sends the message text line by line
   with **every protected span already replaced by its placeholder**, plus each **detected** span
   together with its line. Registered values are never sent: they are substituted before the request
-  is built. User-selected values are substituted too. Only detector-found spans travel as text,
+  is built. User-selected values are substituted too, and a detected span inside one is not sent. Only detector-found spans travel as text,
   because a placeholder cannot be judged from context.
 - **What comes back.** An advisory label per detected span (credential, content hash, organisation,
   legal term, and so on) and a probability per line that it still names a party or states a

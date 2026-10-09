@@ -149,6 +149,7 @@ describe("pre-send protection preview", () => {
         body: JSON.stringify({ model: "test", messages: [{ role: "user", content: text }] }),
       });
       expect(replay.status).toBe(409);
+      expect(replay.headers.get("x-should-retry")).toBe("false");
       expect(upstreamRequests).toBe(1);
 
       const changedPreviewResponse = await fetch(`${base}${FICTA_PROTECTION_PREVIEW_PATH}`, {

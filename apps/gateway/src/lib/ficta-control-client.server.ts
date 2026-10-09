@@ -26,4 +26,9 @@ export async function gatewayFictaControlClient(
   return options.headers ? createFictaControlClient({ baseUrl, headers: options.headers }) : discoveryClient;
 }
 
+/** A response that arrived but failed the contract's validation: a version mismatch, not an outage. */
+export function isFictaResponseShapeError(error: unknown): boolean {
+  return error instanceof Error && error.name === "ZodError";
+}
+
 export { fictaControlErrorData, fictaControlErrorStatus, GatewayFictaCompatibilityError };

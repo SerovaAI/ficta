@@ -688,12 +688,14 @@ function beginProtectedRequest(
           },
         },
         409,
+        STALE_TICKET_HEADERS,
       );
     }
     if (method === "GET" || method === "HEAD") {
       return c.json(
         { error: { type: "ficta_protection_preview_stale", message: "Protection tickets require a request body." } },
         409,
+        STALE_TICKET_HEADERS,
       );
     }
     preparedProtectionTicket = prepared;
@@ -932,6 +934,7 @@ async function readRequestBody(req: RequestContext, headers: Headers): Promise<s
           },
         },
         409,
+        STALE_TICKET_HEADERS,
       );
     }
     // Consume atomically before any detector/upstream await. Concurrent replay sees a missing ticket.
@@ -1589,6 +1592,11 @@ function registryProtectionStatus(engine: RedactionEngine): RegistryProtectionSt
 const DEFAULT_PROTECTION_STATS_LIMIT = 100;
 const MAX_PROTECTION_STATS_LIMIT = 500;
 const PROTECTION_TICKET_TTL_MS = 5 * 60_000;
+/**
+ * A stale or spent ticket never becomes valid on retry. `x-should-retry: false` tells the OpenAI and
+ * Anthropic SDKs not to replay it, so the caller sees the 409 (or the original provider error) once.
+ */
+const STALE_TICKET_HEADERS = { "x-should-retry": "false" } as const;
 const PROTECTION_TICKETS_MAX = 256;
 const PROTECTION_TICKETS_PER_SCOPE_MAX = 8;
 const FICTA_CONTROL_METHODS: ReadonlyMap<string, { method: string; allowHead?: boolean; message: string }> = new Map([

@@ -9,6 +9,7 @@ import {
 import { createAnthropicChat } from "@tanstack/ai-anthropic";
 import { openaiCompatibleText } from "@tanstack/ai-openai/compatible";
 import type { Provider } from "@/lib/models";
+import { proxyBaseUrl } from "@/lib/proxy-base.server";
 
 export interface ModelChoice {
   provider: Provider;
@@ -30,12 +31,10 @@ export interface ModelChoice {
 }
 
 /**
- * The provider seam. `FICTA_PROXY_URL` points each adapter's `baseURL` at the ficta redaction proxy,
+ * The provider seam. `FICTA_PROXY_URL` (via `proxyBaseUrl`) points each adapter's `baseURL` at the ficta redaction proxy,
  * so PII / secrets are tokenized before the vendor and restored on the way back. The firm's real API
  * keys stay server-side (never sent to the browser). Swap provider / model wiring here — nowhere else.
  */
-const FICTA_PROXY_URL = process.env.FICTA_PROXY_URL ?? "http://127.0.0.1:8787";
-
 export function createModelAdapter({
   provider,
   model,
@@ -56,20 +55,26 @@ export function createModelAdapter({
     ...(fictaScope ? { [FICTA_SCOPE_HEADER]: fictaScope } : {}),
     ...(egressEventId ? { [FICTA_EGRESS_EVENT_HEADER]: egressEventId } : {}),
   };
+  const baseURL = proxyBaseUrl();
+  // The proxy consumes a protection ticket on first use, so an SDK retry after a provider 429/5xx
+  // would replay a spent ticket and surface a misleading "preview again" 409 instead of the real error.
+  const maxRetries = protectionTicket ? 0 : undefined;
   if (provider === "anthropic") {
     // ficta routes `/v1/messages` → the Anthropic upstream; the Anthropic adapter emits that wire.
     // The adapter's model param is a known-Claude-id union; the UI supplies a validated id, so cast.
     return createAnthropicChat(model as Parameters<typeof createAnthropicChat>[0], apiKey, {
-      baseURL: FICTA_PROXY_URL,
+      baseURL,
       defaultHeaders,
+      ...(maxRetries === undefined ? {} : { maxRetries }),
     });
   }
   // Gateway uses OpenAI's Responses API so reasoning controls map to the correct wire shape.
   // ficta routes `/v1/responses` → the OpenAI upstream.
   return openaiCompatibleText(model, {
     api: "responses",
-    baseURL: `${FICTA_PROXY_URL}/v1`,
+    baseURL: `${baseURL}/v1`,
     apiKey,
     defaultHeaders,
+    ...(maxRetries === undefined ? {} : { maxRetries }),
   });
 }

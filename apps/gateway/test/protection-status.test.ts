@@ -30,6 +30,11 @@ describe("isProtectionStatusOk", () => {
     expect(isProtectionStatusOk(status)).toBe(true);
   });
 
+  it("accepts fields added by a newer proxy", () => {
+    const status = { ...validStatus(), addedLater: true, pii: { ...validStatus().pii, addedLater: 1 } };
+    expect(isProtectionStatusOk(status)).toBe(true);
+  });
+
   it("identifies only required, unready registries as blocking", () => {
     const emptyRequired = {
       ...validStatus(),

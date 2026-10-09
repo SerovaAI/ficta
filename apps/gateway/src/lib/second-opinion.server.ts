@@ -16,9 +16,10 @@ import type { InstanceSettings } from "./storage/types";
  * `FICTA_GATEWAY_SECOND_OPINION=on|off` pins it from the environment.
  *
  * Privacy contract (see apps/gateway/docs/threat-model-pii.md, "Optional second-opinion service"):
- * - Registered values never leave: every `registry` finding is replaced by its surrogate before any
- *   text is sent. Detected and user-selected spans are sent as text, because context-only
- *   judgement of a placeholder does not work.
+ * - Registered and user-selected values never leave: every `registry` and `user` finding is replaced
+ *   by its surrogate before any text is sent, and a detected span overlapping one is not judged.
+ *   Only detected spans are sent as text, because context-only judgement of a placeholder does not
+ *   work.
  * - The result is advisory. It never changes what the proxy redacts; it labels detected findings
  *   and flags lines the detectors may have missed for the user to select.
  * - Fail open: every error, timeout, or oversize input yields a non-`ok` status and the review
@@ -126,7 +127,8 @@ export function substituteSpans(
   return out + text.slice(cursor, end);
 }
 
-const isRegistry = (finding: ProtectionPreviewFinding) => finding.origin === "registry";
+/** Registry and user-selected values: never sent as text. */
+const isProtected = (finding: ProtectionPreviewFinding) => finding.origin !== "detected";
 const isAny = () => true;
 
 const KIND_CRITERIA: Record<SecondOpinionKind, string> = {
@@ -173,9 +175,15 @@ export function prepareSecondOpinion(
     text: substituteSpans(text, range.start, range.end, findings, isAny),
   }));
 
-  // Candidate view: detected spans in their line, with registry values (only) already substituted.
+  // Candidate view: detected spans in their line, with registry and user-selected values already
+  // substituted. A detected span overlapping one of those would carry its text, so it is not judged.
+  const protectedFindings = findings.filter(isProtected);
   const detected = findings
-    .filter((finding) => finding.origin === "detected")
+    .filter(
+      (finding) =>
+        finding.origin === "detected" &&
+        !protectedFindings.some((other) => other.start < finding.end && finding.start < other.end),
+    )
     .sort((a, b) => rankConfidence(a) - rankConfidence(b) || a.start - b.start)
     .slice(0, SECOND_OPINION_FINDINGS_MAX);
   const candidates: Candidate[] = detected.map((finding) => {
@@ -183,7 +191,7 @@ export function prepareSecondOpinion(
     return {
       finding,
       span: text.slice(finding.start, finding.end),
-      line: substituteSpans(text, range.start, range.end, findings, isRegistry),
+      line: substituteSpans(text, range.start, range.end, findings, isProtected),
     };
   });
 

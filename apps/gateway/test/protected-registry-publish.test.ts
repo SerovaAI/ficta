@@ -1,6 +1,6 @@
 import { isRegistryReloadOk } from "@serovaai/ficta-protocol";
-import { describe, expect, it } from "vitest";
-import { verifyRegistryReload } from "@/lib/storage/protected-registry";
+import { describe, expect, it, vi } from "vitest";
+import { rollBackRejectedRegistry, verifyRegistryReload } from "@/lib/storage/protected-registry";
 import { renderManagedRegistryFile } from "@/lib/storage/protected-registry-render.server";
 import type { ProtectedRegistryEntry } from "@/lib/storage/types";
 
@@ -155,5 +155,32 @@ describe("isRegistryReloadOk", () => {
     expect(isRegistryReloadOk({ ok: true, service: "ficta", registry: { added: "1", total: 2 } })).toBe(false);
     expect(isRegistryReloadOk({ ok: true, service: "ficta", registry: { added: 1 } })).toBe(false);
     expect(isRegistryReloadOk(null)).toBe(false);
+  });
+});
+
+describe("rollBackRejectedRegistry", () => {
+  const rejected = { ok: false as const, status: "source_error" as const, message: "conflicting form" };
+  const io = () => ({ write: vi.fn(async () => {}), remove: vi.fn(async () => {}) });
+
+  it("restores the previous generation when the proxy rejects the file", async () => {
+    const fs = io();
+    await expect(rollBackRejectedRegistry(rejected, "/r.json", "previous", fs)).resolves.toMatchObject({
+      rolledBack: true,
+    });
+    expect(fs.write).toHaveBeenCalledWith("/r.json", "previous");
+  });
+
+  it("removes a first-ever file the proxy rejects", async () => {
+    const fs = io();
+    await rollBackRejectedRegistry(rejected, "/r.json", undefined, fs);
+    expect(fs.remove).toHaveBeenCalledWith("/r.json");
+  });
+
+  it("keeps the file when the proxy never judged it", async () => {
+    const fs = io();
+    const unreachable = { ok: false as const, status: "unreachable" as const, message: "down" };
+    await expect(rollBackRejectedRegistry(unreachable, "/r.json", "previous", fs)).resolves.toBe(unreachable);
+    expect(fs.write).not.toHaveBeenCalled();
+    expect(fs.remove).not.toHaveBeenCalled();
   });
 });
