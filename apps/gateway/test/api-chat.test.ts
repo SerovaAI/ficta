@@ -8,6 +8,7 @@ import {
   latestUserText,
   messagesForModel,
   modelOptionsForProvider,
+  persistEgressEvidenceSafely,
   requiresProtectionReviewTicket,
   resolveChatTraceEnabled,
   resolveRequestedReasoningEffort,
@@ -145,5 +146,17 @@ describe("stored thread protection", () => {
     await expect(prepareStoredThreadProtection("trusted-scope", "text", ["text"])).rejects.toThrow(
       "incompatible proxy",
     );
+  });
+});
+
+describe("persistEgressEvidenceSafely", () => {
+  it("never turns an evidence failure into a chat error", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const args = { userId: "u", orgId: "o", threadId: "t", fictaScope: "v1:x", eventId: "e" };
+    const persist = vi.fn().mockRejectedValue(new Error("Egress proof is not available yet."));
+    await expect(persistEgressEvidenceSafely(args, persist)).resolves.toBeUndefined();
+    expect(persist).toHaveBeenCalledWith(args);
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
   });
 });

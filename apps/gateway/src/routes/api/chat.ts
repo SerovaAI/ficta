@@ -136,11 +136,11 @@ export const Route = createFileRoute("/api/chat")({
                     {
                       name: "persist-egress-evidence",
                       onFinish: () =>
-                        persistThreadEgressEvidence({ userId, orgId, threadId, fictaScope, eventId: egressEventId }),
+                        persistEgressEvidenceSafely({ userId, orgId, threadId, fictaScope, eventId: egressEventId }),
                       onAbort: () =>
-                        persistThreadEgressEvidence({ userId, orgId, threadId, fictaScope, eventId: egressEventId }),
+                        persistEgressEvidenceSafely({ userId, orgId, threadId, fictaScope, eventId: egressEventId }),
                       onError: () =>
-                        persistThreadEgressEvidence({ userId, orgId, threadId, fictaScope, eventId: egressEventId }),
+                        persistEgressEvidenceSafely({ userId, orgId, threadId, fictaScope, eventId: egressEventId }),
                     },
                   ]
                 : undefined,
@@ -157,6 +157,21 @@ export const Route = createFileRoute("/api/chat")({
     },
   },
 });
+
+/**
+ * Evidence is an after-the-fact ledger entry: TanStack AI rethrows `onFinish` failures, so an
+ * unreachable proxy or a failed write must not turn an already-delivered reply into a chat error.
+ */
+export async function persistEgressEvidenceSafely(
+  args: Parameters<typeof persistThreadEgressEvidence>[0],
+  persist: typeof persistThreadEgressEvidence = persistThreadEgressEvidence,
+): Promise<void> {
+  try {
+    await persist(args);
+  } catch (err) {
+    console.warn("Failed to record egress evidence for this chat turn.", err);
+  }
+}
 
 /**
  * A non-2xx Response whose reason phrase the SSE client turns into `error.message`. Keep it a single
