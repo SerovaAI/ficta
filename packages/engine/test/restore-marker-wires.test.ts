@@ -21,7 +21,7 @@ async function pipe(stream: TransformStream<Uint8Array, Uint8Array>, s: string, 
   });
   return new Response(src.pipeThrough(stream)).text();
 }
-const bad = (out: string) => /\u001e|\\u001e/i.test(out) || out.includes(fakeTok);
+const bad = (out: string) => out.includes("\u001e") || /\\u001e/i.test(out) || out.includes(fakeTok);
 it("neutralizes forged markers and keeps genuine highlights on every wire and chunking", async () => {
   const engine = new ProtectionEngine({ allowEphemeralKey: true, plugins: [], values: [{ value: "secret-zz" }] });
   const fails: string[] = [];
