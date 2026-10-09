@@ -4,7 +4,7 @@ import {
   fictaControlErrorStatus,
   GatewayFictaCompatibilityError,
 } from "../ficta-control-client.server";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile, unlink } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { FICTA_REGISTRY_REVISION_HEADER, isRegistryReloadOk } from "@serovaai/ficta-protocol";
 import { createServerFn } from "@tanstack/react-start";
@@ -56,6 +56,9 @@ export type ProtectedRegistryReloadResult =
       ok: false;
       status: "unreachable" | "bad_response" | "forbidden" | "not_applied" | "source_error";
       message: string;
+      /** The proxy rejected this generation, so the previous file was put back (or the new one removed)
+       *  to keep the next proxy start from failing on it. */
+      rolledBack?: boolean;
     };
 
 export interface ProtectedRegistryPublish extends ProtectedRegistryExport {
@@ -130,15 +133,20 @@ export const exportProtectedRegistryFile = createServerFn({ method: "POST" }).ha
 /**
  * One admin action closing the UI → proxy loop: write the managed registry file, then ask the running
  * proxy to reload it (POST /__ficta/registry/reload — loopback-gated, body-less, counts-only response).
- * A reload failure is PARTIAL success — the file is written either way, and the caller gets restart
- * guidance — never a throw. Note the proxy applies additions live; deletions apply on its next restart.
+ * A reload failure is PARTIAL success — the file stays written, and the caller gets restart
+ * guidance — never a throw. The exception is a proxy that rejects the file outright: the registry
+ * loader treats load errors as fatal at startup, so that generation is rolled back.
+ * Note the proxy applies additions live; deletions apply on its next restart.
  */
 export const publishProtectedRegistry = createServerFn({ method: "POST" }).handler(
   async (): Promise<ProtectedRegistryPublish> => {
     const { orgId } = await requireAdminScope();
     return registryMutationQueue.run(async () => {
+      const path = managedRegistryPath();
+      const previous = await readFile(path, "utf8").catch(() => undefined);
       const written = await writeManagedRegistryFile(orgId);
-      return { ...written, reload: await requestProxyRegistryReload(written.revision) };
+      const reload = await requestProxyRegistryReload(written.revision);
+      return { ...written, reload: await rollBackRejectedRegistry(reload, path, previous) };
     });
   },
 );
@@ -158,6 +166,32 @@ async function writeManagedRegistryFile(orgId: string): Promise<ProtectedRegistr
     entries: approved.length,
     values: result.values,
   };
+}
+
+/**
+ * A `source_error` means the running proxy parsed and refused this generation (it keeps its in-memory
+ * registry). Leaving the file in place would make the next proxy start fail, so restore the previous
+ * generation, or remove the file if there was none. Unreachable/not-applied publishes keep the file:
+ * the proxy never judged it.
+ */
+export async function rollBackRejectedRegistry(
+  reload: ProtectedRegistryReloadResult,
+  path: string,
+  previous: string | undefined,
+  io: { write: (path: string, body: string) => Promise<void>; remove: (path: string) => Promise<void> } = {
+    write: writePrivateFileAtomic,
+    remove: unlink,
+  },
+): Promise<ProtectedRegistryReloadResult> {
+  if (reload.ok || reload.status !== "source_error") return reload;
+  try {
+    if (previous === undefined) await io.remove(path);
+    else await io.write(path, previous);
+    return { ...reload, rolledBack: true };
+  } catch (err) {
+    console.warn("Failed to roll back a rejected protected registry file.", err);
+    return reload;
+  }
 }
 
 const RELOAD_TIMEOUT_MS = 1500;
