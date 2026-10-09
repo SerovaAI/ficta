@@ -1140,7 +1140,7 @@ export abstract class VaultView {
     // Residuals are scanned on the EMITTED output, not the working buffer: the buffer tail can end
     // mid-token, and an incomplete token must not be classified until its right context has arrived.
     const residuals = this.residualScanner();
-    const sanitizer = createRestoreMarkerSanitizer(opts.markers);
+    const sanitizer = createRestoreMarkerSanitizer(opts.markers, false);
     const decode = (chunk?: Uint8Array): string => {
       const text = chunk ? decoder.decode(chunk, { stream: true }) : decoder.decode();
       if (!sanitizer) return text;
@@ -1227,7 +1227,7 @@ export abstract class VaultView {
       displayText,
       this.residualScanner(),
       opts.unknownToken !== undefined,
-      createRestoreMarkerSanitizer(opts.markers),
+      createRestoreMarkerSanitizer(opts.markers, true),
     );
   }
 }
@@ -1875,49 +1875,50 @@ function jsonStringEscape(value: string): string {
   return json.slice(1, -1);
 }
 
-/** Streaming marker sanitizer: `feed` holds back a tail that could still complete a delimiter. */
+/** Streaming marker sanitizer: `feed` may hold back a tail that could still complete an escape. */
 interface RestoreMarkerSanitizer {
   feed(text: string): string;
   end(): string;
 }
 
+const NEUTRALIZED = "\uFFFD";
+
 /**
  * Restore markers are the proxy's own claims ("this value was restored, from this origin"). Restore
  * deliberately skips text inside a complete marker pair (it re-scans its own output), so a marker the
  * upstream model wrote would both forge a highlight and shield a residual placeholder from the
- * unknown-token guard. Remove every delimiter — raw or JSON-escaped — from upstream text before any
- * restore pass sees it. Returns undefined when no markers are requested (nothing to protect).
+ * unknown-token guard. Before any restore pass sees upstream text, replace every occurrence of each
+ * delimiter's lead character (a control character for the protocol markers) with U+FFFD — raw, and in
+ * `json` mode also as a `\uXXXX` escape in any hex case. No delimiter can start without its lead, and
+ * replacement never shortens the text, so nothing can be reassembled; one linear pass, no re-scan.
+ * Returns undefined when no markers are requested (nothing to protect).
  */
-function createRestoreMarkerSanitizer(markers: RestoreMarkers | undefined): RestoreMarkerSanitizer | undefined {
+function createRestoreMarkerSanitizer(
+  markers: RestoreMarkers | undefined,
+  json: boolean,
+): RestoreMarkerSanitizer | undefined {
   if (!markers) return undefined;
-  const variants = new Set<string>();
+  const leads = new Set<number>();
   for (const delimiter of [markers.start, markers.origin, markers.metadata, markers.end]) {
-    if (!delimiter) continue;
-    variants.add(delimiter);
-    const escaped = jsonStringEscape(delimiter);
-    variants.add(escaped);
-    variants.add(escaped.replace(/\\u([0-9a-f]{4})/g, (_, hex: string) => `\\u${hex.toUpperCase()}`));
+    const lead = delimiter?.codePointAt(0);
+    if (lead !== undefined) leads.add(lead);
   }
-  const ordered = [...variants].sort((a, b) => b.length - a.length);
-  const pattern = new RegExp(ordered.map((v) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "g");
-  const strip = (text: string): string => {
-    // Removing one delimiter can join its neighbours into a new one, so repeat until stable.
-    for (let next = text.replace(pattern, ""); next !== text; next = text.replace(pattern, "")) text = next;
-    return text;
+  if (leads.size === 0) return undefined;
+  const raw = new RegExp(`[${[...leads].map((cp) => `\\u{${cp.toString(16)}}`).join("")}]`, "gu");
+  // An escape counts only after an even run of backslashes (`\\u001e` is a literal backslash + text).
+  const escaped = /(?<!\\)((?:\\\\)*)\\u([0-9a-fA-F]{4})/g;
+  const neutralize = (text: string): string => {
+    const out = text.replace(raw, NEUTRALIZED);
+    if (!json) return out;
+    return out.replace(escaped, (match, run: string, hex: string) =>
+      leads.has(Number.parseInt(hex, 16)) ? `${run}\\ufffd` : match,
+    );
   };
   let held = "";
   return {
     feed(text) {
-      const clean = strip(held + text);
-      let keep = 0;
-      for (const variant of ordered) {
-        for (let n = Math.min(variant.length - 1, clean.length); n > keep; n--) {
-          if (clean.endsWith(variant.slice(0, n))) {
-            keep = n;
-            break;
-          }
-        }
-      }
+      const clean = neutralize(held + text);
+      const keep = json ? partialJsonEscapeTail(clean) : 0;
       held = clean.slice(clean.length - keep);
       return clean.slice(0, clean.length - keep);
     },
@@ -1929,9 +1930,24 @@ function createRestoreMarkerSanitizer(markers: RestoreMarkers | undefined): Rest
   };
 }
 
+/**
+ * Length of a trailing backslash run plus an incomplete `\uXXX` escape, held so an escape split across
+ * stream chunks (and the parity of the backslashes before it) is judged whole. Linear scan from the end.
+ */
+function partialJsonEscapeTail(text: string): number {
+  const end = text.length;
+  let at = end;
+  while (at > 0 && end - at < 3 && /[0-9a-fA-F]/.test(text[at - 1]!)) at--;
+  if (at > 0 && text[at - 1] === "u") at--;
+  else at = end;
+  let run = at;
+  while (run > 0 && text[run - 1] === "\\") run--;
+  return run === at ? 0 : end - run;
+}
+
 /** One-shot form of {@link createRestoreMarkerSanitizer} for a complete upstream body. */
-export function stripRestoreMarkers(text: string, markers: RestoreMarkers | undefined): string {
-  const sanitizer = createRestoreMarkerSanitizer(markers);
+export function stripRestoreMarkers(text: string, markers: RestoreMarkers | undefined, json = false): string {
+  const sanitizer = createRestoreMarkerSanitizer(markers, json);
   return sanitizer ? sanitizer.feed(text) + sanitizer.end() : text;
 }
 

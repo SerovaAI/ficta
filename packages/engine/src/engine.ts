@@ -1003,7 +1003,7 @@ class ProtectionRequestScope implements RequestScope {
   }
 
   // Upstream text enters restore here (buffered) or in the vault's stream decoders, so model-written
-  // restore markers are removed at these boundaries only — the vault re-scans its own marked output.
+  // restore markers are neutralized at these boundaries only — the vault re-scans its own marked output.
   restoreText(text: string, opts?: RestoreOptions): string {
     this.noteRestoreUse(text);
     return this.vault.restoreText(stripRestoreMarkers(text, opts?.markers), opts);
@@ -1016,7 +1016,11 @@ class ProtectionRequestScope implements RequestScope {
 
   restoreJson(body: string, wire: Wire = "unknown", opts?: RestoreOptions): string {
     this.noteRestoreUse(body);
-    return this.vault.restoreJson(stripRestoreMarkers(body, opts?.markers), bufferedRestoreAdapterFor(wire), opts);
+    return this.vault.restoreJson(
+      stripRestoreMarkers(body, opts?.markers, true),
+      bufferedRestoreAdapterFor(wire),
+      opts,
+    );
   }
 
   restoreStream(opts?: RestoreOptions): TransformStream<Uint8Array, Uint8Array> {
