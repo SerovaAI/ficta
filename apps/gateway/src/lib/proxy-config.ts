@@ -1,6 +1,7 @@
 import { fictaOperatorErrorData } from "@serovaai/ficta-contract";
 import {
   gatewayFictaControlClient,
+  isFictaResponseShapeError,
   fictaControlErrorStatus,
   GatewayFictaCompatibilityError,
 } from "./ficta-control-client.server";
@@ -74,6 +75,14 @@ export const fetchProxyConfig = createServerFn({ method: "GET" }).handler(async 
   } catch (err) {
     if (err instanceof GatewayFictaCompatibilityError)
       return { ok: false, proxyUrl, status: "bad_response", message: err.message };
+    if (isFictaResponseShapeError(err)) {
+      return {
+        ok: false,
+        proxyUrl,
+        status: "bad_response",
+        message: "ficta proxy config response was not understood; update ficta and Gateway together.",
+      };
+    }
     return {
       ok: false,
       proxyUrl,

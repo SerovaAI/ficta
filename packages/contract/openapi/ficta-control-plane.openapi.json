@@ -42,8 +42,7 @@
                       "description": "Supported optional procedures. Clients must ignore capability names they do not recognize."
                     }
                   },
-                  "required": ["ok", "service", "protocolVersion", "capabilities"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "protocolVersion", "capabilities"]
                 }
               }
             }
@@ -64,8 +63,7 @@
                 "schema": {
                   "type": "object",
                   "properties": { "ok": { "const": true }, "service": { "const": "ficta" } },
-                  "required": ["ok", "service"],
-                  "additionalProperties": false
+                  "required": ["ok", "service"]
                 }
               }
             }
@@ -118,8 +116,7 @@
                           "description": "Count of discovered registry values excluded by configured policy."
                         }
                       },
-                      "required": ["enabled", "protecting", "registeredValues", "policyExcluded"],
-                      "additionalProperties": false
+                      "required": ["enabled", "protecting", "registeredValues", "policyExcluded"]
                     },
                     "registry": {
                       "type": "object",
@@ -138,8 +135,7 @@
                           "description": "Values-free operator guidance for the current registry state."
                         }
                       },
-                      "required": ["required", "status", "message"],
-                      "additionalProperties": false
+                      "required": ["required", "status", "message"]
                     },
                     "secretShapes": {
                       "type": "object",
@@ -158,8 +154,7 @@
                           "description": "Values-free explanation of the secret-shape posture."
                         }
                       },
-                      "required": ["enabled", "status", "message"],
-                      "additionalProperties": false
+                      "required": ["enabled", "status", "message"]
                     },
                     "pii": {
                       "type": "object",
@@ -201,8 +196,7 @@
                           "description": "Values-free explanation of the current PII posture."
                         }
                       },
-                      "required": ["enabled", "configuredBackend", "backend", "status", "failureMode", "message"],
-                      "additionalProperties": false
+                      "required": ["enabled", "configuredBackend", "backend", "status", "failureMode", "message"]
                     },
                     "activity": {
                       "type": "object",
@@ -220,12 +214,10 @@
                           "description": "Cumulative protected values withheld from tool-call arguments during this proxy run."
                         }
                       },
-                      "required": ["restoredValues", "withheldFromTools"],
-                      "additionalProperties": false
+                      "required": ["restoredValues", "withheldFromTools"]
                     }
                   },
-                  "required": ["ok", "service", "protection", "secretShapes", "pii"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "protection", "secretShapes", "pii"]
                 }
               }
             }
@@ -341,14 +333,12 @@
                             "description": "How this protected value entered the preview."
                           }
                         },
-                        "required": ["name", "source", "start", "end", "surrogate", "origin"],
-                        "additionalProperties": false
+                        "required": ["name", "source", "start", "end", "surrogate", "origin"]
                       },
                       "description": "Ordered protected occurrences in the preview text."
                     }
                   },
-                  "required": ["ok", "service", "ticket", "textSha256", "redactedText", "findings"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "ticket", "textSha256", "redactedText", "findings"]
                 }
               }
             }
@@ -365,8 +355,7 @@
                     "message": { "type": "string" },
                     "status": { "const": "invalid_request" }
                   },
-                  "required": ["ok", "service", "message", "status"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "message", "status"]
                 }
               }
             }
@@ -383,8 +372,7 @@
                     "message": { "type": "string" },
                     "status": { "const": "forbidden" }
                   },
-                  "required": ["ok", "service", "message", "status"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "message", "status"]
                 }
               }
             }
@@ -401,8 +389,7 @@
                     "message": { "type": "string" },
                     "status": { "const": "invariant" }
                   },
-                  "required": ["ok", "service", "message", "status"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "message", "status"]
                 }
               }
             }
@@ -419,8 +406,7 @@
                     "message": { "type": "string" },
                     "status": { "const": "detector_unavailable" }
                   },
-                  "required": ["ok", "service", "message", "status"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "message", "status"]
                 }
               }
             }
@@ -502,8 +488,7 @@
                             "withheldFromToolsValues",
                             "ambiguousEntityLinks",
                             "ambiguousEntityLinkRequests"
-                          ],
-                          "additionalProperties": false
+                          ]
                         },
                         "byModel": {
                           "type": "array",
@@ -524,8 +509,7 @@
                               "survivingValues",
                               "blockedRequests",
                               "keptOutOfModelValues"
-                            ],
-                            "additionalProperties": false
+                            ]
                           }
                         },
                         "bySurface": {
@@ -547,8 +531,7 @@
                               "survivingValues",
                               "blockedRequests",
                               "keptOutOfModelValues"
-                            ],
-                            "additionalProperties": false
+                            ]
                           }
                         },
                         "byWire": {
@@ -570,8 +553,7 @@
                               "survivingValues",
                               "blockedRequests",
                               "keptOutOfModelValues"
-                            ],
-                            "additionalProperties": false
+                            ]
                           }
                         },
                         "byLabel": {
@@ -615,8 +597,7 @@
                               "blockedRequests",
                               "keptOutOfModelValues",
                               "source"
-                            ],
-                            "additionalProperties": false
+                            ]
                           }
                         },
                         "events": {
@@ -666,8 +647,7 @@
                                       "description": "Confidence class assigned by the protection source."
                                     }
                                   },
-                                  "required": ["name", "source"],
-                                  "additionalProperties": false
+                                  "required": ["name", "source"]
                                 }
                               },
                               "survivingHits": {
@@ -698,8 +678,7 @@
                                       "description": "Confidence class assigned by the protection source."
                                     }
                                   },
-                                  "required": ["name", "source"],
-                                  "additionalProperties": false
+                                  "required": ["name", "source"]
                                 }
                               }
                             },
@@ -717,8 +696,7 @@
                               "ambiguousEntityLinks",
                               "redactedHits",
                               "survivingHits"
-                            ],
-                            "additionalProperties": false
+                            ]
                           }
                         }
                       },
@@ -733,12 +711,10 @@
                         "byWire",
                         "byLabel",
                         "events"
-                      ],
-                      "additionalProperties": false
+                      ]
                     }
                   },
-                  "required": ["ok", "service", "stats"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "stats"]
                 }
               }
             }
@@ -781,8 +757,7 @@
                             "restoredValues": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
                             "unknownTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
                           },
-                          "required": ["restoredValues", "unknownTokens"],
-                          "additionalProperties": false
+                          "required": ["restoredValues", "unknownTokens"]
                         },
                         "labels": {
                           "type": "array",
@@ -814,8 +789,7 @@
                               "redactedValues": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
                               "survivingValues": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
                             },
-                            "required": ["name", "source"],
-                            "additionalProperties": false
+                            "required": ["name", "source"]
                           }
                         }
                       },
@@ -829,12 +803,10 @@
                         "survivingValues",
                         "ambiguousEntityLinks",
                         "labels"
-                      ],
-                      "additionalProperties": false
+                      ]
                     }
                   },
-                  "required": ["ok", "service", "proof"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "proof"]
                 }
               }
             }
@@ -852,12 +824,10 @@
                         "type": { "enum": ["forbidden", "invalid_request", "not_found"], "type": "string" },
                         "message": { "type": "string" }
                       },
-                      "required": ["type", "message"],
-                      "additionalProperties": false
+                      "required": ["type", "message"]
                     }
                   },
-                  "required": ["error"],
-                  "additionalProperties": false
+                  "required": ["error"]
                 }
               }
             }
@@ -875,12 +845,10 @@
                         "type": { "enum": ["forbidden", "invalid_request", "not_found"], "type": "string" },
                         "message": { "type": "string" }
                       },
-                      "required": ["type", "message"],
-                      "additionalProperties": false
+                      "required": ["type", "message"]
                     }
                   },
-                  "required": ["error"],
-                  "additionalProperties": false
+                  "required": ["error"]
                 }
               }
             }
@@ -898,12 +866,10 @@
                         "type": { "enum": ["forbidden", "invalid_request", "not_found"], "type": "string" },
                         "message": { "type": "string" }
                       },
-                      "required": ["type", "message"],
-                      "additionalProperties": false
+                      "required": ["type", "message"]
                     }
                   },
-                  "required": ["error"],
-                  "additionalProperties": false
+                  "required": ["error"]
                 }
               }
             }
@@ -970,8 +936,7 @@
                             "restoreIntoTools",
                             "allowCustomUpstream",
                             "destroyCategories"
-                          ],
-                          "additionalProperties": false
+                          ]
                         },
                         "locked": {
                           "type": "object",
@@ -994,8 +959,7 @@
                           "additionalProperties": { "type": "string" }
                         }
                       },
-                      "required": ["disabled", "restartRequired", "values", "locked"],
-                      "additionalProperties": false
+                      "required": ["disabled", "restartRequired", "values", "locked"]
                     },
                     "config": {
                       "type": "object",
@@ -1019,8 +983,7 @@
                             "restoreIntoTools",
                             "restoreProse",
                             "surrogateStyle"
-                          ],
-                          "additionalProperties": false
+                          ]
                         },
                         "dispositions": {
                           "type": "object",
@@ -1036,12 +999,10 @@
                                   "additionalProperties": { "type": "string" }
                                 }
                               },
-                              "required": ["all", "categories", "labels"],
-                              "additionalProperties": false
+                              "required": ["all", "categories", "labels"]
                             }
                           },
-                          "required": ["destroy"],
-                          "additionalProperties": false
+                          "required": ["destroy"]
                         },
                         "detection": {
                           "type": "object",
@@ -1062,18 +1023,15 @@
                                 "configuredBackend",
                                 "configuredBackends",
                                 "failureMode"
-                              ],
-                              "additionalProperties": false
+                              ]
                             },
                             "secretShapes": {
                               "type": "object",
                               "properties": { "standalone": { "type": "boolean" }, "agents": { "type": "boolean" } },
-                              "required": ["standalone", "agents"],
-                              "additionalProperties": false
+                              "required": ["standalone", "agents"]
                             }
                           },
-                          "required": ["pii", "secretShapes"],
-                          "additionalProperties": false
+                          "required": ["pii", "secretShapes"]
                         },
                         "transport": {
                           "type": "object",
@@ -1087,8 +1045,7 @@
                                 "openai": { "type": "string" },
                                 "chatgpt": { "type": "string" }
                               },
-                              "required": ["anthropic", "openai", "chatgpt"],
-                              "additionalProperties": false
+                              "required": ["anthropic", "openai", "chatgpt"]
                             },
                             "forcedUpstream": { "type": "string" },
                             "allowCustomUpstream": { "type": "boolean" },
@@ -1101,8 +1058,7 @@
                             "traceCapture": {
                               "type": "object",
                               "properties": { "enabled": { "type": "boolean" } },
-                              "required": ["enabled"],
-                              "additionalProperties": false
+                              "required": ["enabled"]
                             },
                             "logDir": { "type": "string" }
                           },
@@ -1116,16 +1072,13 @@
                             "traceAudit",
                             "traceCapture",
                             "logDir"
-                          ],
-                          "additionalProperties": false
+                          ]
                         }
                       },
-                      "required": ["protection", "detection", "transport"],
-                      "additionalProperties": false
+                      "required": ["protection", "detection", "transport"]
                     }
                   },
-                  "required": ["ok", "service", "edit", "config"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "edit", "config"]
                 }
               }
             }
@@ -1208,8 +1161,7 @@
                             "restoreIntoTools",
                             "allowCustomUpstream",
                             "destroyCategories"
-                          ],
-                          "additionalProperties": false
+                          ]
                         },
                         "locked": {
                           "type": "object",
@@ -1232,12 +1184,10 @@
                           "additionalProperties": { "type": "string" }
                         }
                       },
-                      "required": ["disabled", "restartRequired", "values", "locked"],
-                      "additionalProperties": false
+                      "required": ["disabled", "restartRequired", "values", "locked"]
                     }
                   },
-                  "required": ["ok", "service", "edit"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "edit"]
                 }
               }
             }
@@ -1273,8 +1223,7 @@
                       "type": "string"
                     }
                   },
-                  "required": ["ok", "service", "status", "message"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "status", "message"]
                 }
               }
             }
@@ -1310,8 +1259,7 @@
                       "type": "string"
                     }
                   },
-                  "required": ["ok", "service", "status", "message"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "status", "message"]
                 }
               }
             }
@@ -1347,8 +1295,7 @@
                       "type": "string"
                     }
                   },
-                  "required": ["ok", "service", "status", "message"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "status", "message"]
                 }
               }
             }
@@ -1373,12 +1320,10 @@
                     "traceCapture": {
                       "type": "object",
                       "properties": { "enabled": { "type": "boolean" } },
-                      "required": ["enabled"],
-                      "additionalProperties": false
+                      "required": ["enabled"]
                     }
                   },
-                  "required": ["ok", "service", "traceCapture"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "traceCapture"]
                 }
               }
             }
@@ -1414,8 +1359,7 @@
                       "type": "string"
                     }
                   },
-                  "required": ["ok", "service", "status", "message"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "status", "message"]
                 }
               }
             }
@@ -1451,12 +1395,10 @@
                     "traceCapture": {
                       "type": "object",
                       "properties": { "enabled": { "type": "boolean" } },
-                      "required": ["enabled"],
-                      "additionalProperties": false
+                      "required": ["enabled"]
                     }
                   },
-                  "required": ["ok", "service", "traceCapture"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "traceCapture"]
                 }
               }
             }
@@ -1492,8 +1434,7 @@
                       "type": "string"
                     }
                   },
-                  "required": ["ok", "service", "status", "message"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "status", "message"]
                 }
               }
             }
@@ -1529,8 +1470,7 @@
                       "type": "string"
                     }
                   },
-                  "required": ["ok", "service", "status", "message"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "status", "message"]
                 }
               }
             }
@@ -1566,12 +1506,10 @@
                         "ambiguousForms": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
                         "restartRequired": { "type": "boolean" }
                       },
-                      "required": ["added", "total"],
-                      "additionalProperties": false
+                      "required": ["added", "total"]
                     }
                   },
-                  "required": ["ok", "service", "registry"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "registry"]
                 }
               }
             }
@@ -1607,8 +1545,7 @@
                       "type": "string"
                     }
                   },
-                  "required": ["ok", "service", "status", "message"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "status", "message"]
                 }
               }
             }
@@ -1644,8 +1581,7 @@
                       "type": "string"
                     }
                   },
-                  "required": ["ok", "service", "status", "message"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "status", "message"]
                 }
               }
             }
@@ -1681,8 +1617,7 @@
                       "type": "string"
                     }
                   },
-                  "required": ["ok", "service", "status", "message"],
-                  "additionalProperties": false
+                  "required": ["ok", "service", "status", "message"]
                 }
               }
             }

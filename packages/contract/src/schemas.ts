@@ -5,6 +5,11 @@ export const FICTA_CONTROL_PROTOCOL_VERSION = 1 as const;
 export const FICTA_CONTROL_CAPABILITIES = ["health", "status", "protection-preview"] as const;
 export const FICTA_SCOPE_MAX_LENGTH = 256;
 
+/**
+ * Response schemas are deliberately not `.strict()`: a newer engine may add fields, and an older
+ * client must keep working (unknown keys are stripped on parse). Breaking changes bump
+ * `FICTA_CONTROL_PROTOCOL_VERSION` instead. Request inputs that accept edits stay strict.
+ */
 export const PROTECTION_PREVIEW_TEXT_MAX_BYTES = 2 * 1024 * 1024;
 export const PROTECTION_PREVIEW_VALUES_MAX = 200;
 export const PROTECTION_PREVIEW_VALUE_MAX = 2_000;
@@ -12,103 +17,86 @@ export const PROTECTION_PREVIEW_VALUES_MAX_BYTES = 64 * 1024;
 
 const utf8Length = (value: string): number => new TextEncoder().encode(value).byteLength;
 
-export const healthSchema = z
-  .object({
-    ok: z.literal(true),
-    service: z.literal("ficta"),
-  })
-  .strict();
+export const healthSchema = z.object({
+  ok: z.literal(true),
+  service: z.literal("ficta"),
+});
 
-export const capabilitiesSchema = z
-  .object({
-    ok: z.literal(true),
-    service: z.literal("ficta"),
-    protocolVersion: z
-      .literal(FICTA_CONTROL_PROTOCOL_VERSION)
-      .describe("Breaking wire-contract version implemented by this control plane."),
-    capabilities: z
-      .array(z.string().min(1))
-      .describe("Supported optional procedures. Clients must ignore capability names they do not recognize."),
-  })
-  .strict();
+export const capabilitiesSchema = z.object({
+  ok: z.literal(true),
+  service: z.literal("ficta"),
+  protocolVersion: z
+    .literal(FICTA_CONTROL_PROTOCOL_VERSION)
+    .describe("Breaking wire-contract version implemented by this control plane."),
+  capabilities: z
+    .array(z.string().min(1))
+    .describe("Supported optional procedures. Clients must ignore capability names they do not recognize."),
+});
 
-export const registryProtectionStatusSchema = z
-  .object({
-    required: z.boolean().describe("Whether provider requests are blocked until the registry is ready."),
-    status: z.enum(["ready", "empty", "error"]).describe("Current exact-match registry readiness."),
-    message: z.string().describe("Values-free operator guidance for the current registry state."),
-  })
-  .strict();
+export const registryProtectionStatusSchema = z.object({
+  required: z.boolean().describe("Whether provider requests are blocked until the registry is ready."),
+  status: z.enum(["ready", "empty", "error"]).describe("Current exact-match registry readiness."),
+  message: z.string().describe("Values-free operator guidance for the current registry state."),
+});
 
-export const protectionStatusSchema = z
-  .object({
-    ok: z.literal(true),
-    service: z.literal("ficta"),
-    protection: z
-      .object({
-        enabled: z.boolean().describe("Whether the engine has registered values or detector plugins available."),
-        protecting: z.boolean().describe("Whether registered values or an active detector are currently configured."),
-        registeredValues: z.number().int().nonnegative().describe("Count of loaded exact-match protected values."),
-        policyExcluded: z
-          .number()
-          .int()
-          .nonnegative()
-          .describe("Count of discovered registry values excluded by configured policy."),
-      })
-      .strict(),
-    registry: registryProtectionStatusSchema.optional(),
-    secretShapes: z
-      .object({
-        enabled: z.boolean().describe("Whether request-time secret-shape detection is enabled."),
-        status: z.enum(["off", "ok"]).describe("Secret-shape detector posture."),
-        message: z.string().describe("Values-free explanation of the secret-shape posture."),
-      })
-      .strict(),
-    pii: z
-      .object({
-        enabled: z.boolean().describe("Whether request-time PII detection is enabled."),
-        configuredBackend: z.string().describe("Compatibility string naming the configured PII backend set."),
-        configuredBackends: z.array(z.string()).optional().describe("Configured PII backend names."),
-        backend: z.string().describe("Active PII backend names as a compatibility string."),
-        status: z.enum(["off", "ok", "degraded", "blocking"]).describe("Current PII detector posture."),
-        failureMode: z
-          .enum(["fail-open", "fail-closed"])
-          .describe("Whether a required PII backend outage skips that backend or blocks provider traffic."),
-        url: z.string().optional().describe("Values-free health URL for a single configured network backend."),
-        detail: z.string().optional().describe("Values-free backend health diagnostic."),
-        message: z.string().describe("Values-free explanation of the current PII posture."),
-      })
-      .strict(),
-    activity: z
-      .object({
-        restoredValues: z
-          .number()
-          .int()
-          .nonnegative()
-          .describe("Cumulative protected values restored during this proxy run."),
-        withheldFromTools: z
-          .number()
-          .int()
-          .nonnegative()
-          .describe("Cumulative protected values withheld from tool-call arguments during this proxy run."),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
+export const protectionStatusSchema = z.object({
+  ok: z.literal(true),
+  service: z.literal("ficta"),
+  protection: z.object({
+    enabled: z.boolean().describe("Whether the engine has registered values or detector plugins available."),
+    protecting: z.boolean().describe("Whether registered values or an active detector are currently configured."),
+    registeredValues: z.number().int().nonnegative().describe("Count of loaded exact-match protected values."),
+    policyExcluded: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe("Count of discovered registry values excluded by configured policy."),
+  }),
+  registry: registryProtectionStatusSchema.optional(),
+  secretShapes: z.object({
+    enabled: z.boolean().describe("Whether request-time secret-shape detection is enabled."),
+    status: z.enum(["off", "ok"]).describe("Secret-shape detector posture."),
+    message: z.string().describe("Values-free explanation of the secret-shape posture."),
+  }),
+  pii: z.object({
+    enabled: z.boolean().describe("Whether request-time PII detection is enabled."),
+    configuredBackend: z.string().describe("Compatibility string naming the configured PII backend set."),
+    configuredBackends: z.array(z.string()).optional().describe("Configured PII backend names."),
+    backend: z.string().describe("Active PII backend names as a compatibility string."),
+    status: z.enum(["off", "ok", "degraded", "blocking"]).describe("Current PII detector posture."),
+    failureMode: z
+      .enum(["fail-open", "fail-closed"])
+      .describe("Whether a required PII backend outage skips that backend or blocks provider traffic."),
+    url: z.string().optional().describe("Values-free health URL for a single configured network backend."),
+    detail: z.string().optional().describe("Values-free backend health diagnostic."),
+    message: z.string().describe("Values-free explanation of the current PII posture."),
+  }),
+  activity: z
+    .object({
+      restoredValues: z
+        .number()
+        .int()
+        .nonnegative()
+        .describe("Cumulative protected values restored during this proxy run."),
+      withheldFromTools: z
+        .number()
+        .int()
+        .nonnegative()
+        .describe("Cumulative protected values withheld from tool-call arguments during this proxy run."),
+    })
+    .optional(),
+});
 
-export const protectionHitSchema = z
-  .object({
-    name: z.string().describe("Values-free detector or registry label for the finding."),
-    source: z.string().describe("Values-free source category for the finding."),
-    plugin: z.string().optional().describe("Plugin that produced the finding, when available."),
-    kind: z.enum(["secret", "pii", "custom"]).optional().describe("Coarse protected-value category."),
-    confidence: z
-      .enum(["exact", "high", "probabilistic"])
-      .optional()
-      .describe("Confidence class assigned by the protection source."),
-  })
-  .strict();
+export const protectionHitSchema = z.object({
+  name: z.string().describe("Values-free detector or registry label for the finding."),
+  source: z.string().describe("Values-free source category for the finding."),
+  plugin: z.string().optional().describe("Plugin that produced the finding, when available."),
+  kind: z.enum(["secret", "pii", "custom"]).optional().describe("Coarse protected-value category."),
+  confidence: z
+    .enum(["exact", "high", "probabilistic"])
+    .optional()
+    .describe("Confidence class assigned by the protection source."),
+});
 
 export const protectionPreviewFindingSchema = protectionHitSchema
   .extend({
@@ -165,29 +153,25 @@ export const protectionTicketSchema = z
   .min(1)
   .regex(/^[\x21-\x7e]+$/u);
 
-export const protectionPreviewSchema = z
-  .object({
-    ok: z.literal(true),
-    service: z.literal("ficta"),
-    ticket: protectionTicketSchema.describe(
-      "Opaque, short-lived, single-use authorization for the reviewed provider send.",
-    ),
-    textSha256: z
-      .string()
-      .regex(/^[0-9a-f]{64}$/u)
-      .describe("Lowercase SHA-256 of the exact preview text bound to the ticket."),
-    redactedText: z.string().describe("Preview text with all planned protections applied."),
-    findings: z.array(protectionPreviewFindingSchema).describe("Ordered protected occurrences in the preview text."),
-  })
-  .strict();
+export const protectionPreviewSchema = z.object({
+  ok: z.literal(true),
+  service: z.literal("ficta"),
+  ticket: protectionTicketSchema.describe(
+    "Opaque, short-lived, single-use authorization for the reviewed provider send.",
+  ),
+  textSha256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/u)
+    .describe("Lowercase SHA-256 of the exact preview text bound to the ticket."),
+  redactedText: z.string().describe("Preview text with all planned protections applied."),
+  findings: z.array(protectionPreviewFindingSchema).describe("Ordered protected occurrences in the preview text."),
+});
 
-const protectionPreviewErrorBaseSchema = z
-  .object({
-    ok: z.literal(false),
-    service: z.literal("ficta"),
-    message: z.string(),
-  })
-  .strict();
+const protectionPreviewErrorBaseSchema = z.object({
+  ok: z.literal(false),
+  service: z.literal("ficta"),
+  message: z.string(),
+});
 
 export const protectionPreviewForbiddenErrorSchema = protectionPreviewErrorBaseSchema.extend({
   status: z.literal("forbidden"),
