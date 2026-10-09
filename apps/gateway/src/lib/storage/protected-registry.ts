@@ -146,7 +146,13 @@ export const publishProtectedRegistry = createServerFn({ method: "POST" }).handl
       const previous = await readFile(path, "utf8").catch(() => undefined);
       const written = await writeManagedRegistryFile(orgId);
       const reload = await requestProxyRegistryReload(written.revision);
-      return { ...written, reload: await rollBackRejectedRegistry(reload, path, previous) };
+      return {
+        ...written,
+        reload: await rollBackRejectedRegistry(reload, path, previous, {
+          write: writePrivateFileAtomic,
+          remove: unlink,
+        }),
+      };
     });
   },
 );
@@ -178,10 +184,9 @@ export async function rollBackRejectedRegistry(
   reload: ProtectedRegistryReloadResult,
   path: string,
   previous: string | undefined,
-  io: { write: (path: string, body: string) => Promise<void>; remove: (path: string) => Promise<void> } = {
-    write: writePrivateFileAtomic,
-    remove: unlink,
-  },
+  // Injected by the server handler: a module-level reference to `*.server` code would be pulled into
+  // the client bundle, which TanStack Start's import protection rejects.
+  io: { write: (path: string, body: string) => Promise<void>; remove: (path: string) => Promise<void> },
 ): Promise<ProtectedRegistryReloadResult> {
   if (reload.ok || reload.status !== "source_error") return reload;
   try {
