@@ -158,7 +158,7 @@ timeout_ms = 5000
 
 [secret_shapes]
 enabled = true # default: detect secret shapes before the model
-agents = true  # default: also protect coding-agent launches
+agents = true # default: also protect coding-agent launches
 
 [pii]
 enabled = false # set true to redact emails, SSNs, and card numbers before the model
@@ -230,8 +230,8 @@ Like PII, it has separate web/standalone and agent-launch posture:
 
 ```toml
 [secret_shapes]
-enabled = true   # web / standalone proxy
-agents = true    # coding-agent launches; set false to opt out
+enabled = true # web / standalone proxy
+agents = true # coding-agent launches; set false to opt out
 ```
 
 Secret detection defaults on for both surfaces, including unconfigured launches. Both toggles must
@@ -268,8 +268,8 @@ The persisted policy lives in TOML:
 
 ```toml
 [pii]
-enabled = true   # web / standalone proxy
-agents = true    # coding-agent launches; set false to opt out
+enabled = true # web / standalone proxy
+agents = true # coding-agent launches; set false to opt out
 ```
 
 ### Identity protection boundary

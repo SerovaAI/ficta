@@ -258,7 +258,8 @@ export interface ThreadSummary {
  */
 export interface StoredMessage {
   id: string;
-  role: "system" | "user" | "assistant";
+  // Mirrors `UIMessage["role"]`; "activity" is TanStack AI's frontend-only AG-UI activity row.
+  role: "system" | "user" | "assistant" | "activity";
   // Opaque UIMessage parts, round-tripped through jsonb. Typed `any[]` (not `unknown[]`) so the TanStack
   // server-fn boundary treats it as serializable — the shape is arbitrary but always JSON at runtime.
   parts: any[];

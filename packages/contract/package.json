@@ -44,19 +44,19 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@orpc/client": "1.15.4",
-    "@orpc/contract": "1.15.4",
-    "@orpc/openapi-client": "1.15.4",
+    "@orpc/client": "1.15.6",
+    "@orpc/contract": "1.15.6",
+    "@orpc/openapi-client": "1.15.6",
     "@serovaai/ficta-protocol": "workspace:^",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@orpc/openapi": "1.15.4",
-    "@orpc/zod": "1.15.4",
-    "@types/node": "^26.6.4",
-    "oxfmt": "^0.72.0",
+    "@orpc/openapi": "1.15.6",
+    "@orpc/zod": "1.15.6",
+    "@types/node": "^26.6.5",
+    "oxfmt": "^0.73.0",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.4"
   },
   "engines": {
     "node": ">=20"
