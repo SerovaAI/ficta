@@ -9,6 +9,10 @@
  * healthy IPv4 connect is dropped in favour of an unreachable IPv6 one and the request fails with
  * `AggregateError [ETIMEDOUT]`. Agents connecting directly do not fail this way, so the proxy must
  * not be the more fragile path.
+ *
+ * HTTP/2 is disabled: undici 8 negotiates h2 by default, and providers occasionally reset an h2
+ * stream before sending headers (`NGHTTP2_INTERNAL_ERROR`), which surfaces as a 502 that a direct
+ * HTTP/1.1 client would not see.
  */
 import { Agent, fetch as undiciFetch } from "undici";
 import { log } from "./logger.js";
@@ -32,6 +36,7 @@ let dispatcher: Agent | undefined;
 
 function upstreamDispatcher(): Agent {
   dispatcher ??= new Agent({
+    allowH2: false,
     connect: {
       autoSelectFamily: true,
       autoSelectFamilyAttemptTimeout: AUTO_SELECT_FAMILY_ATTEMPT_TIMEOUT_MS,

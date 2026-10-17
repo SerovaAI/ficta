@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
+import { type AddressInfo, createServer as createTcpServer } from "node:net";
 import { describe, expect, it, vi } from "vitest";
 import { fetchUpstream, isConnectPhaseFailure, type UpstreamRequestInit } from "../src/upstream-fetch.js";
 
@@ -98,6 +98,26 @@ describe("fetchUpstream", () => {
       expect(response.status).toBe(201);
       expect(new Headers(response.headers).get("x-upstream")).toBe("yes");
       expect(await new Response(response.body).json()).toEqual({ method: "POST", auth: "k", body: '{"a":1}' });
+    } finally {
+      server.close();
+    }
+  });
+
+  it("offers only HTTP/1.1 over TLS, never h2", async () => {
+    let hello: Buffer | undefined;
+    const server = createTcpServer((socket) => {
+      socket.once("data", (chunk) => {
+        hello = chunk;
+        socket.destroy();
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      await expect(fetchUpstream(`https://127.0.0.1:${port}/v1/messages`, init)).rejects.toThrow();
+      // The ALPN extension lists length-prefixed protocol names in the ClientHello.
+      expect(hello?.includes(Buffer.from("\x08http/1.1", "latin1"))).toBe(true);
+      expect(hello?.includes(Buffer.from("\x02h2", "latin1"))).toBe(false);
     } finally {
       server.close();
     }
