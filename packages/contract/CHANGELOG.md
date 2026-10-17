@@ -1,5 +1,17 @@
 # @serovaai/ficta-contract
 
+## 0.4.0
+
+### Minor Changes
+
+- [#133](https://github.com/SerovaAI/ficta/pull/133) [`48f308b`](https://github.com/SerovaAI/ficta/commit/48f308b50a264e73c77eb2a2b98088225a160fe6) Thanks [@steflsd](https://github.com/steflsd)! - Response schemas no longer reject unknown fields, so an older client keeps working when a newer engine adds response fields; breaking changes still bump the control protocol version. Config-edit and trace-capture request inputs stay strict.
+
+### Patch Changes
+
+- [#130](https://github.com/SerovaAI/ficta/pull/130) [`75680de`](https://github.com/SerovaAI/ficta/commit/75680de7b88efbf22abee6c172ea3f1a90655c86) Thanks [@steflsd](https://github.com/steflsd)! - Surface the `restore_prose` policy in the operator-facing read surfaces: `ficta doctor` now reports it (and flags the default `all`, which leaves registry secrets rehydrated into assistant text, mirroring the existing `restore_into_tools=all` warning), and the `/__ficta/config` posture includes `protection.restoreProse`. Read-only visibility only — it is not added to the Gateway admin editable keys; set it via `restore_prose` / `FICTA_RESTORE_PROSE`.
+- Updated dependencies [[`ea2935c`](https://github.com/SerovaAI/ficta/commit/ea2935c820b8024cd43185b23fbbed65da5ae25e), [`f635717`](https://github.com/SerovaAI/ficta/commit/f63571743455136785c2d41c558cb46f840a73a7), [`f635717`](https://github.com/SerovaAI/ficta/commit/f63571743455136785c2d41c558cb46f840a73a7), [`a70e340`](https://github.com/SerovaAI/ficta/commit/a70e34099932cdd2c369f8f4af323f85c4833ff4), [`c443347`](https://github.com/SerovaAI/ficta/commit/c443347c0ab04a1f77bc6736027d0a80c0dce351), [`75680de`](https://github.com/SerovaAI/ficta/commit/75680de7b88efbf22abee6c172ea3f1a90655c86)]:
+  - @serovaai/ficta-protocol@0.10.0
+
 ## 0.3.0
 
 ### Minor Changes
