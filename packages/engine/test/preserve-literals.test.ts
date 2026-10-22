@@ -47,11 +47,16 @@ describe("withPreservationInstruction", () => {
     expect(out.messages[1]).toMatchObject({ role: "user", content: "hi" });
   });
 
-  it("appends to an anthropic string `system`", () => {
-    const body = JSON.stringify({ system: "You are helpful.", messages: [] });
+  // Regression: subscription (OAuth) requests from Agent SDK callers (e.g. the security-guidance
+  // review hook) must carry the SDK identity prompt verbatim; editing the string gets a bare 429.
+  it("keeps an anthropic string `system` verbatim as its own first block", () => {
+    const sdkPrompt = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
+    const body = JSON.stringify({ system: sdkPrompt, messages: [] });
     const out = JSON.parse(withPreservationInstruction(body, "anthropic", SURR));
-    expect(out.system.startsWith("You are helpful.")).toBe(true);
-    expect(out.system.endsWith(buildPreservationInstruction(SURR))).toBe(true);
+    expect(out.system).toEqual([
+      { type: "text", text: sdkPrompt },
+      { type: "text", text: buildPreservationInstruction(SURR) },
+    ]);
   });
 
   it("appends a text block to an anthropic array `system`", () => {

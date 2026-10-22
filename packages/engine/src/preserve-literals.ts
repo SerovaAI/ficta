@@ -69,15 +69,21 @@ export function withPreservationInstruction(body: string, wire: Wire, surrogates
       break;
     }
     case "anthropic": {
-      // Anthropic `system` is a string or an array of content blocks; APPEND in whichever shape is
-      // present. Never prepend: Claude Code subscription (OAuth) traffic carries an
-      // `x-anthropic-billing-header: …` block as `system[0]`, and api.anthropic.com rejects requests
-      // where that block is displaced with a bare `429 rate_limit_error "Error"` on every retry.
-      // Appending also keeps the caller's cached system prefix (its `cache_control` breakpoints)
-      // byte-identical, so a redacted turn no longer forces a full prompt-cache miss.
+      // Anthropic `system` is a string or an array of content blocks; APPEND a new text block and
+      // never change the caller's own text. Subscription (OAuth) traffic is checked against it:
+      // Claude Code sends an `x-anthropic-billing-header: …` block as `system[0]`, and Agent SDK
+      // callers send the exact SDK identity prompt as a plain string. api.anthropic.com rejects a
+      // displaced or edited prompt with a bare `429 rate_limit_error "Error"` on every retry, so a
+      // non-empty string becomes its own first block, unchanged. Appending also keeps the caller's
+      // cached system prefix (its `cache_control` breakpoints) byte-identical.
       const existing = obj.system;
       if (typeof existing === "string") {
-        obj.system = existing ? `${existing}\n\n${instruction}` : instruction;
+        obj.system = existing
+          ? [
+              { type: "text", text: existing },
+              { type: "text", text: instruction },
+            ]
+          : instruction;
       } else if (Array.isArray(existing)) {
         obj.system = [...existing, { type: "text", text: instruction }];
       } else {
