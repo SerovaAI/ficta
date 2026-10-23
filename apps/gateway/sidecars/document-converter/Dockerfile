@@ -28,8 +28,12 @@ RUN apt-get update \
 WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py signature_probe.py test_signature_probe.py test_render.py ./
-RUN python -m unittest -v test_signature_probe.py test_render.py
+COPY app.py signature_probe.py test_convert.py test_signature_probe.py test_render.py ./
+RUN python -m unittest -v test_convert.py test_signature_probe.py test_render.py
+
+# Parsers run on attacker-controllable uploads: never as root.
+RUN useradd --system --uid 10001 --home-dir /tmp --shell /usr/sbin/nologin converter
+USER converter
 
 ENV CONVERTER_BACKEND=markitdown
 ENV RENDER_BACKEND=pandoc

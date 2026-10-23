@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { scopeFromAuth } from "../../lib/auth/guards.server";
 import { getActiveProvider } from "../../lib/auth/provider.server";
 import { DocumentConverterUnavailableError, getConverter } from "../../lib/documents/converter.server";
+import { sniffExtractableDocument, withKindExtension } from "../../lib/documents/sniff";
 import { MAX_DOCUMENT_BYTES } from "../../lib/file-attachments";
 
 /**
@@ -11,7 +12,9 @@ import { MAX_DOCUMENT_BYTES } from "../../lib/file-attachments";
  * to the model or persist anything; the raw bytes live only for the duration of the conversion call.
  *
  * This is the app's first server-side binary path (chat is all client-side text inlining), hence the
- * explicit size cap here rather than relying on the composer's client-side check alone.
+ * explicit size cap here rather than relying on the composer's client-side check alone. Uploads are
+ * attacker-controllable (counterparty documents), so the type is decided from the bytes: only PDF and
+ * DOCX reach the converter, under a name whose extension matches what the bytes are.
  *
  * Unlike /api/chat (whose SSE client only reads `statusText`), this route is called with plain `fetch`,
  * so errors return a JSON `{ error }` body the composer surfaces as an upload warning. Conversion failure
@@ -27,6 +30,13 @@ export const Route = createFileRoute("/api/extract")({
         const scope = scopeFromAuth(auth);
         if (auth.requiresAuth && !scope) return json(401, { error: "Sign in to attach documents." });
 
+        // Refuse an oversized declared body before buffering it; the per-file check below stays
+        // authoritative (chunked uploads carry no content-length). The slack covers multipart framing.
+        const declaredBytes = Number(request.headers.get("content-length"));
+        if (Number.isFinite(declaredBytes) && declaredBytes > MAX_DOCUMENT_BYTES + MULTIPART_SLACK_BYTES) {
+          return json(413, { error: TOO_LARGE });
+        }
+
         let file: File;
         try {
           const form = await request.formData();
@@ -41,19 +51,28 @@ export const Route = createFileRoute("/api/extract")({
 
         if (file.size === 0) return json(400, { error: "That file is empty." });
         if (file.size > MAX_DOCUMENT_BYTES) {
-          return json(413, { error: "That document is too large to extract. Split it and try again." });
+          return json(413, { error: TOO_LARGE });
         }
+
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const kind = sniffExtractableDocument(bytes);
+        if (!kind) return json(415, { error: UNSUPPORTED });
 
         let markdown: string;
         try {
-          const bytes = new Uint8Array(await file.arrayBuffer());
           const result = await getConverter().toMarkdown({
             bytes,
-            filename: file.name || "document",
-            contentType: file.type || "application/octet-stream",
+            filename: withKindExtension(file.name || "document", kind),
+            contentType: kind === "pdf" ? "application/pdf" : DOCX_MIME,
           });
           markdown = result.markdown.trim();
         } catch (err) {
+          // The sidecar re-checks the container (e.g. a ZIP that is not a DOCX, or one that inflates past
+          // its limit) and answers 415/413; those are the user's file, not an outage.
+          if (err instanceof DocumentConverterUnavailableError && err.reason === "http_error") {
+            if (err.detail === "415") return json(415, { error: UNSUPPORTED });
+            if (err.detail === "413") return json(413, { error: TOO_LARGE });
+          }
           if (err instanceof DocumentConverterUnavailableError) {
             const status = err.reason === "timeout" ? 504 : 502;
             return json(status, { error: "Document extraction is unavailable right now. Paste the text instead." });
@@ -74,6 +93,11 @@ export const Route = createFileRoute("/api/extract")({
     },
   },
 });
+
+const MULTIPART_SLACK_BYTES = 64 * 1024;
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const TOO_LARGE = "That document is too large to extract. Split it and try again.";
+const UNSUPPORTED = "Only PDF and Word (.docx) documents can be attached. Save other formats as PDF or .docx first.";
 
 function json(status: number, body: Record<string, unknown>): Response {
   return new Response(JSON.stringify(body), {

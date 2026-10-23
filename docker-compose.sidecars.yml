@@ -30,6 +30,13 @@ services:
       - "127.0.0.1:5003:5003"
     environment:
       CONVERTER_BACKEND: ${FICTA_DOC_CONVERTER_BACKEND:-markitdown}
+    # Parses attacker-controllable uploads: cap memory/processes so a decompression or parser blowup
+    # stays inside the container instead of starving Postgres and the Gateway on the same host. The
+    # docling backend (torch + models) needs a larger FICTA_DOC_CONVERTER_MEM_LIMIT.
+    mem_limit: ${FICTA_DOC_CONVERTER_MEM_LIMIT:-2g}
+    pids_limit: 256
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     healthcheck:
       test:
         [

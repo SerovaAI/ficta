@@ -15,8 +15,9 @@ export const MAX_TEXT_ATTACHMENT_BYTES = 512 * 1024;
 export const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
 
 /** Formats the browser can't read as text; they go through /api/extract to become Markdown first. */
-const EXTRACTABLE_DOCUMENT_EXTENSIONS = new Set([".pdf", ".doc", ".docx"]);
-const EXTRACTABLE_DOCUMENT_MIME_PARTS = ["pdf", "msword", "wordprocessingml"];
+// Legacy binary .doc is not listed: neither converter backend reads it (save it as .docx).
+const EXTRACTABLE_DOCUMENT_EXTENSIONS = new Set([".pdf", ".docx"]);
+const EXTRACTABLE_DOCUMENT_MIME_PARTS = ["pdf", "wordprocessingml"];
 
 const TEXT_EXTENSIONS = new Set([
   ".bash",
@@ -84,13 +85,12 @@ export const ATTACHMENT_ACCEPT = [
   ".dockerfile",
   ".gitignore",
   ".pdf",
-  ".doc",
   ".docx",
   "text/*",
   ...TEXT_MIME_TYPES,
 ].join(",");
 
-/** A PDF/DOC/DOCX that must be converted to Markdown (via /api/extract) before it can be attached. */
+/** A PDF/DOCX that must be converted to Markdown (via /api/extract) before it can be attached. */
 export function needsExtraction(file: File): boolean {
   const ext = extensionOf(file.name);
   const mime = file.type.toLowerCase();

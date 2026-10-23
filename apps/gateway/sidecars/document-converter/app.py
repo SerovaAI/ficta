@@ -27,6 +27,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import zipfile
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, Response
@@ -37,6 +38,21 @@ RENDER_BACKEND = os.environ.get("RENDER_BACKEND", "pandoc").strip().lower()
 RENDER_REFERENCE_DOCX = os.environ.get("RENDER_REFERENCE_DOCX", "").strip()
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+# Uploads are attacker-controllable (counterparty documents). Only PDF and DOCX are converted, decided
+# from the bytes, and a DOCX's declared uncompressed size is bounded before any parser inflates it
+# (Python's zipfile stops reading an entry at its declared size, so the declaration is what counts).
+MAX_UNCOMPRESSED_BYTES = int(os.environ.get("CONVERTER_MAX_UNCOMPRESSED_BYTES", str(256 * 1024 * 1024)))
+MAX_ZIP_ENTRIES = int(os.environ.get("CONVERTER_MAX_ZIP_ENTRIES", "10000"))
+PDF_HEADER_WINDOW = 1024  # PDF readers accept the header anywhere in the first 1 KiB
+
+
+class UnsupportedDocument(Exception):
+    """Not a PDF or DOCX (HTTP 415)."""
+
+
+class DocumentTooLarge(Exception):
+    """Inflates past the configured bounds (HTTP 413)."""
 
 app = FastAPI(title="ficta document-converter", version="1.0")
 
@@ -66,12 +82,17 @@ async def convert(file: UploadFile = File(...)) -> JSONResponse:
     if not data:
         raise HTTPException(status_code=400, detail="empty file")
 
-    filename = file.filename or "document"
     try:
-        markdown = _to_markdown(data, filename)
+        ext = _sniff(data)
+    except UnsupportedDocument as exc:
+        raise HTTPException(status_code=415, detail="only PDF and DOCX documents are supported") from exc
+    except DocumentTooLarge as exc:
+        raise HTTPException(status_code=413, detail="document expands past the size limit") from exc
+    try:
+        markdown = _to_markdown(data, ext)
     except Exception as exc:  # noqa: BLE001 — surface a generic 500; details stay server-side
-        # Never echo document bytes back; log server-side only.
-        print(f"conversion failed for {filename!r}: {exc}")
+        # Values-free: the client's filename and the exception text can both carry document content.
+        print(f"conversion failed: {type(exc).__name__}")
         raise HTTPException(status_code=500, detail="conversion failed") from exc
 
     return JSONResponse({"markdown": markdown})
@@ -133,21 +154,43 @@ def _safe_docx_filename(name: str | None) -> str:
     return f"{stem}.docx"
 
 
-def _to_markdown(data: bytes, filename: str) -> str:
+def _sniff(data: bytes) -> str:
+    """The extension the bytes really are (".pdf" or ".docx"); the client's filename is never trusted."""
+    if b"%PDF-" in data[:PDF_HEADER_WINDOW]:
+        return ".pdf"
+    if data.startswith(b"PK\x03\x04"):
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                entries = archive.infolist()
+        except (zipfile.BadZipFile, ValueError) as exc:
+            raise UnsupportedDocument("unreadable zip") from exc
+        if len(entries) > MAX_ZIP_ENTRIES or sum(entry.file_size for entry in entries) > MAX_UNCOMPRESSED_BYTES:
+            raise DocumentTooLarge("zip bounds exceeded")
+        names = {entry.filename for entry in entries}
+        if "[Content_Types].xml" in names and "word/document.xml" in names:
+            return ".docx"
+    raise UnsupportedDocument("not a PDF or DOCX")
+
+
+def _to_markdown(data: bytes, ext: str) -> str:
     if BACKEND == "docling":
-        return _docling_markdown(data, filename)
-    return _markitdown_markdown(data, filename)
+        return _docling_markdown(data, ext)
+    return _markitdown_markdown(data, ext)
 
 
-def _markitdown_markdown(data: bytes, filename: str) -> str:
-    from markitdown import MarkItDown  # imported lazily so a docling-only image needn't install it
+def _markitdown_markdown(data: bytes, ext: str) -> str:
+    # Imported lazily so a docling-only image needn't install it.
+    from markitdown import MarkItDown
+    from markitdown.converters import DocxConverter, PdfConverter
 
-    md = MarkItDown()
-    # markitdown sniffs type from the stream/extension; give it the original name as a hint.
-    stream = io.BytesIO(data)
-    result = md.convert_stream(stream, file_extension=_ext(filename))
+    # Only the two converters the product supports. MarkItDown's built-ins also dispatch on sniffed
+    # content, and include audio transcription (sent to Google's speech API) and archive/office parsers.
+    md = MarkItDown(enable_builtins=False, enable_plugins=False)
+    md.register_converter(PdfConverter())
+    md.register_converter(DocxConverter())
+    result = md.convert_stream(io.BytesIO(data), file_extension=ext)
     markdown = (result.text_content or "").strip()
-    if _ext(filename) != ".pdf":
+    if ext != ".pdf":
         return markdown
 
     # MarkItDown extracts PDF text but ignores embedded signature images. Annotate only when every
@@ -163,18 +206,13 @@ def _markitdown_markdown(data: bytes, filename: str) -> str:
         return markdown
 
 
-def _docling_markdown(data: bytes, filename: str) -> str:
+def _docling_markdown(data: bytes, ext: str) -> str:
     from docling.document_converter import DocumentConverter
 
-    # docling converts from a path; write to a temp file preserving the extension so it detects the format.
-    with tempfile.NamedTemporaryFile(suffix=_ext(filename), delete=True) as tmp:
+    # docling converts from a path; write to a temp file with the sniffed extension so it detects the format.
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=True) as tmp:
         tmp.write(data)
         tmp.flush()
         converter = DocumentConverter()
         result = converter.convert(tmp.name)
         return result.document.export_to_markdown().strip()
-
-
-def _ext(filename: str) -> str:
-    dot = filename.rfind(".")
-    return filename[dot:].lower() if dot != -1 else ""

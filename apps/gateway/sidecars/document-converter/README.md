@@ -65,6 +65,21 @@ export FICTA_DOC_CONVERTER_URL=http://127.0.0.1:5003
 export FICTA_DOC_CONVERTER_BACKEND=markitdown   # informational on the Node side
 ```
 
+## Input gate
+
+Uploads are attacker-controllable (counterparty documents), so `/convert` decides the type from the
+bytes, never the filename: only PDF and DOCX are converted, and anything else gets **415**. A DOCX's
+declared uncompressed size and entry count are checked before any parser inflates it (**413** past
+`CONVERTER_MAX_UNCOMPRESSED_BYTES`, default 256 MiB, or `CONVERTER_MAX_ZIP_ENTRIES`, default 10000).
+MarkItDown runs with its built-ins disabled and only the PDF and DOCX converters registered, and only
+the `docx,pdf` extras are installed — `[all]` would add audio transcription (which calls Google's speech
+API), archive and office parsers. Legacy binary `.doc` is not supported by either backend; save it as
+`.docx`. The Gateway's `/api/extract` applies the same byte check before calling the sidecar.
+
+The container runs as a non-root user; `docker-compose.sidecars.yml` caps it at
+`FICTA_DOC_CONVERTER_MEM_LIMIT` (default `2g`, raise it for docling) and 256 processes, with all
+capabilities dropped. Conversion failures are logged values-free (exception type only).
+
 ## Env (web app side)
 
 - `FICTA_DOC_CONVERTER_URL` — sidecar base URL (default `http://127.0.0.1:5003`).

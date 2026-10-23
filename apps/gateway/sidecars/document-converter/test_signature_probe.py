@@ -191,7 +191,7 @@ class ConverterIntegrationTests(unittest.TestCase):
             patch("markitdown.MarkItDown", return_value=converter),
             patch("signature_probe.annotate_pdf_markdown") as annotate,
         ):
-            markdown = converter_app._markitdown_markdown(b"plain text", "note.txt")
+            markdown = converter_app._markitdown_markdown(b"plain text", ".docx")
 
         self.assertEqual(markdown, "Signature: " + "_" * 12)
         annotate.assert_not_called()
@@ -207,7 +207,7 @@ class ConverterIntegrationTests(unittest.TestCase):
             patch("signature_probe.annotate_pdf_markdown", side_effect=RuntimeError("private content")),
             redirect_stdout(output),
         ):
-            markdown = converter_app._markitdown_markdown(b"pdf bytes", "private-agreement.pdf")
+            markdown = converter_app._markitdown_markdown(b"pdf bytes", ".pdf")
 
         self.assertEqual(markdown, original)
         self.assertIn("RuntimeError", output.getvalue())
