@@ -38,7 +38,7 @@
     "sidecars:update": "node scripts/sidecars.mjs update",
     "check:with-sidecars": "pnpm check",
     "check:sidecar-scripts": "node --test scripts/sidecars.test.mjs",
-    "check:deploy-scripts": "node --test scripts/deploy-surrogate-key.test.mjs"
+    "check:deploy-scripts": "node --test scripts/deploy-surrogate-key.test.mjs scripts/deploy-node-version.test.mjs"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^1.0.1",

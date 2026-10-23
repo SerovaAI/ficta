@@ -42,8 +42,8 @@ tag/commit rather than deploying whatever the checkout happens to be on.
 
 The script is idempotent — re-running it converges the host. It performs, in order:
 
-1. **Host packages** — Docker Engine + compose v2 plugin from Docker's apt repo; Node 22 from
-   NodeSource; corepack-managed pnpm; git.
+1. **Host packages** — Docker Engine + compose v2 plugin from Docker's apt repo; Node 24 (at least the root
+   `engines.node`, currently 24.22.1; an older `/usr/bin/node` is upgraded) from NodeSource; corepack-managed pnpm; git.
 2. **Service user** — a `ficta` system user (home `/var/lib/ficta`, holding `.ficta/config.toml`,
    the surrogate key `.ficta/surrogate.key`, the shared managed-registry file, and PGlite-free
    runtime state).
