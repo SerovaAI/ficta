@@ -10,7 +10,10 @@ REPO_REF="${REPO_REF:-}" # branch, tag, or commit to deploy; empty = the checkou
 FICTA_USER="ficta"
 FICTA_HOME="/var/lib/ficta"
 ENV_DIR="/etc/ficta"
-NODE_MAJOR="${NODE_MAJOR:-22}"
+# Minimum Node for the checkout: keep in sync with the root package.json `engines.node`
+# (scripts/deploy-node-version.test.mjs fails CI on drift). pnpm refuses to install on a mismatch.
+NODE_MIN="24.22.1"
+NODE_MAJOR="${NODE_MAJOR:-${NODE_MIN%%.*}}"
 
 log() { printf '\n==> %s\n' "$*"; }
 die() { printf 'install.sh: %s\n' "$*" >&2; exit 1; }
@@ -40,8 +43,12 @@ fi
 docker compose version >/dev/null || die "docker compose v2 plugin missing"
 systemctl enable --now docker
 
-if ! command -v node >/dev/null || [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]; then
-  log "Node ${NODE_MAJOR}.x (NodeSource apt repo)"
+# Check /usr/bin/node specifically: that is what ficta-gateway.service runs, so a newer node earlier
+# on root's PATH (nvm, a tarball) must not satisfy the check.
+system_node_version() { [ -x /usr/bin/node ] && /usr/bin/node -p process.versions.node 2>/dev/null; }
+NODE_VERSION="$(system_node_version || true)"
+if [ -z "$NODE_VERSION" ] || ! dpkg --compare-versions "$NODE_VERSION" ge "$NODE_MIN"; then
+  log "Node ${NODE_MAJOR}.x (NodeSource apt repo; need >= ${NODE_MIN}, found ${NODE_VERSION:-none})"
   # Configure the repo directly instead of piping NodeSource's bootstrap script into root bash;
   # apt verifies package signatures against this key from here on.
   install -m 0755 -d /etc/apt/keyrings
@@ -52,8 +59,11 @@ if ! command -v node >/dev/null || [ "$(node -p 'process.versions.node.split("."
     > /etc/apt/sources.list.d/nodesource.list
   apt-get update -q
   apt-get install -y -q nodejs
+  NODE_VERSION="$(system_node_version || true)"
+  dpkg --compare-versions "${NODE_VERSION:-0}" ge "$NODE_MIN" ||
+    die "/usr/bin/node is ${NODE_VERSION:-missing} after install; need >= ${NODE_MIN} (check NODE_MAJOR)"
 else
-  log "Node already installed: $(node --version)"
+  log "Node already installed: v${NODE_VERSION}"
 fi
 
 log "pnpm via corepack"
