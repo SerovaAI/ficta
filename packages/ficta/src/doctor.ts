@@ -8,6 +8,7 @@ import { detectionFailClosed } from "./engine-env.js";
 import { globalDisablePath, isGloballyDisabled } from "./global-disable.js";
 import { defaultShimDir, findExecutable } from "./install.js";
 import type { LogLevel } from "./log-level.js";
+import { describeRetention } from "./log-retention.js";
 import { codexUsesChatgptAuth } from "./plugins/agents.js";
 import {
   type AgentIntegration,
@@ -48,6 +49,7 @@ export interface DoctorReport {
     traceAudit: boolean;
     /** FICTA_DEV_TRACE: agent launches trace every request with raw-value audit. */
     devTrace: boolean;
+    logRetention: string;
     redactPaths: boolean;
     requireRegistry: boolean;
     globallyDisabled: boolean;
@@ -246,6 +248,7 @@ export async function collectDoctorReport(opts: DoctorOptions = {}): Promise<Doc
       logBodies: posture.transport.logBodies,
       traceAudit: cfg.traceAudit,
       devTrace: cfg.devTrace,
+      logRetention: describeRetention(cfg.logRetention),
       redactPaths: posture.protection.redactPaths,
       requireRegistry: posture.protection.requireRegistry,
       globallyDisabled,
@@ -336,6 +339,7 @@ export function renderDoctorReport(report: DoctorReport): string {
   lines.push("  ✓ raw body logs: off (runtime admin control)");
   lines.push(`  ${report.config.traceAudit ? "!" : "✓"} raw value audit: ${report.config.traceAudit ? "ON" : "off"}`);
   if (report.config.devTrace) lines.push("  ! dev trace: ON — agent launches capture every request with raw values");
+  lines.push(`  - log retention: ${report.config.logRetention} (ficta logs)`);
   lines.push(
     `  ${report.config.redactPaths ? "!" : "-"} path-like tokens: ${
       report.config.redactPaths ? "redacted on all surfaces" : "redacted in headers, preserved in body/query"

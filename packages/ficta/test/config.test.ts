@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { composeLogDir, loadConfig, upstreamPolicyIssue } from "../src/config.js";
+import { composeLogDir, composeLogRoot, loadConfig, upstreamPolicyIssue } from "../src/config.js";
 import { defaultLogDir } from "../src/defaults.js";
 import { configPath, readUserConfig, writeUserConfig } from "../src/user-config.js";
 
@@ -76,6 +76,41 @@ describe("config hardening", () => {
 
     process.env.FICTA_PRESERVE_LITERALS = "1";
     expect(loadConfig().preserveLiterals).toBe(true);
+  });
+
+  it("defaults log retention to 14 days, 1 GiB and 24 h traces, with 0 disabling a limit", () => {
+    const saved = ["FICTA_LOG_RETAIN_DAYS", "FICTA_LOG_MAX_TOTAL_BYTES", "FICTA_LOG_TRACE_RETAIN_HOURS"].map(
+      (key) => [key, process.env[key]] as const,
+    );
+    try {
+      for (const [key] of saved) delete process.env[key];
+      expect(loadConfig().logRetention).toEqual({
+        maxAgeMs: 14 * 86_400_000,
+        maxTotalBytes: 1024 * 1024 * 1024,
+        traceMaxAgeMs: 24 * 3_600_000,
+      });
+
+      process.env.FICTA_LOG_RETAIN_DAYS = "0";
+      process.env.FICTA_LOG_MAX_TOTAL_BYTES = "0";
+      process.env.FICTA_LOG_TRACE_RETAIN_HOURS = "2";
+      expect(loadConfig().logRetention).toEqual({ traceMaxAgeMs: 2 * 3_600_000 });
+
+      process.env.FICTA_LOG_RETAIN_DAYS = "-3";
+      expect(loadConfig().logRetention.maxAgeMs).toBe(14 * 86_400_000);
+    } finally {
+      for (const [key, value] of saved) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
+  it("prunes from the log root, or from an explicit log dir that bypasses the role split", () => {
+    expect(composeLogRoot({ explicitFromConfig: false, root: "/r" })).toBe("/r");
+    expect(composeLogRoot({ explicitFromConfig: false })).toBe(defaultLogDir());
+    expect(composeLogRoot({ explicit: "/exact", explicitFromConfig: false, root: "/r" })).toBe("/exact");
+    // A neutral legacy log_dir from config.toml does not pin the layout, so the root still applies.
+    expect(composeLogRoot({ explicit: defaultLogDir(), explicitFromConfig: true, root: "/r" })).toBe("/r");
   });
 
   it("treats FICTA_TRACE_AUDIT as a capability independent of log verbosity", () => {

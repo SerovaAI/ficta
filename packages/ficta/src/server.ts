@@ -2382,4 +2382,7 @@ if (isMain) {
   };
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
+  const { maybePruneLogs } = await import("./log-retention.js");
+  const cfg = loadConfig();
+  void maybePruneLogs(cfg.logRoot, cfg.logRetention);
 }
