@@ -27,6 +27,10 @@ export interface Config {
   logLevel: LogLevel;
   logBodies: boolean;
   traceAudit: boolean;
+  /** Dev/debug opt-in (FICTA_DEV_TRACE): agent launches capture a full trace of every request. */
+  devTrace: boolean;
+  /** Write structured logs to ficta.log only, never stderr (set by the agent wrapper under devTrace). */
+  logFileOnly: boolean;
   logMaxBytes: number;
   failClosed: boolean;
   preserveLiterals: boolean;
@@ -57,6 +61,8 @@ export function loadConfig(): Config {
     // Audit sidecars remain an operator capability, but are written only while the runtime grant and
     // per-request selector are both active.
     traceAudit: envFlag(process.env.FICTA_TRACE_AUDIT),
+    devTrace: envFlag(process.env.FICTA_DEV_TRACE),
+    logFileOnly: envFlag(process.env.FICTA_LOG_FILE_ONLY),
     logMaxBytes: boundedInt(process.env.FICTA_LOG_MAX_BYTES, DEFAULT_LOG_MAX_BYTES, 1024, 16 * 1024 * 1024),
     // Privacy boundary: refuse to forward if a registered value survived redaction. Default ON.
     // FICTA_FAIL_CLOSED=0 to fall back to forwarding (lab/debug only).

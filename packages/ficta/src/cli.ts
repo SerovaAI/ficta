@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sanitizeAgentEnv } from "./child-env.js";
 import { applyRuntimeEnvDefaults } from "./defaults.js";
-import { detectorFailClosed } from "@serovaai/ficta-engine";
+import { detectorFailClosed, envFlag } from "@serovaai/ficta-engine";
 import { detectionFailClosed, engineConfigFromEnv, surrogateStyle } from "./engine-env.js";
 import { isGloballyDisabled, setGlobalDisabled } from "./global-disable.js";
 import { defaultShimDir, findExecutable, installShims, uninstallShims } from "./install.js";
@@ -226,6 +226,17 @@ process.env.FICTA_LOG_ROLE ??= `agents/${agent.command}/${logInstanceId}`;
 // Sensible defaults BEFORE the proxy starts. logger.ts initializes lazily, so this level is captured
 // before any request-time proxy logs are emitted.
 applyRuntimeEnvDefaults(process.env);
+// FICTA_DEV_TRACE (dev/debug opt-in): full trace of every request — raw bodies, restored bodies and
+// raw-value audit sidecars under this instance's log dir — plus a debug ficta.log. Logs go to the
+// file only so the agent TUI stays clean. The capture files hold real protected values.
+const devTrace = envFlag(process.env.FICTA_DEV_TRACE); // config.toml [logging] dev_trace is merged by now
+if (devTrace) {
+  process.env.FICTA_LOG_LEVEL ??= "debug";
+  process.env.FICTA_LOG_FILE_ONLY = "1";
+  process.env.FICTA_TRACE_AUDIT ??= "1";
+  // Claude Code request bodies routinely exceed the 256 KiB default; a truncated capture hides the turn.
+  process.env.FICTA_LOG_MAX_BYTES ??= String(16 * 1024 * 1024);
+}
 process.env.FICTA_LOG_LEVEL ??= "silent"; // keep the terminal clean for the agent unless explicitly overridden
 // The embedded proxy now enforces strict registry readiness at request time too. Carry the CLI's
 // one-run escape hatch into that shared runtime policy so --allow-empty keeps its documented meaning.
@@ -292,6 +303,7 @@ const proxy = await startProxy({
   port: 0,
   defaultScopeKey: `agent:${agent.command}:${logInstanceId}`,
   launchToken,
+  traceAllRequests: devTrace,
 });
 const base = `http://127.0.0.1:${proxy.port}/__ficta_l/${launchToken}`;
 // For display only — the banner shows the origin, never the token-bearing path.
@@ -422,6 +434,7 @@ function printHelp(exitCode: number): never {
       ["FICTA_DISABLE=1", "Bypass ficta for one agent launch"],
       ["FICTA_LOG_LEVEL=<level>", "silent|error|warn|info|debug|trace (structured log verbosity)"],
       ["FICTA_TRACE_AUDIT=1", "With runtime trace capture, also write raw protected-value audit sidecars"],
+      ["FICTA_DEV_TRACE=1", "Dev/debug: trace every agent request (raw values!) and log to ficta.log"],
       ["FICTA_REQUIRE_REGISTRY=1", "Block provider requests and agent launch until the registry is ready"],
     ]),
     "",

@@ -770,6 +770,83 @@ describe("proxy hardening", () => {
     }
   });
 
+  it("captures every request without the selector when started with traceAllRequests", async () => {
+    const originalEnv = {
+      FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,
+      FICTA_LOG_LEVEL: process.env.FICTA_LOG_LEVEL,
+      FICTA_TRACE_AUDIT: process.env.FICTA_TRACE_AUDIT,
+      FICTA_LOG_DIR: process.env.FICTA_LOG_DIR,
+      FICTA_SURROGATE_KEY: process.env.FICTA_SURROGATE_KEY,
+    };
+
+    const fixturePlugin: RegistrySourcePlugin = {
+      kind: "registry-source",
+      name: "trace-all-fixture",
+      config: { bindings: [], sections: [], envDefaults: {} },
+      setup: { registrySources: () => [] },
+      discover: () => [],
+      loadValues: () => [
+        { name: "PROOF_SECRET", value: PROOF_SECRET, source: "fixture", kind: "secret", confidence: "exact" },
+      ],
+    };
+
+    const upstream = createServer((req, res) => {
+      req.resume();
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "ok" } }] }));
+      });
+    });
+
+    let proxy: Awaited<ReturnType<(typeof import("../src/server.js"))["startProxy"]>> | undefined;
+    try {
+      vi.resetModules();
+      const upstreamPort = await listen(upstream);
+      process.env.FICTA_UPSTREAM = `http://127.0.0.1:${upstreamPort}`;
+      process.env.FICTA_LOG_LEVEL = "silent";
+      process.env.FICTA_TRACE_AUDIT = "1";
+      process.env.FICTA_LOG_DIR = mkdtempSync(join(tmpdir(), "ficta-trace-all-"));
+      process.env.FICTA_SURROGATE_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+      const { startProxy } = await import("../src/server.js");
+      proxy = await startProxy({ port: 0, plugins: [fixturePlugin], traceAllRequests: true });
+      const url = `http://127.0.0.1:${proxy.port}/v1/chat/completions`;
+
+      async function send(traceCapture?: "0" | "1"): Promise<void> {
+        const headers: Record<string, string> = { "content-type": "application/json" };
+        if (traceCapture !== undefined) headers[FICTA_TRACE_CAPTURE_HEADER] = traceCapture;
+        const res = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ model: "gpt-5-mini", messages: [{ role: "user", content: PROOF_SECRET }] }),
+        });
+        expect(res.status).toBe(200);
+        await res.text();
+      }
+
+      await send();
+      await send("0");
+      await setRuntimeTraceCapture(proxy.port, false);
+      await send();
+
+      const runDir = onlyCaptureRunDir(proxy.protectionStats().path);
+      const files = await waitForFiles(runDir, (names) => names.includes("res-0003.meta.json"));
+      expect(files).toContain("req-0001.json");
+      expect(files).toContain("audit-0001.trace.json");
+      expect(files).not.toContain("req-0002.json");
+      expect(files).not.toContain("audit-0002.trace.json");
+      expect(files).not.toContain("req-0003.json");
+    } finally {
+      proxy?.close();
+      await close(upstream);
+      for (const [k, v] of Object.entries(originalEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      vi.resetModules();
+    }
+  });
+
   it("writes trace audit for query redaction before an upstream-policy block", async () => {
     const originalEnv = {
       FICTA_UPSTREAM: process.env.FICTA_UPSTREAM,
