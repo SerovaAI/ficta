@@ -137,6 +137,12 @@ export interface StartProxyOptions {
    * the standalone/multi-tenant proxy, which gates on caller scope instead.
    */
   launchToken?: string;
+  /**
+   * Dev/debug only (the CLI's FICTA_DEV_TRACE): start with runtime trace capture on and capture
+   * every request without the per-request `x-ficta-trace-capture: 1` selector (a request can still
+   * opt out with `0`). Meant for a dedicated single-agent proxy; never set it on a shared proxy.
+   */
+  traceAllRequests?: boolean;
 }
 
 /** Start the redaction proxy. Returns the bound port + a handle to close it. */
@@ -171,7 +177,8 @@ export async function startProxy(opts: StartProxyOptions = {}): Promise<ProxyHan
     egressProofs: new Map<string, EgressProof>(),
     defaultScopeKey: normalizeScopeKey(opts.defaultScopeKey),
     launchToken: opts.launchToken || undefined,
-    runtimeTraceCapture: { enabled: false },
+    runtimeTraceCapture: { enabled: opts.traceAllRequests === true },
+    traceAllRequests: opts.traceAllRequests === true,
     controlHandler: createControlHandler(engine, stats, protectionTickets),
   };
   const app = new Hono<{ Bindings: HttpBindings }>();
@@ -195,6 +202,8 @@ interface ProxyState {
   launchToken: string | undefined;
   /** Toggled at runtime by a loopback administrator through FICTA_TRACE_CAPTURE_PATH. */
   runtimeTraceCapture: { enabled: boolean };
+  /** Capture every request without the per-request selector (see StartProxyOptions). */
+  traceAllRequests: boolean;
   controlHandler: ReturnType<typeof createControlHandler>;
 }
 
@@ -645,7 +654,12 @@ function beginProtectedRequest(
   const requestedProtectionTicket = c.req.header(FICTA_PROTECTION_TICKET_HEADER)?.trim();
   const protect = engine.protecting || Boolean(requestedProtectionTicket);
   const wire = wireOf(url.pathname);
-  const traceCapture = traceCaptureDecisionFrom(c, state.runtimeTraceCapture.enabled, cfg.traceAudit);
+  const traceCapture = traceCaptureDecisionFrom(
+    c,
+    state.runtimeTraceCapture.enabled,
+    cfg.traceAudit,
+    state.traceAllRequests,
+  );
   const restoreHighlightMarkers =
     c.req.header(FICTA_RESTORE_HIGHLIGHT_HEADER) === "1"
       ? {
@@ -1429,13 +1443,15 @@ function traceCaptureDecisionFrom(
   c: Context,
   globallyEnabled: boolean,
   valueAuditEnabled: boolean,
+  requestedByDefault = false,
 ): {
   globalEnabled: boolean;
   requestedForChat: boolean;
   bodyLogged: boolean;
   valueAuditLogged: boolean;
 } {
-  const requestedForChat = c.req.header(FICTA_TRACE_CAPTURE_HEADER)?.trim() === "1";
+  const selector = c.req.header(FICTA_TRACE_CAPTURE_HEADER)?.trim();
+  const requestedForChat = selector === "1" || (requestedByDefault && selector !== "0");
   const bodyLogged = globallyEnabled && requestedForChat;
   return {
     globalEnabled: globallyEnabled,

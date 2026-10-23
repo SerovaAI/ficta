@@ -46,6 +46,8 @@ export interface DoctorReport {
     logLevel: LogLevel;
     logBodies: boolean;
     traceAudit: boolean;
+    /** FICTA_DEV_TRACE: agent launches trace every request with raw-value audit. */
+    devTrace: boolean;
     redactPaths: boolean;
     requireRegistry: boolean;
     globallyDisabled: boolean;
@@ -156,6 +158,13 @@ export async function collectDoctorReport(opts: DoctorOptions = {}): Promise<Doc
       message: "FICTA_TRACE_AUDIT=1 is set; raw protected values may be written to audit sidecars",
     });
   }
+  if (cfg.devTrace) {
+    issues.push({
+      severity: "warning",
+      message:
+        "FICTA_DEV_TRACE=1 is set; agent launches write raw request bodies and protected values to their log dir",
+    });
+  }
   const path = configPath();
   const surrogateKey = doctorSurrogateKey(path);
   if (surrogateKey.status === "invalid") {
@@ -236,6 +245,7 @@ export async function collectDoctorReport(opts: DoctorOptions = {}): Promise<Doc
       logLevel: posture.transport.logLevel,
       logBodies: posture.transport.logBodies,
       traceAudit: cfg.traceAudit,
+      devTrace: cfg.devTrace,
       redactPaths: posture.protection.redactPaths,
       requireRegistry: posture.protection.requireRegistry,
       globallyDisabled,
@@ -325,6 +335,7 @@ export function renderDoctorReport(report: DoctorReport): string {
   lines.push(`  - log level: ${report.config.logLevel}`);
   lines.push("  ✓ raw body logs: off (runtime admin control)");
   lines.push(`  ${report.config.traceAudit ? "!" : "✓"} raw value audit: ${report.config.traceAudit ? "ON" : "off"}`);
+  if (report.config.devTrace) lines.push("  ! dev trace: ON — agent launches capture every request with raw values");
   lines.push(
     `  ${report.config.redactPaths ? "!" : "-"} path-like tokens: ${
       report.config.redactPaths ? "redacted on all surfaces" : "redacted in headers, preserved in body/query"

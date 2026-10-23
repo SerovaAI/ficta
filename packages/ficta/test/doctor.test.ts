@@ -22,6 +22,7 @@ const ENV_KEYS = [
   "FICTA_FAIL_CLOSED",
   "FICTA_LOG_LEVEL",
   "FICTA_TRACE_AUDIT",
+  "FICTA_DEV_TRACE",
   "FICTA_SURROGATE_KEY",
   "FICTA_SURROGATE_STYLE",
   "FICTA_SURROGATE_KEY_FILE",
@@ -117,6 +118,23 @@ describe("ficta doctor", () => {
       message: "FICTA_TRACE_AUDIT=1 is set; raw protected values may be written to audit sidecars",
     });
     expect(rendered).toContain("raw value audit: ON");
+  });
+
+  it("warns when the dev trace switch is on", async () => {
+    const bin = tempDir("ficta-doctor-bin-");
+    executable(join(bin, "claude"));
+    process.env.PATH = bin;
+    process.env.FICTA_DEV_TRACE = "1";
+
+    const report = await collectDoctorReport({ agent: "claude" });
+
+    expect(report.config.devTrace).toBe(true);
+    expect(renderDoctorReport(report)).toContain("dev trace: ON");
+    expect(report.issues).toContainEqual({
+      severity: "warning",
+      message:
+        "FICTA_DEV_TRACE=1 is set; agent launches write raw request bodies and protected values to their log dir",
+    });
   });
 
   it("reports PII posture per surface: standalone on, agent launches off unless pii.agents", async () => {

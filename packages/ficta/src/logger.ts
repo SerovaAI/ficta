@@ -29,6 +29,8 @@ function buildLogger() {
 
   ensurePrivateDir(cfg.logDir);
   const fileStream = pino.destination({ dest: join(cfg.logDir, "ficta.log"), sync: true });
+  // Agent wrapper under FICTA_DEV_TRACE: verbose logs must not garble the agent TUI, so file only.
+  if (cfg.logFileOnly) return pino({ level, base: undefined }, fileStream);
   const stream = pino.multistream([{ stream: stderrStream }, { stream: fileStream }]);
   return pino({ level, base: undefined }, stream);
 }
