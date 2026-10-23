@@ -1,6 +1,8 @@
-![ficta — a local secret airlock for coding agents](https://raw.githubusercontent.com/SerovaAI/ficta/main/assets/ficta-overview.png)
+<img src="https://raw.githubusercontent.com/SerovaAI/ficta/main/assets/brand/ficta-lockup-on-light.svg" alt="ficta" width="200">
 
 # @serovaai/ficta
+
+**Your coding agent reads your `.env`. Ficta keeps those keys off the provider's servers.**
 
 [Website](https://ficta.sh)
 
@@ -9,15 +11,8 @@ the model provider, replaces registered secret values with deterministic placeho
 leave your machine, and restores them locally on the response — so tools keep seeing those protected
 values while the provider sees surrogates. Optional request-time detectors add best-effort tokenization
 for pasted secret-shaped values and PII; they are a reduction layer, not the exact-match guarantee
-registered secrets receive.
-
-In trusted keyed Gateway chats, structured managed-registry people and organizations use
-context-bound entity-family tokens such as `FICTA_ORG_<entity-tag>_<surface-tag>`. Registered forms
-and uniquely anchored, high-confidence detected organization aliases share the entity tag while each
-exact replaced surface keeps its own reversible surface tag. The token discloses only the coarse
-`ORG`/`PERSON` type and within-chat sameness. Literal registry entries, env/Doppler values, explicit
-user selections, probabilistic, ambiguous, or detector-only mentions, headers, queries, and unkeyed
-agent traffic retain the configured opaque or typed literal style.
+registered secrets receive. Structured Gateway entity tokens are described in the
+[threat model](./docs/threat-model.md).
 
 For the full pitch, threat model, and what's in/out of scope, see the
 [project overview](https://ficta.sh) and

@@ -4,9 +4,9 @@ import "@fontsource/fragment-mono";
 import type * as React from "react";
 import styles from "@/styles.css?url";
 
-const SITE_TITLE = "ficta Gateway — review and redaction for AI chat";
+const SITE_TITLE = "ficta — keep secrets out of AI model traffic";
 const DESCRIPTION =
-  "ficta Gateway is a self-hosted AI workspace that lets teams review registered and detected values before model egress, add anything missed, and replace protected text with local surrogates.";
+  "ficta swaps API keys, credentials, and sensitive values for placeholders before requests reach the model provider, and restores them locally. Free open-source CLI for Claude Code, Codex, and Pi; self-hosted Gateway for teams.";
 const CONTACT_EMAIL = "hello@ficta.sh";
 const CONTACT = `mailto:${CONTACT_EMAIL}?subject=ficta%20Gateway`;
 
@@ -16,7 +16,7 @@ export const Route = createRootRoute({
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { title: SITE_TITLE },
-      { name: "application-name", content: "ficta Gateway" },
+      { name: "application-name", content: "ficta" },
       { name: "description", content: DESCRIPTION },
       { name: "robots", content: "index,follow" },
       { name: "theme-color", content: "#0a0a0c" },
@@ -30,7 +30,7 @@ export const Route = createRootRoute({
       { property: "og:image:height", content: "630" },
       {
         property: "og:image:alt",
-        content: "ficta Gateway — the model sees a token while the real value stays inside your environment.",
+        content: "ficta — the model sees a token while the real value stays on your side.",
       },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: SITE_TITLE },
@@ -38,7 +38,7 @@ export const Route = createRootRoute({
       { name: "twitter:image", content: "https://ficta.sh/og.png" },
       {
         name: "twitter:image:alt",
-        content: "ficta Gateway — the model sees a token while the real value stays inside your environment.",
+        content: "ficta — the model sees a token while the real value stays on your side.",
       },
     ],
     links: [

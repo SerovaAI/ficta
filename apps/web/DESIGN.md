@@ -1,6 +1,6 @@
 ---
 name: ficta site
-description: Dark-only marketing site for ficta Gateway — review and redaction for self-hosted AI chat.
+description: Dark-only marketing site for ficta — the free coding-agent CLI and the self-hosted Gateway for teams.
 colors:
   ink: "oklch(0.165 0.006 264)"
   chalk: "oklch(0.96 0.004 90)"
@@ -109,11 +109,11 @@ components:
 
 **Creative North Star: "The Redaction Stamp"**
 
-The ficta site is a dark, precise marketing surface for ficta Gateway, built around one physical metaphor: the redaction stamp. Near-black ink is the page; a single saturated vermilion is the stamp — it marks the wordmark's brackets, the CTAs, text selection, and the faint radial wash "bleeding in" at the hero's corner. The identity itself is the brand's **Token Wrapper** direction (`assets/brand/`): the wordmark is `[ficta]`, a value wrapped in vermilion brackets — the surrogate it becomes on the wire. Its counterpart is a sparing mint that means a real value is still local: under review before send or restored after return. The page doesn't argue that the mechanism is safe; it shows the real Gateway review, the exact text the model receives, and the boundary's limits.
+The ficta site is a dark, precise marketing surface for both ficta products — the free CLI for coding agents and the self-hosted Gateway for teams — built around one physical metaphor: the redaction stamp. Near-black ink is the page; a single saturated vermilion is the stamp — it marks the wordmark's brackets, the CTAs, text selection, and the faint radial wash "bleeding in" at the hero's corner. The identity itself is the brand's **Token Wrapper** direction (`assets/brand/`): the wordmark is `[ficta]`, a value wrapped in vermilion brackets — the surrogate it becomes on the wire. Its counterpart is a sparing mint that means a real value is still local: under review before send or restored after return. The page doesn't argue that the mechanism is safe; it shows the real Gateway review, the exact text the model receives, and the boundary's limits.
 
 The system is bolder than the ficta product UI (large fluid display type, a focused product demo, atmospheric color washes) but shares its anti-theater DNA. It explicitly rejects cybersecurity theater (padlocks, shields, matrix green, fear copy), flashy AI-SaaS landing grammar (gradient text, glassmorphism, orbs, hero-metric blocks, identical icon-card grids), and generic enterprise-security styling. Expressiveness lives in typography, the stamp, and the interaction between the Values and Model will see views — never in adjectives or security imagery.
 
-Layout is a single scannable page: the Gateway workflow appears first, followed later by the open-source engine's install, GitHub, npm, docs, and threat-model links. Use a 72rem (`max-w-6xl`) container, generous section padding (80px, 112px at desktop), hairline top-borders separating sections instead of background shifts, and content capped at readable measures (`max-w-2xl` intros, `max-w-xl` hero prose). Motion is a single entrance vocabulary — `.animate-rise`, a 14px rise-and-fade on `cubic-bezier(0.22, 1, 0.36, 1)` — gated on `prefers-reduced-motion: no-preference` so the page is fully visible by default and the animation only enhances.
+Layout is a single scannable page: a hero that names the problem and offers two explicit doors (the CLI and Gateway), the shared Swap / Send / Restore mechanism, then the CLI section (install, GitHub, npm, docs), then Gateway, FAQ, and the scope note. Use a 72rem (`max-w-6xl`) container, generous section padding (80px, 112px at desktop), hairline top-borders separating sections instead of background shifts, and content capped at readable measures (`max-w-2xl` intros, `max-w-xl` hero prose). Motion is a single entrance vocabulary — `.animate-rise`, a 14px rise-and-fade on `cubic-bezier(0.22, 1, 0.36, 1)` — gated on `prefers-reduced-motion: no-preference` so the page is fully visible by default and the animation only enhances.
 
 **Key Characteristics:**
 
@@ -166,7 +166,7 @@ A near-monochrome ink field where vermilion is the only voice and mint is the on
 
 ### Hierarchy
 
-- **Display** (600, `clamp(2.5rem, 4.2vw, 3.3rem)`, 0.98, −0.02em): The hero H1 only. Two-line structure with the second line in Muted Chalk ("See what leaves. / Protect what matters."). The cap is sized so each sentence holds a single line inside the hero column at every ≥1024px width — do not raise it without re-measuring the couplet.
+- **Display** (600, `clamp(2.5rem, 4.2vw, 3.3rem)`, 0.98, −0.02em): The hero H1 only. Two-line structure with the second line in Muted Chalk ("AI gets the work. / You keep the keys."). The cap is sized so each sentence holds a single line inside the hero column at every ≥1024px width — do not raise it without re-measuring the couplet.
 - **Headline** (600, `clamp(1.75rem, 3.5vw, 2.5rem)`, 1.25, −0.02em): Section H2s. The ScopeNote uses a quieter `clamp(1.5rem, 3vw, 2rem)`.
 - **Title** (600, `1.5rem`, 1.3, −0.02em): Governance and OSS proof H3s, with the trailing phrase in Muted Chalk. Step titles drop to `1.125rem`/500.
 - **Body** (400, `1rem`, 1.625): Section prose in Muted Chalk. Hero lede runs `1.05rem`. Emphasis inside body is weight-500 Chalk, never color. Keep measures ≤ `max-w-2xl`.
@@ -217,7 +217,7 @@ The system is flat and border-led. Depth comes from three tonal steps (Ink → P
 
 ### Navigation
 
-- **Style:** Sticky header, `60px` tall, Header Veil treatment, wordmark left, text links + one primary sm button right. Nav links are `0.875rem` Muted Chalk transitioning to Chalk on hover; external links append a `14px` arrow-up-right and underline on hover. Gateway, How it works, OSS engine, FAQ, threat model, and GitHub are visible in desktop nav; `Talk to us` remains the only button. Coarse-pointer nav links get 44px minimum targets.
+- **Style:** Sticky header, `60px` tall, Header Veil treatment, wordmark left, text links + one primary sm button right. Nav links are `0.875rem` Muted Chalk transitioning to Chalk on hover; external links append a `14px` arrow-up-right and underline on hover. How it works, Coding agents, Gateway, FAQ, threat model, and GitHub are visible in desktop nav; `Talk to us` remains the only button. Coarse-pointer nav links get 44px minimum targets.
 - **Mobile / Tablet Treatment:** Text nav hides below `lg`; wordmark and the `Talk to us` button remain. No hamburger — the page is single-scroll with anchor sections.
 
 ### Wordmark (signature)
@@ -226,11 +226,11 @@ The Token Wrapper (brand direction 2c, `assets/brand/`): the string `ficta` in F
 
 ### GatewayReviewArt (signature)
 
-The hero demo and the brand argument in one component: a faithful slice of Gateway's pre-send review with an interactive Values / Model will see switch. The Values view uses solid, dashed, and foreground underlines for registry, detected, and user-added protection. The model view replaces those values with Token chips. Any future surface that explains Gateway should show this reviewable transition instead of inventing abstract security diagrams.
+The hero demo and the brand argument in one component: a faithful slice of Gateway's pre-send review with an interactive Values / Model will see switch. When motion is allowed it alternates between the two views every 3.5s so the mechanism is visible without a click; any hover, focus, or tab choice stops the alternation for good. The Values view uses solid, dashed, and foreground underlines for registry, detected, and user-added protection. The model view replaces those values with Token chips. Any future surface that explains Gateway should show this reviewable transition instead of inventing abstract security diagrams.
 
 ### InstallLine
 
-A mono one-liner in a hairline-bordered, `10px`-radius, Panel-60% bar: muted `$` prompt, `npm i -g @serovaai/ficta` in Chalk-90, and a ghost copy button whose success state is a Restored Mint check for 1.6s. If clipboard access fails, the command is selected for manual copy and announced through the live region. It belongs in the OSS proof section, not above the fold.
+A mono one-liner in a hairline-bordered, `10px`-radius, Panel-60% bar: muted `$` prompt, `npm i -g @serovaai/ficta` in Chalk-90, and a ghost copy button whose success state is a Restored Mint check for 1.6s. If clipboard access fails, the command is selected for manual copy and announced through the live region. It belongs in the CLI section, not above the fold; the hero links to it with the "Free CLI for coding agents" button.
 
 ### Resilience
 

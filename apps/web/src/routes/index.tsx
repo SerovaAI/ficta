@@ -15,6 +15,7 @@ const SEROVA = "https://serova.ai";
 const CONTACT_EMAIL = "hello@ficta.sh";
 const CONTACT = `mailto:${CONTACT_EMAIL}?subject=ficta%20Gateway`;
 const COPY_RESET_MS = 1600;
+const HERO_FLIP_MS = 3500;
 
 type CopyStatus = "idle" | "copied" | "manual";
 
@@ -203,8 +204,8 @@ function Home() {
       <main id="main">
         <Hero />
         <HowItWorks />
+        <CliSection />
         <GatewaySection />
-        <OssProof />
         <Faq />
         <ScopeNote />
       </main>
@@ -223,19 +224,19 @@ function SiteHeader() {
             href="#how"
             className="inline-flex items-center transition-colors hover:text-foreground [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
           >
-            Workflow
+            How it works
+          </a>
+          <a
+            href="#cli"
+            className="inline-flex items-center transition-colors hover:text-foreground [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+          >
+            Coding agents
           </a>
           <a
             href="#gateway"
             className="inline-flex items-center transition-colors hover:text-foreground [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
           >
-            Workspace
-          </a>
-          <a
-            href="#oss"
-            className="inline-flex items-center transition-colors hover:text-foreground [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
-          >
-            OSS engine
+            Gateway
           </a>
           <a
             href="#faq"
@@ -269,38 +270,37 @@ function Hero() {
         <div className="min-w-0 animate-rise">
           <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-card/50 py-1 pr-3 pl-2 text-muted-foreground text-xs">
             <span className="inline-block size-1.5 rounded-full bg-restored" />
-            review before send · local restore
+            open source · local restore
           </p>
           <h1 className="font-semibold text-[clamp(2.5rem,4.2vw,3.3rem)] leading-[0.98]">
-            See what leaves. <br />
-            <span className="text-muted-foreground">Protect what matters.</span>
+            AI gets the work. <br />
+            <span className="text-muted-foreground">You keep the keys.</span>
           </h1>
           <p className="mt-6 max-w-xl text-[1.05rem] text-muted-foreground leading-relaxed">
-            ficta Gateway is a self-hosted AI workspace for regulated teams. It marks registered and detected values
-            before model egress, lets users add anything missed, and replaces protected text with local surrogates
-            before the provider sees it.
+            Coding agents and AI chat send whatever they see to the model provider: API keys, credentials, client names.
+            ficta swaps those values for placeholders before the request leaves, and restores the real values locally in
+            the response.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Button asChild size="lg">
-              <a href={CONTACT}>
-                Talk to us
-                <ArrowUpRight className="size-4" />
+              <a href="#cli">
+                <Terminal className="size-4" aria-hidden />
+                Free CLI for coding agents
               </a>
             </Button>
             <Button asChild size="lg" variant="outline">
-              <a href={THREAT_MODEL} target="_blank" rel="noreferrer">
-                Read the threat model
-                <ArrowUpRight className="size-4" />
-              </a>
+              <a href="#gateway">Gateway for teams</a>
             </Button>
           </div>
           <p className="mt-5 text-muted-foreground text-sm">
-            Provider keys stay server-side. Responses are restored inside your environment.{" "}
+            MIT-licensed engine. No account, no telemetry.{" "}
             <a
-              href="#oss"
+              href={THREAT_MODEL}
+              target="_blank"
+              rel="noreferrer"
               className="text-foreground underline decoration-primary/50 underline-offset-4 transition-colors hover:decoration-primary"
             >
-              Inspect the engine →
+              Read the threat model →<span className="sr-only"> (opens in new tab)</span>
             </a>
           </p>
         </div>
@@ -313,11 +313,30 @@ function Hero() {
 /** A faithful, interactive slice of Gateway's pre-send review instead of a generic product screenshot. */
 function GatewayReviewArt() {
   const [mode, setMode] = React.useState<"values" | "model">("values");
+  const [autoplay, setAutoplay] = React.useState(true);
+
+  React.useEffect(() => {
+    if (!autoplay || !window.matchMedia("(prefers-reduced-motion: no-preference)").matches) {
+      return;
+    }
+    const timer = setInterval(() => setMode((m) => (m === "values" ? "model" : "values")), HERO_FLIP_MS);
+    return () => clearInterval(timer);
+  }, [autoplay]);
+
+  const choose = (next: "values" | "model") => {
+    setAutoplay(false);
+    setMode(next);
+  };
+
   return (
     <div className="w-full min-w-0 max-w-full animate-rise [animation-delay:120ms] lg:-mr-10">
       <div className="relative mx-auto w-full max-w-[760px] lg:w-[736px] lg:max-w-none">
         <div aria-hidden className="-z-10 absolute inset-y-8 right-12 left-12 rounded-full bg-primary/8 blur-3xl" />
-        <div className="overflow-hidden rounded-xl bg-card shadow-2xl shadow-black/40">
+        <div
+          className="overflow-hidden rounded-xl bg-card shadow-2xl shadow-black/40"
+          onPointerEnter={() => setAutoplay(false)}
+          onFocusCapture={() => setAutoplay(false)}
+        >
           <div className="flex min-w-0 items-center gap-3 border-border/70 border-b bg-background/35 px-4 py-3">
             <div aria-hidden className="flex gap-1.5">
               <span className="size-2.5 rounded-full border border-border" />
@@ -356,7 +375,7 @@ function GatewayReviewArt() {
                   id="hero-values-tab"
                   aria-selected={mode === "values"}
                   aria-controls="hero-values-panel"
-                  onClick={() => setMode("values")}
+                  onClick={() => choose("values")}
                   className={`min-h-8 rounded-md px-2.5 font-medium text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [@media(pointer:coarse)]:min-h-11 ${mode === "values" ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"}`}
                 >
                   Values
@@ -367,7 +386,7 @@ function GatewayReviewArt() {
                   id="hero-model-tab"
                   aria-selected={mode === "model"}
                   aria-controls="hero-model-panel"
-                  onClick={() => setMode("model")}
+                  onClick={() => choose("model")}
                   className={`min-h-8 rounded-md px-2.5 font-medium text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [@media(pointer:coarse)]:min-h-11 ${mode === "model" ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"}`}
                 >
                   Model will see
@@ -416,7 +435,7 @@ function GatewayReviewArt() {
         </div>
 
         <p className="mt-3 px-1 text-muted-foreground text-xs">
-          Exact matches use solid lines. Best-effort detector matches use dashed lines.
+          ficta Gateway's pre-send review. Exact matches use solid lines; best-effort detector matches use dashed lines.
         </p>
       </div>
     </div>
@@ -434,16 +453,16 @@ function LegendMark({ label, border }: { label: string; border: string }) {
 
 const STEPS = [
   {
-    title: "Review",
-    body: "Registry matches and configured detector matches are marked before any provider request begins.",
+    title: "Swap",
+    body: "Secrets you already manage in .env, Doppler, or the environment are matched exactly. Optional detectors catch pasted keys and PII on a best-effort basis. Each match becomes a FICTA_ placeholder.",
   },
   {
-    title: "Protect",
-    body: "Users can add a missed name, amount, project, code, or clause and inspect the exact text the model will see.",
+    title: "Send",
+    body: "The provider receives placeholders in place of every matched value. If a registered secret would still leave verbatim, the request is blocked instead of sent.",
   },
   {
-    title: "Send and verify",
-    body: "Gateway tokenizes protected values, restores the response locally, and records values-free egress evidence.",
+    title: "Restore",
+    body: "Placeholders in the response are swapped back locally, so your agent or chat reads the real values. Overhead is about 2–3 ms per request.",
   },
 ];
 
@@ -452,10 +471,10 @@ function HowItWorks() {
     <section id="how" className="scroll-mt-16 border-border/60 border-t">
       <div className="mx-auto max-w-6xl px-5 py-20 sm:px-8 lg:py-28">
         <div className="max-w-2xl">
-          <h2 className="font-semibold text-[clamp(1.75rem,3.5vw,2.5rem)] leading-tight">Review. Protect. Send.</h2>
+          <h2 className="font-semibold text-[clamp(1.75rem,3.5vw,2.5rem)] leading-tight">Swap. Send. Restore.</h2>
           <p className="mt-4 text-muted-foreground leading-relaxed">
-            Gateway turns model egress into a visible workflow. Registered values use exact matching; configured
-            detectors remain best effort.
+            The same engine runs in the CLI on your laptop and in Gateway on your servers. The model does the work on
+            placeholders; the mapping back to real values never leaves your side.
           </p>
         </div>
         <ol className="mt-12 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3">
@@ -480,12 +499,20 @@ function GatewaySection() {
       <div className="mx-auto max-w-6xl px-5 py-20 sm:px-8 lg:py-28">
         <div className="grid gap-10 lg:grid-cols-[0.92fr_1.08fr] lg:items-start">
           <div className="max-w-2xl">
+            <p className="mb-4 inline-flex items-center gap-2 font-mono text-muted-foreground text-xs uppercase tracking-widest">
+              ficta Gateway · for teams
+            </p>
             <h2 className="font-semibold text-[clamp(1.75rem,3.5vw,2.5rem)] leading-tight">
-              Protection gets stronger with the team.
+              Give the team AI chat. <span className="text-muted-foreground">See what leaves before it does.</span>
             </h2>
             <p className="mt-4 text-muted-foreground leading-relaxed">
-              Users can protect a phrase for one chat or suggest it for the workspace. Admins approve exact-match
-              policy, publish it to the running proxy, and verify that the same revision is active.
+              Gateway is a self-hosted AI workspace for teams handling client data. Before anything is sent, users see
+              exactly what the model will receive and can protect anything the detectors missed. Provider keys stay
+              server-side, and responses are restored inside your environment.
+            </p>
+            <p className="mt-4 text-muted-foreground leading-relaxed">
+              Catches get stronger with the team: a phrase protected in one chat can be suggested for the workspace,
+              approved by an admin, and published to the running proxy.
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-3">
               <Button asChild>
@@ -562,39 +589,59 @@ function GatewaySection() {
   );
 }
 
-function OssProof() {
+/** What follows the install line; the install command itself is the copyable InstallLine. */
+const CLI_STEPS = [
+  ["ficta setup", "pick secret sources, optionally install shims"],
+  ["claude", "or codex / pi — now routed through ficta"],
+];
+
+function CliSection() {
   return (
-    <section id="oss" className="scroll-mt-16 border-border/60 border-t">
+    <section id="cli" className="scroll-mt-16 border-border/60 border-t">
       <div className="mx-auto grid max-w-6xl gap-10 px-5 py-20 sm:px-8 lg:grid-cols-[0.85fr_1.15fr] lg:py-24">
         <div className="max-w-xl">
+          <p className="mb-4 inline-flex items-center gap-2 font-mono text-muted-foreground text-xs uppercase tracking-widest">
+            ficta CLI · free, MIT
+          </p>
           <h2 className="font-semibold text-[clamp(1.75rem,3.5vw,2.5rem)] leading-tight">
-            Open source where the boundary needs proof.
+            Your agent reads your .env. <span className="text-muted-foreground">The provider doesn't have to.</span>
           </h2>
           <p className="mt-4 text-muted-foreground leading-relaxed">
-            The engine and CLI stay visible because technical evaluators should be able to inspect the redaction path,
-            run it locally, and compare the shipped behavior against the written threat model.
+            Coding agents open config files, print environment variables, and paste logs into the conversation. The
+            ficta CLI runs a local proxy for each agent launch, so keys and credentials are replaced before the request
+            reaches the provider. The agent keeps working with the real values on your machine.
+          </p>
+          <p className="mt-4 text-muted-foreground leading-relaxed">
+            Works with <strong className="font-medium text-foreground">Claude Code</strong>,{" "}
+            <strong className="font-medium text-foreground">Codex</strong>, and{" "}
+            <strong className="font-medium text-foreground">Pi</strong>. IDE agents such as Cursor are not supported:
+            they bypass a custom base URL.
           </p>
         </div>
-        <article className="rounded-xl border border-border bg-card p-7">
+        <article className="min-w-0 rounded-xl border border-border bg-card p-7">
           <div className="flex items-center gap-2.5 text-muted-foreground">
             <Terminal className="size-4 text-foreground" />
-            <span className="font-mono text-xs uppercase tracking-widest">open source · MIT engine</span>
+            <span className="font-mono text-xs uppercase tracking-widest">get started</span>
           </div>
-          <h3 className="mt-4 font-semibold text-2xl">
-            Same redaction core. <span className="text-muted-foreground">Readable, installable, auditable.</span>
-          </h3>
-          <p className="mt-3 text-muted-foreground leading-relaxed">
-            Developers can run the CLI with <strong className="font-medium text-foreground">Claude Code</strong>,{" "}
-            <strong className="font-medium text-foreground">Codex</strong>, and{" "}
-            <strong className="font-medium text-foreground">Pi</strong>. Gateway builds the team workspace around that
-            same local mechanism.
-          </p>
-          <div className="mt-6 max-w-md">
+          <div className="mt-5 max-w-md">
             <InstallLine />
           </div>
-          <ul className="mt-6 grid gap-3 text-sm sm:grid-cols-3">
+          <ol className="mt-5 space-y-2 font-mono text-[0.82rem]">
+            {CLI_STEPS.map(([cmd, note]) => (
+              <li key={cmd} className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="text-foreground/90">
+                  <span aria-hidden className="text-muted-foreground">
+                    ${" "}
+                  </span>
+                  {cmd}
+                </span>
+                <span className="text-muted-foreground"># {note}</span>
+              </li>
+            ))}
+          </ol>
+          <ul className="mt-6 grid gap-3 border-border/60 border-t pt-5 text-sm sm:grid-cols-3">
             {[
-              "Exact-match protection for registered values",
+              "Exact-match protection for secrets you register",
               "Fail-closed if a registered value would leave verbatim",
               "Runs locally per launch, with no account or telemetry",
             ].map((item) => (
@@ -617,6 +664,22 @@ function OssProof() {
 }
 
 const FAQ_ITEMS = [
+  {
+    question: "Does the model still work with placeholders instead of real values?",
+    answer: (
+      <>
+        Yes. The same value always maps to the same placeholder within a session, so the model can still refer to it,
+        reuse it, and reason about it. When the response comes back, placeholders are swapped for the real values
+        locally.
+      </>
+    ),
+  },
+  {
+    question: "Does it slow requests down?",
+    answer: (
+      <>Measured overhead is about 2–3 ms per request at typical sizes, well under 1% of a real provider round trip.</>
+    ),
+  },
   {
     question: "What is exact, and what is best effort?",
     answer: (
@@ -761,7 +824,7 @@ function SiteFooter() {
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-5 py-10 sm:flex-row sm:items-center sm:px-8">
         <div>
           <Wordmark />
-          <p className="mt-2 text-muted-foreground text-sm">Review and redaction for self-hosted model traffic.</p>
+          <p className="mt-2 text-muted-foreground text-sm">Keeps secrets and sensitive values out of model traffic.</p>
         </div>
         <nav className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm sm:ml-auto">
           <ExternalLink href={GITHUB}>GitHub</ExternalLink>

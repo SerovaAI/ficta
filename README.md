@@ -1,210 +1,139 @@
-![Ficta - a local secret airlock for coding agents](assets/ficta-overview.png)
+<p align="center">
+  <a href="https://ficta.sh">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/brand/ficta-lockup.svg">
+      <img src="assets/brand/ficta-lockup-on-light.svg" alt="ficta" width="240">
+    </picture>
+  </a>
+</p>
 
-# Ficta
+<p align="center">
+  <strong>Your coding agent reads your <code>.env</code>. Ficta keeps those keys off the provider's servers.</strong>
+</p>
 
-[Website](https://ficta.sh)
+<p align="center">
+  <a href="https://www.npmjs.com/package/@serovaai/ficta"><img src="https://img.shields.io/npm/v/@serovaai/ficta?color=F1552F&label=npm" alt="npm version"></a>
+  <a href="packages/ficta/LICENSE"><img src="https://img.shields.io/badge/license-MIT-F1552F" alt="MIT license"></a>
+  <a href="packages/ficta/docs/threat-model.md"><img src="https://img.shields.io/badge/threat%20model-published-F1552F" alt="Threat model"></a>
+</p>
 
-Ficta is an open-source local redaction proxy for coding-agent model traffic. It sits between a
-supported CLI agent and the model provider, replaces protected values with deterministic surrogates
-before requests leave your machine, and restores the real values locally on the way back.
+<p align="center">
+  <a href="https://ficta.sh">Website</a> ·
+  <a href="packages/ficta/README.md">Docs</a> ·
+  <a href="packages/ficta/docs/threat-model.md">Threat model</a> ·
+  <a href="apps/gateway/README.md">Gateway for teams</a>
+</p>
 
-The strongest guarantee is exact-match protection for registered secrets you already manage in
-`.env`, process env, or Doppler: if a registered value would be sent verbatim in a surface Ficta
-redacts, Ficta blocks the request instead of forwarding it. Request-time secret-shape detection and
-PII detection are opt-in, best-effort reduction layers; they are not completeness guarantees. The
-exact boundary and deliberate exceptions are scoped in the
-[threat model](packages/ficta/docs/threat-model.md).
+---
 
-Ficta is secret-hygiene and best-effort PII-reduction tooling. It is **not** enterprise DLP, a
-compliance product, or a sandbox.
+Coding agents read your files, run your commands, and send everything they see to a model provider —
+API keys, tokens, database URLs, customer emails. **Ficta** is a local proxy that sits between the
+agent and the provider. It swaps sensitive values for placeholders before a request leaves your
+machine, and swaps the real values back when the response arrives. The agent keeps working normally;
+the provider never receives the real values.
 
-## Quick Start
+Open source (MIT), runs locally per launch, no account, no telemetry.
 
-```sh
-npm install -g @serovaai/ficta
-# or: pnpm add -g @serovaai/ficta  /  bun install --global @serovaai/ficta
+## What the provider sees
+
+The agent runs `cat .env` and sends the output to the model. Without Ficta, the provider gets:
+
+```text
+API_TOKEN=tok_9f8e7d6c5b4a39281706f5e4d3c2
+DATABASE_URL=postgres://admin:hunter2-prod@db.internal:5432/app
 ```
 
-```sh
-ficta setup              # configure ~/.ficta/config.toml; optionally install shims
-ficta doctor claude      # or: codex / pi
-# restart your shell if setup installed shims
-claude                   # now runs through Ficta
+With Ficta, the same request reaches the provider as:
+
+```text
+API_TOKEN=FICTA_<32 hex chars>
+DATABASE_URL=FICTA_<32 hex chars>
 ```
 
-Without shims, launch explicitly:
+Each placeholder is a keyed HMAC of the value, so within a session the same secret always maps to the
+same placeholder and the model can still reason about it. When the model's response refers to a
+placeholder, Ficta restores the real value locally before the agent sees it. If a registered secret
+would still leave verbatim in a covered part of the request, Ficta **blocks the request** instead of
+sending it.
+
+## Quick start
 
 ```sh
-ficta claude             # or: ficta codex / ficta pi
+npm install -g @serovaai/ficta   # or pnpm / bun
+ficta setup                      # writes ~/.ficta/config.toml, optionally installs shims
+ficta doctor claude              # check secrets load and routing works (or: codex / pi)
+claude                           # now runs through Ficta
 ```
 
-Full install and usage docs live in the package README:
-**[`packages/ficta/README.md`](packages/ficta/README.md)**.
+No shims? Launch explicitly with `ficta claude`, `ficta codex`, or `ficta pi`. Overhead is about
+2–3 ms per request ([benchmarks](packages/ficta/docs/benchmarks.md)).
 
-## What Ficta Protects
+## Works with
 
-Ficta has three protection layers with different guarantees:
+| Agent                                                                | Status   |
+| -------------------------------------------------------------------- | -------- |
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code)        | Verified |
+| [Codex](https://github.com/openai/codex) (API key and ChatGPT login) | Verified |
+| [Pi](https://github.com/badlogic/pi-mono)                            | Verified |
 
-- **Registered secrets (strong exact match):** protects registered values in their verbatim form after
-  registry filters and exclusions; redacts covered request bodies, query strings, and non-auth
-  headers; fail-closes if a protected value survives redaction in a covered surface; and restores
-  placeholders locally on model responses.
-- **Detected secret shapes (best effort):** detects known token/key formats by default at request
-  time, including common API keys, JWTs, private keys, credential URLs, and secret-ish assignments
-  such as `API_TOKEN=...`. This catches newly pasted values that were not in env/Doppler, but it is
-  pattern-based and does not verify credentials.
-- **Detected PII (best effort):** optionally detects PII at request time, tokenizes detected spans on
-  egress, and restores them on response. The built-in backend covers high-precision regex detections
-  for emails, US SSNs, and Luhn-valid card numbers; Microsoft Presidio is supported as a sidecar
-  backend for broader NER-style detection.
+Ficta only supports CLI agents that send **all** model traffic through its proxy. IDE clients such as
+Cursor are not supported: their agent features bypass a custom base URL
+([why](packages/ficta/docs/threat-model.md#ide-clients-cursor-etc)).
 
-By default, registered-secret discovery loads values from `.env` / `.env.local`, Doppler's current
-config when the Doppler CLI is available, and secret-ish process env names such as `KEY`, `TOKEN`,
-`SECRET`, `PASSWORD`, `AWS`, and `OPENAI`.
+## What it protects — and what it doesn't
 
-Secret-shape detection defaults on for standalone/web proxies and coding-agent launches, including
-best-effort detection of long, random-looking bare values. Explicit `secret_shapes.enabled=false`
-or `secret_shapes.agents=false` settings remain respected; existing opt-outs are not migrated.
-PII detection keeps its separate defaults and requires the agent opt-in. An explicit
-`FICTA_SECRET_SHAPES_ENABLED` / `FICTA_PII_ENABLED` environment override wins for one launch.
-Bare credentials can be indistinguishable from hashes; see the detector documentation for limits.
+| Layer                                                                                                                  | Guarantee                                              |
+| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| **Registered secrets** from `.env`, `.env.local`, Doppler, and secret-ish environment variables                        | Exact match. Fail-closed if one would leave verbatim.  |
+| **Secret shapes** — API keys, JWTs, private keys, credential URLs, `API_TOKEN=...` (on by default)                     | Best effort. Catches newly pasted keys; pattern-based. |
+| **PII** — emails, SSNs, card numbers; [Presidio](https://microsoft.github.io/presidio/) for broader detection (opt-in) | Best effort. Can miss values.                          |
 
-### What It Does Not Protect
+Ficta does **not** catch secrets that are encoded or split up, unregistered values that don't look
+like a known format, or anything the agent sends itself via `curl`, MCP tools, or other non-model
+network traffic. It is secret hygiene and PII reduction, not enterprise DLP, a compliance product, or
+a sandbox. Pair it with your agent's permission system and OS-level egress controls. The exact
+boundary is in the [threat model](packages/ficta/docs/threat-model.md).
 
-Ficta does not claim full prompt privacy, complete secret/PII discovery, or full DLP coverage. Out of
-scope: unregistered values that do not match a known shape, transformed values
-(base64/URL-encoded/split secrets), PII the detector misses, secrets or documents the agent sends
-itself through tool execution / `curl` / MCP tools, binary responses, and arbitrary non-model network
-egress. See the [threat model](packages/ficta/docs/threat-model.md) for the full boundary.
+## Ficta Gateway — for teams
 
-## Supported Agents
+Worried about staff pasting client data into ChatGPT? **[Ficta Gateway](apps/gateway)** is a
+self-hosted AI chat workspace on the same engine. Users see exactly what the model will receive
+before they send, can protect anything the detectors missed, and admins turn those catches into
+workspace policy. Provider keys stay server-side; responses are restored inside your environment.
 
-| Agent       | Status   | Notes                                                                                                                                   |
-| ----------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude Code | Verified | Uses Anthropic base URL routing.                                                                                                        |
-| Codex       | Verified | Supports API-key and ChatGPT/OAuth flows.                                                                                               |
-| Pi          | Verified | Routes built-in `anthropic`/`openai`/`openai-codex` providers via an ephemeral `PI_CODING_AGENT_DIR` + `models.json` base-URL override. |
+Gateway is source-available (BUSL-1.1): free for evaluation, production use needs a commercial
+license. See [ficta.sh](https://ficta.sh) or email [hello@ficta.sh](mailto:hello@ficta.sh).
 
-Ficta only supports CLI agents that route **all** of their model traffic through its proxy. **IDE
-clients such as Cursor are not supported** - their agentic features bypass a custom base URL, so
-secrets could reach the provider unredacted. See the
-[threat model](packages/ficta/docs/threat-model.md#ide-clients-cursor-etc).
+## Docs
 
-## Ficta Gateway
+- [CLI install, configuration, and commands](packages/ficta/README.md)
+- [Threat model](packages/ficta/docs/threat-model.md) — the exact promise, covered surfaces, and non-goals
+- [Shims and runtime behavior](packages/ficta/docs/install.md)
+- [Plugins](packages/ficta/docs/plugins.md) — registry sources, [secret-shape](packages/ficta/docs/plugins.md#built-in-detector-plugin-secret-shapes) and [PII](packages/ficta/docs/plugins.md#built-in-detector-plugin-pii) detectors, agent integrations
+- [Codex ChatGPT/OAuth routing](packages/ficta/docs/codex-oauth-intercept.md)
+- [Control-plane contract](packages/ficta/docs/control-plane.md) and [OpenAPI schema](packages/contract/openapi/ficta-control-plane.openapi.json) for frontend integrators
+- [Gateway operator guide](apps/gateway/README.md) and [POC configuration](apps/gateway/docs/poc-configuration.md)
+- [Security policy](packages/ficta/SECURITY.md)
 
-**[`apps/gateway`](apps/gateway)** contains Ficta Gateway: a self-hosted private chat gateway for
-regulated or internal teams that want sensitive-data-aware model access. Gateway runs inside the
-operator's environment, keeps OpenAI/Anthropic API keys server-side, and points every model call at
-the same Ficta proxy so registered values and enabled detector spans are tokenized before the vendor
-hop and restored locally in the streamed response.
+## What's in this repo
 
-Gateway is a separate product path from the coding-agent CLI. Its operator guide, local POC setup,
-auth/storage guidance, sidecar notes, and production-like deployment cautions live in
-**[`apps/gateway/README.md`](apps/gateway/README.md)**.
-The minimal operator-installed policy and environment contract is
-**[`apps/gateway/docs/poc-configuration.md`](apps/gateway/docs/poc-configuration.md)**.
+| Path                                     | What                                                                                                                                            | License  |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| [`packages/ficta`](packages/ficta)       | [`@serovaai/ficta`](https://www.npmjs.com/package/@serovaai/ficta) — the CLI and proxy                                                          | MIT      |
+| [`packages/engine`](packages/engine)     | [`@serovaai/ficta-engine`](https://www.npmjs.com/package/@serovaai/ficta-engine) — the redaction engine as an in-process library (experimental) | MIT      |
+| [`packages/protocol`](packages/protocol) | [`@serovaai/ficta-protocol`](https://www.npmjs.com/package/@serovaai/ficta-protocol) — wire contract shared by proxy and Gateway                | MIT      |
+| [`packages/contract`](packages/contract) | [`@serovaai/ficta-contract`](https://www.npmjs.com/package/@serovaai/ficta-contract) — OpenAPI control contract and typed client                | MIT      |
+| [`apps/gateway`](apps/gateway)           | Ficta Gateway — self-hosted team chat workspace                                                                                                 | BUSL-1.1 |
+| [`apps/web`](apps/web)                   | [ficta.sh](https://ficta.sh)                                                                                                                    | —        |
 
-## What's In This Repo
+See [`LICENSING.md`](LICENSING.md) for details. Gateway versions up to commit `aacf45d` remain
+AGPL-3.0-only.
 
-This is a monorepo. The main published package is the Ficta CLI/proxy; Gateway is the self-hosted
-private chat surface built on the same redaction engine.
+## Status and contributing
 
-- **[`packages/ficta`](packages/ficta)** - [`@serovaai/ficta`](https://www.npmjs.com/package/@serovaai/ficta),
-  the MIT-licensed CLI, redaction proxy, registry sources, agent integrations, detector backends, and
-  plugin seams. This is the main package published to npm.
-- **[`packages/engine`](packages/engine)** - [`@serovaai/ficta-engine`](https://www.npmjs.com/package/@serovaai/ficta-engine),
-  the redaction engine the CLI/proxy runs on, published as a dependency-free library for in-process
-  use. Experimental (0.x).
-- **[`packages/contract`](packages/contract)** - [`@serovaai/ficta-contract`](https://www.npmjs.com/package/@serovaai/ficta-contract),
-  the language-neutral OpenAPI control contract plus the optional typed oRPC client and schemas for
-  frontend implementors.
-- **[`packages/protocol`](packages/protocol)** - [`@serovaai/ficta-protocol`](https://www.npmjs.com/package/@serovaai/ficta-protocol),
-  the dependency-free wire contract package shared by the proxy and Gateway control-plane calls.
-- **[`apps/gateway`](apps/gateway)** - Ficta Gateway, a self-hosted TanStack Start chat UI with
-  server-side BYO OpenAI/Anthropic keys, chat history/settings storage, optional WorkOS
-  auth/workspaces, protection-status polling, and text/document attachments.
-- **[`apps/web`](apps/web)** - the public website for Ficta and Ficta Gateway.
+Ficta uses normal semver releases. Exact-match redaction, restore, and fail-closed behavior are
+covered by tests and real agent runs; run `ficta doctor <agent>` before relying on a setup, and test a
+Gateway deployment with fake secrets and fake PII before using it on sensitive work.
 
-## Documentation
-
-- [`packages/ficta/README.md`](packages/ficta/README.md) - full CLI/proxy install, usage, and commands
-- [`packages/ficta/docs/control-plane.md`](packages/ficta/docs/control-plane.md) - language-neutral frontend integration and conformance contract
-- [`packages/contract/openapi/ficta-control-plane.openapi.json`](packages/contract/openapi/ficta-control-plane.openapi.json) - generated OpenAPI 3.1.1 control-plane schema
-- [`apps/gateway/README.md`](apps/gateway/README.md) - Ficta Gateway setup, POC defaults, and deployment cautions
-- [`apps/gateway/docs/poc-configuration.md`](apps/gateway/docs/poc-configuration.md) - canonical minimal Gateway POC environment and proxy policy
-- [`docs/install.md`](packages/ficta/docs/install.md) - Ficta shim installation and runtime behavior
-- [`docs/threat-model.md`](packages/ficta/docs/threat-model.md) - exact promise, covered surfaces, and non-goals
-- [`docs/plugins.md`](packages/ficta/docs/plugins.md) - registry-source, detector, and agent-integration plugins
-- [`docs/plugins.md#built-in-detector-plugin-secret-shapes`](packages/ficta/docs/plugins.md#built-in-detector-plugin-secret-shapes) - request-time secret-shape detector surfaces and limits
-- [`docs/plugins.md#built-in-detector-plugin-pii`](packages/ficta/docs/plugins.md#built-in-detector-plugin-pii) - PII detector surfaces, backends, and failure policy
-- [`docs/codex-oauth-intercept.md`](packages/ficta/docs/codex-oauth-intercept.md) - Codex ChatGPT/OAuth routing
-- [`docs/benchmarks.md`](packages/ficta/docs/benchmarks.md) - performance notes
-- [`CONTRIBUTING.md`](packages/ficta/CONTRIBUTING.md) - contributing to core and extension seams
-- [`SECURITY.md`](packages/ficta/SECURITY.md) - reporting vulnerabilities and expected limitations
-
-## Status
-
-Ficta uses normal semver releases. Core exact-match redaction, restore, and fail-closed behavior is
-covered by tests and local agent runs, but CLI users should run `ficta doctor <agent>` before relying
-on a setup. Treat detector layers as best effort, and verify any Gateway deployment with fake PII and
-fake secret-shaped tokens before sensitive workflows.
-
-## Development
-
-The monorepo toolchain requires Node.js 22.13 or newer. The published CLI and protocol packages keep
-their own Node.js `>=20` runtime support.
-
-```sh
-pnpm install
-pnpm dev             # proxy + Gateway; auto-uses Doppler when configured, otherwise local .env
-pnpm dev:proxy       # proxy only
-pnpm gateway:dev     # Gateway only
-pnpm sidecars        # document converter + Presidio via docker-compose.sidecars.yml
-pnpm sidecars:openmed # additionally start the opt-in OpenMed PII backend
-pnpm sidecars:down
-pnpm sidecars:check  # check upstream image digests; add --openmed to include OpenMed
-pnpm sidecars:update # upgrade Presidio pin, rebuild and recreate; add --openmed if used
-pnpm check:with-sidecars # alias for pnpm check
-pnpm check           # advisory sidecar version check, static checks, type checks, and tests
-pnpm build
-```
-
-`sidecars:check` needs Docker with Buildx, a running Docker daemon, and registry access. It reports
-whether Presidio's checked-in base digest differs from the latest stable upstream release tag, and whether the local
-converter's recorded Python base (falling back to the cached base for older images) and optionally
-OpenMed differ from their configured registry references.
-Updates are informational; registry/Docker errors fail the standalone command. `pnpm check` starts
-with this check in advisory mode: updates are reported, and unavailable Docker or registry access
-produces a warning without failing the checks. It never updates or restarts sidecars.
-`pnpm check:with-sidecars` is an alias for `pnpm check`. Lint, formatting, test, and workspace check
-failures still fail normally.
-
-`sidecars:update` skips images whose recorded source/build inputs and upstream digest are unchanged.
-Changed or missing images build with Docker caching; Compose reuses unchanged containers and applies
-configuration changes. The command updates the Presidio Dockerfile digest
-to the latest stable upstream release tag and digest after a successful build, and converges the Compose services with health checks.
-Use `pnpm sidecars:update --force` for an uncached rebuild and forced restart (optionally add
-`--openmed`). Existing images without input metadata need one cached build to establish it.
-A forced rebuild re-resolves converter Python dependencies but leaves fixed Pandoc, optional GLiNER/torch, and model
-versions unchanged; the check does not inspect those dependencies or running-container versions.
-OpenMed defaults to a stable version tag and digest shared by Compose and dev. With `--openmed`,
-the updater advances that default to the latest stable release; explicit `OPENMED_IMAGE` overrides
-from Compose and `.env` are pulled as configured. Release discovery uses GitHub's stable-release API;
-there is no fallback to the floating `latest` image tag.
-Stop a foreground `pnpm dev` first if it owns the sidecar ports. Changed services may restart;
-review any changed Presidio pin, run detector regressions, and add a changeset before committing it.
-
-`pnpm dev` is for developing the proxy and Gateway together. It also auto-manages the Gateway
-document-converter sidecar by default, plus the PII sidecars for whichever backends
-`FICTA_PII_BACKENDS` selects, reusing any already-running (e.g. compose-started) containers. The
-coding agents do not use it -
-`ficta claude|codex|pi` starts its own ephemeral proxy per launch (see
-[`docs/install.md`](packages/ficta/docs/install.md)).
-
-## License
-
-This monorepo is licensed per product - see [`LICENSING.md`](LICENSING.md) for the map:
-
-- **`packages/ficta`** (the published `@serovaai/ficta` CLI, proxy, and npm package) - **MIT**, see [`packages/ficta/LICENSE`](packages/ficta/LICENSE).
-- **`packages/engine`** (the published `@serovaai/ficta-engine` redaction engine library) - **MIT**, see [`packages/engine/LICENSE`](packages/engine/LICENSE).
-- **`apps/gateway`** (Ficta Gateway) - **BUSL-1.1**, source-available: free for non-production use, production use requires a commercial license; see [`apps/gateway/LICENSING.md`](apps/gateway/LICENSING.md). Versions up to commit `aacf45d` remain AGPL-3.0-only.
+Contributions welcome — start with [`CONTRIBUTING.md`](CONTRIBUTING.md) for the monorepo toolchain
+and [`packages/ficta/CONTRIBUTING.md`](packages/ficta/CONTRIBUTING.md) for the guidelines.
