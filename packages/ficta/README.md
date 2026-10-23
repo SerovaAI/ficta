@@ -182,6 +182,12 @@ active until an administrator disables it or the proxy restarts, and still requi
 per-request `x-ficta-trace-capture: 1` selector. Gateway administrators can enable it from Admin settings; a
 standalone loopback operator can use `PATCH /__ficta/trace-capture` with `{ "enabled": true }`.
 
+Capture logs live under `~/.ficta/logs` (one dir per agent launch or proxy run). Agent launches and
+the standalone proxy prune them at most hourly: dirs idle for 14 days go, then the oldest until the
+tree is under 1 GiB, and raw-value trace files go after 24 hours. Dirs still in use are never removed.
+Tune it with `[logging] retain_days`, `max_total_bytes`, and `trace_retain_hours` (0 disables a
+limit). `ficta logs` shows usage; `ficta logs prune [--traces]` applies the policy now.
+
 When a request contains redacted values, Ficta defaults to adding a system/developer instruction that
 asks the model to reproduce the exact surrogate literals. Exact reproduction lets Ficta restore the
 original values in the response; models can otherwise truncate or editorialize opaque tokens. Set
