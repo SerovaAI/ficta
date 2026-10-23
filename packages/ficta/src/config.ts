@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { defaultLogDir } from "./defaults.js";
 import { envEnabled, envFlag } from "@serovaai/ficta-engine";
+import type { LogRetentionPolicy } from "./log-retention.js";
 import { type LogLevel, parseLogLevel } from "./log-level.js";
 import { loadUserConfig, wasLoadedFromUserConfig } from "./user-config.js";
 
@@ -16,6 +17,9 @@ const DEFAULT_UPSTREAMS = {
 
 const DEFAULT_UPSTREAM_ORIGINS = new Set(Object.values(DEFAULT_UPSTREAMS).map((url) => new URL(url).origin));
 const DEFAULT_LOG_MAX_BYTES = 256 * 1024;
+const DEFAULT_LOG_RETAIN_DAYS = 14;
+const DEFAULT_LOG_MAX_TOTAL_BYTES = 1024 * 1024 * 1024;
+const DEFAULT_LOG_TRACE_RETAIN_HOURS = 24;
 
 export interface Config {
   host: string;
@@ -24,6 +28,9 @@ export interface Config {
   forcedUpstream?: string;
   allowCustomUpstream: boolean;
   logDir: string;
+  /** Root of the per-role capture tree that retention prunes (the explicit log dir when one is set). */
+  logRoot: string;
+  logRetention: LogRetentionPolicy;
   logLevel: LogLevel;
   logBodies: boolean;
   traceAudit: boolean;
@@ -52,6 +59,18 @@ export function loadConfig(): Config {
     forcedUpstream: process.env.FICTA_UPSTREAM,
     allowCustomUpstream: envFlag(process.env.FICTA_ALLOW_CUSTOM_UPSTREAM),
     logDir: resolveLogDir(),
+    logRoot: resolveLogRoot(),
+    // Every launch leaves a capture dir; prune idle ones by age and total size, and raw-value trace
+    // files much sooner. 0 disables a limit.
+    logRetention: {
+      maxAgeMs: positiveOrUndefined(process.env.FICTA_LOG_RETAIN_DAYS, DEFAULT_LOG_RETAIN_DAYS, 86_400_000),
+      maxTotalBytes: positiveOrUndefined(process.env.FICTA_LOG_MAX_TOTAL_BYTES, DEFAULT_LOG_MAX_TOTAL_BYTES, 1),
+      traceMaxAgeMs: positiveOrUndefined(
+        process.env.FICTA_LOG_TRACE_RETAIN_HOURS,
+        DEFAULT_LOG_TRACE_RETAIN_HOURS,
+        3_600_000,
+      ),
+    },
     // Single verbosity knob. Standalone default is "info"; the wrapper sets "silent" so proxy
     // output never garbles the agent TUI (cli.ts). "debug" adds unknown-wire (non-model) traffic.
     logLevel,
@@ -158,6 +177,8 @@ export function composeLogDir(opts: {
   explicitFromConfig: boolean;
   root?: string;
   role?: string;
+  /** Return the root the role dir would sit under instead of the role dir. */
+  rootOnly?: boolean;
 }): string {
   // Treat empty-string env vars as unset (e.g. `FICTA_LOG_ROOT= ficta …`) so we never emit a
   // relative path or a role-less root.
@@ -166,7 +187,27 @@ export function composeLogDir(opts: {
   const role = opts.role?.trim() || undefined;
   const neutralLegacy = Boolean(explicit) && opts.explicitFromConfig && expandHome(explicit ?? "") === defaultLogDir();
   if (explicit && !neutralLegacy) return expandHome(explicit);
+  if (opts.rootOnly) return expandHome(root ?? defaultLogDir());
   return join(expandHome(root ?? defaultLogDir()), role ?? "gateway");
+}
+
+/** The tree {@link composeLogDir} places role dirs under — the explicit dir itself when one applies. */
+export function composeLogRoot(opts: { explicit?: string; explicitFromConfig: boolean; root?: string }): string {
+  return composeLogDir({ ...opts, role: undefined, rootOnly: true });
+}
+
+function resolveLogRoot(): string {
+  return composeLogRoot({
+    explicit: process.env.FICTA_LOG_DIR,
+    explicitFromConfig: wasLoadedFromUserConfig("FICTA_LOG_DIR"),
+    root: process.env.FICTA_LOG_ROOT,
+  });
+}
+
+function positiveOrUndefined(value: string | undefined, fallback: number, scale: number): number | undefined {
+  const n = Number(value?.trim() || fallback);
+  if (!Number.isFinite(n) || n < 0) return fallback * scale;
+  return n === 0 ? undefined : n * scale;
 }
 
 function resolveLogDir(): string {

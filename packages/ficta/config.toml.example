@@ -112,6 +112,11 @@ log_root = "~/.ficta/logs"
 # Dev/debug only: agent launches trace every request (raw bodies, restored bodies, protected-value
 # audit sidecars) into their instance log dir and write a debug ficta.log. Files hold real secrets.
 # dev_trace = false
+# Retention, applied at most hourly by agent launches and the standalone proxy (0 disables a limit;
+# dirs still in use are never removed). `ficta logs` shows usage, `ficta logs prune` applies it now.
+# retain_days = 14              # delete capture dirs idle longer than this
+# max_total_bytes = 1073741824  # then delete the oldest until the log root is under this
+# trace_retain_hours = 24       # raw-value trace files (dev_trace / trace capture) go sooner
 
 # Surrogate key: the local HMAC key that turns a value into its FICTA_… token. It never leaves the
 # proxy and is never passed to launched agents. `ficta setup` / `ficta install` (and agent launches)

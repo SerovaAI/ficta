@@ -159,6 +159,11 @@ if (command === "doctor") {
   process.exit(doctorExitCode(report));
 }
 
+if (command === "logs") {
+  const { runLogsCommand } = await import("./logs-command.js");
+  process.exit(await runLogsCommand(args.slice(1)));
+}
+
 if (command === "review") {
   const { runReview } = await import("./review.js");
   await runReview({ global: args.slice(1).includes("--global") });
@@ -223,9 +228,6 @@ if (preflight && (preflight.level === "block" || agent.isMachineReadable?.(rest)
 const logInstanceId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`;
 process.env.FICTA_LOG_ROLE ??= `agents/${agent.command}/${logInstanceId}`;
 
-// Sensible defaults BEFORE the proxy starts. logger.ts initializes lazily, so this level is captured
-// before any request-time proxy logs are emitted.
-applyRuntimeEnvDefaults(process.env);
 // FICTA_DEV_TRACE (dev/debug opt-in): full trace of every request — raw bodies, restored bodies and
 // raw-value audit sidecars under this instance's log dir — plus a debug ficta.log. Logs go to the
 // file only so the agent TUI stays clean. The capture files hold real protected values.
@@ -234,9 +236,13 @@ if (devTrace) {
   process.env.FICTA_LOG_LEVEL ??= "debug";
   process.env.FICTA_LOG_FILE_ONLY = "1";
   process.env.FICTA_TRACE_AUDIT ??= "1";
-  // Claude Code request bodies routinely exceed the 256 KiB default; a truncated capture hides the turn.
+  // Claude Code request bodies routinely exceed the 256 KiB default; a truncated capture hides the
+  // turn. Must precede applyRuntimeEnvDefaults, which would otherwise set the default first.
   process.env.FICTA_LOG_MAX_BYTES ??= String(16 * 1024 * 1024);
 }
+// Sensible defaults BEFORE the proxy starts. logger.ts initializes lazily, so this level is captured
+// before any request-time proxy logs are emitted.
+applyRuntimeEnvDefaults(process.env);
 process.env.FICTA_LOG_LEVEL ??= "silent"; // keep the terminal clean for the agent unless explicitly overridden
 // The embedded proxy now enforces strict registry readiness at request time too. Carry the CLI's
 // one-run escape hatch into that shared runtime policy so --allow-empty keeps its documented meaning.
@@ -379,6 +385,10 @@ const plan = agent.configureLaunch({
 
 const child = spawn(plan.executable, plan.args, { stdio: "inherit", env: plan.env });
 
+// Prune old capture dirs and expired raw traces in the background (at most hourly across launches).
+// Best effort: it never throws, and an agent exiting first just leaves the rest for the next pass.
+void pruneLogsInBackground();
+
 let cleaned = false;
 const shutdown = async () => {
   if (printStartupDiagnostics) process.stderr.write(`\n${proxy.statsSummary()}`);
@@ -412,6 +422,10 @@ function printHelp(exitCode: number): never {
       ["setup", "Configure registry sources in ~/.ficta/config.toml"],
       ["review [--global]", "Review protected names; deselect to exclude in this project (--global: everywhere)"],
       ["doctor [agent]", "Check config, registry sources, and agent routing"],
+      [
+        "logs [prune [--traces]]",
+        "Show capture-log usage; prune applies retention now (--traces: drop all raw traces)",
+      ],
       ["install [--force] [--no-shell]", `Install ${supportedAgents.join("/")} shims into ~/.ficta/bin`],
       ["uninstall [--no-shell]", "Remove installed shims"],
       ["disable", "Globally bypass installed shims"],
@@ -493,4 +507,10 @@ function runChild(child: ChildProcess): Promise<number> {
       resolve(1);
     });
   });
+}
+
+async function pruneLogsInBackground(): Promise<void> {
+  const [{ loadConfig }, { maybePruneLogs }] = await Promise.all([import("./config.js"), import("./log-retention.js")]);
+  const cfg = loadConfig();
+  await maybePruneLogs(cfg.logRoot, cfg.logRetention);
 }
