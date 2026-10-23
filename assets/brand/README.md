@@ -8,6 +8,7 @@ Logo direction **2c · Token Wrapper**: the value is wrapped in vermilion bracke
 - `ficta-mark-mono.svg` — single-color version. Set `color` (CSS) or `fill` to re-tint.
 - `ficta-wordmark.svg` — the `[ficta]` wordmark. Fragment Mono is embedded, so it renders anywhere.
 - `ficta-lockup.svg` — horizontal lockup: mark + `ficta`.
+- `ficta-lockup-on-light.svg` — the same lockup with ink lettering, only for surfaces we don't control that may render light (e.g. GitHub's light theme).
 - `ficta-icon.svg` / `favicon.svg` — app icon on the ink tile (rounded square).
 - `ficta-icon-vermilion.svg` — inverted app icon (vermilion tile).
 - `png/` — rasterized icon + mark at 512 / 180 (Apple touch) / 32 (favicon).
