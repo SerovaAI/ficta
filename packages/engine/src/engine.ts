@@ -67,7 +67,7 @@ import {
   stripRestoreMarkers,
   type SurrogateTable,
   Vault,
-  JSON_TEXT_KEYS,
+  rawJsonBody,
   visitBodyLeaves,
 } from "./vault.js";
 import type { Wire } from "./wire.js";
@@ -150,9 +150,9 @@ interface KeyedScopeState {
 
 interface BodyDocument {
   readonly body: string;
-  readonly parsed?: unknown;
   readonly leaves: readonly BodyLeaf[];
-  readonly isJson: boolean;
+  /** `body` with rewritten leaves spliced in; every other byte is the original. */
+  render(replacements: ReadonlyMap<number, string>): string;
 }
 
 interface DetectionPass {
@@ -1375,25 +1375,10 @@ class ProtectionRequestScope implements RequestScope {
   }
 }
 
-/** Body leaves include the strings inside tool-call JSON text, so escaped values there are matched. */
-const BODY_LEAF_OPTIONS = { jsonTextKeys: JSON_TEXT_KEYS } as const;
-
-function bodyDocument(body: string): BodyDocument {
-  try {
-    const parsed: unknown = JSON.parse(body);
-    const leaves: BodyLeaf[] = [];
-    visitBodyLeaves(
-      parsed,
-      (leaf) => {
-        leaves.push(leaf);
-      },
-      "value",
-      BODY_LEAF_OPTIONS,
-    );
-    return { body, parsed, leaves, isJson: true };
-  } catch {
-    return rawDocument(body);
-  }
+/** A JSON body is read literal by literal from its raw text (see {@link rawJsonBody}). */
+function bodyDocument(body: string, opts: { readonly paths?: boolean } = {}): BodyDocument {
+  const json = rawJsonBody(body, opts);
+  return json ? { body, ...json } : rawDocument(body);
 }
 
 /** A non-JSON document: the whole string is a single raw leaf. */
@@ -1406,14 +1391,11 @@ function rawDocument(body: string): BodyDocument {
     },
     "raw",
   );
-  return { body, leaves, isJson: false };
+  return { body, leaves, render: (replacements) => replacements.get(0) ?? body };
 }
 
 function renderBodyDocument(document: BodyDocument, replacements: ReadonlyMap<number, string>): string {
-  if (replacements.size === 0) return document.body;
-  if (!document.isJson) return replacements.get(0) ?? document.body;
-  const mapped = visitBodyLeaves(document.parsed, (leaf) => replacements.get(leaf.index), "value", BODY_LEAF_OPTIONS);
-  return JSON.stringify(mapped);
+  return document.render(replacements);
 }
 
 function claimsFromMetadata(
@@ -1541,7 +1523,7 @@ function entityPolicyLeakOwners(
   claims: readonly EntityClaim[],
   vault: ScopedVault,
 ): Map<string, EntityClaim> {
-  const document = bodyDocument(body);
+  const document = bodyDocument(body, { paths: false }); // only leaf texts are needed here
   const owners = new Map<string, EntityClaim>();
   const occurrences = expandEntities(
     document.leaves.map((leaf) => leaf.text),

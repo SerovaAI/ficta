@@ -580,6 +580,22 @@ export abstract class VaultView {
   }
 
   /**
+   * Token-shaped spans of `text` that a known value may sit inside without counting as present.
+   * `all` is every token-shaped span. `strict` is narrower for text this view cannot map: there only
+   * the `FICTA_[TYPE_]` label is exempt, so a value written into the opaque tail of a made-up token
+   * (a 32-hex secret written as `FICTA_<secret>`) is still redacted and caught by the leak gate.
+   */
+  protected tokenSpans(text: string): TokenSpans {
+    const all = surrogateSpans(text, this.surrogate.pattern);
+    if (all.length === 0) return NO_TOKEN_SPANS;
+    const strict = all.map(([start, end]): readonly [number, number] => {
+      const token = text.slice(start, end);
+      return this.valueFor(token) === undefined ? [start, start + token.lastIndexOf("_") + 1] : [start, end];
+    });
+    return { all, strict };
+  }
+
+  /**
    * A layer with `permanent` provenance (registry, registry-derived or caller-selected) already maps
    * `value`. Detection must not re-register such a value on the detected layer: that layer sits ahead
    * of the permanent registry, so the first-match {@link provenanceFor} would call the registry secret
@@ -691,7 +707,7 @@ export abstract class VaultView {
         out,
         v,
         surrogate,
-        surrogateSpans(out, this.surrogate.pattern),
+        exemptSpansFor(this.tokenSpans(out), v),
         this.preservesPaths(preservePaths),
         this.isWordBounded(v),
       );
@@ -1057,40 +1073,38 @@ export abstract class VaultView {
     const strings: string[] = [];
     let masked: string | undefined;
     try {
-      const parsed: unknown = JSON.parse(body);
-      visitBodyLeaves(parsed, (leaf) => {
-        strings.push(leaf.text);
-      });
-      // Also the strings inside JSON-text values (tool-call arguments), decoded once more, so a value
-      // escaped twice there is still found. The whole-value scan above stays for numbers inside them.
-      visitBodyLeaves(
-        parsed,
-        (leaf) => {
-          if (leaf.inJsonText) strings.push(leaf.text);
-          return undefined;
-        },
-        "value",
-        { jsonTextKeys: JSON_TEXT_KEYS },
-      );
+      // Every string literal as written, so a value hidden behind a duplicate key is still scanned,
+      // plus the literals inside JSON-text values (tool-call arguments), decoded once more so a value
+      // escaped twice there is found too.
+      const literals = jsonLiterals(body, false, false);
+      if (!literals) throw new SyntaxError("not JSON");
+      for (const literal of literals) {
+        strings.push(literal.text);
+        if (literal.kind !== "value" || literal.key === undefined || !JSON_TEXT_KEYS.has(literal.key)) continue;
+        for (const inner of jsonTextLiterals(literal.text, false) ?? []) strings.push(inner.text);
+      }
       masked = maskJsonStringLiterals(body);
     } catch {
       // Non-JSON: the whole raw body is scanned for any known value below.
     }
     // A minted token is opaque HMAC output, so a value "found" inside one is not a leak — most
     // notably a detected value like "FICTA" (the model narrating tokens) matches every token's
-    // prefix, including its own replacement, and would otherwise block every follow-up turn.
-    const stringSpans = strings.map((s) => surrogateSpans(s, this.surrogate.pattern));
-    const bodySpans = masked === undefined ? surrogateSpans(body, this.surrogate.pattern) : [];
+    // prefix, including its own replacement, and would otherwise block every follow-up turn. Text
+    // that is only token-shaped is exempt just for its label (see tokenSpans).
+    const stringSpans = strings.map((s) => this.tokenSpans(s));
+    const bodySpans = masked === undefined ? this.tokenSpans(body) : NO_TOKEN_SPANS;
     const leaked: string[] = [];
     for (const v of this.orderedValues()) {
       const wordBounded = this.isWordBounded(v);
-      const stringLeak = strings.some((s, i) => containsKnownOutsidePaths(s, v, stringSpans[i], paths, wordBounded));
+      const stringLeak = strings.some((s, i) =>
+        containsKnownOutsidePaths(s, v, exemptSpansFor(stringSpans[i] ?? NO_TOKEN_SPANS, v), paths, wordBounded),
+      );
       // For valid JSON, string contents are masked out, so the backstop scans only primitives and
       // matches a value as a complete token — never as a substring of a longer number (so a
       // registered `12345678` is not flagged inside an unrelated `99912345678`).
       const primitiveLeak =
         masked === undefined
-          ? containsKnownOutsidePaths(body, v, bodySpans, paths, wordBounded)
+          ? containsKnownOutsidePaths(body, v, exemptSpansFor(bodySpans, v), paths, wordBounded)
           : containsKnownPrimitive(masked, v);
       if (stringLeak || primitiveLeak) leaked.push(v);
     }
@@ -1100,9 +1114,15 @@ export abstract class VaultView {
   /** True when text contains any known raw value, using the same matcher as redaction/leak gates. */
   containsKnownValue(text: string, preservePaths = true): boolean {
     if (!this.hasValues || !text) return false;
-    const spans = surrogateSpans(text, this.surrogate.pattern);
+    const spans = this.tokenSpans(text);
     return this.orderedValues().some((value) =>
-      containsKnownOutsidePaths(text, value, spans, this.preservesPaths(preservePaths), this.isWordBounded(value)),
+      containsKnownOutsidePaths(
+        text,
+        value,
+        exemptSpansFor(spans, value),
+        this.preservesPaths(preservePaths),
+        this.isWordBounded(value),
+      ),
     );
   }
 
@@ -1435,7 +1455,7 @@ export class ScopedVault extends VaultView {
 
   /** Whether a resolver claim is outside existing surrogate tokens and preserved filesystem paths. */
   isRedactableRange(text: string, start: number, end: number, preservePaths = true): boolean {
-    if (overlapsSpan(surrogateSpans(text, this.surrogate.pattern), start, end)) return false;
+    if (overlapsSpan(exemptSpansFor(this.tokenSpans(text), text.slice(start, end)), start, end)) return false;
     return !isInsidePathLikeToken(text, start, end, text.slice(start, end), this.preservesPaths(preservePaths));
   }
 
@@ -1797,6 +1817,22 @@ function renderSseDataEvent(eventName: string | undefined, data: unknown): strin
  * "FICTA" in a transcript where the model discussed its own tokens): replacing it re-introduces
  * the value inside its own surrogate, which un-guarded leak scanning then flags on every turn.
  */
+interface TokenSpans {
+  readonly all: ReadonlyArray<readonly [number, number]>;
+  readonly strict: ReadonlyArray<readonly [number, number]>;
+}
+
+/**
+ * Shorter values keep the whole-token exemption even in unmapped tokens: a few hex or base32
+ * characters turn up by chance in any opaque tail, and the leak gate fails closed on a match.
+ */
+const MIN_VALUE_IN_UNMAPPED_TOKEN = 8;
+
+/** The exempt spans that apply to `value` (see {@link VaultView.tokenSpans}). */
+function exemptSpansFor(spans: TokenSpans, value: string): ReadonlyArray<readonly [number, number]> {
+  return value.length < MIN_VALUE_IN_UNMAPPED_TOKEN ? spans.all : spans.strict;
+}
+
 function surrogateSpans(text: string, pattern: RegExp): ReadonlyArray<readonly [number, number]> {
   const spans: Array<readonly [number, number]> = [];
   const re = new RegExp(pattern.source, "g");
@@ -1809,6 +1845,7 @@ function entitySurfaceKey(entityId: string, surface: string): string {
 }
 
 const NO_SPANS: ReadonlyArray<readonly [number, number]> = [];
+const NO_TOKEN_SPANS: TokenSpans = { all: NO_SPANS, strict: NO_SPANS };
 
 /**
  * Spans of `text` (in text order) whose contents are one of `regions` — the tool-argument strings a
@@ -2294,63 +2331,24 @@ export interface BodyLeaf {
 export type BodyLeafVisitor = (leaf: BodyLeaf) => string | undefined;
 
 /**
- * Object keys whose string value is itself JSON text: OpenAI chat `tool_calls[].function.arguments`
- * and Responses `function_call.arguments`. A value inside one is JSON-escaped a second time, so a
- * registered value containing `"`, `\`, or a newline never matches the once-decoded leaf. Redaction
- * and the leak gate visit the strings inside such JSON text as leaves of their own.
- */
-export const JSON_TEXT_KEYS: ReadonlySet<string> = new Set(["arguments"]);
-
-export interface BodyLeafOptions {
-  /** String values under these keys that parse as a JSON object or array are visited as their strings. */
-  readonly jsonTextKeys?: ReadonlySet<string>;
-}
-
-/**
  * Visit and optionally rewrite every JSON string leaf through one structural traversal. Object keys
  * are visited immediately before their values; arrays retain index order. The returned structure is
- * suitable for JSON.stringify and preserves all non-string primitives unchanged. With `jsonTextKeys`,
- * a JSON-text value is visited string by string instead of whole, and a rewrite splices only the
- * rewritten literals back into its original text, so every other byte of it is kept.
+ * suitable for JSON.stringify and preserves all non-string primitives unchanged.
  */
-export function visitBodyLeaves(
-  value: unknown,
-  visit: BodyLeafVisitor,
-  rootKind: "value" | "raw" = "value",
-  opts: BodyLeafOptions = {},
-): unknown {
+export function visitBodyLeaves(value: unknown, visit: BodyLeafVisitor, rootKind: "value" | "raw" = "value"): unknown {
   let index = 0;
-  const visitJsonText = (text: string, literals: readonly JsonTextLiteral[], path: BodyLeafPath): string => {
-    let out = "";
-    let cursor = 0;
-    literals.forEach((literal, i) => {
-      const replacement = visit({
-        index: index++,
-        kind: literal.kind,
-        path: [...path, i],
-        text: literal.text,
-        inJsonText: true,
-      });
-      if (replacement === undefined || replacement === literal.text) return;
-      out += `${text.slice(cursor, literal.start)}${JSON.stringify(replacement)}`;
-      cursor = literal.end;
-    });
-    return cursor === 0 ? text : out + text.slice(cursor);
-  };
-  const walk = (current: unknown, path: BodyLeafPath, key?: string): unknown => {
+  const walk = (current: unknown, path: BodyLeafPath): unknown => {
     if (typeof current === "string") {
-      const literals = key !== undefined && opts.jsonTextKeys?.has(key) ? jsonTextLiterals(current) : undefined;
-      if (literals) return visitJsonText(current, literals, path);
       const replacement = visit({ index: index++, kind: path.length === 0 ? rootKind : "value", path, text: current });
       return replacement ?? current;
     }
     if (Array.isArray(current)) return current.map((entry, i) => walk(entry, [...path, i]));
     if (current && typeof current === "object") {
       const out: Record<string, unknown> = Object.create(null);
-      for (const [entryKey, entry] of Object.entries(current)) {
-        const entryPath = [...path, entryKey];
-        const replacement = visit({ index: index++, kind: "key", path: entryPath, text: entryKey });
-        out[replacement ?? entryKey] = walk(entry, entryPath, entryKey);
+      for (const [key, entry] of Object.entries(current)) {
+        const entryPath = [...path, key];
+        const replacement = visit({ index: index++, kind: "key", path: entryPath, text: key });
+        out[replacement ?? key] = walk(entry, entryPath);
       }
       return out;
     }
@@ -2359,54 +2357,185 @@ export function visitBodyLeaves(
   return walk(value, []);
 }
 
-interface JsonTextLiteral {
-  /** Offset of the opening quote. */
-  readonly start: number;
-  /** Offset just past the closing quote. */
-  readonly end: number;
-  readonly kind: "key" | "value";
-  /** The decoded string. */
-  readonly text: string;
+/**
+ * Object keys whose string value is itself JSON text: OpenAI chat `tool_calls[].function.arguments`
+ * and Responses `function_call.arguments`. A value inside one is JSON-escaped a second time, so a
+ * registered value containing `"`, `\`, or a newline never matches the once-decoded leaf. The body
+ * scan visits the literals inside such JSON text as leaves of their own.
+ */
+export const JSON_TEXT_KEYS: ReadonlySet<string> = new Set(["arguments"]);
+
+/** The leaves of a JSON body read from its raw text, and a renderer that splices rewrites back. */
+export interface RawJsonBody {
+  readonly leaves: readonly BodyLeaf[];
+  /** `body` with each rewritten leaf spliced in place; every other byte is the original. */
+  render(replacements: ReadonlyMap<number, string>): string;
+}
+
+interface RawLeafSlot {
+  readonly literal: JsonLiteral;
+  /** Leaf index of this literal, or of each literal inside it when it holds expanded JSON text. */
+  readonly index?: number;
+  readonly inner?: { readonly text: string; readonly slots: readonly RawLeafSlot[] };
 }
 
 /**
- * The string and number literals of `text` in order, or undefined unless `text` is a JSON object or
- * array. Numbers are included because a detector saw them when the whole text was one leaf (a card
- * number written as a JSON number); a rewritten number is spliced back as a string.
+ * Read a JSON body literal by literal from its raw text, or undefined when `body` is not JSON.
+ *
+ * Redaction scans these leaves and renders by splicing replacements into the original text, so what
+ * is forwarded is exactly what was scanned. A parse-then-reserialize round trip breaks that twice:
+ * with duplicate keys `JSON.parse` keeps only the last value while the original bytes still carry
+ * the first (which a provider's parser may be the one to keep), and `JSON.stringify` rounds integers
+ * above 2^53. Strings under {@link JSON_TEXT_KEYS} that hold a JSON object or array are expanded into
+ * their own string and number literals.
  */
-function jsonTextLiterals(text: string): JsonTextLiteral[] | undefined {
+export function rawJsonBody(body: string, opts: { readonly paths?: boolean } = {}): RawJsonBody | undefined {
+  const paths = opts.paths ?? true;
+  const literals = jsonLiterals(body, false, paths);
+  if (!literals) return undefined;
+  const leaves: BodyLeaf[] = [];
+  // Literals inside JSON text get the outer path as a prefix, so key/value pairing still works there.
+  const slotsFor = (items: readonly JsonLiteral[], outer?: BodyLeafPath): RawLeafSlot[] =>
+    items.map((literal) => {
+      const nested =
+        outer === undefined && literal.kind === "value" && literal.key !== undefined && JSON_TEXT_KEYS.has(literal.key)
+          ? jsonTextLiterals(literal.text, paths)
+          : undefined;
+      if (nested) return { literal, inner: { text: literal.text, slots: slotsFor(nested, literal.path) } };
+      const index = leaves.length;
+      const path = outer === undefined || !paths ? literal.path : [...outer, ...literal.path];
+      const kind = path.length === 0 ? "value" : literal.kind;
+      leaves.push(
+        outer === undefined
+          ? { index, kind, path, text: literal.text }
+          : { index, kind, path, text: literal.text, inJsonText: true },
+      );
+      return { literal, index };
+    });
+  const slots = slotsFor(literals);
+  const splice = (text: string, items: readonly RawLeafSlot[], replacements: ReadonlyMap<number, string>): string => {
+    let out = "";
+    let cursor = 0;
+    for (const slot of items) {
+      const replaced = slot.inner
+        ? splice(slot.inner.text, slot.inner.slots, replacements)
+        : slot.index === undefined
+          ? undefined
+          : replacements.get(slot.index);
+      const original = slot.inner ? slot.inner.text : slot.literal.text;
+      if (replaced === undefined || replaced === original) continue;
+      out += `${text.slice(cursor, slot.literal.start)}${JSON.stringify(replaced)}`;
+      cursor = slot.literal.end;
+    }
+    return cursor === 0 ? text : out + text.slice(cursor);
+  };
+  return { leaves, render: (replacements) => (replacements.size === 0 ? body : splice(body, slots, replacements)) };
+}
+
+interface JsonLiteral {
+  /** Offset of the opening quote (or first digit). */
+  readonly start: number;
+  /** Offset just past the closing quote (or last digit). */
+  readonly end: number;
+  readonly kind: "key" | "value";
+  /** The decoded string, or a number's source text. */
+  readonly text: string;
+  readonly path: BodyLeafPath;
+  /** For a value directly in an object, its key. */
+  readonly key?: string;
+}
+
+/** The literals inside JSON text, or undefined unless it is a JSON object or array. */
+function jsonTextLiterals(text: string, paths = true): JsonLiteral[] | undefined {
   const first = text.trimStart()[0];
-  if (first !== "{" && first !== "[") return undefined;
+  return first === "{" || first === "[" ? jsonLiterals(text, true, paths) : undefined;
+}
+
+function precededByOddBackslashes(text: string, index: number): boolean {
+  let count = 0;
+  for (let i = index - 1; text.charCodeAt(i) === 92; i--) count += 1;
+  return count % 2 === 1;
+}
+
+/** `0-9 + - . e E`: the characters after a JSON number's first one. */
+function isNumberChar(code: number): boolean {
+  return (code >= 48 && code <= 57) || code === 43 || code === 45 || code === 46 || code === 69 || code === 101;
+}
+
+const NO_PATH: BodyLeafPath = [];
+
+type JsonFrame = { array: true; index: number } | { array: false; key?: string; keyNext: boolean };
+
+/**
+ * Every string literal of `text` in document order (and number literals when `numbers`), with its
+ * position, path, and whether it is a key, or undefined when `text` is not valid JSON. Duplicate keys
+ * and their values are all reported, unlike a parse. Numbers matter inside JSON text, where a
+ * detector used to see them as part of one string (a card number written as a JSON number).
+ */
+function jsonLiterals(text: string, numbers: boolean, paths = true): JsonLiteral[] | undefined {
   try {
     JSON.parse(text);
   } catch {
     return undefined;
   }
-  // `text` is valid JSON, so every `"` outside a literal opens one and escapes are well formed, and
-  // every `-` or digit outside a literal starts a number.
-  const literals: JsonTextLiteral[] = [];
-  let cursor = 0;
-  while (cursor < text.length) {
-    const ch = text[cursor] ?? "";
-    if (ch === "-" || (ch >= "0" && ch <= "9")) {
-      const start = cursor;
-      while (cursor < text.length && /[-+.eE0-9]/.test(text[cursor] ?? "")) cursor += 1;
-      literals.push({ start, end: cursor, kind: "value", text: text.slice(start, cursor) });
-      continue;
+  // `text` is valid JSON, so the structure below is well formed: every `"` outside a literal opens
+  // one, escapes are complete, and every `-` or digit outside a literal starts a number.
+  const literals: JsonLiteral[] = [];
+  const frames: JsonFrame[] = [];
+  const path = (): BodyLeafPath => {
+    if (!paths) return NO_PATH;
+    const out: (string | number)[] = [];
+    for (const frame of frames) {
+      if (frame.array) out.push(frame.index);
+      else if (frame.key !== undefined) out.push(frame.key);
     }
-    if (ch !== '"') {
-      cursor += 1;
-      continue;
+    return out;
+  };
+  const valueKey = (): string | undefined => {
+    const top = frames.at(-1);
+    return top && !top.array ? top.key : undefined;
+  };
+  // Jump between structural characters; string contents are skipped with indexOf.
+  const structural = /["{}[\],:\-0-9]/g;
+  // The next backslash at or after the scan position, advanced monotonically so the escape check
+  // costs O(n) overall rather than a search to the next backslash per literal.
+  let backslash = text.indexOf("\\");
+  for (let match = structural.exec(text); match !== null; match = structural.exec(text)) {
+    const ch = match[0];
+    const at = match.index;
+    const top = frames.at(-1);
+    if (ch === "{" || ch === "[") {
+      frames.push(ch === "[" ? { array: true, index: 0 } : { array: false, keyNext: true });
+    } else if (ch === "}" || ch === "]") {
+      frames.pop();
+    } else if (ch === ",") {
+      if (top?.array) top.index += 1;
+      else if (top) top.keyNext = true;
+    } else if (ch === ":") {
+      if (top && !top.array) top.keyNext = false;
+    } else if (ch === '"') {
+      let close = text.indexOf('"', at + 1);
+      while (precededByOddBackslashes(text, close)) close = text.indexOf('"', close + 1);
+      if (backslash !== -1 && backslash < at) backslash = text.indexOf("\\", at);
+      const decoded =
+        backslash !== -1 && backslash < close
+          ? (JSON.parse(text.slice(at, close + 1)) as string)
+          : text.slice(at + 1, close);
+      structural.lastIndex = close + 1;
+      if (top && !top.array && top.keyNext) {
+        top.key = decoded;
+        literals.push({ start: at, end: close + 1, kind: "key", text: decoded, path: path() });
+      } else {
+        literals.push({ start: at, end: close + 1, kind: "value", text: decoded, path: path(), key: valueKey() });
+      }
+    } else {
+      let end = at + 1;
+      while (end < text.length && isNumberChar(text.charCodeAt(end))) end += 1;
+      structural.lastIndex = end;
+      if (numbers) {
+        literals.push({ start: at, end, kind: "value", text: text.slice(at, end), path: path(), key: valueKey() });
+      }
     }
-    const start = cursor;
-    cursor += 1;
-    while (text[cursor] !== '"') cursor += text[cursor] === "\\" ? 2 : 1;
-    cursor += 1;
-    let next = cursor;
-    while (next < text.length && /\s/.test(text[next] ?? "")) next += 1;
-    const decoded: unknown = JSON.parse(text.slice(start, cursor));
-    if (typeof decoded !== "string") return undefined;
-    literals.push({ start, end: cursor, kind: text[next] === ":" ? "key" : "value", text: decoded });
   }
   return literals;
 }
