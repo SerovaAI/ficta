@@ -427,6 +427,10 @@ function isLikelySecretValue(raw: string): boolean {
   // which silently deletes ~1 path per 150 from any file listing an agent reads.
   if (isPathShaped(value)) return false;
   if (/^[a-z][a-z0-9-]*$/i.test(value) && value.length < 20) return false;
+  // An environment variable name, not its value: a listing of names (`JWT_PRIVATE_KEY` on one line,
+  // `RESEND_API_KEY` on the next) otherwise reads as a secret-ish name followed by its value. Known
+  // secret shapes (e.g. AWS key IDs) were checked above and still win.
+  if (/^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(value)) return false;
   // Code references, not secrets: dotted identifier chains (localStorage.getItem,
   // envData.ADMIN_JWT_SECRET) and bare mixed-case identifiers with no digits (getValidApiKeys).
   // The chain tolerates optional chaining (`env.FOO?.trim`) and a trailing TypeScript non-null
@@ -525,14 +529,16 @@ function isCredentialLikeSegment(segment: string): boolean {
 }
 
 /**
- * True for multi-segment filesystem paths (`apps/web/app/settings/page.tsx`), optionally carrying a
+ * True for multi-segment filesystem paths (`apps/web/app/settings/page.tsx`, `/var/tmp/x/y`), optionally carrying a
  * grep/ripgrep locator suffix (`src/defaults.ts:12`, `src/defaults.ts:12:9`). Deliberately narrow:
  * a single-segment value is never path-shaped, `+` and `=` are excluded from the char class so
  * base64 credentials stay detectable, and one credential-like segment disqualifies the whole value
  * so a slash-containing secret is not mistaken for a path.
  */
 function isPathShaped(value: string): boolean {
-  if (!/^[A-Za-z0-9_.@~$%-]+(?:\/[A-Za-z0-9_.@~$%-]+)+\/?(?::\d+)*:?$/.test(value)) return false;
+  // An absolute path counts too (`/private/tmp/<agent>/<uuid>/scratchpad`): without the optional
+  // leading `/` it read as one long mixed-case token with digits, i.e. an opaque secret.
+  if (!/^\/?[A-Za-z0-9_.@~$%-]+(?:\/[A-Za-z0-9_.@~$%-]+)+\/?(?::\d+)*:?$/.test(value)) return false;
   return !value
     .replace(/(?::\d+)*:?$/, "")
     .split("/")

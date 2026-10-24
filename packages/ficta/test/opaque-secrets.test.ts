@@ -59,6 +59,26 @@ describe("opaque secret detection", () => {
     }
   });
 
+  it("does not flag absolute paths an agent works in", () => {
+    const uuid = "384296bb-2d24-43b6-86ac-96f85fa06d95";
+    for (const path of [
+      `/private/tmp/claude-501/-Users-dev-src-acme-app/${uuid}/scratchpad`,
+      `/private/tmp/claude-501/-Users-dev-src-acme-app/${uuid}/scratchpad/`,
+      `/private/tmp/claude-501/-Users-dev-src-acme-app/${uuid}/scratchpad/meta`,
+      "/var/folders/rl/19tnbzpj51zgmzm430g3w3wh0000gn/T/ficta-trace-audit-block-5lnkjO",
+      `/Users/Dev/Library/Caches/${HEX}/vite.log`,
+    ]) {
+      for (const text of [path, `cd ${path} && ls`, `Scratchpad directory: ${path}\n`, `"${path}"`]) {
+        expect(detectSecretShapes(text), text).toEqual([]);
+      }
+    }
+  });
+
+  it("still detects a secret with a slash-free credential segment behind a leading slash", () => {
+    expect(detectSecretShapes(`/${OPAQUE}`)).toContainEqual(expect.objectContaining({ name: "opaque-secret" }));
+    expect(detectSecretShapes(`/srv/${OPAQUE}/x`)).toContainEqual(expect.objectContaining({ name: "opaque-secret" }));
+  });
+
   it("scales the entropy bar with length so genuinely random 32-char tokens are not rejected", () => {
     // 32 chars over 21 distinct symbols: entropy 4.31 bits — below the old flat 4.5-bit bar, which
     // rejected about a third of random 32-char alphanumeric tokens, and above the scaled bar (4.25).
