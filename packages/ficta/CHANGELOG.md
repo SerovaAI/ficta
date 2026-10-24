@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.11.0
+
+### Minor Changes
+
+- [#137](https://github.com/SerovaAI/ficta/pull/137) [`555f987`](https://github.com/SerovaAI/ficta/commit/555f987d25eca938bb4355d000b9027b6d30f9f9) Thanks [@steflsd](https://github.com/steflsd)! - Prune capture logs automatically: agent launches and the standalone proxy (at most hourly) delete capture dirs idle for 14 days, then the oldest until `~/.ficta/logs` is under 1 GiB, and raw-value trace files after 24 hours; dirs still in use are never removed. Configure with `[logging] retain_days`, `max_total_bytes`, `trace_retain_hours` (0 disables). New `ficta logs` / `ficta logs prune [--traces]` command, and `ficta doctor` shows the retention policy. Also fixes `FICTA_DEV_TRACE` so its 16 MiB capture limit applies instead of the 256 KiB default.
+
+- [#145](https://github.com/SerovaAI/ficta/pull/145) [`fbe0620`](https://github.com/SerovaAI/ficta/commit/fbe062064d140b3ee4a1f0e05e8d7cf6ddaecc5a) Thanks [@steflsd](https://github.com/steflsd)! - Add `ficta logs audit [--json]`, which replays dev-trace captures and reports any protected value that reached the provider, any registry secret restored into a tool call, and unreplaced secret-shaped strings to review. Each launch is checked against its own protected values. The report shows hashes and labels, never values, and the command exits 1 on a leak.
+
+### Patch Changes
+
+- [#136](https://github.com/SerovaAI/ficta/pull/136) [`e2d3368`](https://github.com/SerovaAI/ficta/commit/e2d3368b1b0eb307772a31752e29c3c14893b218) Thanks [@steflsd](https://github.com/steflsd)! - Rewrite the package README intro: lead with what Ficta does for coding agents and point Gateway entity-token details to the threat model.
+- Updated dependencies [[`80e8882`](https://github.com/SerovaAI/ficta/commit/80e8882fdb104b69529819d125dfc92b9d105b87), [`827bd65`](https://github.com/SerovaAI/ficta/commit/827bd6572473063c79ccca4245e3c1a2bb7a69eb), [`0ddb717`](https://github.com/SerovaAI/ficta/commit/0ddb717f606e8023555f4cd2a687b37714fb7c37)]:
+  - @serovaai/ficta-engine@0.11.0
+  - @serovaai/ficta-protocol@0.11.0
+  - @serovaai/ficta-contract@0.4.1
+
 ## 0.10.0
 
 ### Minor Changes
