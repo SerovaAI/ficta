@@ -2,7 +2,9 @@
 fastapi>=0.110
 uvicorn[standard]>=0.29
 python-multipart>=0.0.9
-markitdown[all]>=0.0.1a3
+# Only the PDF and DOCX extras: app.py registers just those converters, and [all] would also install
+# audio transcription (Google speech API) and archive/office parsers. 0.1 added enable_builtins.
+markitdown[docx,pdf]>=0.1.0,<0.2
 # Used directly by signature_probe.py (MarkItDown's PDF extra also installs it transitively).
 pdfplumber>=0.11
 
