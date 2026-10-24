@@ -834,7 +834,12 @@ export abstract class VaultView {
    * by the caller's `pending` reassembly before it reaches here, so split tokens are counted and
    * withheld/restored as a unit rather than silently passing through raw.
    */
-  private restoreToolArgText(text: string, policy: RestoreIntoToolsPolicy, withheldSink: Set<string>): string {
+  private restoreToolArgText(
+    text: string,
+    policy: RestoreIntoToolsPolicy,
+    withheldSink: Set<string>,
+    encoding: "json" | "raw" = "json",
+  ): string {
     if (!this.hasSurrogates || !text) return text;
     return text.replace(this.surrogate.pattern, (m) => {
       const value = this.valueFor(m);
@@ -846,8 +851,9 @@ export abstract class VaultView {
         // surrogate always sits inside a string literal there. Splice the value in escaped for that
         // context — as restoreJsonText does for response bodies — or a value containing a newline,
         // `"`, or `\` (a PEM key, a quoted password, any multi-line file content the agent is
-        // writing back) produces invalid JSON and the tool call is corrupted.
-        return jsonStringEscape(value);
+        // writing back) produces invalid JSON and the tool call is corrupted. Freeform (`raw`) input
+        // is not JSON text, so the value goes in as-is.
+        return encoding === "raw" ? value : jsonStringEscape(value);
       }
       withheldSink.add(m);
       this.recordWithheld(value, m);
@@ -906,9 +912,10 @@ export abstract class VaultView {
     opts: RestoreOptions = {},
   ): string {
     const regions = adapter.toolArgumentTexts(parsed);
+    const rawRegions = adapter.rawToolTexts?.(parsed) ?? [];
     return this.restoreJsonText(
       body,
-      this.collectWithheldToolTokens(regions, policy),
+      this.collectWithheldToolTokens(rawRegions.length > 0 ? [...regions, ...rawRegions] : regions, policy),
       opts,
       nestedJsonStringSpans(body, regions, this.surrogate),
     );
@@ -1221,8 +1228,8 @@ export abstract class VaultView {
         // No-fragment metadata/replay path (the request-echo events): plain, so `instructions` and
         // other non-output fields are restored without highlight decoration.
         restoreReplayJson: (text, data) => this.restoreJsonBody(text, buffered, data, policy, plainOpts),
-        restoreToolArg: (text, withheldSink) =>
-          this.restoreToolArgText(this.replaceUnknownTokens(text, plainOpts, true), policy, withheldSink),
+        restoreToolArg: (text, withheldSink, encoding) =>
+          this.restoreToolArgText(this.replaceUnknownTokens(text, plainOpts, true), policy, withheldSink, encoding),
       },
       displayText,
       this.residualScanner(),
@@ -1433,6 +1440,13 @@ export interface StreamingTextFragment extends PendingSseFragment {
    * loop uses it to decide whether to withhold restoration. See {@link ToolRestorePolicy}.
    */
   kind: "text" | "tool";
+  /**
+   * How a tool fragment's text is read by the client: `json` (default) is JSON text the client
+   * concatenates and parses (function-call arguments), so a restored value is escaped for that
+   * nested string context; `raw` is freeform input used as-is (a Codex `apply_patch` body), so a
+   * restored value is spliced in unescaped. Withholding is identical for both.
+   */
+  encoding?: "json" | "raw";
   key: string;
   setValue: (value: string) => void;
 }
@@ -1455,7 +1469,13 @@ export interface SseRestoreAdapter {
  * wire-restore.ts.
  */
 export interface BufferedRestoreAdapter {
+  /** Tool-call arguments carried as JSON text inside a JSON string (restored values escaped twice). */
   toolArgumentTexts(body: unknown): string[];
+  /**
+   * Tool input that is not JSON text — freeform input (`apply_patch`) or a structured command — so it
+   * is withheld under the same policy but restored values keep ordinary single escaping.
+   */
+  rawToolTexts?(body: unknown): string[];
 }
 
 /** No shape knowledge: nothing is classified as a tool argument, so the blanket restore is kept. */
@@ -1483,7 +1503,7 @@ interface ToolRestorePolicy {
    */
   restoreReplayJson: (text: string, data: unknown) => string;
   /** Restore a reassembled tool-argument fragment per policy; withheld tokens go to `withheldSink`. */
-  restoreToolArg: (text: string, withheldSink: Set<string>) => string;
+  restoreToolArg: (text: string, withheldSink: Set<string>, encoding: "json" | "raw") => string;
 }
 
 function createSseRestoreStream(
@@ -1603,7 +1623,7 @@ function restoreSseRecord(
     const toolSink = withheld ?? new Set<string>();
     const restore =
       fragment.kind === "tool"
-        ? (text: string) => tool.restoreToolArg(text, toolSink)
+        ? (text: string) => tool.restoreToolArg(text, toolSink, fragment.encoding ?? "json")
         : fragment.kind === "text"
           ? restoreDisplayText
           : restoreText;

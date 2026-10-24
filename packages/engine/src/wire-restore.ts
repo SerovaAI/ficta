@@ -67,33 +67,77 @@ const ANTHROPIC_BUFFERED_ADAPTER: BufferedRestoreAdapter = {
 const OPENAI_CHAT_BUFFERED_ADAPTER: BufferedRestoreAdapter = {
   // Non-stream chat completion: choices[].message.tool_calls[].function.arguments (a JSON string).
   toolArgumentTexts(body) {
-    if (!isRecord(body) || !Array.isArray(body.choices)) return [];
     const regions: string[] = [];
-    for (const choice of body.choices) {
-      if (!isRecord(choice) || !isRecord(choice.message) || !Array.isArray(choice.message.tool_calls)) continue;
-      for (const toolCall of choice.message.tool_calls) {
-        if (isRecord(toolCall) && isRecord(toolCall.function) && typeof toolCall.function.arguments === "string") {
-          regions.push(toolCall.function.arguments);
-        }
+    for (const toolCall of openAiChatToolCalls(body)) {
+      if (isRecord(toolCall.function) && typeof toolCall.function.arguments === "string") {
+        regions.push(toolCall.function.arguments);
       }
+    }
+    return regions;
+  },
+  // Custom (freeform) tools: tool_calls[].type === "custom" → custom.input, plain text.
+  rawToolTexts(body) {
+    const regions: string[] = [];
+    for (const toolCall of openAiChatToolCalls(body)) {
+      if (isRecord(toolCall.custom) && typeof toolCall.custom.input === "string") regions.push(toolCall.custom.input);
     }
     return regions;
   },
 };
 
+function openAiChatToolCalls(body: unknown): Record<string, unknown>[] {
+  if (!isRecord(body) || !Array.isArray(body.choices)) return [];
+  const toolCalls: Record<string, unknown>[] = [];
+  for (const choice of body.choices) {
+    if (!isRecord(choice) || !isRecord(choice.message) || !Array.isArray(choice.message.tool_calls)) continue;
+    for (const toolCall of choice.message.tool_calls) if (isRecord(toolCall)) toolCalls.push(toolCall);
+  }
+  return toolCalls;
+}
+
 const OPENAI_RESPONSES_BUFFERED_ADAPTER: BufferedRestoreAdapter = {
   // Non-stream response: output[].type === "function_call" → arguments (a JSON string). SSE replay
   // events re-send the same completed items nested under `response` (response.completed) or as a
-  // bare `item` (response.output_item.added/done).
+  // bare `item` (response.output_item.added/done), and `response.function_call_arguments.done`
+  // re-sends the whole arguments text.
   toolArgumentTexts(body) {
     if (!isRecord(body)) return [];
     const regions: string[] = [];
-    collectResponsesFunctionCalls(body.output, regions);
-    if (isRecord(body.response)) collectResponsesFunctionCalls(body.response.output, regions);
-    collectResponsesFunctionCall(body.item, regions);
+    for (const item of responsesItems(body)) {
+      if (item.type === "function_call" && typeof item.arguments === "string") regions.push(item.arguments);
+    }
+    if (body.type === "response.function_call_arguments.done" && typeof body.arguments === "string") {
+      regions.push(body.arguments);
+    }
+    return regions;
+  },
+  // Codex freeform tools: `custom_tool_call.input` (apply_patch), re-sent whole by
+  // `response.custom_tool_call_input.done`, and `local_shell_call.action` (an argv array and env).
+  rawToolTexts(body) {
+    if (!isRecord(body)) return [];
+    const regions: string[] = [];
+    for (const item of responsesItems(body)) {
+      if (item.type === "custom_tool_call" && typeof item.input === "string") regions.push(item.input);
+      if (item.type === "local_shell_call" && item.action !== undefined) regions.push(JSON.stringify(item.action));
+    }
+    if (body.type === "response.custom_tool_call_input.done" && typeof body.input === "string") {
+      regions.push(body.input);
+    }
     return regions;
   },
 };
+
+/** Output items of a response body, an SSE `response.*` envelope, or an `output_item` event. */
+function responsesItems(body: Record<string, unknown>): Record<string, unknown>[] {
+  const items: Record<string, unknown>[] = [];
+  const add = (output: unknown) => {
+    if (Array.isArray(output)) for (const item of output) if (isRecord(item)) items.push(item);
+  };
+  add(body.output);
+  if (isRecord(body.response)) add(body.response.output);
+  if (isRecord(body.item)) items.push(body.item);
+  return items;
+}
 
 function collectAnthropicToolUse(content: unknown, regions: string[]): void {
   if (!Array.isArray(content)) return;
@@ -104,17 +148,6 @@ function collectAnthropicToolUseBlock(block: unknown, regions: string[]): void {
   if (!isRecord(block) || block.type !== "tool_use" || block.input === undefined) return;
   const text = JSON.stringify(block.input);
   if (text) regions.push(text);
-}
-
-function collectResponsesFunctionCalls(output: unknown, regions: string[]): void {
-  if (!Array.isArray(output)) return;
-  for (const item of output) collectResponsesFunctionCall(item, regions);
-}
-
-function collectResponsesFunctionCall(item: unknown, regions: string[]): void {
-  if (isRecord(item) && item.type === "function_call" && typeof item.arguments === "string") {
-    regions.push(item.arguments);
-  }
 }
 
 const ANTHROPIC_ADAPTER: SseRestoreAdapter = {
@@ -149,6 +182,7 @@ const OPENAI_RESPONSES_ADAPTER: SseRestoreAdapter = {
     if (!isRecord(data)) return [];
     if (data.type === "response.output_text.done") return [openAiResponseTextKey(data)];
     if (data.type === "response.function_call_arguments.done") return [openAiResponseArgumentsKey(data)];
+    if (data.type === "response.custom_tool_call_input.done") return [openAiResponseInputKey(data)];
     if (data.type === "response.completed") return ["openai-responses:"];
     return [];
   },
@@ -272,6 +306,22 @@ function openAiResponsesStreamingTextFragments(
     ];
   }
 
+  if (data.type === "response.custom_tool_call_input.delta" && typeof data.delta === "string") {
+    return [
+      {
+        kind: "tool",
+        encoding: "raw",
+        key: openAiResponseInputKey(data),
+        value: data.delta,
+        eventName,
+        setValue: (value) => {
+          data.delta = value;
+        },
+        flushData: (value) => ({ ...data, delta: value }),
+      },
+    ];
+  }
+
   return [];
 }
 
@@ -298,4 +348,8 @@ function openAiResponseTextKey(data: Record<string, unknown>): string {
 
 function openAiResponseArgumentsKey(data: Record<string, unknown>): string {
   return `openai-responses:${String(data.item_id ?? data.output_index ?? "")}:arguments`;
+}
+
+function openAiResponseInputKey(data: Record<string, unknown>): string {
+  return `openai-responses:${String(data.item_id ?? data.output_index ?? "")}:input`;
 }
