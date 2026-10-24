@@ -1,5 +1,15 @@
 # @serovaai/ficta-engine
 
+## 0.11.0
+
+### Patch Changes
+
+- [#146](https://github.com/SerovaAI/ficta/pull/146) [`80e8882`](https://github.com/SerovaAI/ficta/commit/80e8882fdb104b69529819d125dfc92b9d105b87) Thanks [@steflsd](https://github.com/steflsd)! - Scan and forward request bodies literal by literal. A value hidden behind a duplicate JSON key (`{"content":"<secret>","content":"hi"}`) is now redacted and seen by the leak gate, where before the parse kept only the last value while the original bytes, secret included, were forwarded. Redaction no longer re-serializes the body, so integers above 2^53 and formatting reach the provider unchanged. A registered value written inside token-shaped text that this scope never minted (a 32-hex key written as `FICTA_<key>`) is now redacted and leak-checked instead of being exempt.
+
+- [#144](https://github.com/SerovaAI/ficta/pull/144) [`827bd65`](https://github.com/SerovaAI/ficta/commit/827bd6572473063c79ccca4245e3c1a2bb7a69eb) Thanks [@steflsd](https://github.com/steflsd)! - Apply `restore_into_tools` to Codex freeform tools. A registry secret placed in a Responses `custom_tool_call` (`apply_patch`) or `local_shell_call`, or in a chat custom tool call, is now withheld under the default `detected` policy instead of being restored. This covers buffered bodies, streamed `custom_tool_call_input` deltas (including a token split across them), and replay events. The `response.function_call_arguments.done` and `response.custom_tool_call_input.done` events, which re-send the whole input, are withheld too. Restored values in freeform input are no longer JSON-escaped.
+
+- [#143](https://github.com/SerovaAI/ficta/pull/143) [`0ddb717`](https://github.com/SerovaAI/ficta/commit/0ddb717f606e8023555f4cd2a687b37714fb7c37) Thanks [@steflsd](https://github.com/steflsd)! - Fix two exact-match guarantee gaps. A registered value that JSON-escapes (a quote, backslash or newline) is now redacted and leak-checked inside OpenAI tool-call `arguments`, which carry JSON text inside a JSON string. A registry secret that a detector also sees in a header or query string now stays a registry secret, so the default `restore_into_tools=detected` keeps withholding it from tool calls, including in keyed scopes whose stores hold a detected copy written by an earlier release.
+
 ## 0.10.0
 
 ### Minor Changes

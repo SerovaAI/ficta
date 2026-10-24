@@ -1,5 +1,12 @@
 # @serovaai/ficta-contract
 
+## 0.4.1
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @serovaai/ficta-protocol@0.11.0
+
 ## 0.4.0
 
 ### Minor Changes
