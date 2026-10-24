@@ -183,6 +183,13 @@ tree is under 1 GiB, and raw-value trace files go after 24 hours. Dirs still in 
 Tune it with `[logging] retain_days`, `max_total_bytes`, and `trace_retain_hours` (0 disables a
 limit). `ficta logs` shows usage; `ficta logs prune [--traces]` applies the policy now.
 
+`ficta logs audit` replays the traces captured with `FICTA_DEV_TRACE=1` and checks what actually
+left: a value a launch protected that still reached the provider, or a registry secret restored into
+a tool call. Each launch is checked against its own protected values, and values inside file paths
+are counted as preserved. It also lists unreplaced secret-shaped strings for review. The report
+shows hashes, lengths, and labels, never values; `--json` gives the same report as JSON, and the
+command exits 1 when it finds a leak. Requests without a captured body are counted but not checked.
+
 When a request contains redacted values, Ficta defaults to adding a system/developer instruction that
 asks the model to reproduce the exact surrogate literals. Exact reproduction lets Ficta restore the
 original values in the response; models can otherwise truncate or editorialize opaque tokens. Set

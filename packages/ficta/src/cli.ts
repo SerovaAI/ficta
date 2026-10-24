@@ -426,6 +426,7 @@ function printHelp(exitCode: number): never {
         "logs [prune [--traces]]",
         "Show capture-log usage; prune applies retention now (--traces: drop all raw traces)",
       ],
+      ["logs audit [--json]", "Check captured traces for protected values sent upstream or into tool calls"],
       ["install [--force] [--no-shell]", `Install ${supportedAgents.join("/")} shims into ~/.ficta/bin`],
       ["uninstall [--no-shell]", "Remove installed shims"],
       ["disable", "Globally bypass installed shims"],
