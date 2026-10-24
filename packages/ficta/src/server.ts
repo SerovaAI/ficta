@@ -95,6 +95,7 @@ import {
   selectedBackendNames,
 } from "./plugins/index.js";
 import { ProtectionStats, type ProtectionStatsSnapshot, type ProtectionSurface } from "./protection-stats.js";
+import { allowedHostNames, fromBrowser, hostHeaderAllowed } from "./request-origin.js";
 import {
   applyProxyConfigPatch,
   isLoopbackAddress,
@@ -177,6 +178,7 @@ export async function startProxy(opts: StartProxyOptions = {}): Promise<ProxyHan
     egressProofs: new Map<string, EgressProof>(),
     defaultScopeKey: normalizeScopeKey(opts.defaultScopeKey),
     launchToken: opts.launchToken || undefined,
+    allowedHosts: allowedHostNames(),
     runtimeTraceCapture: { enabled: opts.traceAllRequests === true },
     traceAllRequests: opts.traceAllRequests === true,
     controlHandler: createControlHandler(engine, stats, protectionTickets),
@@ -200,6 +202,8 @@ interface ProxyState {
   defaultScopeKey: string | undefined;
   /** Per-launch caller token required on provider-bound requests (see StartProxyOptions). */
   launchToken: string | undefined;
+  /** Host names (beyond IP literals and loopback) this proxy answers to; see request-origin.ts. */
+  allowedHosts: ReadonlySet<string>;
   /** Toggled at runtime by a loopback administrator through FICTA_TRACE_CAPTURE_PATH. */
   runtimeTraceCapture: { enabled: boolean };
   /** Capture every request without the per-request selector (see StartProxyOptions). */
@@ -321,6 +325,20 @@ function headerLaunchTokenValid(c: ProxyContext, token: string): boolean {
 async function handleProxyRequest(state: ProxyState, c: ProxyContext): Promise<Response> {
   const url = new URL(c.req.url);
   const method = c.req.method;
+  // DNS rebinding: a page whose name now resolves to loopback still sends its own name as Host.
+  // Answer only to IP literals, loopback names, and FICTA_ALLOWED_HOSTS, on every route, since a
+  // rebinding page could otherwise read restored responses as well as reach the control plane.
+  if (!hostHeaderAllowed(c.req.header("host"), state.allowedHosts)) {
+    return c.json(
+      {
+        error: {
+          type: "forbidden",
+          message: "ficta: unrecognised Host header (add the name to FICTA_ALLOWED_HOSTS if it is yours)",
+        },
+      },
+      403,
+    );
+  }
   // Belt-and-braces with the socket-level "upgrade" listener in listen(): refuse WebSocket upgrade
   // attempts locally instead of forwarding a doomed (but authenticated) GET upstream. Clients
   // with an HTTP fallback (e.g. Pi's Codex transport) retry over SSE immediately.
@@ -381,6 +399,13 @@ async function handleControlRoute(
   method: string,
 ): Promise<Response | undefined> {
   const { stats, egressProofs, controlHandler } = state;
+  if (isControlPath(url.pathname) && fromBrowser(c.req.raw.headers)) {
+    // Control routes serve local processes only; a browser request here is a cross-site attempt.
+    return c.json(
+      { error: { type: "forbidden", message: "ficta: control routes do not accept browser requests" } },
+      403,
+    );
+  }
   const controlMethod = FICTA_CONTROL_METHODS.get(url.pathname);
   if (controlMethod) {
     const allowed = method === controlMethod.method || (method === "HEAD" && controlMethod.allowHead);
@@ -426,6 +451,17 @@ async function handleControlRoute(
   if (url.pathname === FICTA_CONFIG_PATH) return handleConfigRoute(state, c, method);
   if (url.pathname === FICTA_REGISTRY_RELOAD_PATH) return handleRegistryReloadRoute(state, c, method);
   return undefined;
+}
+
+function isControlPath(pathname: string): boolean {
+  return (
+    FICTA_CONTROL_METHODS.has(pathname) ||
+    pathname === FICTA_PROTECTION_STATS_PATH ||
+    pathname === FICTA_EGRESS_PROOF_PATH ||
+    pathname === FICTA_TRACE_CAPTURE_PATH ||
+    pathname === FICTA_CONFIG_PATH ||
+    pathname === FICTA_REGISTRY_RELOAD_PATH
+  );
 }
 
 /**

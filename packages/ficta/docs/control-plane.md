@@ -418,8 +418,11 @@ missing or expired evidence produces 404. The reference proxy retains proofs for
 15 minutes; clients MUST persist receipts they need and MUST NOT interpret a missing receipt as
 successful screening. `survivingValues` covers known values only, not undetected sensitive content.
 
-Configuration PATCH, trace GET/PATCH, and registry reload require loopback callers. The application
-server MUST enforce operator authorization. Config changes report `restartRequired` and locked
+Configuration PATCH, trace GET/PATCH, and registry reload require loopback callers. Every
+`/__ficta/*` route refuses requests that carry browser provenance (`Origin`, or `Sec-Fetch-Site`
+other than `none`) with 403, and the proxy as a whole refuses a `Host` that is not an IP literal, a
+loopback name, or listed in `FICTA_ALLOWED_HOSTS`. Clients MUST call these routes from a server, not
+a browser. The application server MUST enforce operator authorization. Config changes report `restartRequired` and locked
 fields; a saved setting does not promise it is active. Trace capture requires the operator's configured
 trace capability, the runtime toggle, and per-request `x-ficta-trace-capture: 1`; enabling a toggle
 alone does not promise a trace file. Trace data may be sensitive and is not a values-free receipt.

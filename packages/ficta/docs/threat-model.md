@@ -113,6 +113,14 @@ close that local "echo oracle":
 The proxy binds loopback by default; `FICTA_HOST` can widen that but then also exposes the forwarded
 provider auth headers, so it stays opt-in.
 
+A loopback peer address does not mean a trusted caller: a web page can reach `127.0.0.1` too. The
+proxy therefore answers only when the `Host` header is an IP literal, a loopback name, or a name in
+`FICTA_ALLOWED_HOSTS`, which defeats DNS rebinding (a rebound page still sends its own name). Its
+control routes (`/__ficta/*`) also refuse any request with browser provenance, meaning an `Origin`
+header or a cross-site `Sec-Fetch-Site`, because only local processes such as the Gateway server
+and the CLI call them. Another process running as the same user can still reach the standalone
+proxy's control routes; that is the same-user boundary above.
+
 ## Remote MCP servers are a second egress path
 
 ficta redacts the **model API** channel. An agent's MCP servers are a separate channel, and their

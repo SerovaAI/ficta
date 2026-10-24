@@ -451,6 +451,7 @@ function printHelp(exitCode: number): never {
       ["FICTA_TRACE_AUDIT=1", "With runtime trace capture, also write raw protected-value audit sidecars"],
       ["FICTA_DEV_TRACE=1", "Dev/debug: trace every agent request (raw values!) and log to ficta.log"],
       ["FICTA_REQUIRE_REGISTRY=1", "Block provider requests and agent launch until the registry is ready"],
+      ["FICTA_ALLOWED_HOSTS=<names>", "Extra Host names the proxy answers to (IP literals and localhost always)"],
     ]),
     "",
     "Registry sources:",
