@@ -1,5 +1,11 @@
 # @serovaai/ficta-engine
 
+## 0.12.0
+
+### Patch Changes
+
+- [#147](https://github.com/SerovaAI/ficta/pull/147) [`322344c`](https://github.com/SerovaAI/ficta/commit/322344c0b99ff2f0f025eaa0628b14ace65f6713) Thanks [@steflsd](https://github.com/steflsd)! - Stop the secret-shape detector from flagging two kinds of ordinary text: absolute filesystem paths (an agent's scratchpad or temp directory, read as one long opaque token), and an environment variable name that follows a secret-ish name in a listing (`JWT_PRIVATE_KEY` then `RESEND_API_KEY`, read as a name and its value). Both were redacted on some turns and not others.
+
 ## 0.11.0
 
 ### Patch Changes

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.12.0
+
+### Minor Changes
+
+- [#148](https://github.com/SerovaAI/ficta/pull/148) [`f833984`](https://github.com/SerovaAI/ficta/commit/f8339844dcb9dc4a411b9834a568356ff9c685a2) Thanks [@steflsd](https://github.com/steflsd)! - Defend the local proxy against web pages. The proxy now refuses a request whose `Host` header is not an IP literal, a loopback name, or a name in the new `FICTA_ALLOWED_HOSTS`, which blocks DNS rebinding. Its `/__ficta/*` control routes also refuse any request carrying browser provenance (`Origin`, or a cross-site `Sec-Fetch-Site`). Before this, a page could rewrite `config.toml` through `PATCH /__ficta/config` on the standalone proxy (for example setting `fail_closed = false`), toggle trace capture, or trigger a registry reload. If you reach the proxy by a DNS name other than `localhost`, add it to `FICTA_ALLOWED_HOSTS`.
+
+### Patch Changes
+
+- Updated dependencies [[`322344c`](https://github.com/SerovaAI/ficta/commit/322344c0b99ff2f0f025eaa0628b14ace65f6713)]:
+  - @serovaai/ficta-engine@0.12.0
+  - @serovaai/ficta-protocol@0.12.0
+  - @serovaai/ficta-contract@0.4.2
+
 ## 0.11.0
 
 ### Minor Changes
