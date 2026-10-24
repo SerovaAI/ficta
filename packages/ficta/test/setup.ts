@@ -1,3 +1,7 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 // Keep tests deterministic and isolated from any real ~/.ficta/config.toml, Doppler CLI/config, or a
 // shell that has sourced the ficta dev environment. vitest inherits the launching process's env (it
 // does not sandbox process.env), so a dev shell exporting e.g. FICTA_PII_BACKEND=presidio or
@@ -20,3 +24,8 @@ process.env.FICTA_REGISTRY_ENV_FILE_PATHS = ".env:.env.local";
 process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "0";
 process.env.FICTA_REGISTRY_PROCESS_ENV_ENABLED = "0";
 process.env.FICTA_REGISTRY_PROCESS_ENV_MODE = "secret-ish";
+
+// Capture logs go to a throwaway root: a proxy a test starts would otherwise write run dirs (and, with
+// capture on, raw bodies) into the developer's real ~/.ficta/logs. Tests that need their own dir still
+// set FICTA_LOG_DIR, which overrides this.
+process.env.FICTA_LOG_ROOT = mkdtempSync(join(tmpdir(), "ficta-test-logs-"));

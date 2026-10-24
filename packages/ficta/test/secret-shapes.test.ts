@@ -144,6 +144,20 @@ describe("secret-shape detector", () => {
     ]);
   });
 
+  it("does not treat an environment variable name as the value of the name before it", () => {
+    for (const text of [
+      "EMAIL_FROM\nJWKS\nJWT_PRIVATE_KEY\nRESEND_API_KEY\nSITE_URL",
+      "keys: JWT_PRIVATE_KEY RESEND_API_KEY",
+      "PAYMENT_SECRET=" + ["STRIPE", "LIVE", "KEY"].join("_"),
+    ]) {
+      expect(detectSecretShapes(text), text).toEqual([]);
+    }
+    // A real value after the name is still caught, and a known shape in caps still wins.
+    expect(detectSecretShapes(`JWT_PRIVATE_KEY=${GENERIC_SECRET}`).map((value) => value.value)).toContain(
+      GENERIC_SECRET,
+    );
+  });
+
   it("does not treat code references as secret-assignment values", () => {
     // Dotted identifier chains and bare mixed-case identifiers are code, not secrets. The value
     // char class also stops before a call/index expression so `foo(` never enters the candidate.
