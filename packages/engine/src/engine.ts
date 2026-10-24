@@ -67,6 +67,7 @@ import {
   stripRestoreMarkers,
   type SurrogateTable,
   Vault,
+  JSON_TEXT_KEYS,
   visitBodyLeaves,
 } from "./vault.js";
 import type { Wire } from "./wire.js";
@@ -970,8 +971,12 @@ class ProtectionRequestScope implements RequestScope {
     const destroyedValues = new Set(destroy.map((value) => value.value));
     // The vault keeps the first category it sees for a value, so register in priority order.
     reversible.sort((a, b) => compareCategoryClaims(a, b, this.runtime.config));
-    for (const value of reversible) {
-      if (destroyedValues.has(value.value)) continue; // another category of this value destroys it
+    // A registry or caller-selected value already has its token; registering it again here would
+    // relabel it `detected` (and persist that relabel in a keyed scope).
+    const fresh = reversible.filter(
+      (value) => !destroyedValues.has(value.value) && !this.vault.heldWithRegistryAuthority(value.value),
+    );
+    for (const value of fresh) {
       remember(this.detectedMetadata, value);
       this.vault.register([value]);
     }
@@ -996,7 +1001,7 @@ class ProtectionRequestScope implements RequestScope {
       if (leakValues.length > 0) details.traceLeakValues = this.traceValuesFor(leakValues);
     }
     await this.persistence?.persist(
-      reversible.map((value) => value.value),
+      fresh.map((value) => value.value),
       this.vault.surrogatesIn(redacted.text),
     );
     return details;
@@ -1370,13 +1375,21 @@ class ProtectionRequestScope implements RequestScope {
   }
 }
 
+/** Body leaves include the strings inside tool-call JSON text, so escaped values there are matched. */
+const BODY_LEAF_OPTIONS = { jsonTextKeys: JSON_TEXT_KEYS } as const;
+
 function bodyDocument(body: string): BodyDocument {
   try {
     const parsed: unknown = JSON.parse(body);
     const leaves: BodyLeaf[] = [];
-    visitBodyLeaves(parsed, (leaf) => {
-      leaves.push(leaf);
-    });
+    visitBodyLeaves(
+      parsed,
+      (leaf) => {
+        leaves.push(leaf);
+      },
+      "value",
+      BODY_LEAF_OPTIONS,
+    );
     return { body, parsed, leaves, isJson: true };
   } catch {
     return rawDocument(body);
@@ -1399,7 +1412,7 @@ function rawDocument(body: string): BodyDocument {
 function renderBodyDocument(document: BodyDocument, replacements: ReadonlyMap<number, string>): string {
   if (replacements.size === 0) return document.body;
   if (!document.isJson) return replacements.get(0) ?? document.body;
-  const mapped = visitBodyLeaves(document.parsed, (leaf) => replacements.get(leaf.index));
+  const mapped = visitBodyLeaves(document.parsed, (leaf) => replacements.get(leaf.index), "value", BODY_LEAF_OPTIONS);
   return JSON.stringify(mapped);
 }
 

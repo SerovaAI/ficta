@@ -579,20 +579,40 @@ export abstract class VaultView {
     return undefined;
   }
 
-  /** Provenance of the layer that maps `surrogate` (first match wins, mirroring {@link valueFor}). */
-  private provenanceFor(surrogate: string): LayerProvenance | undefined {
-    for (const layer of this.layers) {
-      if (layer.toVal.has(surrogate)) return layer.provenance;
-    }
-    return undefined;
+  /**
+   * A layer with `permanent` provenance (registry, registry-derived or caller-selected) already maps
+   * `value`. Detection must not re-register such a value on the detected layer: that layer sits ahead
+   * of the permanent registry, so the first-match {@link provenanceFor} would call the registry secret
+   * `detected` and restore it into tool calls.
+   */
+  heldWithRegistryAuthority(value: string): boolean {
+    return this.layers.some((layer) => layer.provenance === "permanent" && layer.toSur.has(value));
   }
 
-  /** UI provenance of the first layer mapping `surrogate`, matching value/redaction precedence. */
-  private restoreOriginFor(surrogate: string): RestoreOrigin | undefined {
+  /**
+   * The layer whose provenance governs `surrogate`: the first permanent-provenance layer that maps
+   * it, else the first layer that does. Registry authority wins over layer order, so a detected-layer
+   * copy of a registry secret (e.g. one hydrated from a store written before detection stopped
+   * re-registering them) can never make the secret restorable into tool calls.
+   */
+  private governingLayer(surrogate: string): SurrogateTable | undefined {
+    let first: SurrogateTable | undefined;
     for (const layer of this.layers) {
-      if (layer.toVal.has(surrogate)) return layer.restoreOrigin;
+      if (!layer.toVal.has(surrogate)) continue;
+      if (layer.provenance === "permanent") return layer;
+      first ??= layer;
     }
-    return undefined;
+    return first;
+  }
+
+  /** Provenance of the layer that governs `surrogate` (see {@link governingLayer}). */
+  private provenanceFor(surrogate: string): LayerProvenance | undefined {
+    return this.governingLayer(surrogate)?.provenance;
+  }
+
+  /** UI provenance of the layer that governs `surrogate`, matching the restore policy's view. */
+  private restoreOriginFor(surrogate: string): RestoreOrigin | undefined {
+    return this.governingLayer(surrogate)?.restoreOrigin;
   }
 
   /**
@@ -603,7 +623,7 @@ export abstract class VaultView {
   private surrogateEntryFor(value: string): { surrogate: string; provenance: LayerProvenance } | undefined {
     for (const layer of this.layers) {
       const surrogate = layer.toSur.get(value);
-      if (surrogate !== undefined) return { surrogate, provenance: layer.provenance };
+      if (surrogate !== undefined) return { surrogate, provenance: this.provenanceFor(surrogate) ?? layer.provenance };
     }
     return undefined;
   }
@@ -1037,9 +1057,21 @@ export abstract class VaultView {
     const strings: string[] = [];
     let masked: string | undefined;
     try {
-      visitBodyLeaves(JSON.parse(body), (leaf) => {
+      const parsed: unknown = JSON.parse(body);
+      visitBodyLeaves(parsed, (leaf) => {
         strings.push(leaf.text);
       });
+      // Also the strings inside JSON-text values (tool-call arguments), decoded once more, so a value
+      // escaped twice there is still found. The whole-value scan above stays for numbers inside them.
+      visitBodyLeaves(
+        parsed,
+        (leaf) => {
+          if (leaf.inJsonText) strings.push(leaf.text);
+          return undefined;
+        },
+        "value",
+        { jsonTextKeys: JSON_TEXT_KEYS },
+      );
       masked = maskJsonStringLiterals(body);
     } catch {
       // Non-JSON: the whole raw body is scanned for any known value below.
@@ -2255,33 +2287,126 @@ export interface BodyLeaf {
   readonly kind: BodyLeafKind;
   readonly path: BodyLeafPath;
   readonly text: string;
+  /** A string literal inside a JSON-text value (see {@link JSON_TEXT_KEYS}). */
+  readonly inJsonText?: true;
 }
 
 export type BodyLeafVisitor = (leaf: BodyLeaf) => string | undefined;
 
 /**
+ * Object keys whose string value is itself JSON text: OpenAI chat `tool_calls[].function.arguments`
+ * and Responses `function_call.arguments`. A value inside one is JSON-escaped a second time, so a
+ * registered value containing `"`, `\`, or a newline never matches the once-decoded leaf. Redaction
+ * and the leak gate visit the strings inside such JSON text as leaves of their own.
+ */
+export const JSON_TEXT_KEYS: ReadonlySet<string> = new Set(["arguments"]);
+
+export interface BodyLeafOptions {
+  /** String values under these keys that parse as a JSON object or array are visited as their strings. */
+  readonly jsonTextKeys?: ReadonlySet<string>;
+}
+
+/**
  * Visit and optionally rewrite every JSON string leaf through one structural traversal. Object keys
  * are visited immediately before their values; arrays retain index order. The returned structure is
- * suitable for JSON.stringify and preserves all non-string primitives unchanged.
+ * suitable for JSON.stringify and preserves all non-string primitives unchanged. With `jsonTextKeys`,
+ * a JSON-text value is visited string by string instead of whole, and a rewrite splices only the
+ * rewritten literals back into its original text, so every other byte of it is kept.
  */
-export function visitBodyLeaves(value: unknown, visit: BodyLeafVisitor, rootKind: "value" | "raw" = "value"): unknown {
+export function visitBodyLeaves(
+  value: unknown,
+  visit: BodyLeafVisitor,
+  rootKind: "value" | "raw" = "value",
+  opts: BodyLeafOptions = {},
+): unknown {
   let index = 0;
-  const walk = (current: unknown, path: BodyLeafPath): unknown => {
+  const visitJsonText = (text: string, literals: readonly JsonTextLiteral[], path: BodyLeafPath): string => {
+    let out = "";
+    let cursor = 0;
+    literals.forEach((literal, i) => {
+      const replacement = visit({
+        index: index++,
+        kind: literal.kind,
+        path: [...path, i],
+        text: literal.text,
+        inJsonText: true,
+      });
+      if (replacement === undefined || replacement === literal.text) return;
+      out += `${text.slice(cursor, literal.start)}${JSON.stringify(replacement)}`;
+      cursor = literal.end;
+    });
+    return cursor === 0 ? text : out + text.slice(cursor);
+  };
+  const walk = (current: unknown, path: BodyLeafPath, key?: string): unknown => {
     if (typeof current === "string") {
+      const literals = key !== undefined && opts.jsonTextKeys?.has(key) ? jsonTextLiterals(current) : undefined;
+      if (literals) return visitJsonText(current, literals, path);
       const replacement = visit({ index: index++, kind: path.length === 0 ? rootKind : "value", path, text: current });
       return replacement ?? current;
     }
     if (Array.isArray(current)) return current.map((entry, i) => walk(entry, [...path, i]));
     if (current && typeof current === "object") {
       const out: Record<string, unknown> = Object.create(null);
-      for (const [key, entry] of Object.entries(current)) {
-        const entryPath = [...path, key];
-        const replacement = visit({ index: index++, kind: "key", path: entryPath, text: key });
-        out[replacement ?? key] = walk(entry, entryPath);
+      for (const [entryKey, entry] of Object.entries(current)) {
+        const entryPath = [...path, entryKey];
+        const replacement = visit({ index: index++, kind: "key", path: entryPath, text: entryKey });
+        out[replacement ?? entryKey] = walk(entry, entryPath, entryKey);
       }
       return out;
     }
     return current;
   };
   return walk(value, []);
+}
+
+interface JsonTextLiteral {
+  /** Offset of the opening quote. */
+  readonly start: number;
+  /** Offset just past the closing quote. */
+  readonly end: number;
+  readonly kind: "key" | "value";
+  /** The decoded string. */
+  readonly text: string;
+}
+
+/**
+ * The string and number literals of `text` in order, or undefined unless `text` is a JSON object or
+ * array. Numbers are included because a detector saw them when the whole text was one leaf (a card
+ * number written as a JSON number); a rewritten number is spliced back as a string.
+ */
+function jsonTextLiterals(text: string): JsonTextLiteral[] | undefined {
+  const first = text.trimStart()[0];
+  if (first !== "{" && first !== "[") return undefined;
+  try {
+    JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  // `text` is valid JSON, so every `"` outside a literal opens one and escapes are well formed, and
+  // every `-` or digit outside a literal starts a number.
+  const literals: JsonTextLiteral[] = [];
+  let cursor = 0;
+  while (cursor < text.length) {
+    const ch = text[cursor] ?? "";
+    if (ch === "-" || (ch >= "0" && ch <= "9")) {
+      const start = cursor;
+      while (cursor < text.length && /[-+.eE0-9]/.test(text[cursor] ?? "")) cursor += 1;
+      literals.push({ start, end: cursor, kind: "value", text: text.slice(start, cursor) });
+      continue;
+    }
+    if (ch !== '"') {
+      cursor += 1;
+      continue;
+    }
+    const start = cursor;
+    cursor += 1;
+    while (text[cursor] !== '"') cursor += text[cursor] === "\\" ? 2 : 1;
+    cursor += 1;
+    let next = cursor;
+    while (next < text.length && /\s/.test(text[next] ?? "")) next += 1;
+    const decoded: unknown = JSON.parse(text.slice(start, cursor));
+    if (typeof decoded !== "string") return undefined;
+    literals.push({ start, end: cursor, kind: text[next] === ":" ? "key" : "value", text: decoded });
+  }
+  return literals;
 }
