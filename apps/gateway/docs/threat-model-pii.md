@@ -54,6 +54,16 @@ specific way:
   in a document could shift its answers. Because its output is advisory and a person confirms every
   selection, the failure mode is a missed hint, not a changed redaction.
 
+### Rendering restored replies
+
+Restored values reach the browser by design, and the model that wrote the reply may have been steered
+by a prompt injection in an uploaded document. The chat renderer therefore makes no request on render:
+images (markdown or raw HTML, including `picture`/`source`) are replaced with a "blocked" indicator, so
+a URL that carries a restored value is never fetched without user action. Links to http(s)/mailto
+targets stay usable but open only after a confirmation that shows the full URL; other protocols are
+removed. A link whose URL embeds a restored value is still openable on purpose — read the URL in the
+confirmation before following a link the model wrote.
+
 ## Two layers, two strengths
 
 **Strong (inherited from the base threat model):** the firm's **registered values** — a loaded

