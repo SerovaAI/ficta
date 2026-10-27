@@ -1,4 +1,5 @@
 import type { ProtectionPreviewFinding } from "@serovaai/ficta-protocol";
+import { zstdDecompressSync } from "node:zlib";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -188,6 +189,14 @@ describe("assessment", () => {
     ) as unknown as typeof fetch;
   }
 
+  /** Decode a sent request body as the API would: the SDK zstd-compresses bodies of 1 KiB or more. */
+  async function sentJson(init: RequestInit): Promise<{ model: string; state: unknown }> {
+    const request = new Request("https://typesafe.test", init);
+    const bytes = Buffer.from(await request.arrayBuffer());
+    const encoding = request.headers.get("content-encoding");
+    return JSON.parse((encoding === "zstd" ? zstdDecompressSync(bytes) : bytes).toString("utf8"));
+  }
+
   it("flags lines above threshold and labels detected findings by original offsets", async () => {
     const fetchImpl = fetchWith({ model: "jev-1.13.0", answers, usage: { input_tokens: 321, output_tokens: 7 } });
     const opinion = await assessProtectionPreview({ text: TEXT, findings: FINDINGS }, CONFIG, { fetch: fetchImpl });
@@ -200,7 +209,7 @@ describe("assessment", () => {
     expect(isSecondOpinion(JSON.parse(JSON.stringify(opinion)))).toBe(true);
 
     const request = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!;
-    const body = JSON.parse(String((request[1] as RequestInit).body));
+    const body = await sentJson(request[1] as RequestInit);
     expect(body.model).toBe("jev-1.13.0");
     expect(JSON.stringify(body.state)).not.toContain("Northstar Biologics");
   });

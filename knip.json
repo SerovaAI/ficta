@@ -25,7 +25,7 @@
     },
     "packages/contract": {
       "entry": ["src/index.ts", "scripts/generate-openapi.mjs"],
-      "project": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.mjs"]
+      "project": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.mjs", "*.config.ts"]
     },
     "packages/protocol": {
       "project": ["src/**/*.d.ts"]

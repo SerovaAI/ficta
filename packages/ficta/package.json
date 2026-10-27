@@ -77,22 +77,22 @@
   "dependencies": {
     "@clack/prompts": "^1.8.1",
     "@hono/node-server": "^2.1.5",
-    "@orpc/openapi": "1.15.6",
-    "@orpc/server": "1.15.6",
+    "@orpc/openapi": "1.16.1",
+    "@orpc/server": "1.16.1",
     "@serovaai/ficta-contract": "workspace:^",
     "@serovaai/ficta-engine": "workspace:^",
     "@serovaai/ficta-protocol": "workspace:^",
-    "hono": "^4.13.13",
+    "hono": "^4.13.14",
     "pino": "^10.4.0",
     "pino-pretty": "^13.2.0",
-    "undici": "^8.12.1"
+    "undici": "^8.12.3"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
-    "@typesafe-ai/sdk": "0.6.0",
+    "@typesafe-ai/sdk": "0.7.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.4"
+    "vitest": "^5.0.5"
   },
   "engines": {
     "node": "^22.23.4 || ^24.22.1 || >=26.12.1"

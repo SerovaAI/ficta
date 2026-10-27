@@ -215,7 +215,7 @@ export function ChatView({
     [],
   );
 
-  const messagesRef = useRef<UIMessage[]>(initialMessages ?? []);
+  const messagesRef = useRef<readonly UIMessage[]>(initialMessages ?? []);
   const { messages, sendMessage, isLoading, error, stop, reload, clear, setMessages } = useChat({
     connection: chatConnection,
     forwardedProps,
@@ -381,7 +381,7 @@ export function ChatView({
   }, [threadId, tid]);
 
   const persistSnapshot = useCallback(
-    async (snapshot: UIMessage[]) => {
+    async (snapshot: readonly UIMessage[]) => {
       if (snapshot.length === 0) return;
       const persistable = prepareMessagesForPersistence(snapshot);
       const stored = persistable.map(uiToStored);
@@ -1091,9 +1091,9 @@ function userMessage(content: string, annotations: readonly ProtectionHighlightA
 }
 
 function replaceLatestUserProtectionAnnotations(
-  messages: UIMessage[],
+  messages: readonly UIMessage[],
   annotations: readonly ProtectionHighlightAnnotation[],
-): UIMessage[] {
+): readonly UIMessage[] {
   const position = latestMessagePosition(messages, "user");
   if (position === -1) return messages;
   return messages.map((message, messagePosition) => {
@@ -1108,18 +1108,21 @@ function replaceLatestUserProtectionAnnotations(
   });
 }
 
-function latestAssistantPosition(messages: UIMessage[]): number {
+function latestAssistantPosition(messages: readonly UIMessage[]): number {
   return latestMessagePosition(messages, "assistant");
 }
 
-function latestMessagePosition(messages: UIMessage[], role: UIMessage["role"]): number {
+function latestMessagePosition(messages: readonly UIMessage[], role: UIMessage["role"]): number {
   for (let position = messages.length - 1; position >= 0; position -= 1) {
     if (messages[position]?.role === role) return position;
   }
   return -1;
 }
 
-function snapshotWithFinishedMessage(messages: UIMessage[], finishedMessage: UIMessage | undefined): UIMessage[] {
+function snapshotWithFinishedMessage(
+  messages: readonly UIMessage[],
+  finishedMessage: UIMessage | undefined,
+): readonly UIMessage[] {
   if (!finishedMessage) return messages;
   const existingIndex = messages.findIndex((message) => message.id === finishedMessage.id);
   if (existingIndex === -1) return [...messages, finishedMessage];
@@ -1129,7 +1132,7 @@ function snapshotWithFinishedMessage(messages: UIMessage[], finishedMessage: UIM
 function upsertThreadSummary(
   current: ThreadSummary[] | undefined,
   threadId: string,
-  messages: UIMessage[],
+  messages: readonly UIMessage[],
   modelSettings: ThreadModelSettings,
 ): ThreadSummary[] {
   const now = new Date().toISOString();
@@ -1145,7 +1148,7 @@ function upsertThreadSummary(
   return [summary, ...(current ?? []).filter((thread) => thread.id !== threadId)];
 }
 
-function deriveTitle(messages: UIMessage[]): string {
+function deriveTitle(messages: readonly UIMessage[]): string {
   const firstUser = messages.find((message) => message.role === "user");
   const text = firstUser?.parts
     .filter((part) => part.type === "text")
@@ -1154,7 +1157,7 @@ function deriveTitle(messages: UIMessage[]): string {
   return deriveThreadTitleFromText(text);
 }
 
-function latestUserMessageText(messages: UIMessage[]): string | undefined {
+function latestUserMessageText(messages: readonly UIMessage[]): string | undefined {
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index];
     if (message?.role !== "user") continue;

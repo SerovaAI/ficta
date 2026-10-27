@@ -18,7 +18,7 @@ export function MessageList({
   protectionStatus,
   greetingName,
 }: {
-  messages: UIMessage[];
+  messages: readonly UIMessage[];
   isLoading: boolean;
   onReport?: (messageId: string) => void;
   onRegenerate: () => void;

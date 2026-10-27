@@ -50,7 +50,7 @@ export const Route = createFileRoute("/api/chat")({
         let model: string;
         let reasoningEffort: ReasoningEffort;
         let messages: Parameters<typeof chat>[0]["messages"];
-        let threadId: string | undefined;
+        let threadId: string;
         let requestedTraceEnabled = false;
         let protectionTicket: string | undefined;
         try {
@@ -61,7 +61,9 @@ export const Route = createFileRoute("/api/chat")({
           requestedTraceEnabled = body.forwardedProps?.traceEnabled === true;
           protectionTicket = cleanProtectionTicket(body.forwardedProps?.protectionTicket);
           messages = messagesForModel(body.messages);
-          threadId = typeof body.threadId === "string" ? body.threadId.trim().slice(0, 128) || undefined : undefined;
+          // TanStack AI's client always sends the AG-UI thread id, and chat() needs it to correlate the run.
+          threadId = typeof body.threadId === "string" ? body.threadId.trim().slice(0, 128) : "";
+          if (!threadId) throw new Error("a chat id is required");
           if (!PROVIDERS.includes(provider)) throw new Error(`unknown provider "${provider}"`);
           if (!model) throw new Error("no model selected");
         } catch (err) {
@@ -75,8 +77,8 @@ export const Route = createFileRoute("/api/chat")({
         const orgId = scope?.orgId ?? "local";
         const [instance, storedThread, threadOwner] = await Promise.all([
           storage.getInstanceSettings(orgId),
-          threadId ? storage.getThread(userId, orgId, threadId) : Promise.resolve(null),
-          threadId ? storage.getThreadOwner(threadId) : Promise.resolve(null),
+          storage.getThread(userId, orgId, threadId),
+          storage.getThreadOwner(threadId),
         ]);
         if (threadOwner && (threadOwner.userId !== userId || threadOwner.orgId !== orgId || threadOwner.deleted)) {
           return errorResponse(404, "chat not found");
@@ -87,7 +89,6 @@ export const Route = createFileRoute("/api/chat")({
         if (requiresProtectionReviewTicket(instance, protectionTicket)) {
           return errorResponse(428, "protection review is required before sending");
         }
-        if (protectionTicket && !threadId) return errorResponse(400, "a chat id is required for protection review");
 
         let stream: ReturnType<typeof chat>;
         try {
@@ -98,9 +99,9 @@ export const Route = createFileRoute("/api/chat")({
           recordProtectionStatsTrend(orgId).catch((err: unknown) => {
             console.warn("Failed to ingest redaction proof trend.", err);
           });
-          const fictaScope = threadId ? fictaScopeFor(orgId, userId, threadId) : undefined;
-          const egressEventId = threadId && fictaScope ? randomUUID() : undefined;
-          if (!protectionTicket && threadId && fictaScope) {
+          const fictaScope = fictaScopeFor(orgId, userId, threadId);
+          const egressEventId = randomUUID();
+          if (!protectionTicket) {
             const protectedValues = await storage.listThreadProtectedValues(userId, orgId, threadId);
             if (protectedValues.length > 0) {
               const currentUserText = latestUserText(messages);
@@ -116,7 +117,7 @@ export const Route = createFileRoute("/api/chat")({
           });
           await gatewayFictaControlClient({ requiredCapability: "restore-highlights" });
           await gatewayFictaControlClient({ requiredCapability: "restore-unknown" });
-          if (egressEventId) await gatewayFictaControlClient({ requiredCapability: "egress-proof" });
+          await gatewayFictaControlClient({ requiredCapability: "egress-proof" });
           if (traceEnabled) await gatewayFictaControlClient({ requiredCapability: "trace-capture" });
           stream = chat({
             adapter: createModelAdapter({
@@ -129,21 +130,19 @@ export const Route = createFileRoute("/api/chat")({
               protectionTicket,
             }),
             messages,
+            threadId,
             modelOptions: modelOptionsForProvider(provider, reasoningEffort),
-            middleware:
-              threadId && fictaScope && egressEventId
-                ? [
-                    {
-                      name: "persist-egress-evidence",
-                      onFinish: () =>
-                        persistEgressEvidenceSafely({ userId, orgId, threadId, fictaScope, eventId: egressEventId }),
-                      onAbort: () =>
-                        persistEgressEvidenceSafely({ userId, orgId, threadId, fictaScope, eventId: egressEventId }),
-                      onError: () =>
-                        persistEgressEvidenceSafely({ userId, orgId, threadId, fictaScope, eventId: egressEventId }),
-                    },
-                  ]
-                : undefined,
+            middleware: [
+              {
+                name: "persist-egress-evidence",
+                onFinish: () =>
+                  persistEgressEvidenceSafely({ userId, orgId, threadId, fictaScope, eventId: egressEventId }),
+                onAbort: () =>
+                  persistEgressEvidenceSafely({ userId, orgId, threadId, fictaScope, eventId: egressEventId }),
+                onError: () =>
+                  persistEgressEvidenceSafely({ userId, orgId, threadId, fictaScope, eventId: egressEventId }),
+              },
+            ],
           });
         } catch (err) {
           if (err instanceof MissingKeyError || err instanceof ProviderKeyDecryptionError) {

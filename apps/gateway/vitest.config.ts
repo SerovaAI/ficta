@@ -19,5 +19,8 @@ export default defineConfig({
     // Storage tests cold-start PGlite and run migrations; GitHub runners can exceed Vitest's 5s default.
     hookTimeout: 15_000,
     testTimeout: 15_000,
+    // Per-package module cache: the workspace-root default is shared by turbo's parallel vitest runs,
+    // which all wipe it at once after a lockfile change and race (ENOTEMPTY).
+    fsModuleCachePath: "node_modules/.vitest-cache",
   },
 });

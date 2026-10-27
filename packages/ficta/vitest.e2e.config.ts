@@ -11,5 +11,8 @@ export default defineConfig({
     testTimeout: 120_000,
     hookTimeout: 120_000,
     fileParallelism: false,
+    // Per-package module cache: the workspace-root default is shared by turbo's parallel vitest runs,
+    // which all wipe it at once after a lockfile change and race (ENOTEMPTY).
+    fsModuleCachePath: "node_modules/.vitest-cache",
   },
 });

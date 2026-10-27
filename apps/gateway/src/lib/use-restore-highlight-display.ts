@@ -47,11 +47,11 @@ export function createRestoreHighlightStore(): RestoreHighlightStore {
 
 export function useRestoreHighlightDisplay(
   threadId: string,
-  messages: UIMessage[],
+  messages: readonly UIMessage[],
 ): {
-  displayMessages: UIMessage[];
+  displayMessages: readonly UIMessage[];
   restoreHighlightsAvailable: boolean;
-  prepareMessagesForPersistence: (snapshot: UIMessage[]) => UIMessage[];
+  prepareMessagesForPersistence: (snapshot: readonly UIMessage[]) => readonly UIMessage[];
   clearRestoreHighlightsAtPosition: (position: number) => void;
 } {
   const queryClient = useQueryClient();
@@ -73,7 +73,7 @@ export function useRestoreHighlightDisplay(
     if (current) queryClient.setQueryData<SerializedStore>(restoreHighlightKey(threadId), serializeStore(current));
   }, [queryClient, threadId, messages]);
 
-  const prepareMessagesForPersistence = useCallback((snapshot: UIMessage[]) => {
+  const prepareMessagesForPersistence = useCallback((snapshot: readonly UIMessage[]) => {
     const current = storeRef.current;
     return current ? deriveRestoreHighlightDisplay(snapshot, current).displayMessages : snapshot;
   }, []);
@@ -97,9 +97,9 @@ export function useRestoreHighlightDisplay(
  * turns/parts absent this pass. Exported for testing without React.
  */
 export function deriveRestoreHighlightDisplay(
-  messages: UIMessage[],
+  messages: readonly UIMessage[],
   store: RestoreHighlightStore,
-): { displayMessages: UIMessage[]; restoreHighlightsAvailable: boolean } {
+): { displayMessages: readonly UIMessage[]; restoreHighlightsAvailable: boolean } {
   let changed = false;
   const livePositions = new Map<number, Set<number>>();
 

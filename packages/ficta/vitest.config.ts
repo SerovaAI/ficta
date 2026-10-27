@@ -8,5 +8,8 @@ export default defineConfig({
     exclude: [...configDefaults.exclude, "test/e2e/**"],
     environment: "node",
     setupFiles: ["test/setup.ts"],
+    // Per-package module cache: the workspace-root default is shared by turbo's parallel vitest runs,
+    // which all wipe it at once after a lockfile change and race (ENOTEMPTY).
+    fsModuleCachePath: "node_modules/.vitest-cache",
   },
 });
