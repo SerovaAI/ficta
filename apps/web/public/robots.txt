@@ -1,0 +1,2 @@
+# Cloudflare's managed robots.txt prepends its crawler rules to this file.
+Sitemap: https://ficta.sh/sitemap.xml
