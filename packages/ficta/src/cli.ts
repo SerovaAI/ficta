@@ -238,6 +238,10 @@ process.env.FICTA_LOG_ROLE ??= `agents/${agent.command}/${logInstanceId}`;
 // file only so the agent TUI stays clean. The capture files hold real protected values.
 const devTrace = envFlag(process.env.FICTA_DEV_TRACE); // config.toml [logging] dev_trace is merged by now
 if (devTrace) {
+  // Always shown, unlike the banner: a forgotten persisted switch captures raw values on every launch.
+  process.stderr.write(
+    "⚠ ficta: dev trace is on (FICTA_DEV_TRACE or [logging] dev_trace) — raw request bodies and protected values from this session are written to its log dir\n",
+  );
   process.env.FICTA_LOG_LEVEL ??= "debug";
   process.env.FICTA_LOG_FILE_ONLY = "1";
   process.env.FICTA_TRACE_AUDIT ??= "1";

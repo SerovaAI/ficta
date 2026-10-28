@@ -316,6 +316,14 @@ function matchLaunchToken(pathname: string, token: string): string | undefined {
   return slash === -1 ? "/" : rest.slice(slash);
 }
 
+/** `pathname` with any launch-token segment masked, for paths logged before the token is stripped. */
+function pathForLog(pathname: string): string {
+  const prefix = `/${LAUNCH_TOKEN_PREFIX}/`;
+  if (!pathname.startsWith(prefix)) return pathname;
+  const slash = pathname.indexOf("/", prefix.length);
+  return `${prefix}<token>${slash === -1 ? "" : pathname.slice(slash)}`;
+}
+
 /** True when the request carries the launch token in the x-ficta-launch header (Codex path). */
 function headerLaunchTokenValid(c: ProxyContext, token: string): boolean {
   const header = c.req.raw.headers.get(FICTA_LAUNCH_TOKEN_HEADER);
@@ -343,7 +351,7 @@ async function handleProxyRequest(state: ProxyState, c: ProxyContext): Promise<R
   // attempts locally instead of forwarding a doomed (but authenticated) GET upstream. Clients
   // with an HTTP fallback (e.g. Pi's Codex transport) retry over SSE immediately.
   if (c.req.raw.headers.get("upgrade")?.toLowerCase() === "websocket") {
-    return refusedWebSocketUpgradeResponse(c, url.pathname);
+    return refusedWebSocketUpgradeResponse(c, pathForLog(url.pathname));
   }
   // Per-launch caller token (dedicated single-agent proxy only). The CLI bakes the token into the
   // agent's base URL as a leading path segment; strip and verify it here, before routing or logging,
@@ -892,9 +900,25 @@ function resolveUpstream(
   return c.json({ error: { type: "ficta_upstream_policy", message: upstreamIssue } }, 403);
 }
 
+/** RFC 9110 §7.6.1 hop-by-hop headers, plus the non-standard `proxy-connection`. Undici refuses some of them. */
+const HOP_BY_HOP_HEADERS = [
+  "connection",
+  "keep-alive",
+  "proxy-connection",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+];
+
 /** Copy the inbound headers for the upstream hop, dropping hop-by-hop framing and all Ficta control metadata. */
 function upstreamRequestHeaders(inbound: Headers): Headers {
   const headers = new Headers(inbound);
+  // Headers the client named in Connection are hop-by-hop too, so read it before deleting it.
+  const named = (headers.get("connection") ?? "").split(",").map((name) => name.trim().toLowerCase());
+  for (const name of [...HOP_BY_HOP_HEADERS, ...named]) if (name) headers.delete(name);
   headers.delete("host");
   headers.delete("content-length");
   headers.delete("accept-encoding");
@@ -1438,11 +1462,11 @@ function listen(
     // WS-first clients with an HTTP fallback (e.g. Pi's Codex transport) retry over SSE at once.
     server.on("upgrade", (req: { url?: string }, socket: { end: (data: string) => void }) => {
       // An upgrade URL can carry credentials in its query string (e.g. ?api_key=…), so log only
-      // the pathname, and omit it entirely when the request-target does not parse.
+      // the pathname, with the launch token masked, and omit it when the request-target does not parse.
       let path: string | undefined;
       if (req.url !== undefined) {
         try {
-          path = new URL(req.url, "http://ficta.invalid").pathname;
+          path = pathForLog(new URL(req.url, "http://ficta.invalid").pathname);
         } catch {
           path = undefined;
         }
