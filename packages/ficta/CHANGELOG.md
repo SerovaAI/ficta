@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.12.0
+
+### Minor Changes
+
+- [#148](https://github.com/SerovaAI/ficta/pull/148) [`f833984`](https://github.com/SerovaAI/ficta/commit/f8339844dcb9dc4a411b9834a568356ff9c685a2) Thanks [@steflsd](https://github.com/steflsd)! - Defend the local proxy against web pages. The proxy now refuses a request whose `Host` header is not an IP literal, a loopback name, or a name in the new `FICTA_ALLOWED_HOSTS`, which blocks DNS rebinding. Its `/__ficta/*` control routes also refuse any request carrying browser provenance (`Origin`, or a cross-site `Sec-Fetch-Site`). Before this, a page could rewrite `config.toml` through `PATCH /__ficta/config` on the standalone proxy (for example setting `fail_closed = false`), toggle trace capture, or trigger a registry reload. If you reach the proxy by a DNS name other than `localhost`, add it to `FICTA_ALLOWED_HOSTS`.
+
+- [#150](https://github.com/SerovaAI/ficta/pull/150) [`0cebf28`](https://github.com/SerovaAI/ficta/commit/0cebf281482f62d3e13a4a98a20669c9f7fcb45d) Thanks [@steflsd](https://github.com/steflsd)! - Read `~/.ficta/config.toml` with a real TOML parser. Multi-line arrays (one managed-registry path per line) no longer collapse to the path `[`, which left the registry unloaded and was then written back as `paths = ["["]`. A config file that is not valid TOML now stops `ficta` with the parse error instead of silently dropping settings, and a configured managed-registry file that does not exist is reported as a registry source error, so `registry.require = true` blocks rather than reporting ready. If strict mode now blocks a launch, check `ficta doctor` for a stale managed-registry path.
+
+### Patch Changes
+
+- [`773bed6`](https://github.com/SerovaAI/ficta/commit/773bed65c5e4bb78a28c3e365af4dd6e3ba59b39) Thanks [@steflsd](https://github.com/steflsd)! - Update runtime dependencies: oRPC 1.16.1, Hono 4.13.14 and undici 8.12.3.
+
+- [`773bed6`](https://github.com/SerovaAI/ficta/commit/773bed65c5e4bb78a28c3e365af4dd6e3ba59b39) Thanks [@steflsd](https://github.com/steflsd)! - Update the Presidio analyzer sidecar base image to 2.2.366.
+
+- [#151](https://github.com/SerovaAI/ficta/pull/151) [`2449fe6`](https://github.com/SerovaAI/ficta/commit/2449fe697e349b943a423832990dc0802321081c) Thanks [@steflsd](https://github.com/steflsd)! - Three local-proxy fixes from the October review. The proxy now strips hop-by-hop request headers (`Connection`, `Keep-Alive`, `TE`, `Transfer-Encoding` and the rest of the RFC 9110 set, plus any header named in `Connection`) before the upstream hop; clients that sent one, such as a keep-alive header on a chunked body, got a 502. A refused WebSocket upgrade no longer writes the agent's launch token to the log. And `ficta <agent>` now prints a one-line stderr warning whenever dev trace is on, including when it was set in `config.toml`. Until now only `ficta doctor` mentioned it.
+- Updated dependencies [[`773bed6`](https://github.com/SerovaAI/ficta/commit/773bed65c5e4bb78a28c3e365af4dd6e3ba59b39), [`322344c`](https://github.com/SerovaAI/ficta/commit/322344c0b99ff2f0f025eaa0628b14ace65f6713)]:
+  - @serovaai/ficta-contract@0.4.2
+  - @serovaai/ficta-engine@0.12.0
+  - @serovaai/ficta-protocol@0.12.0
+
 ## 0.11.0
 
 ### Minor Changes
