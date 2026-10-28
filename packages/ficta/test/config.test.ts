@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -238,6 +238,52 @@ describe("config hardening", () => {
       expect(readFileSync(path, "utf8")).toContain("[surrogate]");
       expect(readFileSync(path, "utf8")).toContain('style = "typed"');
       expect(readUserConfig(path)).toMatchObject({ FICTA_SURROGATE_STYLE: "typed" });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reads hand-edited multi-line arrays and keeps them through a rewrite", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ficta-config-"));
+    const path = join(dir, "config.toml");
+    try {
+      writeFileSync(
+        path,
+        [
+          "# hand-edited",
+          "[registry]",
+          "require = true # strict",
+          "",
+          "[registry.managed_file]",
+          "paths = [",
+          '  "/var/lib/ficta/protected-registry.json", # firm registry',
+          '  "/var/lib/ficta/extra.json",',
+          "]",
+        ].join("\n"),
+      );
+      const values = readUserConfig(path);
+      expect(values).toMatchObject({
+        FICTA_REQUIRE_REGISTRY: "1",
+        FICTA_REGISTRY_MANAGED_FILE_PATHS: "/var/lib/ficta/protected-registry.json:/var/lib/ficta/extra.json",
+      });
+
+      writeUserConfig(values, path);
+      expect(readFileSync(path, "utf8")).toContain(
+        'paths = ["/var/lib/ficta/protected-registry.json", "/var/lib/ficta/extra.json"]',
+      );
+      expect(readUserConfig(path)).toEqual(values);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a config file that is not valid TOML instead of dropping settings", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ficta-config-"));
+    const path = join(dir, "config.toml");
+    try {
+      writeFileSync(path, '[surrogate]\nkey = "do-not-print-me"\nstyle = typed\n');
+      expect(() => readUserConfig(path)).toThrow(`invalid ${path} at line 3, column`);
+      expect(() => readUserConfig(path)).not.toThrow("do-not-print-me");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
