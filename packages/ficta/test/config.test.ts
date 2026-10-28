@@ -281,8 +281,9 @@ describe("config hardening", () => {
     const dir = mkdtempSync(join(tmpdir(), "ficta-config-"));
     const path = join(dir, "config.toml");
     try {
-      writeFileSync(path, '[registry]\nrequire = true\npaths = [\n  "/a.json",\n');
-      expect(() => readUserConfig(path)).toThrow(`invalid ${path}`);
+      writeFileSync(path, '[surrogate]\nkey = "do-not-print-me"\nstyle = typed\n');
+      expect(() => readUserConfig(path)).toThrow(`invalid ${path} at line 3, column`);
+      expect(() => readUserConfig(path)).not.toThrow("do-not-print-me");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

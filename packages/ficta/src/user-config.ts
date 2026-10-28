@@ -9,7 +9,7 @@ import {
   type ConfigBindingKind,
   type ConfigSection,
 } from "@serovaai/ficta-engine";
-import { parse as parseTomlDocument } from "smol-toml";
+import { parse as parseTomlDocument, TomlError } from "smol-toml";
 import { pluginConfigBindings, pluginConfigSections } from "./plugins/index.js";
 import { projectRoot, projectsFilePath, readProjectExcludeNames } from "./project-config.js";
 
@@ -450,8 +450,13 @@ function parseToml(text: string, path: string): TomlTable {
     return parseTomlDocument(text) as TomlTable;
   } catch (error) {
     // A config that cannot be read could be hiding `registry.require` or `fail_closed`, so stop
-    // rather than fall back to defaults.
-    throw new Error(`invalid ${path}: ${(error as Error).message}`);
+    // rather than fall back to defaults. Report the position only: the parser's message quotes the
+    // surrounding lines, which can hold `surrogate.key`.
+    if (error instanceof TomlError) {
+      const reason = error.message.split("\n")[0]?.replace(/^Invalid TOML document: /, "");
+      throw new Error(`invalid ${path} at line ${error.line}, column ${error.column}: ${reason}`);
+    }
+    throw new Error(`invalid ${path}`);
   }
 }
 
