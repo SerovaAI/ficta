@@ -39,7 +39,12 @@ const shellEnv: NodeJS.ProcessEnv = { ...process.env };
 const shellPiiEnabled = shellEnv.FICTA_PII_ENABLED;
 const shellSecretShapesEnabled = shellEnv.FICTA_SECRET_SHAPES_ENABLED;
 
-loadUserConfig();
+try {
+  loadUserConfig();
+} catch (error) {
+  process.stderr.write(`ficta: ${(error as Error).message}\n`);
+  process.exit(2);
+}
 
 const args = process.argv.slice(2);
 const command = args[0];

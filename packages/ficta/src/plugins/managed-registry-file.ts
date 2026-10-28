@@ -23,7 +23,7 @@ interface ManagedRegistryFileStat {
   exists: boolean;
   loaded: number;
   revision?: string;
-  error?: "read error" | "invalid json" | "unsupported json" | "registry conflict";
+  error?: "not found" | "read error" | "invalid json" | "unsupported json" | "registry conflict";
 }
 
 interface ManagedRegistryStats {
@@ -110,6 +110,9 @@ function loadManagedRegistryValues(): ProtectedValue[] {
     stats.files.push(stat);
     if (!stat.exists) {
       stats.filesMissing++;
+      // The default path is a per-project convention that is usually absent. A path someone set
+      // and that is missing means their registry is not loaded, which strict mode must not pass.
+      if (file !== DEFAULT_MANAGED_REGISTRY_FILE) stat.error = "not found";
       continue;
     }
 
@@ -325,17 +328,21 @@ function managedRegistryDiscovery(stats: ManagedRegistryStats): PluginDiscovery 
   const details = stats.files.map(
     (file) => `${file.file}: ${file.error ? file.error : file.exists ? `${file.loaded} loaded` : "not found"}`,
   );
-  if (stats.filesErrored > 0) {
+  const filesNotFound = stats.files.filter((file) => file.error === "not found").length;
+  if (stats.filesErrored > 0 || filesNotFound > 0) {
+    const problem = [
+      stats.filesErrored > 0 ? `could not read ${stats.filesErrored} file(s)` : undefined,
+      filesNotFound > 0 ? `${filesNotFound} configured file(s) not found` : undefined,
+    ]
+      .filter(Boolean)
+      .join("; ");
     return {
       id: `${PLUGIN_NAME}/json-files`,
       plugin: PLUGIN_NAME,
       label: "managed registry files",
       status: "error",
       valueCount: stats.loaded,
-      message:
-        stats.loaded > 0
-          ? `loaded ${stats.loaded} value(s), but could not read ${stats.filesErrored} file(s)`
-          : `could not read ${stats.filesErrored} file(s)`,
+      message: stats.loaded > 0 ? `loaded ${stats.loaded} value(s), but ${problem}` : problem,
       details,
     };
   }

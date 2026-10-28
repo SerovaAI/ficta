@@ -284,6 +284,28 @@ describe("registry plugin discovery", () => {
     expect(JSON.stringify(snapshot.discoveries)).not.toContain(value);
   });
 
+  it("reports a configured managed registry file that does not exist as an error", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ficta-managed-registry-missing-"));
+    process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+    process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "1";
+    process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS = join(dir, "protected-registry.json");
+
+    const managed = loadPluginRegistry().discoveries.find((d) => d.id === "managed-registry-file/json-files");
+
+    expect(managed).toMatchObject({ status: "error", message: "1 configured file(s) not found" });
+    expect(managed?.details).toEqual([`${join(dir, "protected-registry.json")}: not found`]);
+  });
+
+  it("keeps the default managed registry path quiet when it is absent", () => {
+    process.env.FICTA_REGISTRY_ENV_FILE_ENABLED = "0";
+    process.env.FICTA_REGISTRY_MANAGED_FILE_ENABLED = "1";
+    delete process.env.FICTA_REGISTRY_MANAGED_FILE_PATHS;
+
+    const managed = loadPluginRegistry().discoveries.find((d) => d.id === "managed-registry-file/json-files");
+
+    expect(managed?.status).toBe("not_found");
+  });
+
   it("rejects an unknown managed registry schema instead of partially loading it", () => {
     const dir = mkdtempSync(join(tmpdir(), "ficta-managed-registry-schema-"));
     const file = join(dir, "protected-registry.json");

@@ -457,6 +457,9 @@ importers:
       pino-pretty:
         specifier: ^13.2.0
         version: 13.2.0
+      smol-toml:
+        specifier: ^1.9.1
+        version: 1.9.1
       undici:
         specifier: ^8.12.3
         version: 8.12.3

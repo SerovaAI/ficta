@@ -9,6 +9,7 @@ import {
   type ConfigBindingKind,
   type ConfigSection,
 } from "@serovaai/ficta-engine";
+import { parse as parseTomlDocument } from "smol-toml";
 import { pluginConfigBindings, pluginConfigSections } from "./plugins/index.js";
 import { projectRoot, projectsFilePath, readProjectExcludeNames } from "./project-config.js";
 
@@ -145,7 +146,7 @@ export function writeUserConfig(values: Record<string, string>, path = defaultCo
 /** Read an existing TOML config file into the effective FICTA_* setting map (empty if missing). */
 export function readUserConfig(path = defaultConfigPath()): Record<string, string> {
   if (!path || !existsSync(path)) return {};
-  return configObjectToEnv(parseToml(readFileSync(path, "utf8")));
+  return configObjectToEnv(parseToml(readFileSync(path, "utf8"), path));
 }
 
 /** Where the active surrogate key came from; `ephemeral` means a random per-process key. */
@@ -444,34 +445,14 @@ function formatTomlScalar(value: TomlScalar): string {
   return String(value);
 }
 
-function parseToml(text: string): TomlTable {
-  const root: TomlTable = {};
-  let current = root;
-
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = stripTomlComment(rawLine).trim();
-    if (!line) continue;
-
-    const sectionMatch = line.match(/^\[([^\]]+)\]$/);
-    if (sectionMatch) {
-      current = ensureTable(
-        root,
-        sectionMatch[1]
-          ?.split(".")
-          .map((part) => part.trim())
-          .filter(Boolean) ?? [],
-      );
-      continue;
-    }
-
-    const eq = line.indexOf("=");
-    if (eq <= 0) continue;
-    const key = line.slice(0, eq).trim();
-    if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(key)) continue;
-    current[key] = parseTomlValue(line.slice(eq + 1).trim());
+function parseToml(text: string, path: string): TomlTable {
+  try {
+    return parseTomlDocument(text) as TomlTable;
+  } catch (error) {
+    // A config that cannot be read could be hiding `registry.require` or `fail_closed`, so stop
+    // rather than fall back to defaults.
+    throw new Error(`invalid ${path}: ${(error as Error).message}`);
   }
-
-  return root;
 }
 
 function ensureTable(root: TomlTable, path: readonly string[]): TomlTable {
@@ -482,86 +463,4 @@ function ensureTable(root: TomlTable, path: readonly string[]): TomlTable {
     cursor = cursor[part] as TomlTable;
   }
   return cursor;
-}
-
-function stripTomlComment(line: string): string {
-  let quote: '"' | "'" | undefined;
-  let escaped = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (quote) {
-      if (quote === '"' && ch === "\\" && !escaped) {
-        escaped = true;
-        continue;
-      }
-      if (ch === quote && !escaped) quote = undefined;
-      escaped = false;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      quote = ch;
-      continue;
-    }
-    if (ch === "#") return line.slice(0, i);
-  }
-  return line;
-}
-
-function parseTomlValue(raw: string): TomlValue {
-  if (raw.startsWith("[") && raw.endsWith("]")) return parseTomlArray(raw.slice(1, -1));
-  if (raw.startsWith('"') && raw.endsWith('"')) return parseDoubleQuoted(raw);
-  if (raw.startsWith("'") && raw.endsWith("'")) return raw.slice(1, -1);
-  if (raw === "true") return true;
-  if (raw === "false") return false;
-  if (/^[+-]?\d+(?:\.\d+)?$/.test(raw)) return Number(raw);
-  return raw;
-}
-
-function parseTomlArray(raw: string): TomlScalar[] {
-  const items: TomlScalar[] = [];
-  for (const item of splitTomlArray(raw)) {
-    const value = parseTomlValue(item);
-    if (Array.isArray(value)) continue;
-    items.push(value);
-  }
-  return items;
-}
-
-function splitTomlArray(raw: string): string[] {
-  const out: string[] = [];
-  let start = 0;
-  let quote: '"' | "'" | undefined;
-  let escaped = false;
-  for (let i = 0; i < raw.length; i++) {
-    const ch = raw[i];
-    if (quote) {
-      if (quote === '"' && ch === "\\" && !escaped) {
-        escaped = true;
-        continue;
-      }
-      if (ch === quote && !escaped) quote = undefined;
-      escaped = false;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      quote = ch;
-      continue;
-    }
-    if (ch === ",") {
-      const item = raw.slice(start, i).trim();
-      if (item) out.push(item);
-      start = i + 1;
-    }
-  }
-  const last = raw.slice(start).trim();
-  if (last) out.push(last);
-  return out;
-}
-
-function parseDoubleQuoted(raw: string): string {
-  try {
-    return JSON.parse(raw) as string;
-  } catch {
-    return raw.slice(1, -1);
-  }
 }
