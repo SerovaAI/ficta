@@ -2445,7 +2445,10 @@ if (isMain) {
   };
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
-  const { maybePruneLogs } = await import("./log-retention.js");
+  const [{ maybePruneLogs }, { auditBeforeTraceRemoval }] = await Promise.all([
+    import("./log-retention.js"),
+    import("./log-audit.js"),
+  ]);
   const cfg = loadConfig();
-  void maybePruneLogs(cfg.logRoot, cfg.logRetention);
+  void maybePruneLogs(cfg.logRoot, cfg.logRetention, { beforeTraceRemoval: auditBeforeTraceRemoval(cfg.logRoot) });
 }

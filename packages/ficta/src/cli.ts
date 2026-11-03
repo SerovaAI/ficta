@@ -527,7 +527,11 @@ function runChild(child: ChildProcess): Promise<number> {
 }
 
 async function pruneLogsInBackground(): Promise<void> {
-  const [{ loadConfig }, { maybePruneLogs }] = await Promise.all([import("./config.js"), import("./log-retention.js")]);
+  const [{ loadConfig }, { maybePruneLogs }, { auditBeforeTraceRemoval }] = await Promise.all([
+    import("./config.js"),
+    import("./log-retention.js"),
+    import("./log-audit.js"),
+  ]);
   const cfg = loadConfig();
-  await maybePruneLogs(cfg.logRoot, cfg.logRetention);
+  await maybePruneLogs(cfg.logRoot, cfg.logRetention, { beforeTraceRemoval: auditBeforeTraceRemoval(cfg.logRoot) });
 }

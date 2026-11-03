@@ -1,8 +1,16 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { auditLeakCount, auditLogs, formatAuditReport } from "../src/log-audit.js";
+import {
+  auditBeforeTraceRemoval,
+  auditLeakCount,
+  auditLogs,
+  formatAuditReport,
+  readAuditHistory,
+  saveAuditReport,
+} from "../src/log-audit.js";
+import { pruneLogs } from "../src/log-retention.js";
 
 const REGISTRY = "reg-Secret-7Qm2xVb9LpT4";
 const DETECTED = "pat.example@example.com";
@@ -113,15 +121,27 @@ describe("ficta logs audit", () => {
     });
   });
 
-  it("counts a value inside a file path as preserved, not leaked", async () => {
+  it("counts a plain name inside a file path as preserved, and lists it", async () => {
+    const root = tempRoot();
+    const name = "eu-central-1-prod";
+    unit(root, 1, [{ sent: message(`cd /srv/${name}/k8s`), audit: audit([{ value: name, provenance: "permanent" }]) }]);
+    const report = await auditLogs(root);
+    expect(report.findings).toEqual([]);
+    expect(report.pathPreserved).toBe(1);
+    expect(report.pathSightings).toEqual([
+      expect.objectContaining({ length: name.length, requests: ["runs/run-2026-10-24T00-00-00-000Z/req-0001"] }),
+    ]);
+  });
+
+  it("reports a credential-looking value inside a path as a leak, since redaction never preserves one", async () => {
     const root = tempRoot();
     const hash = "9f3b9566f64e7a1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c";
     unit(root, 1, [
       { sent: message(`see /tmp/${hash}/vite.log`), audit: audit([{ value: hash, provenance: "detected" }]) },
     ]);
     const report = await auditLogs(root);
-    expect(report.findings).toEqual([]);
-    expect(report.pathPreserved).toBe(1);
+    expect(report.findings.map((finding) => finding.kind)).toEqual(["egress"]);
+    expect(report.pathPreserved).toBe(0);
   });
 
   it("checks each launch only against the values that launch protected", async () => {
@@ -219,5 +239,76 @@ describe("ficta logs audit", () => {
     const root = tempRoot();
     unit(root, 1, [{}]);
     expect(formatAuditReport(await auditLogs(root))).toContain("nothing to audit");
+  });
+
+  it("does not flag Claude Code's device id in metadata.user_id, but still flags the same id elsewhere", async () => {
+    const root = tempRoot();
+    const device = [
+      "5f3c9a1e",
+      "7b2d4f60",
+      "8e1a3c5b",
+      "9d7f2e4a",
+      "6c0b8d1f",
+      "3a5e7c9b",
+      "2f4d6a8c",
+      "1e3b5d7f",
+    ].join("");
+    const userId = JSON.stringify({
+      device_id: device,
+      account_uuid: "",
+      session_id: "a71e04c2-9d3b-4f58-8c26-5e0f9b1d7a43",
+    });
+    unit(root, 1, [
+      { sent: { metadata: { user_id: userId }, messages: [{ role: "user", content: "hi" }] }, audit: audit([]) },
+    ]);
+    expect((await auditLogs(root)).findings).toEqual([]);
+
+    const other = tempRoot();
+    unit(other, 1, [
+      {
+        sent: { metadata: { user_id: userId }, messages: [{ role: "user", content: `id ${device}` }] },
+        audit: audit([]),
+      },
+    ]);
+    const findings = (await auditLogs(other)).findings;
+    expect(findings.map((finding) => [finding.kind, finding.locations])).toEqual([
+      ["unprotected-shape", ["messages[].content"]],
+    ]);
+  });
+
+  it("saves reports and totals them, counting a unit audited twice once", async () => {
+    const root = tempRoot();
+    unit(root, 1, [
+      { sent: message(`token ${REGISTRY}`), audit: audit([{ value: REGISTRY, provenance: "permanent" }]) },
+    ]);
+    unit(root, 2, [
+      { sent: message("nothing here"), audit: audit([]) },
+      { sent: message("still nothing"), audit: audit([]) },
+    ]);
+    const first = await auditLogs(root);
+    await saveAuditReport(root, first);
+    await saveAuditReport(root, { ...(await auditLogs(root)), at: "2099-01-01T00:00:00.000Z" });
+
+    const history = await readAuditHistory(root);
+    expect(history).toMatchObject({ reports: 2, units: 2, requestsAudited: 3, leakFindings: 1 });
+    expect(history.lastAt).toBe("2099-01-01T00:00:00.000Z");
+    // The audits dir is not a capture unit and does not disturb later audits.
+    expect((await auditLogs(root)).coverage.units).toBe(2);
+  });
+
+  it("audits units just before pruning deletes their raw traces", async () => {
+    const root = tempRoot();
+    const dir = unit(root, 999_999, [
+      { sent: message(`token ${REGISTRY}`), audit: audit([{ value: REGISTRY, provenance: "permanent" }]) },
+    ]);
+    const result = await pruneLogs(
+      root,
+      { traceMaxAgeMs: 0 },
+      { now: Date.now() + 60_000, isPidAlive: () => false, beforeTraceRemoval: auditBeforeTraceRemoval(root) },
+    );
+    expect(result.removedTraceFiles).toBeGreaterThan(0);
+    expect(existsSync(join(dir, "runs", "run-2026-10-24T00-00-00-000Z", "req-0001.sent.json"))).toBe(false);
+    const history = await readAuditHistory(root);
+    expect(history).toMatchObject({ reports: 1, requestsAudited: 1, leakFindings: 1 });
   });
 });

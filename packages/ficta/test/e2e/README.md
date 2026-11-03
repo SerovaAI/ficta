@@ -73,3 +73,25 @@ FICTA_E2E_ONLY=claude FICTA_E2E_REGISTRY_OVERRIDE=/dev/null pnpm test:e2e
 ficta now has nothing to redact, so the values-free request metadata contains no registered
 `BUILD_REF` hit and no linked protection event exists. The suite **FAILS**. A green run here
 would mean the assertions are vacuous; a red run confirms they depend on real protection.
+
+## Leak canary (`live-leak-canary.test.ts`)
+
+The redaction test above proves one value is redacted from values-free metadata. The leak canary
+proves the stronger claim from the bytes themselves. It runs each agent with `FICTA_DEV_TRACE=1`, has
+it read a notes file and run a shell command over it, and compares every captured original request
+(`req-N.json`) with what ficta forwarded (`req-N.sent.json`).
+
+The notes file plants registered canaries and detector-only canaries (a token, an access key id, a
+credential URL) in the shapes that have leaked before: git ranges and errors, URL and file paths,
+JSON, and env assignments. The test fails if any canary never reached the agent's requests (the run
+would prove nothing), if any canary appears in a forwarded body, or if `ficta logs audit` reports a
+leak for the run.
+
+One registered canary is a plain matter code that no detector recognizes. With
+`FICTA_E2E_REGISTRY_OVERRIDE=/dev/null` it is the canary that leaks, so the negative control fails.
+The random-looking registered canaries are also caught by the detectors, so they stay protected
+without the registry.
+
+```sh
+FICTA_E2E_ONLY=claude FICTA_E2E_CLAUDE_MODEL=claude-haiku-5-5 pnpm test:e2e   # cheap targeted run
+```

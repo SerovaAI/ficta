@@ -2218,7 +2218,7 @@ function isInsidePathLikeToken(
  * detects is never then preserved inside a path. Plain words, slugs (`eu-central-1-prod`), UUIDs, and
  * short ids stay preservable.
  */
-function looksLikeCredentialMaterial(value: string): boolean {
+export function looksLikeCredentialMaterial(value: string): boolean {
   if (
     /(^|[^A-Za-z0-9])(sk-|sk_live_|ghp_|gho_|ghs_|ghu_|github_pat_|glpat-|xox[abprs]-|AKIA[A-Z0-9]{12}|eyJ[A-Za-z0-9_-]{10,})/.test(
       value,
