@@ -1,5 +1,19 @@
 # @serovaai/ficta-engine
 
+## 0.12.0
+
+### Patch Changes
+
+- [#156](https://github.com/SerovaAI/ficta/pull/156) [`713de07`](https://github.com/SerovaAI/ficta/commit/713de0777f133901ac1776ede517e00da7c5113a) Thanks [@steflsd](https://github.com/steflsd)! - `ficta logs audit` keeps its evidence. Before log pruning deletes a session's raw traces, ficta now audits them and saves the values-free report under `~/.ficta/logs/audits/`, and `ficta logs audit --save` saves one on demand. Each audit ends with a total over the saved reports: requests audited, capture units, and distinct leak findings. The audit also lists the plain protected values it sees inside file paths, reports a credential-looking value inside a path as a leak (redaction never keeps one there), and no longer flags Claude Code's device id in `metadata.user_id`. The engine exports `looksLikeCredentialMaterial` and `isClaudeCodeUserId` so the audit and redaction use the same rules.
+
+- [#157](https://github.com/SerovaAI/ficta/pull/157) [`7aeda53`](https://github.com/SerovaAI/ficta/commit/7aeda53be6b1be8e1c61975c7d857191a82d62cd) Thanks [@steflsd](https://github.com/steflsd)! - Fix a leak: a registered value next to a JSON escape in serialized text (`<value>\nNext`, `\"<value>\"`, `\t<value>`) was sent unreplaced, because the escape's backslash made the word look like a Windows path and path preservation kept it. Claude Code's auto-mode classifier sends the transcript this way, so a registered client name or matter code could leave in that side request even though the main conversation protected it. Escape sequences no longer count as path separators. Real Windows paths still keep plain names usable.
+
+- [#155](https://github.com/SerovaAI/ficta/pull/155) [`68b961d`](https://github.com/SerovaAI/ficta/commit/68b961d648076d6ed12ea46139dc9b87d0816ac0) Thanks [@steflsd](https://github.com/steflsd)! - Fix a leak: a protected value that looks like a credential (a known token prefix, long hex, or a long random mixed-case string) was sent to the provider unreplaced whenever it sat in a path-like word, such as `<sha>..origin/main`, `host/v1/<key>`, `/tmp/<token>/out`, or `fatal: bad revision '<value>..origin/main'`. The leak gate skipped the same occurrences, so nothing was blocked. Path preservation now applies only to plain names such as regions, profiles, and project directories. The preserve-literals instruction also lists only surrogates the model can see, not ones that appear only in `metadata` or other client fields. The model had once copied such a token into a shell command, and the real value then reached the provider.
+
+- [#147](https://github.com/SerovaAI/ficta/pull/147) [`322344c`](https://github.com/SerovaAI/ficta/commit/322344c0b99ff2f0f025eaa0628b14ace65f6713) Thanks [@steflsd](https://github.com/steflsd)! - Stop the secret-shape detector from flagging two kinds of ordinary text: absolute filesystem paths (an agent's scratchpad or temp directory, read as one long opaque token), and an environment variable name that follows a secret-ish name in a listing (`JWT_PRIVATE_KEY` then `RESEND_API_KEY`, read as a name and its value). Both were redacted on some turns and not others.
+
+- [#154](https://github.com/SerovaAI/ficta/pull/154) [`7f8c347`](https://github.com/SerovaAI/ficta/commit/7f8c3473fbddec6a306855c7a42f7fb013ad38c8) Thanks [@steflsd](https://github.com/steflsd)! - Stop the secret detectors from screening a request's top-level `metadata.user_id` when it is exactly Claude Code's telemetry identifier (a 64-hex device id, account UUID, and session UUID, nothing else). Claude Code sends that on every request, which was replaced as an `opaque-secret`, so nearly every request counted a protected value and got the surrogate-preservation instruction even when nothing in the conversation was secret. Registered values in that field are still replaced.
+
 ## 0.11.0
 
 ### Patch Changes
