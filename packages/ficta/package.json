@@ -82,14 +82,14 @@
     "@serovaai/ficta-contract": "workspace:^",
     "@serovaai/ficta-engine": "workspace:^",
     "@serovaai/ficta-protocol": "workspace:^",
-    "hono": "^4.13.14",
+    "hono": "^4.13.16",
     "pino": "^10.4.0",
     "pino-pretty": "^13.2.0",
     "smol-toml": "^1.9.1",
     "undici": "^8.12.3"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "@typesafe-ai/sdk": "0.7.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
