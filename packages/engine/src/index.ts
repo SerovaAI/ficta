@@ -109,7 +109,7 @@ export {
   secretShapesPlugin,
 } from "./plugins/secret-shapes/index.js";
 export type * from "./plugins/types.js";
-export { buildPreservationInstruction, withPreservationInstruction } from "./preserve-literals.js";
+export { buildPreservationInstruction, modelVisibleText, withPreservationInstruction } from "./preserve-literals.js";
 export {
   type LiteralProtection,
   literalProtectionRecords,

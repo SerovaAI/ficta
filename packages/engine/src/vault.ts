@@ -2201,10 +2201,45 @@ function isInsidePathLikeToken(
   const shellPathArg = isShellPathArgument(text, tokenStart);
   if (!pathKind && !shellPathArg) return false;
 
+  // A value that looks like credential material is never left in place, whatever surrounds it. Path
+  // preservation exists so plain names (a region, a profile, a project dir) keep cwd paths usable; a
+  // random token next to a `/` is not that. Without this, `<sha>..origin/main`, `host/v1/<key>`, and
+  // `fatal: bad revision '<value>..origin/main'` all carried a known protected value out raw.
+  if (needle !== undefined && looksLikeCredentialMaterial(needle)) return false;
   if (needle === undefined || canPreservePathSegmentOccurrence(needle)) return true;
   if (shellPathArg) return true;
   if (pathKind === "explicit" && !isAssignmentValue(text, tokenStart)) return true;
   return false;
+}
+
+/**
+ * Credential-looking values: known token prefixes, long hex, or a long mixed-case-and-digit run with
+ * high character entropy. Deliberately the same bar the opaque-secret detector uses, so a value it
+ * detects is never then preserved inside a path. Plain words, slugs (`eu-central-1-prod`), UUIDs, and
+ * short ids stay preservable.
+ */
+function looksLikeCredentialMaterial(value: string): boolean {
+  if (
+    /(^|[^A-Za-z0-9])(sk-|sk_live_|ghp_|gho_|ghs_|ghu_|github_pat_|glpat-|xox[abprs]-|AKIA[A-Z0-9]{12}|eyJ[A-Za-z0-9_-]{10,})/.test(
+      value,
+    )
+  ) {
+    return true;
+  }
+  let longest = "";
+  for (const run of value.split(/[^A-Za-z0-9+/_=-]+/)) if (run.length > longest.length) longest = run;
+  if (longest.length < 20) return false;
+  const counts = new Map<string, number>();
+  for (const char of longest) counts.set(char, (counts.get(char) ?? 0) + 1);
+  let entropy = 0;
+  for (const count of counts.values()) {
+    const p = count / longest.length;
+    entropy -= p * Math.log2(p);
+  }
+  const hex = /[0-9a-f]{32,}/i.exec(longest)?.[0];
+  if (hex && /[a-f]/i.test(hex) && /\d/.test(hex)) return true;
+  const threshold = Math.min(4.5, 0.85 * Math.log2(longest.length));
+  return /[a-z]/.test(longest) && /[A-Z]/.test(longest) && /\d/.test(longest) && entropy >= threshold;
 }
 
 function canPreservePathSegmentOccurrence(needle: string): boolean {
