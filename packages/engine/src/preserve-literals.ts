@@ -41,6 +41,30 @@ export function buildPreservationInstruction(surrogates: readonly string[]): str
  * Returns the body unchanged when there is nothing to do (no surrogates, unknown wire, non-JSON body, or
  * an unrecognised shape) so it can never corrupt a request it does not understand.
  */
+/**
+ * Top-level request fields the provider reads but the model never sees: client identifiers and cache
+ * or safety keys. A surrogate that appears only here must not be listed in the preservation
+ * instruction, or the instruction itself is the one place the model learns that token.
+ */
+const NON_MODEL_FIELDS = ["metadata", "user", "safety_identifier", "prompt_cache_key", "service_tier"] as const;
+
+/**
+ * The part of a JSON request body the model reads: the body without {@link NON_MODEL_FIELDS}. Used
+ * to pick the surrogates the preservation instruction lists. A non-JSON body is returned unchanged.
+ */
+export function modelVisibleText(body: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return body;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return body;
+  const visible: Record<string, unknown> = { ...(parsed as Record<string, unknown>) };
+  for (const field of NON_MODEL_FIELDS) delete visible[field];
+  return JSON.stringify(visible);
+}
+
 export function withPreservationInstruction(body: string, wire: Wire, surrogates: readonly string[]): string {
   if (wire === "unknown" || surrogates.length === 0) return body;
 

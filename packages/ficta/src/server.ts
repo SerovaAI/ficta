@@ -48,6 +48,7 @@ import {
   detectorFailClosed,
   ProtectionEngine,
   type ProtectedValue,
+  modelVisibleText,
   withPreservationInstruction,
   type AmbiguousEntityLinkDiagnostic,
   DetectorUnavailableError,
@@ -1121,7 +1122,9 @@ async function redactBodySurface(
   // Tell the model to preserve the surrogate literals verbatim (opt-in). Runs after the fail-closed
   // leak gate and only adds surrogate tokens the proxy already minted, so it introduces no new leak.
   if (cfg.preserveLiterals) {
-    const surrogates = scope.mintedSurrogatesIn(redacted);
+    // Only surrogates the model can see: listing one that exists only in `metadata` teaches the model
+    // a token it then reuses (it once wrote the device id's surrogate into `git log <token>..main`).
+    const surrogates = scope.mintedSurrogatesIn(modelVisibleText(redacted));
     if (surrogates.length > 0) bodyToSend = withPreservationInstruction(redacted, wire, surrogates);
   }
   if (captureRawBodies) writeCaptureFile(`req-${String(n).padStart(4, "0")}.sent.json`, bodyToSend);
@@ -2442,7 +2445,10 @@ if (isMain) {
   };
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
-  const { maybePruneLogs } = await import("./log-retention.js");
+  const [{ maybePruneLogs }, { auditBeforeTraceRemoval }] = await Promise.all([
+    import("./log-retention.js"),
+    import("./log-audit.js"),
+  ]);
   const cfg = loadConfig();
-  void maybePruneLogs(cfg.logRoot, cfg.logRetention);
+  void maybePruneLogs(cfg.logRoot, cfg.logRetention, { beforeTraceRemoval: auditBeforeTraceRemoval(cfg.logRoot) });
 }

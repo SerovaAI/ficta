@@ -194,6 +194,12 @@ a tool call. Each launch is checked against its own protected values, and values
 are counted as preserved. It also lists unreplaced secret-shaped strings for review. The report
 shows hashes, lengths, and labels, never values; `--json` gives the same report as JSON, and the
 command exits 1 when it finds a leak. Requests without a captured body are counted but not checked.
+Plain names inside file paths are listed separately, by hash and label, because redaction keeps them
+so paths stay usable. A value that looks like a credential is never kept in a path, so the audit
+reports one there as a leak. Raw traces are deleted after 24 hours, so before pruning removes a
+session's traces, ficta audits them and saves the values-free report under `~/.ficta/logs/audits/`.
+`ficta logs audit --save` saves one now, and every audit ends with a total over the saved reports, so
+the evidence outlives the traces.
 
 When a request contains redacted values, Ficta defaults to adding a system/developer instruction that
 asks the model to reproduce the exact surrogate literals. Exact reproduction lets Ficta restore the
