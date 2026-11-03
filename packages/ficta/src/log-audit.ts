@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { basename, dirname, relative } from "node:path";
-import { detectSecretShapes } from "@serovaai/ficta-engine";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { basename, dirname, join, relative } from "node:path";
+import { detectSecretShapes, isClaudeCodeUserId, looksLikeCredentialMaterial } from "@serovaai/ficta-engine";
 import { type LogUnit, scanLogUnits } from "./log-retention.js";
 
 /**
@@ -43,15 +43,46 @@ export interface AuditCoverage {
   auditRecords: number;
 }
 
+/** A protected value seen inside a path, which redaction preserves: plain names only, by design. */
+export interface PathSighting {
+  unit: string;
+  sha256: string;
+  length: number;
+  name: string;
+  source?: string;
+  provenance?: string;
+  requests: string[];
+  locations: string[];
+}
+
+/** Totals over the audit reports saved under `<root>/audits`, so evidence outlives the raw traces. */
+export interface AuditHistory {
+  reports: number;
+  firstAt?: string;
+  lastAt?: string;
+  /** Distinct capture units ever audited, and the request bodies audited in them. */
+  units: number;
+  requestsAudited: number;
+  /** Distinct leak findings (egress + tool-restore) across every saved report. */
+  leakFindings: number;
+}
+
 export interface LogAuditReport {
   root: string;
+  /** When the audit ran. */
+  at: string;
   coverage: AuditCoverage;
   byGroup: Record<string, AuditCoverage>;
   /** Requests whose audit records a fail-closed block or a value surviving redaction. */
   leakGateEvents: number;
   /** Sightings of a protected value inside a filesystem path, which redaction preserves by design. */
   pathPreserved: number;
+  /** The distinct values behind {@link pathPreserved}, by hash and label. */
+  pathSightings: PathSighting[];
+  /** Captured request bodies audited per unit (keyed by unit path relative to the root). */
+  unitBodies: Record<string, number>;
   findings: AuditFinding[];
+  history?: AuditHistory;
 }
 
 /** Leaks are egress and tool-restore findings; unprotected shapes only need review. */
@@ -88,16 +119,20 @@ interface AuditRecord {
   restore?: { restored?: AuditValue[]; withheldFromTools?: AuditValue[] };
 }
 
-export async function auditLogs(root: string): Promise<LogAuditReport> {
+/** Audit every unit under `root`, or only `opts.units` (used just before their traces are pruned). */
+export async function auditLogs(root: string, opts: { units?: readonly LogUnit[] } = {}): Promise<LogAuditReport> {
   const report: LogAuditReport = {
     root,
+    at: new Date().toISOString(),
     coverage: emptyCoverage(),
     byGroup: {},
     leakGateEvents: 0,
     pathPreserved: 0,
+    pathSightings: [],
+    unitBodies: {},
     findings: [],
   };
-  for (const unit of await scanLogUnits(root)) {
+  for (const unit of opts.units ?? (await scanLogUnits(root))) {
     const group = (report.byGroup[unit.group] ??= emptyCoverage());
     const counts = coverageOf(unit);
     for (const target of [group, report.coverage]) {
@@ -106,6 +141,7 @@ export async function auditLogs(root: string): Promise<LogAuditReport> {
       target.capturedBodies += counts.capturedBodies;
       target.auditRecords += counts.auditRecords;
     }
+    if (counts.capturedBodies > 0) report.unitBodies[relative(root, unit.path) || "."] = counts.capturedBodies;
     if (counts.capturedBodies > 0 || counts.auditRecords > 0) await auditUnit(root, unit, report);
   }
   return report;
@@ -166,18 +202,33 @@ async function auditUnit(root: string, unit: LogUnit, report: LogAuditReport): P
 
   const egress = new Map<string, AuditFinding>();
   const shapes = new Map<string, AuditFinding>();
+  const sightings = new Map<string, PathSighting>();
   const scanned = new Set<string>();
   for (const path of files(/^req-\d+\.sent\.json$/)) {
     const body = await readFile(path, "utf8").catch(() => undefined);
     if (body === undefined) continue;
     const request = requestKey(path);
+    const telemetryId = claudeCodeUserIdIn(body);
     for (const leaf of bodyLeaves(body)) {
       const text = leaf.text.replace(SURROGATE, (token) => " ".repeat(token.length));
       for (const [value, meta] of catalogue) {
         const at = occurrences(text, value);
         if (at.length === 0) continue;
-        if (at.every((index) => insidePath(text, index, value.length))) {
+        // Redaction keeps plain names inside paths so they stay usable; it never keeps a credential.
+        if (!looksLikeCredentialMaterial(value) && at.every((index) => insidePath(text, index, value.length))) {
           report.pathPreserved += 1;
+          const sighting = sightings.get(value) ?? {
+            unit: unitName,
+            ...identify(value),
+            name: meta.name,
+            source: meta.source,
+            provenance: meta.provenance,
+            requests: [],
+            locations: [],
+          };
+          sightings.set(value, sighting);
+          if (!sighting.requests.includes(request)) sighting.requests.push(request);
+          if (!sighting.locations.includes(leaf.location)) sighting.locations.push(leaf.location);
           continue;
         }
         const finding = upsert(egress, value, () => ({
@@ -194,6 +245,8 @@ async function auditUnit(root: string, unit: LogUnit, report: LogAuditReport): P
         if (request < meta.firstSeen) finding.beforeFirstProtected = true;
       }
       if (OPAQUE_KEYS.has(leaf.key ?? "") || leaf.text.length < MIN_VALUE_LENGTH) continue;
+      // Claude Code's device/session identifier: client telemetry the model never sees.
+      if (telemetryId && leaf.location.startsWith("metadata.user_id")) continue;
       // Conversation history repeats in every request; scan each distinct string once per unit.
       const digest = sha256(leaf.text);
       if (scanned.has(digest)) continue;
@@ -203,7 +256,9 @@ async function auditUnit(root: string, unit: LogUnit, report: LogAuditReport): P
       for (const hit of detectSecretShapes(leaf.text)) {
         if (catalogue.has(hit.value) || new RegExp(`^${SURROGATE.source}$`).test(hit.value)) continue;
         const index = leaf.text.indexOf(hit.value);
-        if (index >= 0 && insidePath(leaf.text, index, hit.value.length)) continue;
+        if (index >= 0 && insidePath(leaf.text, index, hit.value.length) && !looksLikeCredentialMaterial(hit.value)) {
+          continue;
+        }
         const finding = upsert(shapes, hit.value, () => ({
           kind: "unprotected-shape",
           unit: unitName,
@@ -243,6 +298,68 @@ async function auditUnit(root: string, unit: LogUnit, report: LogAuditReport): P
     }
   }
   report.findings.push(...egress.values(), ...tool.values(), ...shapes.values());
+  report.pathSightings.push(...sightings.values());
+}
+
+/** Whether a captured body's top-level `metadata.user_id` is Claude Code's telemetry identifier. */
+function claudeCodeUserIdIn(body: string): boolean {
+  const parsed = parseJson(body);
+  if (!isRecord(parsed) || !isRecord(parsed.metadata)) return false;
+  const userId = parsed.metadata.user_id;
+  return typeof userId === "string" && isClaudeCodeUserId(userId);
+}
+
+const AUDITS_DIR = "audits";
+
+/** Save a report under `<root>/audits/`, values-free, so the evidence survives trace pruning. */
+export async function saveAuditReport(root: string, report: LogAuditReport): Promise<string> {
+  const dir = join(root, AUDITS_DIR);
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  const path = join(dir, `audit-${report.at.replace(/[:.]/g, "-")}.json`);
+  const { history: _history, ...saved } = report;
+  await writeFile(path, `${JSON.stringify(saved, null, 2)}\n`, { mode: 0o600 });
+  return path;
+}
+
+/** Totals over every saved report. A unit audited more than once counts once, at its largest size. */
+export async function readAuditHistory(root: string): Promise<AuditHistory> {
+  const dir = join(root, AUDITS_DIR);
+  const names = (await readdir(dir).catch(() => [] as string[])).filter((n) => /^audit-.*\.json$/.test(n)).sort();
+  const units = new Map<string, number>();
+  const leaks = new Set<string>();
+  const history: AuditHistory = { reports: 0, units: 0, requestsAudited: 0, leakFindings: 0 };
+  for (const name of names) {
+    const report = await readJson<Partial<LogAuditReport>>(join(dir, name));
+    if (!report || typeof report.at !== "string") continue;
+    history.reports += 1;
+    history.firstAt ??= report.at;
+    history.lastAt = report.at;
+    for (const [unit, bodies] of Object.entries(report.unitBodies ?? {})) {
+      if (typeof bodies === "number") units.set(unit, Math.max(units.get(unit) ?? 0, bodies));
+    }
+    for (const finding of report.findings ?? []) {
+      if (finding.kind !== "unprotected-shape") leaks.add(`${finding.kind}:${finding.unit}:${finding.sha256}`);
+    }
+  }
+  history.units = units.size;
+  history.requestsAudited = [...units.values()].reduce((sum, n) => sum + n, 0);
+  history.leakFindings = leaks.size;
+  return history;
+}
+
+/**
+ * A prune hook: audit the units whose raw traces are about to be deleted and save the report, so
+ * each captured request is checked at least once before its body is gone. Never throws.
+ */
+export function auditBeforeTraceRemoval(root: string): (units: readonly LogUnit[]) => Promise<void> {
+  return async (units) => {
+    try {
+      const report = await auditLogs(root, { units });
+      if (report.coverage.capturedBodies > 0) await saveAuditReport(root, report);
+    } catch {
+      // Best effort: pruning must still happen when the audit cannot run.
+    }
+  };
 }
 
 interface BodyLeaf {
@@ -427,8 +544,15 @@ export function formatAuditReport(report: LogAuditReport): string {
   lines.push(`leak gate: ${report.leakGateEvents} request(s) blocked or with values surviving redaction`);
   if (report.pathPreserved > 0) {
     lines.push(
-      `paths: ${report.pathPreserved} sighting(s) of a protected value inside a file path (preserved by design)`,
+      `paths: ${report.pathPreserved} sighting(s) of ${report.pathSightings.length} plain protected value(s) inside a file path (preserved by design; credential-looking values are never preserved)`,
     );
+    for (const sighting of report.pathSightings.slice(0, 10)) {
+      const labels = [sighting.name, sighting.source, sighting.provenance].filter(Boolean).join(", ");
+      lines.push(
+        `  sha256:${sighting.sha256} len=${sighting.length} (${labels}) in ${sighting.requests.length} request(s) at ${sighting.locations.slice(0, 2).join(", ")}`,
+      );
+    }
+    if (report.pathSightings.length > 10) lines.push(`  … ${report.pathSightings.length - 10} more (--json for all)`);
   }
   for (const kind of ["egress", "tool-restore", "unprotected-shape"] as const) {
     const findings = report.findings.filter((finding) => finding.kind === kind);
@@ -445,5 +569,11 @@ export function formatAuditReport(report: LogAuditReport): string {
   }
   const leaks = auditLeakCount(report);
   lines.push("", leaks === 0 ? "no leaks found in the captured requests" : `${leaks} leak finding(s)`);
+  const h = report.history;
+  if (h && h.reports > 0) {
+    lines.push(
+      `history: ${h.reports} saved audit(s) ${h.firstAt?.slice(0, 10)} → ${h.lastAt?.slice(0, 10)}, ${h.requestsAudited} request(s) in ${h.units} capture unit(s), ${h.leakFindings} distinct leak finding(s)`,
+    );
+  }
   return `${lines.join("\n")}\n`;
 }

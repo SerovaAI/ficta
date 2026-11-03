@@ -70,6 +70,7 @@ import {
   rawJsonBody,
   visitBodyLeaves,
 } from "./vault.js";
+import { isClaudeCodeUserId } from "./client-identifiers.js";
 import type { Wire } from "./wire.js";
 import type { VaultStore } from "./vault-store.js";
 import { bufferedRestoreAdapterFor, sseRestoreAdapterFor } from "./wire-restore.js";
@@ -1391,26 +1392,8 @@ class ProtectionRequestScope implements RequestScope {
 function isClientIdentifierLeaf(leaf: BodyLeaf): boolean {
   if (leaf.kind !== "value" || leaf.inJsonText === true || leaf.path.length !== 2) return false;
   if (leaf.path[0] !== "metadata" || leaf.path[1] !== "user_id") return false;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(leaf.text);
-  } catch {
-    return false;
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
-  const fields = parsed as Record<string, unknown>;
-  const keys = Object.keys(fields);
-  if (!keys.every((key) => CLIENT_IDENTIFIER_KEYS.has(key))) return false;
-  if (typeof fields.device_id !== "string" || !DEVICE_ID.test(fields.device_id)) return false;
-  return (["account_uuid", "session_id"] as const).every((key) => {
-    const value = fields[key];
-    return value === undefined || value === "" || (typeof value === "string" && UUID.test(value));
-  });
+  return isClaudeCodeUserId(leaf.text);
 }
-
-const CLIENT_IDENTIFIER_KEYS: ReadonlySet<string> = new Set(["device_id", "account_uuid", "session_id"]);
-const DEVICE_ID = /^[0-9a-f]{64}$/;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** A JSON body is read literal by literal from its raw text (see {@link rawJsonBody}). */
 function bodyDocument(body: string, opts: { readonly paths?: boolean } = {}): BodyDocument {

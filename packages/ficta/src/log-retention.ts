@@ -49,6 +49,8 @@ export interface PruneResult {
 export interface PruneOptions {
   now?: number;
   isPidAlive?: (pid: number) => boolean;
+  /** Runs once, before any raw trace file is deleted, with the units about to lose traces. */
+  beforeTraceRemoval?: (units: readonly LogUnit[]) => Promise<void>;
 }
 
 /** Every instance/run dir under `root`, with its files, size, and whether it may still be in use. */
@@ -83,16 +85,29 @@ export async function pruneLogs(
   const now = opts.now ?? Date.now();
   const result: PruneResult = { removedUnits: 0, removedTraceFiles: 0, freedBytes: 0 };
   const kept: LogUnit[] = [];
-  for (const unit of await scanLogUnits(root, opts)) {
-    if (!unit.live && policy.maxAgeMs !== undefined && now - unit.lastActivityMs > policy.maxAgeMs) {
+  const units = await scanLogUnits(root, opts);
+  const expired = (unit: LogUnit) =>
+    !unit.live && policy.maxAgeMs !== undefined && now - unit.lastActivityMs > policy.maxAgeMs;
+  const agedTraces = (unit: LogUnit) =>
+    policy.traceMaxAgeMs === undefined
+      ? []
+      : traceFiles(unit).filter((file) => now - file.mtimeMs >= (policy.traceMaxAgeMs ?? 0));
+  // Give the caller one look at every unit about to lose its raw traces (for example to audit them),
+  // whether the traces go by age, with an expired unit, or under the size cap below.
+  const audited = new Set<LogUnit>();
+  const beforeRemoval = async (candidates: readonly LogUnit[]) => {
+    const fresh = candidates.filter((unit) => !audited.has(unit) && traceFiles(unit).length > 0);
+    if (fresh.length === 0 || !opts.beforeTraceRemoval) return;
+    for (const unit of fresh) audited.add(unit);
+    await opts.beforeTraceRemoval(fresh);
+  };
+  await beforeRemoval(units.filter((unit) => expired(unit) || agedTraces(unit).length > 0));
+  for (const unit of units) {
+    if (expired(unit)) {
       await removeUnit(unit, result);
       continue;
     }
-    if (policy.traceMaxAgeMs !== undefined) {
-      for (const file of traceFiles(unit)) {
-        if (now - file.mtimeMs >= policy.traceMaxAgeMs) await removeTraceFile(unit, file, result);
-      }
-    }
+    for (const file of agedTraces(unit)) await removeTraceFile(unit, file, result);
     kept.push(unit);
   }
   if (policy.maxTotalBytes !== undefined) {
@@ -102,6 +117,7 @@ export async function pruneLogs(
     const traces = kept
       .flatMap((unit) => traceFiles(unit).map((file) => ({ unit, file })))
       .sort((a, b) => a.file.mtimeMs - b.file.mtimeMs);
+    if (total > policy.maxTotalBytes) await beforeRemoval([...new Set(traces.map(({ unit }) => unit))]);
     for (const { unit, file } of traces) {
       if (total <= policy.maxTotalBytes) break;
       total -= file.bytes;

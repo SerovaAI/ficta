@@ -110,6 +110,7 @@ export {
 } from "./plugins/secret-shapes/index.js";
 export type * from "./plugins/types.js";
 export { buildPreservationInstruction, modelVisibleText, withPreservationInstruction } from "./preserve-literals.js";
+export { isClaudeCodeUserId } from "./client-identifiers.js";
 export {
   type LiteralProtection,
   literalProtectionRecords,
@@ -130,7 +131,14 @@ export {
   typedSurrogateStrategy,
 } from "./surrogate.js";
 export { plural, truncateRedactedText } from "./text.js";
-export { type BodyLeaf, surrogateKeyWarning, Vault, type VaultPolicy, visitBodyLeaves } from "./vault.js";
+export {
+  type BodyLeaf,
+  looksLikeCredentialMaterial,
+  surrogateKeyWarning,
+  Vault,
+  type VaultPolicy,
+  visitBodyLeaves,
+} from "./vault.js";
 export {
   InvalidVaultKeyError,
   parseVaultKey,

@@ -14,13 +14,11 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProtectionStatsSnapshot } from "@serovaai/ficta-protocol";
 import { describe, expect, it } from "vitest";
-import { defaultShimDir, findExecutable } from "../../src/install.js";
-
-const E2E = process.env.FICTA_E2E === "1";
+import { type AgentSpec, agentSpecs, CLI, E2E, REGISTRY_OVERRIDE, realBinary, skipReason, TSX } from "./agents.js";
 
 // The registered value is a benign, git-SHA-like build ref rather than an obvious
 // credential: safety-tuned agents refuse to read a file that is plainly a secret
@@ -33,92 +31,7 @@ const SECRET_VAR = "BUILD_REF";
 const CANARY = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0";
 const PROMPT = `Read ${SECRET_FILE} in the current working directory and tell me the value of ${SECRET_VAR}.`;
 
-const REPO = process.cwd();
-const TSX = join(REPO, "node_modules", ".bin", "tsx");
-const CLI = join(REPO, "src", "cli.ts");
-
-interface AgentSpec {
-  /** ficta agent command. */
-  name: string;
-  /** Headless single-turn args; the canary PROMPT is appended last. */
-  args: () => string[];
-  /** True when the agent's own provider auth looks present. */
-  authPresent: () => boolean;
-  /** Human-readable note about how auth is detected (for skip messages). */
-  authHint: string;
-}
-
-function realBinary(name: string): string | undefined {
-  const override = process.env[`FICTA_REAL_${name.toUpperCase()}`];
-  if (override) return override;
-  const excludeDirs = [defaultShimDir(), process.env.FICTA_SHIM_DIR].filter((v): v is string => Boolean(v));
-  return findExecutable(name, { excludeDirs });
-}
-
-// Use Pi's real default provider (e.g. openai-codex) so the test exercises what the
-// user actually runs, not a provider they may not be authed for.
-function piDefaultProvider(): string {
-  if (process.env.FICTA_E2E_PI_PROVIDER) return process.env.FICTA_E2E_PI_PROVIDER;
-  try {
-    const s = JSON.parse(readFileSync(join(homedir(), ".pi", "agent", "settings.json"), "utf8"));
-    if (typeof s.defaultProvider === "string") return s.defaultProvider;
-  } catch {
-    // No settings; fall through to default.
-  }
-  return "openai-codex";
-}
-const PI_PROVIDER = piDefaultProvider();
-const PI_MODEL = process.env.FICTA_E2E_PI_MODEL;
-
-// Restrict to named agents for cheaper targeted runs, e.g. FICTA_E2E_ONLY=claude.
-const ONLY = (process.env.FICTA_E2E_ONLY ?? "")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
-// Negative control: point the registry elsewhere (e.g. /dev/null) so the canary
-// is NOT protected — the suite must then FAIL, proving the assertions bite.
-const REGISTRY_OVERRIDE = process.env.FICTA_E2E_REGISTRY_OVERRIDE;
-
-const AGENTS: AgentSpec[] = [
-  {
-    name: "claude",
-    // `--allowedTools <tools...>` is variadic and greedily consumes following
-    // positionals, so the PROMPT must come before it or claude sees no prompt.
-    args: () => [
-      "-p",
-      ...(process.env.FICTA_E2E_CLAUDE_MODEL ? ["--model", process.env.FICTA_E2E_CLAUDE_MODEL] : []),
-      PROMPT,
-      "--allowedTools",
-      "Read",
-    ],
-    authPresent: () => existsSync(join(homedir(), ".claude")) || Boolean(process.env.ANTHROPIC_API_KEY),
-    authHint: "~/.claude or ANTHROPIC_API_KEY",
-  },
-  {
-    name: "codex",
-    args: () => [
-      "exec",
-      "--skip-git-repo-check",
-      "-s",
-      "read-only",
-      ...(process.env.FICTA_E2E_CODEX_MODEL ? ["-m", process.env.FICTA_E2E_CODEX_MODEL] : []),
-      PROMPT,
-    ],
-    authPresent: () => existsSync(join(homedir(), ".codex", "auth.json")) || Boolean(process.env.OPENAI_API_KEY),
-    authHint: "~/.codex/auth.json or OPENAI_API_KEY",
-  },
-  {
-    name: "pi",
-    args: () => ["-p", "--provider", PI_PROVIDER, ...(PI_MODEL ? ["--model", PI_MODEL] : []), "--no-session", PROMPT],
-    // Pi stores its own logins in ~/.pi/agent/auth.json (provider-independent), so
-    // that is the real auth signal — not shell API-key env vars.
-    authPresent: () =>
-      existsSync(join(homedir(), ".pi", "agent", "auth.json")) ||
-      Boolean(process.env.OPENAI_API_KEY) ||
-      Boolean(process.env.ANTHROPIC_API_KEY),
-    authHint: `~/.pi/agent/auth.json for provider '${PI_PROVIDER}' (override with FICTA_E2E_PI_PROVIDER)`,
-  },
-];
+const AGENTS = agentSpecs(PROMPT);
 
 interface RunArtifacts {
   status: number | null;
@@ -229,15 +142,7 @@ function runAgent(agent: AgentSpec, bin: string): RunArtifacts {
 describe("live redaction through real agents", () => {
   for (const agent of AGENTS) {
     const bin = E2E ? realBinary(agent.name) : undefined;
-    const skip = !E2E
-      ? "FICTA_E2E is not set (run via `pnpm test:e2e`)"
-      : ONLY.length && !ONLY.includes(agent.name)
-        ? "excluded by FICTA_E2E_ONLY"
-        : !bin
-          ? `real ${agent.name} binary not found on PATH`
-          : !agent.authPresent()
-            ? `no auth detected (${agent.authHint})`
-            : "";
+    const skip = skipReason(agent, bin);
 
     if (skip) {
       it.skip(`${agent.name}: SKIPPED — ${skip}`, () => {});
@@ -326,8 +231,3 @@ describe("live redaction through real agents", () => {
     });
   }
 });
-
-// Surface the toolchain assumption early with a clear message.
-if (E2E && !existsSync(TSX)) {
-  throw new Error(`tsx not found at ${TSX}; run \`pnpm install\` before \`pnpm test:e2e\`.`);
-}

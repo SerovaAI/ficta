@@ -1,12 +1,19 @@
 import { loadConfig } from "./config.js";
-import { auditLeakCount, auditLogs, formatAuditReport } from "./log-audit.js";
+import {
+  auditBeforeTraceRemoval,
+  auditLeakCount,
+  auditLogs,
+  formatAuditReport,
+  readAuditHistory,
+  saveAuditReport,
+} from "./log-audit.js";
 import { describeRetention, formatBytes, pruneLogs, scanLogUnits, traceFiles } from "./log-retention.js";
 
 /**
  * `ficta logs` — capture-log usage per group under the log root.
  * `ficta logs prune` — apply the retention policy now (ignoring the hourly throttle).
  * `ficta logs prune --traces` — also delete every raw-value trace file, whatever its age.
- * `ficta logs audit [--json]` — check captured bodies for protected values that reached the provider
+ * `ficta logs audit [--json] [--save]` — check captured bodies for protected values that reached the provider
  *   or a tool call; exits 1 when it finds a leak. Prints hashes and labels, never values.
  */
 export async function runLogsCommand(args: readonly string[]): Promise<number> {
@@ -14,19 +21,21 @@ export async function runLogsCommand(args: readonly string[]): Promise<number> {
   const [sub, ...flags] = args;
   if (sub === "prune") {
     const policy = flags.includes("--traces") ? { ...cfg.logRetention, traceMaxAgeMs: 0 } : cfg.logRetention;
-    const result = await pruneLogs(cfg.logRoot, policy);
+    const result = await pruneLogs(cfg.logRoot, policy, { beforeTraceRemoval: auditBeforeTraceRemoval(cfg.logRoot) });
     process.stdout.write(
       `ficta logs: removed ${result.removedUnits} capture dir(s) and ${result.removedTraceFiles} raw trace file(s), freed ${formatBytes(result.freedBytes)}\n`,
     );
     return 0;
   }
-  if (sub === "audit" && flags.every((flag) => flag === "--json")) {
+  if (sub === "audit" && flags.every((flag) => flag === "--json" || flag === "--save")) {
     const report = await auditLogs(cfg.logRoot);
+    if (flags.includes("--save")) await saveAuditReport(cfg.logRoot, report);
+    report.history = await readAuditHistory(cfg.logRoot);
     process.stdout.write(flags.includes("--json") ? `${JSON.stringify(report, null, 2)}\n` : formatAuditReport(report));
     return auditLeakCount(report) > 0 ? 1 : 0;
   }
   if (sub !== undefined) {
-    process.stderr.write("usage: ficta logs [prune [--traces] | audit [--json]]\n");
+    process.stderr.write("usage: ficta logs [prune [--traces] | audit [--json] [--save]]\n");
     return 2;
   }
 
