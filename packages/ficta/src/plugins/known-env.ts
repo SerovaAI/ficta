@@ -57,6 +57,33 @@ function isSecretishEnvName(name: string): boolean {
   return SECRETISH_ENV_NAME.test(name);
 }
 
+/**
+ * Env names whose values are runtime mode, locale, terminal, region or log settings — never secret
+ * material. Their values are common words (`development`, `production`, `en_US.UTF-8`,
+ * `eu-central-1`), so registering them surrogates every ordinary mention of that word. Enforced as a
+ * trusted registry-policy exclusion, so it covers every source (Doppler loads whole configs by name).
+ */
+export const WELL_KNOWN_CONFIG_ENV_NAMES = [
+  "APP_ENV",
+  "ASPNETCORE_ENVIRONMENT",
+  "AWS_DEFAULT_REGION",
+  "AWS_REGION",
+  "COLORTERM",
+  "FLASK_ENV",
+  "FORCE_COLOR",
+  "LANG",
+  "LC_ALL",
+  "LOG_LEVEL",
+  "MIX_ENV",
+  "NO_COLOR",
+  "NODE_ENV",
+  "RACK_ENV",
+  "RAILS_ENV",
+  "RUST_LOG",
+  "TERM",
+  "TZ",
+] as const;
+
 let cachedKey: string | undefined;
 let cachedValues: ProtectedValue[] | undefined;
 let cachedStats: KnownEnvStats | undefined;
@@ -65,6 +92,16 @@ export const knownEnvPlugin: RegistrySourcePlugin = {
   kind: "registry-source",
   name: PLUGIN_NAME,
   description: "Loads exact secret/PII-ish values from .env files and process env",
+  registryPolicy: {
+    exclusions: [
+      {
+        id: "well-known-config-env-names",
+        kind: "env-name",
+        names: WELL_KNOWN_CONFIG_ENV_NAMES,
+        reason: "runtime mode, locale, region, and log settings are not secret material",
+      },
+    ],
+  },
   config: {
     envDefaults: {
       FICTA_REGISTRY_ENV_FILE_ENABLED: DEFAULT_ENV_FILE_ENABLED,

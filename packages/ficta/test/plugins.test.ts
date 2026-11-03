@@ -935,9 +935,36 @@ exit 1
     // The exclusion is owned by the built-in Doppler plugin, so it is enforced.
     const rule = snapshot.registryPolicy.exclusions.find((r) => r.id === "doppler-metadata-env-names");
     expect(rule?.trusted).toBe(true);
-    expect(snapshot.policyExcluded).toBe(3);
-    // All three came from the process-env source, so the count is attributed there.
-    expect(snapshot.policyExcludedBySource["process-env"]).toBe(3);
+    // Mode "all" also sees the runner's own TERM/LANG/NODE_ENV, which the well-known-config rule
+    // drops; count only what the Doppler rule excluded.
+    const dopplerDropped = snapshot.policyExcludedValues.filter((d) => d.rule.id === "doppler-metadata-env-names");
+    expect(dopplerDropped.map((d) => d.name).sort()).toEqual([
+      "DOPPLER_CONFIG",
+      "DOPPLER_ENVIRONMENT",
+      "DOPPLER_PROJECT",
+    ]);
+    // All three came from the process-env source.
+    expect(dopplerDropped.every((d) => d.source === "process-env")).toBe(true);
+  });
+
+  it("never protects well-known runtime config names such as NODE_ENV, from any source", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ficta-wellknown-"));
+    const envFile = join(dir, ".env");
+    const token = `tok_${"q7Zp".repeat(6)}`;
+    writeFileSync(envFile, `NODE_ENV=development\nAWS_REGION=eu-central-1\nAPI_TOKEN=${token}\n`);
+    process.env.FICTA_REGISTRY_ENV_FILE_PATHS = envFile;
+    process.env.FICTA_REGISTRY_MIN_LEN = "8";
+
+    const snapshot = loadPluginRegistry();
+
+    expect(snapshot.values.some((v) => v.name === "NODE_ENV")).toBe(false);
+    expect(snapshot.values.some((v) => v.name === "AWS_REGION")).toBe(false);
+    expect(snapshot.values.some((v) => v.name === "API_TOKEN")).toBe(true);
+    const rule = snapshot.registryPolicy.exclusions.find((r) => r.id === "well-known-config-env-names");
+    expect(rule?.trusted).toBe(true);
+    expect(rule?.names).toContain("NODE_ENV");
+    const dropped = snapshot.policyExcludedValues.filter((d) => d.rule.id === "well-known-config-env-names");
+    expect(dropped.map((d) => d.name).sort()).toEqual(["AWS_REGION", "NODE_ENV"]);
   });
 
   it("annotates discovery lines with per-source policy exclusions", () => {
