@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.12.1
+
+### Patch Changes
+
+- [#158](https://github.com/SerovaAI/ficta/pull/158) [`6fd188c`](https://github.com/SerovaAI/ficta/commit/6fd188c8727e461c6ff917eb3b1fcbfe36b82ff1) Thanks [@steflsd](https://github.com/steflsd)! - Docs: the threat model and plugin guide now describe the path rule as it works since 0.12.0. Only plain-looking registered values are left in place inside file paths. Credential-looking values are replaced even there, and JSON-escaped text never counts as a path. `ficta logs audit` lists what the exception kept.
+- Updated dependencies []:
+  - @serovaai/ficta-engine@0.12.1
+  - @serovaai/ficta-protocol@0.12.1
+
 ## 0.12.0
 
 ### Minor Changes
