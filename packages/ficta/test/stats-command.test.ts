@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ProtectionStatsSnapshot } from "@serovaai/ficta-protocol";
+import type { ProtectionHit, ProtectionStatsEvent, ProtectionStatsSnapshot } from "@serovaai/ficta-protocol";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseStatsArgs, readStatsSources, renderStatsRollup, rollUpStats } from "../src/stats-command.js";
 
@@ -16,50 +16,65 @@ function tempRoot(): string {
   return root;
 }
 
-function snapshot(opts: {
-  startedAt: string;
-  kept: number;
+interface EventSpec {
+  at: string;
+  /** Redacted values, all carrying `label`. */
+  redacted: number;
+  /** Values left in the request; kept out of the model only when the request was blocked. */
   surviving?: number;
-  blocked?: number;
-  restored?: number;
+  blocked?: boolean;
   model?: string;
   label?: { name: string; source: string };
-}): ProtectionStatsSnapshot {
-  const surviving = opts.surviving ?? 0;
-  const blocked = opts.blocked ?? 0;
-  const redacted = opts.kept - (blocked > 0 ? surviving : 0);
-  const bucket = (name: string) => ({
-    name,
-    requests: 1,
-    redactedValues: redacted,
-    survivingValues: surviving,
-    blockedRequests: blocked,
-    keptOutOfModelValues: opts.kept,
-  });
-  const label = opts.label ?? { name: "opaque-secret", source: "secret-shape" };
+}
+
+function hits(count: number, label: { name: string; source: string }): ProtectionHit[] {
+  return Array.from({ length: count }, () => ({ name: label.name, source: label.source }) as ProtectionHit);
+}
+
+/**
+ * A snapshot built from events. The per-run totals and buckets are deliberately wrong (all zero)
+ * so the tests prove the rollup is built from the events, not the run-level summaries.
+ */
+function snapshot(startedAt: string, events: EventSpec[], restored = 0): ProtectionStatsSnapshot {
+  const label = { name: "opaque-secret", source: "secret-shape" };
   return {
     version: 1,
     path: "/unused",
-    startedAt: opts.startedAt,
-    updatedAt: opts.startedAt,
+    startedAt,
+    updatedAt: events.at(-1)?.at ?? startedAt,
     totals: {
-      events: 1,
-      affectedRequests: 1,
-      redactedValues: redacted,
-      survivingValues: surviving,
-      blockedRequests: blocked,
-      keptOutOfModelValues: opts.kept,
-      restoredValues: opts.restored ?? 0,
+      events: events.length,
+      affectedRequests: 0,
+      redactedValues: 0,
+      survivingValues: 0,
+      blockedRequests: 0,
+      keptOutOfModelValues: 0,
+      restoredValues: restored,
       withheldFromToolsValues: 0,
       residualSurrogateValues: 0,
       ambiguousEntityLinks: 0,
       ambiguousEntityLinkRequests: 0,
     },
-    byModel: [bucket(opts.model ?? "claude-opus-5-5")],
-    bySurface: [bucket("body")],
-    byWire: [bucket("anthropic")],
-    byLabel: [{ ...bucket(label.name), source: label.source }],
-    events: [],
+    byModel: [],
+    bySurface: [],
+    byWire: [],
+    byLabel: [],
+    events: events.map((spec, i): ProtectionStatsEvent => ({
+      index: i + 1,
+      requestId: i + 1,
+      at: spec.at,
+      method: "POST",
+      path: "/v1/messages",
+      wire: "anthropic",
+      model: spec.model ?? "claude-opus-5-5",
+      surface: "body",
+      redactedValues: spec.redacted,
+      survivingValues: spec.surviving ?? 0,
+      blocked: spec.blocked ?? false,
+      ambiguousEntityLinks: 0,
+      redactedHits: hits(spec.redacted, spec.label ?? label),
+      survivingHits: hits(spec.surviving ?? 0, spec.label ?? label),
+    })),
   };
 }
 
@@ -73,39 +88,56 @@ describe("ficta stats", () => {
     const root = tempRoot();
     const claudeA = join(root, "agents", "claude", "2026-10-20T11-00-00-000Z-111");
     const claudeB = join(root, "agents", "claude", "2026-10-21T11-00-00-000Z-222");
-    writeStats(join(claudeA, "runs", "run-1", "stats.json"), snapshot({ startedAt: "2026-10-20T11:00:00Z", kept: 5 }));
+    writeStats(
+      join(claudeA, "runs", "run-1", "stats.json"),
+      snapshot("2026-10-20T11:00:00Z", [{ at: "2026-10-20T11:05:00Z", redacted: 5 }]),
+    );
     // A restarted proxy: second run in the same session.
     writeStats(
       join(claudeA, "runs", "run-2", "stats.json"),
-      snapshot({ startedAt: "2026-10-20T12:00:00Z", kept: 3, restored: 2 }),
+      snapshot("2026-10-20T12:00:00Z", [{ at: "2026-10-20T12:05:00Z", redacted: 3 }], 2),
     );
     // The instance-level copy repeats the latest run and must not be double counted.
-    writeStats(join(claudeA, "protection-stats.json"), snapshot({ startedAt: "2026-10-20T12:00:00Z", kept: 3 }));
+    writeStats(
+      join(claudeA, "protection-stats.json"),
+      snapshot("2026-10-20T12:00:00Z", [{ at: "2026-10-20T12:05:00Z", redacted: 3 }]),
+    );
     writeStats(
       join(claudeB, "runs", "run-1", "stats.json"),
-      snapshot({ startedAt: "2026-10-21T11:00:00Z", kept: 10, label: { name: "API_TOKEN", source: "doppler" } }),
+      snapshot("2026-10-21T11:00:00Z", [
+        { at: "2026-10-21T11:05:00Z", redacted: 10, label: { name: "API_TOKEN", source: "doppler" } },
+      ]),
     );
     writeStats(
       join(root, "gateway", "runs", "run-2026-10-21", "stats.json"),
-      snapshot({ startedAt: "2026-10-21T13:00:00Z", kept: 4, surviving: 2, blocked: 1, model: "gpt-sol" }),
+      snapshot("2026-10-21T13:00:00Z", [
+        { at: "2026-10-21T13:05:00Z", redacted: 2, surviving: 2, blocked: true, model: "gpt-sol" },
+      ]),
     );
     writeStats(
       join(root, "agents", "codex", "2026-10-21T09-00-00-000Z-333", "runs", "run-1", "stats.json"),
       "{not json",
     );
+    // A session that protected nothing writes no stats file but still counts as logged.
+    mkdirSync(join(root, "agents", "codex", "2026-10-21T10-00-00-000Z-444", "runs", "run-1"), { recursive: true });
 
-    const { sources, unreadable } = await readStatsSources(root);
-    const rollup = rollUpStats(sources, { root, unreadable });
+    const { sources, sessions, unreadable } = await readStatsSources(root);
+    const rollup = rollUpStats(sources, { root, unreadable, sessions });
 
     expect(rollup.runs).toBe(4);
     expect(rollup.sessions).toBe(3);
+    expect(rollup.sessionsLogged).toBe(5);
     expect(rollup.unreadable).toBe(1);
     expect(rollup.totals.keptOutOfModelValues).toBe(22);
+    expect(rollup.totals.affectedRequests).toBe(4);
     expect(rollup.totals.restoredValues).toBe(2);
     expect(rollup.totals.blockedRequests).toBe(1);
-    expect(rollup.byAgent.map((row) => [row.name, row.sessions, row.runs, row.keptOutOfModelValues])).toEqual([
-      ["claude", 2, 3, 18],
-      ["gateway", 1, 1, 4],
+    expect(
+      rollup.byAgent.map((row) => [row.name, row.sessions, row.sessionsLogged, row.runs, row.keptOutOfModelValues]),
+    ).toEqual([
+      ["claude", 2, 2, 3, 18],
+      ["gateway", 1, 1, 1, 4],
+      ["codex", 0, 2, 0, 0],
     ]);
     expect(rollup.byLabel.map((row) => [row.name, row.source, row.runs, row.keptOutOfModelValues])).toEqual([
       ["opaque-secret", "secret-shape", 3, 12],
@@ -116,34 +148,56 @@ describe("ficta stats", () => {
       { day: "2026-10-20", runs: 2, keptOutOfModelValues: 8, blockedRequests: 0 },
       { day: "2026-10-21", runs: 2, keptOutOfModelValues: 14, blockedRequests: 1 },
     ]);
-    expect(rollup.firstAt).toBe("2026-10-20T11:00:00Z");
+    expect(rollup.firstAt).toBe("2026-10-20T11:05:00Z");
 
     const text = renderStatsRollup(rollup);
     expect(text).toContain("kept 22 protected values out of the model");
-    expect(text).toContain("3 sessions, 4 proxy runs, 2026-10-20 → 2026-10-21");
+    expect(text).toContain("3 of 5 sessions protected something, 4 proxy runs, 2026-10-20 → 2026-10-21");
     // Blocked surviving values never reached the model.
     expect(text).toContain("values that reached the model: 0");
     expect(text).toContain("skipped 1 unreadable stats file(s)");
   });
 
-  it("filters runs by start day with --since", async () => {
+  it("dates protection by each event, so a long-running session spreads across days", async () => {
     const root = tempRoot();
     const session = join(root, "agents", "claude", "2026-10-20T11-00-00-000Z-111");
-    writeStats(join(session, "runs", "run-1", "stats.json"), snapshot({ startedAt: "2026-10-20T11:00:00Z", kept: 5 }));
-    writeStats(join(session, "runs", "run-2", "stats.json"), snapshot({ startedAt: "2026-10-22T11:00:00Z", kept: 7 }));
+    writeStats(
+      join(session, "runs", "run-1", "stats.json"),
+      snapshot("2026-10-20T11:00:00Z", [
+        { at: "2026-10-20T11:05:00Z", redacted: 5 },
+        { at: "2026-10-22T09:00:00Z", redacted: 7 },
+        { at: "2026-10-23T09:00:00Z", redacted: 1, label: { name: "NODE_ENV", source: "doppler" } },
+      ]),
+    );
 
     const { sources } = await readStatsSources(root);
-    const rollup = rollUpStats(sources, { root, since: "2026-10-21" });
+    const all = rollUpStats(sources, { root });
+    expect(all.byDay.map((row) => [row.day, row.keptOutOfModelValues])).toEqual([
+      ["2026-10-20", 5],
+      ["2026-10-22", 7],
+      ["2026-10-23", 1],
+    ]);
 
-    expect(rollup.runs).toBe(1);
-    expect(rollup.totals.keptOutOfModelValues).toBe(7);
-    expect(renderStatsRollup(rollup)).toContain("since 2026-10-21");
+    // --since keeps the later events of a session that started before the cut-off.
+    const since = rollUpStats(sources, { root, since: "2026-10-22" });
+    expect(since.runs).toBe(1);
+    expect(since.totals.keptOutOfModelValues).toBe(8);
+    expect(since.totals.affectedRequests).toBe(2);
+    expect(since.firstAt).toBe("2026-10-22T09:00:00Z");
+    expect(since.byLabel.map((row) => [row.name, row.keptOutOfModelValues])).toEqual([
+      ["opaque-secret", 7],
+      ["NODE_ENV", 1],
+    ]);
+    expect(renderStatsRollup(since)).toContain("since 2026-10-22");
+
+    // A run whose events all fall before the cut-off drops out entirely.
+    expect(rollUpStats(sources, { root, since: "2026-10-24" }).runs).toBe(0);
   });
 
   it("reports an empty log root without failing", async () => {
     const root = tempRoot();
-    const { sources } = await readStatsSources(root);
-    const text = renderStatsRollup(rollUpStats(sources, { root }));
+    const { sources, sessions } = await readStatsSources(root);
+    const text = renderStatsRollup(rollUpStats(sources, { root, sessions }));
     expect(text).toContain("no protection activity recorded");
   });
 
