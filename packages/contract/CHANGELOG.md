@@ -1,5 +1,13 @@
 # @serovaai/ficta-contract
 
+## 0.4.2
+
+### Patch Changes
+
+- [`773bed6`](https://github.com/SerovaAI/ficta/commit/773bed65c5e4bb78a28c3e365af4dd6e3ba59b39) Thanks [@steflsd](https://github.com/steflsd)! - Update runtime dependencies: oRPC 1.16.1, Hono 4.13.14 and undici 8.12.3.
+- Updated dependencies []:
+  - @serovaai/ficta-protocol@0.12.0
+
 ## 0.4.1
 
 ### Patch Changes
