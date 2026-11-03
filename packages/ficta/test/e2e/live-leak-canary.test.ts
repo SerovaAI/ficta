@@ -4,7 +4,8 @@
 // Each real agent runs through ficta with dev trace on, so every request is captured twice: the
 // original (`req-N.json`) and what ficta forwarded (`req-N.sent.json`). The agent reads a notes file
 // and runs a shell command over it. The file holds two kinds of canary, each in the shapes that have
-// leaked before (git ranges, git errors, URL and file paths, JSON, env assignments):
+// leaked before (git ranges, git errors, URL and file paths, JSON, env assignments, and serialized
+// transcript text whose `\\n` escapes once made a value look like it sat in a Windows path):
 //   - registered canaries, loaded from a `.env` the way a project's secrets are, including one that
 //     looks ordinary, so only the registry protects it;
 //   - detector-only canaries (token prefixes, an access key id, a credential URL) that nothing
@@ -52,6 +53,7 @@ Preview API: https://api.example.test/v1/${REGISTERED.ASSET_KEY}/items
 Config JSON: {"build_ref":"${REGISTERED.BUILD_REF}","asset_key":"${REGISTERED.ASSET_KEY}"}
 Env: ASSET_KEY=${REGISTERED.ASSET_KEY}
 Client matter: ${REGISTERED.MATTER_CODE} (ref kept in the matter tracker)
+Transcript excerpt: {"Bash":"git status"}\\nClient: ${REGISTERED.MATTER_CODE}\\nIntent: ship the fix
 
 Legacy CI token (rotated, kept for the audit trail): ${DETECTOR_ONLY.githubToken}
 Old access key id: ${DETECTOR_ONLY.awsKeyId}

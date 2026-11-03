@@ -46,6 +46,27 @@ describe("path preservation never keeps credential-looking values", () => {
   });
 });
 
+describe("JSON escapes in serialized text are not path separators", () => {
+  // A plain registered value no detector would catch: only the registry protects it.
+  const MATTER = "MTR-4417-QUILL";
+
+  it.each([
+    ["an escaped newline", `{"Bash":"echo hi"}\\nClient: ${MATTER}\\nIntent: ship it`],
+    ["an escaped quote", `{"note":"matter \\"${MATTER}\\" is open"}`],
+    ["an escaped tab", `Client:\\t${MATTER}\\tstatus`],
+    ["a unicode escape", `Client: ${MATTER}\\u000aNext`],
+  ])("replaces a registered value next to %s", async (_label, content) => {
+    expect(await sent(`escape-${_label}`, [MATTER], content)).not.toContain(MATTER);
+  });
+
+  it.each([
+    ["a Windows drive path", `C:\\matters\\${MATTER}\\brief.docx`],
+    ["a relative Windows path", `matters\\${MATTER}\\docs`],
+  ])("still keeps a plain name usable in %s", async (_label, content) => {
+    expect(await sent(`windows-${_label}`, [MATTER], content)).toBe(content);
+  });
+});
+
 describe("modelVisibleText", () => {
   it("drops top-level fields the model never sees", () => {
     const body = JSON.stringify({

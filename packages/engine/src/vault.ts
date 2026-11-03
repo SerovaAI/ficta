@@ -2274,8 +2274,22 @@ function pathLikeKind(token: string): PathLikeKind | undefined {
 
   if (/^(?:\/|~\/|\.\/|\.\.\/)/.test(value)) return "explicit";
   if (/^[A-Za-z]:[\\/]/.test(value)) return "explicit";
-  if (value.includes("/") || value.includes("\\")) return "relative";
+  if (value.includes("/") || hasPathBackslash(value)) return "relative";
   return undefined;
+}
+
+/**
+ * Whether a token has a backslash that can separate path segments. Text that is itself serialized
+ * JSON (a transcript an agent embeds in a request, such as Claude Code's auto-mode classifier input)
+ * carries escapes like `\n`, `\t`, and `\"` as literal backslashes; counting those as Windows path
+ * separators made `<value>\nNext line` a "path" and left a registered value in it unreplaced. Escape
+ * sequences and a stray leading or trailing backslash are ignored; `matters\<name>\brief` still counts.
+ */
+function hasPathBackslash(value: string): boolean {
+  return value
+    .replace(/\\u[0-9a-fA-F]{4}|\\[nrtbf"'\\/]/g, "")
+    .replace(/^\\+|\\+$/g, "")
+    .includes("\\");
 }
 
 function isAssignmentValue(text: string, tokenStart: number): boolean {
