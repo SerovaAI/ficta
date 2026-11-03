@@ -169,6 +169,11 @@ if (command === "logs") {
   process.exit(await runLogsCommand(args.slice(1)));
 }
 
+if (command === "stats") {
+  const { runStatsCommand } = await import("./stats-command.js");
+  process.exit(await runStatsCommand(args.slice(1)));
+}
+
 if (command === "review") {
   const { runReview } = await import("./review.js");
   await runReview({ global: args.slice(1).includes("--global") });
@@ -435,6 +440,7 @@ function printHelp(exitCode: number): never {
         "logs [prune [--traces]]",
         "Show capture-log usage; prune applies retention now (--traces: drop all raw traces)",
       ],
+      ["stats [--since <Nd|date>] [--json]", "Protection totals across every logged session, by agent/model/label/day"],
       ["logs audit [--json]", "Check captured traces for protected values sent upstream or into tool calls"],
       ["install [--force] [--no-shell]", `Install ${supportedAgents.join("/")} shims into ~/.ficta/bin`],
       ["uninstall [--no-shell]", "Remove installed shims"],

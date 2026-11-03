@@ -183,6 +183,11 @@ tree is under 1 GiB, and raw-value trace files go after 24 hours. Dirs still in 
 Tune it with `[logging] retain_days`, `max_total_bytes`, and `trace_retain_hours` (0 disables a
 limit). `ficta logs` shows usage; `ficta logs prune [--traces]` applies the policy now.
 
+`ficta stats` adds up the values-free `stats.json` from every proxy run still under the log root:
+protected values kept out of the model, blocked requests, restores, and breakdowns by agent, model,
+surface, label, and day. `--since 7d` or `--since 2026-10-01` narrows it by run start date, and
+`--json` prints the full rollup. It only covers runs the retention policy has kept.
+
 `ficta logs audit` replays the traces captured with `FICTA_DEV_TRACE=1` and checks what actually
 left: a value a launch protected that still reached the provider, or a registry secret restored into
 a tool call. Each launch is checked against its own protected values, and values inside file paths

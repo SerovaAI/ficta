@@ -613,6 +613,14 @@ negative override on top of the secret-ish heuristic — those names still match
 are just dropped afterward. Credential variables such as `DOPPLER_TOKEN` are not on the exclusion
 list and remain protected by the normal `TOKEN` heuristic.
 
+The known-env plugin declares a second trusted exclusion, `well-known-config-env-names`, for env vars
+whose values are runtime mode, locale, region, or log settings: `NODE_ENV`, `RAILS_ENV`, `APP_ENV`
+and the other framework environment names, `AWS_REGION`, `AWS_DEFAULT_REGION`, `LOG_LEVEL`,
+`RUST_LOG`, `LANG`, `LC_ALL`, `TZ`, and terminal color settings. Their values are ordinary words
+such as `development` or `eu-central-1`, so protecting them would replace every ordinary mention of
+that word. Like the Doppler rule, it matches by name and applies to every source, including whole
+Doppler configs.
+
 ## Built-in registry source: `managed-registry-file`
 
 This plugin loads admin-approved literal values and registered entities from JSON files. It is separate from

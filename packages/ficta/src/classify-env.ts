@@ -9,6 +9,8 @@
 // Bias is fail-safe: when unsure, keep protecting. A false "keep" costs the user one extra checkbox;
 // a false "un-protect" defaults a real secret to excluded.
 
+import { WELL_KNOWN_CONFIG_ENV_NAMES } from "./plugins/known-env.js";
+
 export type NonSecretReason =
   | "well-known config name"
   | "looks like a URL (no credentials)"
@@ -31,29 +33,18 @@ const PII_NAME = /(^|_)(EMAIL|PHONE|SSN|ADDRESS|ACCOUNT|CARD|IBAN)S?(_|$)/i;
 // (e.g. SSH_AUTH_SOCK). Applied before SECRET_NAME; the value veto below still overrides.
 const EXACT_ALLOWLIST = new Set(
   [
+    ...WELL_KNOWN_CONFIG_ENV_NAMES,
     "AWS_PROFILE",
-    "AWS_REGION",
-    "AWS_DEFAULT_REGION",
     "AWS_DEFAULT_OUTPUT",
     "AWS_PAGER",
     "AWS_SDK_LOAD_CONFIG",
     "AWS_EC2_METADATA_DISABLED",
     "SSH_AUTH_SOCK",
     "SSH_AGENT_PID",
-    "NODE_ENV",
-    "LOG_LEVEL",
-    "RUST_LOG",
-    "NO_COLOR",
-    "FORCE_COLOR",
-    "TERM",
-    "COLORTERM",
     "SHELL",
     "EDITOR",
     "VISUAL",
     "PAGER",
-    "LANG",
-    "LC_ALL",
-    "TZ",
   ].map((n) => n.toUpperCase()),
 );
 
