@@ -49,8 +49,10 @@ Today a plugin can provide any of these capabilities:
 
 1. **Registry source** — launch-time exact values. This is the exact-match layer: if a value is loaded
    here, ficta exact-matches it and fail-closes if it would reach the model verbatim in a covered
-   request surface. Filesystem-path-like tokens are skipped by default; set `FICTA_REDACT_PATHS=1`
-   to redact inside paths too.
+   request surface. A plain-looking value inside a filesystem-path-like token is left in place by
+   default so agent paths keep working; a value that looks like credential material is replaced even
+   there. Set `FICTA_REDACT_PATHS=1` to redact inside paths too. See the
+   [threat model](./threat-model.md) for the exact rule.
 2. **Detector** — request-time detections. This is the best-effort layer for unknown/pasted secrets
    or optional PII-like patterns; it is not the primary product promise.
 3. **Agent integration** — how to launch a client through the ephemeral ficta proxy (`claude`,

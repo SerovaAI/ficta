@@ -684,8 +684,10 @@ const FAQ_ITEMS = [
     question: "What is exact, and what is best effort?",
     answer: (
       <>
-        Registered values, aliases, and phrases a user protects for a chat use exact matching. Secret-shape and PII
-        detection reduce exposure, but they can miss values and are not a completeness guarantee.
+        Registered values, aliases, and phrases a user protects for a chat use exact matching. The one exception is a
+        plain name inside a file path, such as a project folder, which is left in place so the path keeps working.
+        Anything that looks like a credential is replaced even there. Secret-shape and PII detection reduce exposure,
+        but they can miss values and are not a completeness guarantee.
       </>
     ),
   },
