@@ -186,7 +186,7 @@ limit). `ficta logs` shows usage; `ficta logs prune [--traces]` applies the poli
 `ficta stats` adds up the values-free `stats.json` from every proxy run still under the log root:
 protected values kept out of the model, blocked requests, restores, and breakdowns by agent, model,
 surface, label, and day. `--since 7d` or `--since 2026-10-01` narrows it by run start date, and
-`--json` prints the full rollup. It only covers runs the retention policy has kept.
+`--json` prints the full rollup. Days come from when each value was protected, and the session count includes sessions that protected nothing. It only covers runs the retention policy has kept; restore counts are per run, so `--since` includes them for any run with activity in range.
 
 `ficta logs audit` replays the traces captured with `FICTA_DEV_TRACE=1` and checks what actually
 left: a value a launch protected that still reached the provider, or a registry secret restored into
