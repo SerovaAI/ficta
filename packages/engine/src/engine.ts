@@ -597,9 +597,12 @@ class ProtectionRequestScope implements RequestScope {
     await this.persistence?.hydrate();
     const seen = this.seenLeaves;
     const hashes = seen ? document.leaves.map((leaf) => leafHash(leaf.text)) : [];
-    const freshLeaves = seen ? document.leaves.filter((_, i) => !seen.has(hashes[i] ?? "")) : document.leaves;
+    const freshLeaves = (seen ? document.leaves.filter((_, i) => !seen.has(hashes[i] ?? "")) : document.leaves).filter(
+      (leaf) => !isClientIdentifierLeaf(leaf),
+    );
     const freshContentLeaves = freshLeaves.filter((leaf) => leaf.kind !== "key");
-    const detection = await this.detectBodyValues(freshContentLeaves, freshLeaves, document.leaves, {
+    const structuralLeaves = document.leaves.filter((leaf) => !isClientIdentifierLeaf(leaf));
+    const detection = await this.detectBodyValues(freshContentLeaves, freshLeaves, structuralLeaves, {
       ...detectCtx,
       surface: "body",
       runtime: this.runtime,
@@ -1376,6 +1379,19 @@ class ProtectionRequestScope implements RequestScope {
 }
 
 /** A JSON body is read literal by literal from its raw text (see {@link rawJsonBody}). */
+/**
+ * The request's top-level `metadata.user_id`: a client-generated identifier the provider uses for
+ * abuse tracking, never shown to the model. Claude Code fills it on every request with a JSON string
+ * holding a random 64-hex device id, which the probabilistic detectors read as an opaque secret, so
+ * nearly every request counted a "protected value" that was only telemetry. Detectors skip it;
+ * registered values are still replaced there, because exact replacement does not depend on detection.
+ */
+function isClientIdentifierLeaf(leaf: BodyLeaf): boolean {
+  return (
+    leaf.inJsonText !== true && leaf.path.length === 2 && leaf.path[0] === "metadata" && leaf.path[1] === "user_id"
+  );
+}
+
 function bodyDocument(body: string, opts: { readonly paths?: boolean } = {}): BodyDocument {
   const json = rawJsonBody(body, opts);
   return json ? { body, ...json } : rawDocument(body);

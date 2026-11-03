@@ -162,4 +162,60 @@ describe("opaque secret detection", () => {
     const result = await scope.redactBodyDetailed(body);
     expect(result.body).not.toContain(HEX);
   });
+
+  describe("Claude Code's metadata.user_id", () => {
+    // Claude Code sends this on every request: a JSON string with a random 64-hex device id.
+    const DEVICE = HEX + HEX.slice(0, 24);
+    const userId = (device: string) =>
+      JSON.stringify({ device_id: device, account_uuid: "", session_id: "a71e04c2-9d3b-4f58-8c26-5e0f9b1d7a43" });
+    const newScope = (name: string) => {
+      vi.stubEnv("FICTA_SECRET_SHAPES_ENABLED", undefined);
+      const engine = new ProtectionEngine({
+        allowEphemeralKey: true,
+        plugins: [secretShapesPlugin],
+        config: engineConfigFromEnv(),
+      });
+      return engine.beginRequest(name);
+    };
+
+    it("is not screened by the detectors, so telemetry does not count as a protected value", async () => {
+      const scope = newScope("device-id");
+      const body = JSON.stringify({
+        model: "claude-sonnet-5-5",
+        messages: [{ role: "user", content: "Write the chapter." }],
+        metadata: { user_id: userId(DEVICE) },
+      });
+      const result = await scope.redactBodyDetailed(body);
+      expect(result.count).toBe(0);
+      expect(result.hits).toEqual([]);
+      expect(result.body).toBe(body);
+    });
+
+    it("still screens the same value when it appears in model-visible content", async () => {
+      const scope = newScope("device-id-in-content");
+      const body = JSON.stringify({
+        messages: [{ role: "user", content: `the id is ${DEVICE}` }],
+        metadata: { user_id: userId(DEVICE) },
+      });
+      const result = await scope.redactBodyDetailed(body);
+      expect(result.hits.map((hit) => hit.name)).toEqual(["opaque-secret"]);
+      expect(JSON.parse(result.body).messages[0].content).not.toContain(DEVICE);
+    });
+
+    it("only exempts the top-level field", async () => {
+      const scope = newScope("nested-user-id");
+      const body = JSON.stringify({ messages: [{ role: "user", content: "hi", metadata: { user_id: OPAQUE } }] });
+      const result = await scope.redactBodyDetailed(body);
+      expect(result.body).not.toContain(OPAQUE);
+    });
+
+    it("still replaces a registered value placed there", async () => {
+      const scope = newScope("registered-in-user-id");
+      scope.registerProtectedValues([{ name: "PARTNER_TOKEN", value: OPAQUE, source: "test" }]);
+      const body = JSON.stringify({ messages: [{ role: "user", content: "hi" }], metadata: { user_id: OPAQUE } });
+      const result = await scope.redactBodyDetailed(body);
+      expect(result.body).not.toContain(OPAQUE);
+      expect(scope.restoreJson(result.body)).toBe(body);
+    });
+  });
 });
