@@ -202,6 +202,36 @@ describe("opaque secret detection", () => {
       expect(JSON.parse(result.body).messages[0].content).not.toContain(DEVICE);
     });
 
+    it("screens the field when it holds anything beyond Claude Code's three identifiers", async () => {
+      const scope = newScope("extra-metadata");
+      // CLAUDE_CODE_EXTRA_METADATA merges arbitrary keys into the same JSON string.
+      const userIdWithExtra = JSON.stringify({ team_token: OPAQUE, ...JSON.parse(userId(DEVICE)) });
+      const body = JSON.stringify({
+        messages: [{ role: "user", content: "hi" }],
+        metadata: { user_id: userIdWithExtra },
+      });
+      const result = await scope.redactBodyDetailed(body);
+      expect(result.body).not.toContain(OPAQUE);
+    });
+
+    it("screens a free-form user_id that is not Claude Code's shape", async () => {
+      const scope = newScope("free-form-user-id");
+      const body = JSON.stringify({ messages: [{ role: "user", content: "hi" }], metadata: { user_id: OPAQUE } });
+      const result = await scope.redactBodyDetailed(body);
+      expect(result.body).not.toContain(OPAQUE);
+    });
+
+    it("does not mark the skipped text as screened for later turns", async () => {
+      const scope = newScope("seen-cache");
+      const text = userId(DEVICE);
+      const first = JSON.stringify({ messages: [{ role: "user", content: "hi" }], metadata: { user_id: text } });
+      expect((await scope.redactBodyDetailed(first)).count).toBe(0);
+      // The identical text pasted as content on the next turn must still be screened.
+      const second = JSON.stringify({ messages: [{ role: "user", content: text }], metadata: { user_id: text } });
+      const result = await scope.redactBodyDetailed(second);
+      expect(JSON.parse(result.body).messages[0].content).not.toContain(DEVICE);
+    });
+
     it("only exempts the top-level field", async () => {
       const scope = newScope("nested-user-id");
       const body = JSON.stringify({ messages: [{ role: "user", content: "hi", metadata: { user_id: OPAQUE } }] });

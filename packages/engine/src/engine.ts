@@ -799,7 +799,8 @@ class ProtectionRequestScope implements RequestScope {
     if (seen && detection.complete) {
       document.leaves.forEach((leaf, i) => {
         const hash = hashes[i];
-        if (hash !== undefined && !destroyedLeaves.has(leaf.index)) seen.add(hash);
+        // An exempted leaf was never scanned, so its text must not count as screened for later leaves.
+        if (hash !== undefined && !destroyedLeaves.has(leaf.index) && !isClientIdentifierLeaf(leaf)) seen.add(hash);
       });
     }
 
@@ -1378,20 +1379,40 @@ class ProtectionRequestScope implements RequestScope {
   }
 }
 
-/** A JSON body is read literal by literal from its raw text (see {@link rawJsonBody}). */
 /**
- * The request's top-level `metadata.user_id`: a client-generated identifier the provider uses for
- * abuse tracking, never shown to the model. Claude Code fills it on every request with a JSON string
- * holding a random 64-hex device id, which the probabilistic detectors read as an opaque secret, so
- * nearly every request counted a "protected value" that was only telemetry. Detectors skip it;
- * registered values are still replaced there, because exact replacement does not depend on detection.
+ * The request's top-level `metadata.user_id` when it is exactly Claude Code's telemetry identifier:
+ * a JSON object holding only a random 64-hex `device_id`, an `account_uuid`, and a `session_id`. The
+ * provider uses it for abuse tracking and the model never sees it, but the probabilistic detectors
+ * read the device id as an opaque secret, so nearly every request counted a "protected value" that
+ * was only telemetry. Detectors skip that one shape. Anything else in the field (extra keys from
+ * CLAUDE_CODE_EXTRA_METADATA, another client's free-form id) is screened as usual, and registered
+ * values are replaced there either way, because exact replacement does not depend on detection.
  */
 function isClientIdentifierLeaf(leaf: BodyLeaf): boolean {
-  return (
-    leaf.inJsonText !== true && leaf.path.length === 2 && leaf.path[0] === "metadata" && leaf.path[1] === "user_id"
-  );
+  if (leaf.kind !== "value" || leaf.inJsonText === true || leaf.path.length !== 2) return false;
+  if (leaf.path[0] !== "metadata" || leaf.path[1] !== "user_id") return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(leaf.text);
+  } catch {
+    return false;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+  const fields = parsed as Record<string, unknown>;
+  const keys = Object.keys(fields);
+  if (!keys.every((key) => CLIENT_IDENTIFIER_KEYS.has(key))) return false;
+  if (typeof fields.device_id !== "string" || !DEVICE_ID.test(fields.device_id)) return false;
+  return (["account_uuid", "session_id"] as const).every((key) => {
+    const value = fields[key];
+    return value === undefined || value === "" || (typeof value === "string" && UUID.test(value));
+  });
 }
 
+const CLIENT_IDENTIFIER_KEYS: ReadonlySet<string> = new Set(["device_id", "account_uuid", "session_id"]);
+const DEVICE_ID = /^[0-9a-f]{64}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A JSON body is read literal by literal from its raw text (see {@link rawJsonBody}). */
 function bodyDocument(body: string, opts: { readonly paths?: boolean } = {}): BodyDocument {
   const json = rawJsonBody(body, opts);
   return json ? { body, ...json } : rawDocument(body);
