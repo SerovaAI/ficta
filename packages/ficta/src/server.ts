@@ -264,12 +264,6 @@ function createControlHandler(engine: RedactionEngine, stats: ProtectionStats, t
   );
 }
 
-/**
- * The request pipeline. Each phase either produces the next phase's input or short-circuits with a
- * `Response` (a control-plane answer, a refusal, or a fail-closed block); the orchestrator only
- * sequences them. Phase order is load-bearing — see the comments on each phase for what it assumes
- * has already happened.
- */
 /** Leading path segment that carries the per-launch caller token: `/__ficta_l/<token>/…`. */
 const LAUNCH_TOKEN_PREFIX = "__ficta_l";
 
@@ -277,13 +271,13 @@ const LAUNCH_TOKEN_PREFIX = "__ficta_l";
  * Neutral marker that replaces a surrogate-shaped token which survived restore (a mutated, invented,
  * or unresolvable reference) in client-visible text — see the residual-surrogate guard. Must not
  * contain `FICTA_`, or the engine would reject it as a would-be surrogate. Its sibling for
- * deliberately withheld values (fix #3) will be `[ficta:withheld]`.
+ * deliberately withheld values is {@link WITHHELD_MARKER}.
  */
 const RESIDUAL_MARKER = "[ficta:unrestored]";
 
 /**
  * Marker that replaces a registry/env surrogate the prose policy withholds from assistant free text
- * (`FICTA_RESTORE_PROSE`, default `detected`) — a value the model only ever saw as a placeholder, so
+ * (`FICTA_RESTORE_PROSE`, default `all`) — a value the model only ever saw as a placeholder, so
  * it is never rehydrated into narration (closing the prose + transcript-echo leak). Distinct from
  * {@link RESIDUAL_MARKER}: this is a deliberate withhold, not a restore failure. Must not contain
  * `FICTA_`.
@@ -331,6 +325,12 @@ function headerLaunchTokenValid(c: ProxyContext, token: string): boolean {
   return header !== null && timingSafeEqualStr(header, token);
 }
 
+/**
+ * The request pipeline. Each phase either produces the next phase's input or short-circuits with a
+ * `Response` (a control-plane answer, a refusal, or a fail-closed block); the orchestrator only
+ * sequences them. Phase order is load-bearing — see the comments on each phase for what it assumes
+ * has already happened.
+ */
 async function handleProxyRequest(state: ProxyState, c: ProxyContext): Promise<Response> {
   const url = new URL(c.req.url);
   const method = c.req.method;
@@ -784,7 +784,7 @@ function beginProtectedRequest(
       // passthrough mode for preview tooling.
       unknownToken: protect || c.req.header(FICTA_UNKNOWN_TOKEN_HEADER) === "replace" ? RESIDUAL_MARKER : undefined,
       // Fix #3: when protecting, withhold registry/env secrets from assistant prose per
-      // FICTA_RESTORE_PROSE (default `detected`). The engine renders a withheld token as this marker
+      // FICTA_RESTORE_PROSE (default `all`). The engine renders a withheld token as this marker
       // instead of rehydrating a value the model only ever saw as a placeholder. Content-derived
       // detections still restore; tool-call arguments are governed separately by FICTA_RESTORE_INTO_TOOLS.
       withheldToken: protect ? WITHHELD_MARKER : undefined,
@@ -1119,7 +1119,7 @@ async function redactBodySurface(
     }
   }
   let bodyToSend = redacted;
-  // Tell the model to preserve the surrogate literals verbatim (opt-in). Runs after the fail-closed
+  // Tell the model to preserve the surrogate literals verbatim (on by default; FICTA_PRESERVE_LITERALS=0 opts out). Runs after the fail-closed
   // leak gate and only adds surrogate tokens the proxy already minted, so it introduces no new leak.
   if (cfg.preserveLiterals) {
     // Only surrogates the model can see: listing one that exists only in `metadata` teaches the model
@@ -1203,6 +1203,11 @@ async function redactHeaderSurface(
   return undefined;
 }
 
+/** Response logging is best-effort: a failed log write must never become an unhandled rejection that exits the proxy. */
+function logResponseFailed(reqId: number): (err: unknown) => void {
+  return (err) => log.warn({ reqId, err: err instanceof Error ? err.message : String(err) }, "response log failed");
+}
+
 /** Send the screened request upstream. A transport failure is reported as a 502 with a sanitized diagnostic. */
 async function forwardUpstream(
   req: RequestContext,
@@ -1282,7 +1287,7 @@ async function restoreUpstreamResponse(
       contentType,
       stream: toLog,
       captureRawBodies,
-    });
+    }).catch(logResponseFailed(n));
     if (!restoreResponse) {
       writeProtectionTraceAudit(n, traceRedactions, scope, "not-restored", captureTraceAudit);
       return new Response(toClient, { status: upstreamRes.status, headers: resHeaders });
@@ -1326,7 +1331,9 @@ async function restoreUpstreamResponse(
   }
 
   const body = await upstreamRes.text();
-  void logResponse({ n, path: url.pathname, status: upstreamRes.status, contentType, body, captureRawBodies });
+  void logResponse({ n, path: url.pathname, status: upstreamRes.status, contentType, body, captureRawBodies }).catch(
+    logResponseFailed(n),
+  );
   const restoredBody = restoreResponse
     ? restoreBufferedBody(scope, wire, contentType, body, restoreHighlightOptions)
     : body;

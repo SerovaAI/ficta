@@ -30,7 +30,7 @@ lines to TypeSafe; read the "Optional second-opinion service" section of the
 available; an admin then turns it on under Admin settings → Second opinion:
 
 ```dotenv
-TYPESAFE_API_KEY...
+TYPESAFE_API_KEY=...
 ```
 
 ## Proxy policy

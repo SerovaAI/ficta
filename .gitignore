@@ -12,9 +12,7 @@ logs/
 .claude/
 .agents/
 .codex/
-.impeccable/config.local.json
-.impeccable/hook.cache.json
-.impeccable/hook.pending.json
+.impeccable
 
 # package/build artifacts
 *.tgz
@@ -23,12 +21,10 @@ coverage/
 .output/
 .nitro/
 .pi-subagents
-apps/gateway/.impeccable
 
 # accidental private-material spill / temporary local scratch only;
 # canonical internal docs belong in private SerovaAI/ficta-internal
 notes/
-.impeccable
 
 # TypeSafe bench response cache (bench-only; never shipped)
 packages/ficta/bench/.jev-cache/

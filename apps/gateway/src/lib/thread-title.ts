@@ -1,3 +1,5 @@
+import { DOCUMENT_FENCE_INSTRUCTION } from "@/lib/documents/document-blocks";
+
 export const THREAD_TITLE_MAX = 80;
 
 const DEFAULT_THREAD_TITLE = "New chat";
@@ -24,7 +26,12 @@ function titleFromUserRequest(text: string): string | undefined {
   const lastFileContentClose = text.lastIndexOf(FILE_CONTENT_CLOSE);
   if (lastFileContentClose !== -1 && markerIndex < lastFileContentClose) return undefined;
 
-  const requestText = text.slice(markerIndex + USER_REQUEST_MARKER.length);
+  // messageWithAttachments appends the document-fence instruction after the request; it is not the title.
+  const instructionIndex = text.indexOf(DOCUMENT_FENCE_INSTRUCTION, markerIndex);
+  const requestText = text.slice(
+    markerIndex + USER_REQUEST_MARKER.length,
+    instructionIndex === -1 ? undefined : instructionIndex,
+  );
   return normalizeTitle(requestText) || undefined;
 }
 

@@ -175,7 +175,9 @@ export function surrogateStyle(env: EnvSource): SurrogateStyle {
 
 /** The `<TYPE>` for a value's surrogate: mapped category → coarse kind fallback → generic tag. */
 function surrogateType(hint?: SurrogateHint): string {
-  const mapped = hint?.name ? CATEGORY_TYPE[hint.name.toLowerCase()] : undefined;
+  const category = hint?.name?.toLowerCase();
+  // Own keys only: a value named `constructor` or `toString` must not resolve to an Object.prototype member.
+  const mapped = category && Object.hasOwn(CATEGORY_TYPE, category) ? CATEGORY_TYPE[category] : undefined;
   if (mapped) return mapped;
   switch (hint?.kind) {
     case "secret":

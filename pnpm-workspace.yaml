@@ -8,7 +8,3 @@ allowBuilds:
   # transitive image dep. Both ship native binaries via postinstall.
   sharp: true
   workerd: true
-
-minimumReleaseAgeExclude:
-  - lucide-react@1.23.0
-  - "@rolldown/binding-android-arm64@1.2.2"

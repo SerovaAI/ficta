@@ -66,9 +66,9 @@ export function restoreIntoToolsPolicy(value: string | undefined): RestoreIntoTo
 /**
  * Parse `FICTA_RESTORE_PROSE` — the restore-into-tools policy's analogue for assistant **prose**
  * (free text the model emits, not tool-call arguments). `all` rehydrates every surrogate, `none`
- * withholds every mapped surrogate, and `detected` (the default) rehydrates content-derived
+ * withholds every mapped surrogate, and `detected` rehydrates content-derived
  * detections the agent already read locally while withholding registry/environment secrets the model
- * only ever saw as placeholders. Same spellings and boolean back-compat as
+ * only ever saw as placeholders. The default is `all`. Same spellings and boolean back-compat as
  * {@link restoreIntoToolsPolicy}.
  */
 export function restoreProsePolicy(value: string | undefined): RestoreIntoToolsPolicy {

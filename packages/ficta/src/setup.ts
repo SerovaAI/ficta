@@ -1,6 +1,6 @@
 import { confirm, intro, isCancel, multiselect, note, outro, select, text } from "@clack/prompts";
 import { PII_BACKEND_NAMES, type PiiBackendName } from "@serovaai/ficta-protocol";
-import { defaultLogDir, FICTA_DEFAULTS } from "./defaults.js";
+import { defaultLogDir } from "./defaults.js";
 import { envEnabled, envFlag, parseBoolean } from "@serovaai/ficta-engine";
 import { installShims } from "./install.js";
 import type { RegistrySetupPromptContext, RegistrySetupSource } from "./plugins/index.js";
@@ -148,8 +148,6 @@ export async function runSetup(opts: SetupOptions): Promise<void> {
 
   const values: Record<string, string> = {
     ...registryValues,
-    FICTA_REQUIRE_REGISTRY: FICTA_DEFAULTS.FICTA_REQUIRE_REGISTRY,
-    FICTA_FAIL_CLOSED: FICTA_DEFAULTS.FICTA_FAIL_CLOSED,
     // Persist the PII toggle + backend as [pii] so redaction is proxy policy, not a per-run flag.
     ...piiValues,
     ...secretShapeValues,

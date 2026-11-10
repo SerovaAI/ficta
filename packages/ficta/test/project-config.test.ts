@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -24,7 +24,7 @@ describe("projectRoot", () => {
 
   it("falls back to the directory itself outside a repository", () => {
     const dir = tempDir();
-    expect(projectRoot(dir)).toBe(projectRoot(dir));
+    expect(projectRoot(dir)).toBe(realpathSync(dir));
     expect(projectRoot(dir).endsWith(dir.split("/").pop() ?? "")).toBe(true);
   });
 });

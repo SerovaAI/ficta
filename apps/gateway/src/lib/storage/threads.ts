@@ -56,23 +56,6 @@ function optionalThreadModelSettings(input: Record<string, unknown>): ThreadMode
   return input.modelSettings === undefined ? undefined : toThreadModelSettings(input.modelSettings);
 }
 
-function validateStart(input: unknown): {
-  threadId: string;
-  message: StoredMessage;
-  traceEnabled: boolean;
-  modelSettings?: ThreadModelSettings;
-} {
-  const i = asObject(input);
-  if (typeof i.threadId !== "string" || !i.threadId) throw new Error("invalid threadId");
-  if (i.traceEnabled !== undefined && typeof i.traceEnabled !== "boolean") throw new Error("invalid traceEnabled");
-  return {
-    threadId: i.threadId,
-    message: toStoredMessage(i.message),
-    traceEnabled: i.traceEnabled === true,
-    modelSettings: optionalThreadModelSettings(i),
-  };
-}
-
 function validateSnapshot(input: unknown): {
   expectedRevision: number;
   traceEnabled: boolean;
@@ -126,24 +109,6 @@ export const fetchThreadEgressReceipt = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<ThreadEgressReceipt> => {
     const { userId, orgId } = await requireScope();
     return (await getStorage()).getThreadEgressReceipt(userId, orgId, data.threadId);
-  });
-
-export const startThread = createServerFn({ method: "POST" })
-  .validator(validateStart)
-  .handler(async ({ data }): Promise<void> => {
-    const auth = await requireAuthState();
-    const scope = scopeFromAuth(auth);
-    if (!scope) throw new Error("unauthorized");
-    await (
-      await getStorage()
-    ).startThread(
-      scope.userId,
-      scope.orgId,
-      data.threadId,
-      data.message,
-      data.traceEnabled && isAdmin(auth),
-      data.modelSettings,
-    );
   });
 
 export const saveThread = createServerFn({ method: "POST" })

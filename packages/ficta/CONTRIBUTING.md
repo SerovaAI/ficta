@@ -46,8 +46,7 @@ please open an issue/RFC before sending a large PR.
 
 Requirements:
 
-- Node.js 20+
-- pnpm 11+
+- Node.js and pnpm versions as pinned by `engines` and `packageManager` in the root `package.json`
 
 ```sh
 pnpm install

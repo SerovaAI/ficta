@@ -143,7 +143,13 @@ async function maybeStartPresidio(env) {
     },
   );
 
-  await waitForSidecarHealth(child, url, startupTimeoutMs, "Presidio analyzer");
+  try {
+    await waitForSidecarHealth(child, url, startupTimeoutMs, "Presidio analyzer");
+  } catch (err) {
+    // Don't leak a half-started container: it isn't in `sidecars` yet, so stopSidecars won't reap it.
+    if (!isChildDone(child) && !child.killed) child.kill("SIGTERM");
+    throw err;
+  }
   console.log(`[dev] Presidio analyzer is healthy at ${url}`);
   return { name: "presidio", child };
 }
@@ -207,7 +213,13 @@ async function maybeStartOpenmed(env) {
     },
   );
 
-  await waitForSidecarHealth(child, url, startupTimeoutMs, "OpenMed service");
+  try {
+    await waitForSidecarHealth(child, url, startupTimeoutMs, "OpenMed service");
+  } catch (err) {
+    // Don't leak a half-started container: it isn't in `sidecars` yet, so stopSidecars won't reap it.
+    if (!isChildDone(child) && !child.killed) child.kill("SIGTERM");
+    throw err;
+  }
   console.log(`[dev] OpenMed service is healthy at ${url}`);
   return { name: "openmed", child };
 }
@@ -307,7 +319,7 @@ function shouldManage(env, backend, managedFlag) {
   return selectedBackends(env).includes(backend);
 }
 
-/** Mirror of selectedBackendNames() in packages/ficta/src/engine/plugins/pii/registry.ts. */
+/** Mirror of selectedBackendNames() in packages/engine/src/plugins/pii/registry.ts. */
 function selectedBackends(env) {
   const raw = env.FICTA_PII_BACKENDS?.trim() || env.FICTA_PII_BACKEND?.trim() || "";
   return raw

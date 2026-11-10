@@ -18,7 +18,13 @@ interface StructuredPattern {
 // High-precision structured PII only. Format-anchored patterns (and Luhn for cards) keep the
 // false-positive rate low; fuzzy categories (names, addresses, orgs) are a NER recognizer's job.
 const PATTERNS: readonly StructuredPattern[] = [
-  { category: "email", regex: /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, confidence: "high" },
+  // The lookbehind pins the match to the start of a local-part run; without it every position in a long
+  // unbroken run (a hex or base64 blob) rescans to the end, which is quadratic.
+  {
+    category: "email",
+    regex: /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g,
+    confidence: "high",
+  },
   { category: "us-ssn", regex: /\b\d{3}-\d{2}-\d{4}\b/g, confidence: "high" },
   // Anchored to start and end on a digit (via `\d(?:[ -]?\d){12,18}`) so a trailing space/hyphen
   // after the number is never pulled into the match; 13-19 digits total.

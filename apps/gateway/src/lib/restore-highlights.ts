@@ -483,7 +483,7 @@ export function renderProtectionHighlights(
 }
 
 export function stripRestoreHighlightMarkers<T>(value: T): T {
-  // Markers only exist when the proxy runs in trace-audit mode; on normal traffic there are none.
+  // Most strings carry no markers (user turns, replies with nothing restored).
   // Scan first (read-only, allocates nothing) and return the original graph untouched when clean,
   // so the common case skips the deep clone + per-string rewrite this used to do on every call.
   if (!containsRestoreHighlightMarkersDeep(value)) return value;

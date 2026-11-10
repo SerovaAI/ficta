@@ -249,7 +249,7 @@ Unlike the registry sources below — which load _exact_ secrets to protect — 
 in the response. Detection is a _concept_ backed by a registry of pluggable **backends**, of which
 one or more can run at a time: the in-process `regex` backend (emails, US SSNs, Luhn-validated
 cards) is the always-available default, an out-of-process Microsoft Presidio sidecar (`presidio`)
-covers general/rule-based PII, and an external OpenMed analyzer service (`medical`) covers learned
+covers general/rule-based PII, and an external OpenMed analyzer service (`openmed`) covers learned
 medical/PHI-style spans. Backend selection is config-driven (see [Choosing backends](#choosing-backends)
 below). Coverage is best-effort, not a guarantee; see [`threat-model.md`](./threat-model.md).
 
@@ -271,7 +271,7 @@ The persisted policy lives in TOML:
 ```toml
 [pii]
 enabled = true # web / standalone proxy
-agents = true # coding-agent launches; set false to opt out
+agents = true # coding-agent launches; off unless set to true
 ```
 
 ### Identity protection boundary
@@ -543,7 +543,7 @@ The decision resolves **per-detector override, else global default**:
 
 Best-effort deployments keep the defaults; compliance deployments that must never send unscreened data
 set `[pii] fail_closed = true` (or the global `[detection] fail_closed = true`) and run the sidecar
-under a supervisor. `ficta setup` prompts for the per-PII override when Presidio is the chosen backend.
+under a supervisor. `ficta setup` prompts for the per-PII override when a sidecar backend (Presidio or OpenMed) is selected.
 
 This is **core-enforced**: a detector plugin exposes its `failClosed()` config but never blocks the
 request itself — the engine resolves the policy and the transport returns the 503. It is also
@@ -782,6 +782,7 @@ or PII-like values, but they are best-effort and should not be the headline clai
 ```ts
 const emailDetector: FictaPlugin = {
   name: "email-detector",
+  kind: "detector",
   detectText(text) {
     return [...new Set(text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [])].map((value) => ({
       name: "EMAIL",
