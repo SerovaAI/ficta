@@ -121,8 +121,13 @@ export function resolveTarget(
       ? t(cfg.upstreams.chatgpt, "/backend-api/codex/responses", "chatgpt(responses↦backend)")
       : t(cfg.upstreams.openai, pathname, "openai");
   }
-  // Model registry: public /v1/models 403s on OAuth → ChatGPT backend.
+  // Model registry. Anthropic clients (Claude Code builds its /model picker from this) always send
+  // `anthropic-version`; everything else is OpenAI-style, where public /v1/models 403s on OAuth →
+  // ChatGPT backend.
   if (pathname.endsWith("/models") || pathname.includes("/models/")) {
+    if (headers.has("anthropic-version") || headers.has("x-api-key")) {
+      return t(cfg.upstreams.anthropic, pathname, "anthropic(models)");
+    }
     return oauth
       ? t(cfg.upstreams.chatgpt, "/backend-api/codex/models", "chatgpt(models↦backend)")
       : t(cfg.upstreams.openai, pathname, "openai");
