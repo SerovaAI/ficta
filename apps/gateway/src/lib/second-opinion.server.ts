@@ -120,7 +120,12 @@ export function substituteSpans(
   let out = "";
   let cursor = start;
   for (const finding of overlapping) {
-    if (finding.start < cursor) continue; // nested or overlapping: the earlier, longer span already covers it
+    if (finding.start < cursor) {
+      // Nested or overlapping: the earlier span's surrogate stands in for it. Still advance past a
+      // partial overlap's tail so those characters are dropped rather than sent as plaintext.
+      cursor = Math.max(cursor, Math.min(end, finding.end));
+      continue;
+    }
     out += text.slice(cursor, finding.start) + finding.surrogate;
     cursor = Math.min(end, finding.end);
   }

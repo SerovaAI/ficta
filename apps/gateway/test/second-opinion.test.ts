@@ -133,6 +133,12 @@ describe("registry substitution", () => {
     expect(substituteSpans("abcdefghijkl", 0, 8, [crossing], () => true)).toBe("abcdFICTA_X");
   });
 
+  it("drops the tail of a partially overlapping finding instead of sending it as text", () => {
+    const first: ProtectionPreviewFinding = { ...REGISTRY, start: 0, end: 6, surrogate: "FICTA_A" };
+    const second: ProtectionPreviewFinding = { ...REGISTRY, start: 3, end: 9, surrogate: "FICTA_B" };
+    expect(substituteSpans("abcdefghijkl", 0, 12, [first, second], () => true)).toBe("FICTA_Ajkl");
+  });
+
   it("never places a registry value in the request state", () => {
     const prepared = prepareSecondOpinion(TEXT, FINDINGS);
     if ("skipped" in prepared) throw new Error("unexpected skip");

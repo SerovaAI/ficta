@@ -74,7 +74,8 @@ addHeader(
   "Expected managed-file revision. Success acknowledges it only when that exact revision was loaded.",
 );
 function addHeader(path, method, name, required, schema, description) {
-  specification.paths[path][method].parameters = [{ name, in: "header", required, schema, description }];
+  const operation = specification.paths[path][method];
+  operation.parameters = [...(operation.parameters ?? []), { name, in: "header", required, schema, description }];
 }
 addHeadOperation(
   specification,

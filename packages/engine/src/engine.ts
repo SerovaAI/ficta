@@ -692,7 +692,7 @@ class ProtectionRequestScope implements RequestScope {
     for (const { value } of detection.detections) {
       // Destroyed values never enter scope metadata: nothing retained could map back to them.
       const chosen = detectedByValue.get(value.value) ?? value;
-      if (this.destroyLabelFor(chosen) === undefined) remember(this.detectedMetadata, value);
+      if (this.destroyLabelFor(chosen) === undefined) remember(this.detectedMetadata, chosen);
     }
     const replacements = new Map<number, string>();
     const owners = new Map<string, EntityClaim>();

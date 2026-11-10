@@ -174,7 +174,7 @@ Shims preserve the important privacy properties:
 Agent shims are backed by built-in agent-integration plugins:
 
 - `claude`: sets `ANTHROPIC_BASE_URL` for Claude Code. **Remote control does not work under ficta**:
-  Claude Code starts the bridge only when `ANTHROPIC_BASE_URL` is unset, so `ficta claude` refuses
+  Claude Code starts the bridge only when `ANTHROPIC_BASE_URL` is unset or its host is exactly `api.anthropic.com`, so `ficta claude` refuses
   `claude remote-control` and warns on `--remote-control`/`--rc`. Use `FICTA_DISABLE=1 claude --rc`
   when you want your phone, plain `ficta claude` when you want redaction — remote control also
   mirrors the transcript over endpoints ficta does not redact, so this is a real either/or. See

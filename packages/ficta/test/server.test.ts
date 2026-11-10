@@ -1636,6 +1636,7 @@ printf '%s\n' '{"FICTA_CANARY_SECRET":"${canary}"}'
       expect(res.status).toBe(200);
       // The real secret must NOT be handed to the tool; the placeholder surrogate goes out instead.
       expect(toolInput).not.toContain(secret);
+      expect(upstreamSurrogate).toMatch(/^FICTA_[0-9a-f]{32}$/);
       expect(toolInput).toContain(upstreamSurrogate);
     } finally {
       proxy?.close();

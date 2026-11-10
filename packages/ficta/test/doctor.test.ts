@@ -204,7 +204,9 @@ describe("ficta doctor", () => {
     report = await collectDoctorReport();
     expect(report.config.surrogateKey.status).toBe("ephemeral");
     expect(renderDoctorReport(report)).toContain("! surrogate key: ephemeral (random per process");
-    expect(report.issues).toContainEqual(expect.objectContaining({ severity: "warning" }));
+    expect(report.issues).toContainEqual(
+      expect.objectContaining({ severity: "warning", message: expect.stringContaining("no stable surrogate key") }),
+    );
   });
 
   it("errors when a stable surrogate key is required but missing, or the key file is unusable", async () => {

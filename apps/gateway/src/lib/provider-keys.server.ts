@@ -84,10 +84,14 @@ export function completeProviderKeySummaries(summaries: ProviderKeySummary[]): P
   );
 }
 
+// scrypt is deliberately slow and synchronous; derive once per secret instead of on every chat request.
+let derivedKey: { secret: string; key: Buffer } | undefined;
+
 function encryptionKey(): Buffer {
   const secret = process.env[ENCRYPTION_SECRET_ENV]?.trim();
   if (!secret) throw new Error(`${ENCRYPTION_SECRET_ENV} is not set; set it before saving provider keys`);
-  return scryptSync(secret, KEY_SALT, 32);
+  if (derivedKey?.secret !== secret) derivedKey = { secret, key: scryptSync(secret, KEY_SALT, 32) };
+  return derivedKey.key;
 }
 
 function keyHint(apiKey: string): string {

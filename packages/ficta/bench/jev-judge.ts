@@ -6,8 +6,7 @@ import { TypeSafeClient } from "@typesafe-ai/sdk";
 /**
  * Bench-only TypeSafe (Jev) client. This file must never be imported from `src/`: the shipped
  * proxy makes no remote judgment calls, and every input sent through here is synthetic fixture
- * text or a corpus the operator has explicitly pointed the bench at. See the plan notes in
- * ficta-internal for the threat-model reasoning.
+ * text or a corpus the operator has explicitly pointed the bench at.
  */
 
 export const ENV_API_KEY = "TYPESAFE_API_KEY";

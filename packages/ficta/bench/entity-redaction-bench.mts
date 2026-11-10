@@ -2,7 +2,7 @@
 // Run: pnpm exec tsx bench/entity-redaction-bench.mts
 import { ProtectionEngine } from "@serovaai/ficta-engine";
 import { expandEntities } from "../../engine/src/expander.js";
-import { type Entity, resolveOccurrences } from "../../engine/src/occurrence.js";
+import { type Entity, type EntityClaim, resolveOccurrences } from "../../engine/src/occurrence.js";
 import type { ProtectedValue } from "../src/plugins/index.js";
 
 const ITERATIONS = 120;
@@ -41,12 +41,17 @@ function percentiles(times: readonly number[]) {
   return { p50: at(0.5), p95: at(0.95), p99: at(0.99) };
 }
 
-const entities: Entity[] = values.map((meta, i) => ({
-  id: `bench:${i}`,
-  canonical: meta.value,
-  forms: [meta.value],
-  authority: "registry",
+const entities: EntityClaim[] = values.map((meta, i) => ({
+  entity: { id: `bench:${i}`, canonical: meta.value, forms: [meta.value], authority: "registry", meta } as Entity,
   meta,
+  mention: {
+    detectionSource: "registry",
+    detectionConfidence: "exact",
+    linkSource: "explicit_form",
+    linkConfidence: "exact",
+    resolverAuthority: "registry",
+    protectionEligible: true,
+  },
 }));
 const peakOccurrences = resolveOccurrences(expandEntities([content], entities)).length;
 const occurrence = await run();

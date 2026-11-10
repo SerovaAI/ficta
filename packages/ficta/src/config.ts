@@ -132,8 +132,7 @@ export function resolveTarget(
       ? t(cfg.upstreams.chatgpt, "/backend-api/codex/models", "chatgpt(models↦backend)")
       : t(cfg.upstreams.openai, pathname, "openai");
   }
-  if (pathname.includes("/chat/completions") || pathname.includes("/completions"))
-    return t(cfg.upstreams.openai, pathname, "openai");
+  if (pathname.includes("/completions")) return t(cfg.upstreams.openai, pathname, "openai");
   if (pathname.includes("/messages")) return t(cfg.upstreams.anthropic, pathname, "anthropic");
   return t(cfg.upstreams.anthropic, pathname, "anthropic(default)");
 }

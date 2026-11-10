@@ -9,7 +9,7 @@
 set -eu
 
 # Staged, still-present files (added/copied/modified) in the formats oxfmt handles.
-files=$(git diff --cached --name-only --diff-filter=ACM | grep -Ei '\.(ts|mts|cts|tsx|js|mjs|cjs|jsx|json|jsonc|md|mdx)$' || true)
+files=$(git diff --cached --name-only --diff-filter=ACM | grep -Ei '\.(ts|mts|cts|tsx|js|mjs|cjs|jsx|json|jsonc|md|mdx|css|html|yml|yaml|toml)$' || true)
 [ -z "$files" ] && exit 0
 
 # oxfmt respects .gitignore, so a staged-but-ignored path is skipped. Pass the set in one go;

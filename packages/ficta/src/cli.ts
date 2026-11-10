@@ -4,11 +4,12 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { constants as osConstants } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sanitizeAgentEnv } from "./child-env.js";
 import { applyRuntimeEnvDefaults } from "./defaults.js";
-import { detectorFailClosed, envFlag } from "@serovaai/ficta-engine";
+import { detectorFailClosed, envFlag, surrogateKeyWarning } from "@serovaai/ficta-engine";
 import { detectionFailClosed, engineConfigFromEnv, surrogateStyle } from "./engine-env.js";
 import { isGloballyDisabled, setGlobalDisabled } from "./global-disable.js";
 import { defaultShimDir, findExecutable, installShims, uninstallShims } from "./install.js";
@@ -286,7 +287,7 @@ process.env.FICTA_SECRET_SHAPES_ENABLED = resolveAgentSecretShapesEnabled({
   : "0";
 
 // Stable surrogates by default for every entry path — generate/persist a local key if absent,
-// before the vault module reads FICTA_SURROGATE_KEY at import.
+// before the proxy builds its engine config from FICTA_SURROGATE_KEY.
 const startupVerbose = verbose || levelEnabled(parseLogLevel(process.env.FICTA_LOG_LEVEL, "silent"), "debug");
 const printStartupDiagnostics = shouldPrintStartupDiagnostics({
   verbose: startupVerbose,
@@ -310,7 +311,6 @@ if (surrogate.generated && printStartupDiagnostics) {
 }
 
 const { startProxy } = await import("./server.js");
-const { surrogateKeyWarning } = await import("@serovaai/ficta-engine");
 // Every launched agent owns its loopback proxy, so one process-owned scope is the correct isolation
 // boundary. Keeping detected mappings across its model requests lets hidden compaction/subagent
 // calls echo a surrogate into a later tool call without turning that placeholder into file content.
@@ -412,9 +412,9 @@ const shutdown = async () => {
     await plan.cleanup?.();
   }
 };
-child.on("exit", async (code) => {
+child.on("exit", async (code, signal) => {
   await shutdown();
-  process.exit(code ?? 0);
+  process.exit(childExitCode(code, signal));
 });
 child.on("error", async (e) => {
   process.stderr.write(`ficta: failed to launch ${agent.command}: ${(e as Error).message}\n`);
@@ -441,7 +441,7 @@ function printHelp(exitCode: number): never {
         "Show capture-log usage; prune applies retention now (--traces: drop all raw traces)",
       ],
       ["stats [--since <Nd|date>] [--json]", "Protection totals across every logged session, by agent/model/label/day"],
-      ["logs audit [--json]", "Check captured traces for protected values sent upstream or into tool calls"],
+      ["logs audit [--json] [--save]", "Check captured traces for protected values sent upstream or into tool calls"],
       ["install [--force] [--no-shell]", `Install ${supportedAgents.join("/")} shims into ~/.ficta/bin`],
       ["uninstall [--no-shell]", "Remove installed shims"],
       ["disable", "Globally bypass installed shims"],
@@ -516,9 +516,15 @@ function resolveAgentExecutable(command: string): string | undefined {
   return findExecutable(command, { excludeDirs });
 }
 
+/** Shell convention: a child killed by a signal exits 128 + signal number, never 0. */
+function childExitCode(code: number | null, signal: NodeJS.Signals | null): number {
+  if (code !== null) return code;
+  return 128 + ((signal && osConstants.signals[signal]) || 1);
+}
+
 function runChild(child: ChildProcess): Promise<number> {
   return new Promise((resolve) => {
-    child.on("exit", (code) => resolve(code ?? 0));
+    child.on("exit", (code, signal) => resolve(childExitCode(code, signal)));
     child.on("error", (e) => {
       process.stderr.write(`ficta: failed to launch: ${(e as Error).message}\n`);
       resolve(1);

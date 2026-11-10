@@ -9,11 +9,11 @@
       "project": ["scripts/**/*.mjs"]
     },
     "apps/gateway": {
-      "entry": ["src/router.tsx", "src/start.ts", "src/routes/**/*.{ts,tsx}"],
+      "entry": ["src/routes/**/*.{ts,tsx}"],
       "project": ["src/**/*.{ts,tsx}", "src/**/*.css", "test/**/*.ts"]
     },
     "apps/web": {
-      "entry": ["src/router.tsx", "src/routes/**/*.{ts,tsx}"],
+      "entry": ["src/routes/**/*.{ts,tsx}"],
       "project": ["src/**/*.{ts,tsx}", "src/**/*.css"]
     },
     "packages/ficta": {
@@ -24,7 +24,6 @@
       "project": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.mjs", "*.config.ts"]
     },
     "packages/contract": {
-      "entry": ["src/index.ts", "scripts/generate-openapi.mjs"],
       "project": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.mjs", "*.config.ts"]
     },
     "packages/protocol": {

@@ -877,6 +877,13 @@
         },
         "parameters": [
           {
+            "name": "x-ficta-scope",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "description": "Trusted conversation scope used for the provider request."
+          },
+          {
             "name": "x-ficta-egress-event",
             "in": "header",
             "required": true,

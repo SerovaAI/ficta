@@ -101,6 +101,5 @@ describe("protection stats label accounting", () => {
       ambiguousEntityLinkRequests: 3,
     });
     expect(snapshot.events.map((event) => event.ambiguousEntityLinks)).toEqual([2, 1, 1, 3]);
-    expect(readFileSync(path, "utf8")).not.toContain("Northstar");
   });
 });

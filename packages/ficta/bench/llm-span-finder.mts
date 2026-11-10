@@ -278,8 +278,10 @@ async function llmFindings(text: string): Promise<LlmFinding[]> {
   usage.inputTokens += json.usage?.prompt_tokens ?? 0;
   usage.outputTokens += json.usage?.completion_tokens ?? 0;
   const content = json.choices?.[0]?.message?.content ?? "";
+  // Parse first: a refusal or truncated reply must not be cached and poison every later run.
+  const findings = parseFindings(content);
   await writeCache(key, content);
-  return parseFindings(content);
+  return findings;
 }
 
 function parseFindings(content: string): LlmFinding[] {

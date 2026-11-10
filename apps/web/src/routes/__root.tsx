@@ -104,13 +104,13 @@ function NotFound() {
     <FallbackPage
       eyebrow="404"
       title="That ficta page does not exist."
-      body="The public site is intentionally small. Start from the Gateway page, or contact us if you followed a stale product or documentation link."
+      body="The public site is intentionally small. Start from the home page, or contact us if you followed a stale product or documentation link."
       action={
         <a
           href="/"
           className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-6 font-medium text-primary-foreground text-sm transition-colors hover:bg-primary/90 focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
-          Back to Gateway
+          Back to home
         </a>
       }
     />

@@ -10,8 +10,8 @@ Every user-facing change to a published package needs a changeset (`pnpm changes
 
 ## Development
 
-The monorepo toolchain requires Node.js 22.13 or newer. The published CLI and protocol packages keep
-their own Node.js `>=20` runtime support.
+The monorepo toolchain requires Node.js 24.22.1 or newer within Node 24 (root `engines`). The published
+packages support Node.js `^22.23.4 || ^24.22.1 || >=26.12.1`.
 
 ```sh
 pnpm install

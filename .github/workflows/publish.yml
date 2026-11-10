@@ -17,7 +17,8 @@ on:
 
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Only PR runs are safe to cancel: a second push to main must not kill a release job mid-publish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
 

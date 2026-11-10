@@ -73,8 +73,8 @@ A version-1 client:
   as confirmation that protection is active.
 
 `protocolVersion` changes for a breaking wire-contract revision. Capability names may be added
-without changing it. Other version-1 response objects are closed (`additionalProperties: false`):
-unknown response fields are not currently a version-1 compatibility mechanism. Adding a required
+without changing it. Version-1 response objects are open: a newer proxy may add fields, and clients MUST ignore response
+fields they do not recognize. Edit request bodies are closed (`additionalProperties: false`). Adding a required
 field, changing a field's type or meaning, or otherwise invalidating a version-1 response requires a
 new protocol version.
 

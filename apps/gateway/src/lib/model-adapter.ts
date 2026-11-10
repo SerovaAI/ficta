@@ -16,7 +16,7 @@ export interface ModelChoice {
   model: string;
   apiKey: string;
   /**
-   * ficta scope key for this conversation (server-derived `org:thread`). Sent as the internal
+   * ficta scope key for this conversation (server-derived hash of org, user and thread; see ficta-scope.server.ts). Sent as the internal
    * `x-ficta-scope` header so the proxy pins a persistent per-thread detected-PII vault: a value
    * detected on turn 1 stays redacted on every later turn even if detection misses it there. The
    * proxy strips the header before forwarding upstream. Omit for one-off requests.
