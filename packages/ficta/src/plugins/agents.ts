@@ -51,9 +51,11 @@ export const claudeAgent: AgentIntegration = {
       // Fable 5.1 when 5.2 is current). ficta forwards to api.anthropic.com, so tell Claude Code to
       // behave as first-party. A user-set value wins, so it can be turned off.
       _CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL: env._CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL ?? "1",
-      // First-party mode also enables org memory sync, which uploads memory files directly to
-      // api.anthropic.com rather than through ficta, so they would not be redacted. Keep it off.
-      CLAUDE_CODE_DISABLE_ORG_MEMORY: "1",
+      // First-party mode also enables Claude Code's crash reporting, which goes directly to Anthropic
+      // and can carry error text ficta never sees. Turning it off costs the user nothing visible.
+      // Memory sync is left alone on purpose: ficta stays best effort and does not disable features
+      // (see docs/threat-model.md#claude-code-first-party-mode).
+      DISABLE_ERROR_REPORTING: env.DISABLE_ERROR_REPORTING ?? "1",
     },
   }),
 };
