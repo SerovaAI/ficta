@@ -60,6 +60,7 @@ matter-specific enforcement.
 - Remote-transport MCP servers, which talk to their own hosts and never reach the proxy. See [Remote MCP servers are a second egress path](#remote-mcp-servers-are-a-second-egress-path) below.
 - Codex (ChatGPT/OAuth) account, plugin, and usage calls to `chatgpt.com/backend-api/{wham,ps,plugins}`. Codex 0.156+ refuses a non-HTTPS `chatgpt_base_url`, so this housekeeping goes direct rather than through the loopback proxy; model turns still route through ficta via the temporary provider. The one housekeeping channel observed carrying registered values, Codex analytics events, is switched off for every wrapped launch (`analytics.enabled=false`). See [Intercepting Codex (ChatGPT/OAuth)](./codex-oauth-intercept.md#housekeeping-traffic).
 - Session mirroring over non-model-API wires, notably Claude Code's remote control. See [Remote control is out of scope](#remote-control-is-out-of-scope) below.
+- Claude Code's own housekeeping traffic, which uses hard-coded Anthropic hosts rather than `ANTHROPIC_BASE_URL`: telemetry, account and plugin lookups, and MCP calls through Anthropic's MCP proxy. See [Claude Code first-party mode](#claude-code-first-party-mode) below.
 - IDE clients that do not route all model traffic through the proxy, for example Cursor, whose Agent / Edit / Tab / Composer features bypass a custom base URL. See [IDE clients](#ide-clients-cursor-etc) below.
 
 ## IDE clients (Cursor, etc.)
@@ -171,8 +172,9 @@ In practice the two features are mutually exclusive today, which is the safer fa
 
 - Claude Code starts the bridge only when `ANTHROPIC_BASE_URL` is unset or its host is exactly
   `api.anthropic.com` (the host comparison includes the port, and the
-  `_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL` escape hatch is explicitly excluded from it). ficta owns
-  that variable for the launched agent, so under ficta the bridge never starts.
+  `_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL` escape hatch is explicitly excluded from it, so
+  ficta setting that variable does not change this). ficta owns `ANTHROPIC_BASE_URL` for the launched
+  agent, so under ficta the bridge never starts.
 - Claude Code says so at startup, but a full-screen TUI repaints the notice away, so the flag reads
   as silently broken. ficta therefore refuses `claude remote-control` outright and warns on a bare
   `--rc` (see `claudeRemoteControlPreflight`).
@@ -180,6 +182,26 @@ In practice the two features are mutually exclusive today, which is the safer fa
 `FICTA_DISABLE=1 claude --rc` gets remote control back and gives up redaction for that session. Do
 not read that as a redaction gap ficta could close by relaxing the routing: the mirroring channel is
 unredacted either way, because ficta has no reader for that schema.
+
+## Claude Code first-party mode
+
+Claude Code treats any `ANTHROPIC_BASE_URL` whose host is not exactly `api.anthropic.com` as a
+third-party gateway. In that mode its `/model` picker lists models from a cached account response
+instead of the current first-party list, so newly released models can be missing. ficta forwards
+Claude Code's model traffic to `api.anthropic.com`, so `ficta claude` sets
+`_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1` to keep Claude Code's first-party behaviour. Set it to
+`0` in your environment to opt out.
+
+First-party mode changes no routing for model traffic, which still goes through ficta. Observed on
+2.1.322, a session with and without the variable contacted the same set of hosts directly. It does
+make two differences worth knowing:
+
+- **Org memory sync.** First-party mode allows Claude Code's organization memory sync, which uploads
+  memory files directly to `api.anthropic.com`, not through ficta, so they would not be redacted.
+  `ficta claude` always sets `CLAUDE_CODE_DISABLE_ORG_MEMORY=1` to keep it off.
+- **Billing header.** Claude Code adds a hash of the request body to its attribution header. ficta
+  rewrites the body when it redacts, so the hash no longer matches what is sent. Anthropic accepts
+  these requests today; if that changes, opt out as above.
 
 ## Embedding the engine
 

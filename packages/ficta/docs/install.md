@@ -178,7 +178,9 @@ Agent shims are backed by built-in agent-integration plugins:
   `claude remote-control` and warns on `--remote-control`/`--rc`. Use `FICTA_DISABLE=1 claude --rc`
   when you want your phone, plain `ficta claude` when you want redaction — remote control also
   mirrors the transcript over endpoints ficta does not redact, so this is a real either/or. See
-  [threat model](./threat-model.md#remote-control-is-out-of-scope).
+  [threat model](./threat-model.md#remote-control-is-out-of-scope). It also tells Claude Code to
+  behave as first-party so `/model` lists current models, and turns off org memory sync, which
+  would bypass ficta (see [first-party mode](./threat-model.md#claude-code-first-party-mode)).
 - `codex`: injects temporary `-c model_provider=...` overrides, including ChatGPT/OAuth handling.
 - `pi`: launches Pi with `PI_CODING_AGENT_DIR` set to an ephemeral agent dir that mirrors Pi's real
   auth/settings and swaps in a `models.json` overriding the base URLs of the built-in `anthropic`,

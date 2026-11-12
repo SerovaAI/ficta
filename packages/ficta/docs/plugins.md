@@ -809,7 +809,10 @@ Detector output enters the same vault as registry values, but the protection cla
 
 The `builtin-agent-integrations` plugin currently provides:
 
-- `claude` — launches the real Claude Code executable with `ANTHROPIC_BASE_URL=<ficta>`. Its
+- `claude` — launches the real Claude Code executable with `ANTHROPIC_BASE_URL=<ficta>`,
+  `_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1` (unless already set) and
+  `CLAUDE_CODE_DISABLE_ORG_MEMORY=1` (see
+  [Claude Code first-party mode](./threat-model.md#claude-code-first-party-mode)). Its
   `preflight` refuses `claude remote-control` and warns on `--remote-control`/`--rc`: Claude Code
   starts the remote-control bridge only when `ANTHROPIC_BASE_URL` is unset or its host is exactly
   `api.anthropic.com`, so under ficta the flag is a silent no-op (see
