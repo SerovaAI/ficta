@@ -1,5 +1,13 @@
 # @serovaai/ficta-contract
 
+## 0.4.3
+
+### Patch Changes
+
+- [#161](https://github.com/SerovaAI/ficta/pull/161) [`10c0947`](https://github.com/SerovaAI/ficta/commit/10c0947f14053634f87880cc7f48703f54543ce2) Thanks [@steflsd](https://github.com/steflsd)! - The OpenAPI document now lists both required headers (`x-ficta-scope` and `x-ficta-egress-event`) on `GET /__ficta/egress-proof`; the generator previously kept only the last one.
+- Updated dependencies []:
+  - @serovaai/ficta-protocol@0.12.1
+
 ## 0.4.2
 
 ### Patch Changes
