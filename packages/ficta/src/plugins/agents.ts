@@ -43,7 +43,20 @@ export const claudeAgent: AgentIntegration = {
   configureLaunch: ({ baseUrl, args, realExecutable, env }) => ({
     executable: realExecutable,
     args,
-    env: { ...env, ANTHROPIC_BASE_URL: baseUrl },
+    env: {
+      ...env,
+      ANTHROPIC_BASE_URL: baseUrl,
+      // Claude Code treats any base URL whose host is not api.anthropic.com as a third-party gateway
+      // and switches to a reduced /model picker that lists models from a stale account cache (e.g.
+      // Fable 5.1 when 5.2 is current). ficta forwards to api.anthropic.com, so tell Claude Code to
+      // behave as first-party. A user-set value wins, so it can be turned off.
+      _CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL: env._CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL ?? "1",
+      // First-party mode also enables Claude Code's crash reporting, which goes directly to Anthropic
+      // and can carry error text ficta never sees. Turning it off costs the user nothing visible.
+      // Memory sync is left alone on purpose: ficta stays best effort and does not disable features
+      // (see docs/threat-model.md#claude-code-first-party-mode).
+      DISABLE_ERROR_REPORTING: env.DISABLE_ERROR_REPORTING ?? "1",
+    },
   }),
 };
 

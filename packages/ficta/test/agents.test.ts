@@ -86,6 +86,22 @@ describe("agent integration plugins", () => {
     expect(plan.executable).toBe("/bin/claude");
     expect(plan.args).toEqual(["--version"]);
     expect(plan.env.ANTHROPIC_BASE_URL).toBe(BASE);
+    expect(plan.env._CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL).toBe("1");
+    expect(plan.env.DISABLE_ERROR_REPORTING).toBe("1");
+    expect(plan.env.CLAUDE_CODE_DISABLE_ORG_MEMORY).toBeUndefined();
+  });
+
+  it("keeps user-set first-party and error-reporting values", () => {
+    const plan = claudeAgent.configureLaunch({
+      baseUrl: BASE,
+      args: [],
+      realExecutable: "/bin/claude",
+      env: { _CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL: "0", DISABLE_ERROR_REPORTING: "" },
+      cwd: process.cwd(),
+    });
+
+    expect(plan.env._CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL).toBe("0");
+    expect(plan.env.DISABLE_ERROR_REPORTING).toBe("");
   });
 
   it("configures Codex API-key mode through a temporary provider override", () => {
