@@ -15,7 +15,7 @@ import type { DetectorPlugin } from "../src/plugins/index.js";
 // 403 on every follow-up turn. The fix skips surrogate-token spans in redaction and leak scanning.
 
 const EMAIL = "avery@example.com";
-const PHONE = "+23057054725";
+const PHONE = "+23057000001";
 const SURROGATE = /FICTA_[0-9a-f]{32}/;
 
 /** Deterministic stand-in for Presidio: emails + phone + the token-prefix word "FICTA". */
