@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.12.1
+
+### Patch Changes
+
+- [#160](https://github.com/SerovaAI/ficta/pull/160) [`22e3970`](https://github.com/SerovaAI/ficta/commit/22e3970c169908296fd995fea3f413914b7807bb) Thanks [@steflsd](https://github.com/steflsd)! - Route Anthropic `/v1/models` requests to Anthropic instead of OpenAI, so Claude Code's `/model` picker shows the account's full model list through Ficta.
+
+- [#161](https://github.com/SerovaAI/ficta/pull/161) [`10c0947`](https://github.com/SerovaAI/ficta/commit/10c0947f14053634f87880cc7f48703f54543ce2) Thanks [@steflsd](https://github.com/steflsd)! - Fix several audit findings: an agent killed by a signal no longer makes `ficta` exit 0, `ficta setup` no longer resets a hand-set `registry.require` or `redaction.fail_closed`, a failed response-log write can no longer exit the proxy, the email detector no longer goes quadratic on long unbroken runs, `detection.entityPriority` now holds on later turns of a scope, and a typed-style value named like an `Object.prototype` member gets a valid surrogate. Docs corrected (plugin example, OpenMed backend name, control-plane response openness).
+
+- [#162](https://github.com/SerovaAI/ficta/pull/162) [`fcd9c08`](https://github.com/SerovaAI/ficta/commit/fcd9c0882135d5972c1939e5021083f99407ab3b) Thanks [@steflsd](https://github.com/steflsd)! - `ficta claude` now sets `_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1` so Claude Code's `/model` picker lists current models (such as Fable 5.2) instead of a stale cached list. It also sets `DISABLE_ERROR_REPORTING=1`, since first-party mode would send crash reports directly to Anthropic. Memory sync is left on and goes directly to Anthropic, outside ficta; the threat model documents how to turn it off.
+
+- [#158](https://github.com/SerovaAI/ficta/pull/158) [`6fd188c`](https://github.com/SerovaAI/ficta/commit/6fd188c8727e461c6ff917eb3b1fcbfe36b82ff1) Thanks [@steflsd](https://github.com/steflsd)! - Docs: the threat model and plugin guide now describe the path rule as it works since 0.12.0. Only plain-looking registered values are left in place inside file paths. Credential-looking values are replaced even there, and JSON-escaped text never counts as a path. `ficta logs audit` lists what the exception kept.
+- Updated dependencies [[`10c0947`](https://github.com/SerovaAI/ficta/commit/10c0947f14053634f87880cc7f48703f54543ce2)]:
+  - @serovaai/ficta-contract@0.4.3
+  - @serovaai/ficta-engine@0.12.1
+  - @serovaai/ficta-protocol@0.12.1
+
 ## 0.12.0
 
 ### Minor Changes
