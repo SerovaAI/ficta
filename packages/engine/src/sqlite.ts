@@ -1,6 +1,6 @@
 // @serovaai/ficta-engine/sqlite: a persistent, encrypted VaultStore on Node's built-in SQLite.
 //
-// Requires Node >= 22.13 (`node:sqlite` without a flag); Node 24 LTS is recommended. The main
+// Requires Node >= 22.13 (`node:sqlite` without a flag); Node 26 LTS is recommended. The main
 // `@serovaai/ficta-engine` entry never imports this file, so it stays SQLite-free and loads on Node 20.
 
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";

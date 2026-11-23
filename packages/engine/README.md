@@ -460,7 +460,7 @@ await vault.close();
 
 ### SQLite store
 
-`@serovaai/ficta-engine/sqlite` needs Node.js 22.13 or newer (`node:sqlite` without a flag); Node 24
+`@serovaai/ficta-engine/sqlite` needs Node.js 22.13 or newer (`node:sqlite` without a flag); Node 26
 LTS is recommended. Node releases before 24.15 / 25.7 (where `node:sqlite` became a release
 candidate) print an experimental-feature warning for it. The main
 `@serovaai/ficta-engine` entry never imports it, so it still loads on Node 20. There is no native

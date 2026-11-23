@@ -12,7 +12,7 @@ FICTA_HOME="/var/lib/ficta"
 ENV_DIR="/etc/ficta"
 # Minimum Node for the checkout: keep in sync with the root package.json `engines.node`
 # (scripts/deploy-node-version.test.mjs fails CI on drift). pnpm refuses to install on a mismatch.
-NODE_MIN="24.22.1"
+NODE_MIN="26.13.1"
 NODE_MAJOR="${NODE_MAJOR:-${NODE_MIN%%.*}}"
 
 log() { printf '\n==> %s\n' "$*"; }
