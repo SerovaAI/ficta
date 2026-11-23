@@ -1290,9 +1290,11 @@ class ProtectionRequestScope implements RequestScope {
 
   /** Stored metadata fallback for header/query redaction and later response restore traces. */
   private storedMetadataFor(raw: string): ProtectedValue | undefined {
-    return (this.permanentMetadata.get(raw) ??
+    return (
+      this.permanentMetadata.get(raw) ??
       this.userProtectedMetadata.get(raw) ??
-      this.detectedMetadata.get(raw))?.[0];
+      this.detectedMetadata.get(raw)
+    )?.[0];
   }
 
   private hitsForEntities(claims: readonly EntityClaim[]): ProtectionHit[] {

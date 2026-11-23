@@ -111,9 +111,17 @@ export function createProvider(): AuthProvider {
         statuses: ["active"],
         limit: 100,
       });
-      return memberships.data
-        .filter((membership) => membership.organizationId === deploymentOrgId)
-        .map((membership) => ({ id: membership.organizationId, name: membership.organizationName }));
+      // `organizationName` is optional in the SDK types; look the org up only when it is missing.
+      return Promise.all(
+        memberships.data
+          .filter((membership) => membership.organizationId === deploymentOrgId)
+          .map(async (membership) => ({
+            id: membership.organizationId,
+            name:
+              membership.organizationName ??
+              (await getApiClient().organizations.getOrganization(membership.organizationId)).name,
+          })),
+      );
     },
     async createOrganization(name: string): Promise<OrgSummary> {
       void name;
