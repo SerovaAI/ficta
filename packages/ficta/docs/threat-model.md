@@ -59,6 +59,7 @@ matter-specific enforcement.
 - Secrets the agent reads or sends outside the proxied model API channel.
 - Remote-transport MCP servers, which talk to their own hosts and never reach the proxy. See [Remote MCP servers are a second egress path](#remote-mcp-servers-are-a-second-egress-path) below.
 - Codex (ChatGPT/OAuth) account, plugin, and usage calls to `chatgpt.com/backend-api/{wham,ps,plugins}`. Codex 0.156+ refuses a non-HTTPS `chatgpt_base_url`, so this housekeeping goes direct rather than through the loopback proxy; model turns still route through ficta via the temporary provider. The one housekeeping channel observed carrying registered values, Codex analytics events, is switched off for every wrapped launch (`analytics.enabled=false`). See [Intercepting Codex (ChatGPT/OAuth)](./codex-oauth-intercept.md#housekeeping-traffic).
+- Claude Code cross-session messages (`SendMessage`) to a session on another machine or in the cloud, which travel through Anthropic's servers rather than the proxy. See [Cross-session messages leave through Anthropic](#cross-session-messages-leave-through-anthropic) below.
 - Session mirroring over non-model-API wires, notably Claude Code's remote control. See [Remote control is out of scope](#remote-control-is-out-of-scope) below.
 - Claude Code's own housekeeping traffic, which uses hard-coded Anthropic hosts rather than `ANTHROPIC_BASE_URL`: telemetry, account and plugin lookups, MCP calls through Anthropic's MCP proxy, and memory sync. See [Claude Code first-party mode](#claude-code-first-party-mode) below.
 - IDE clients that do not route all model traffic through the proxy, for example Cursor, whose Agent / Edit / Tab / Composer features bypass a custom base URL. See [IDE clients](#ide-clients-cursor-etc) below.
@@ -148,6 +149,28 @@ right. This is the same shape of gap as [remote control](#remote-control-is-out-
 carrying the same material ficta just protected, over a wire ficta has no reader for. Routing it
 through the proxy would not help — a redactor would need per-server schema knowledge, and MCP tool
 arguments are arbitrary vendor-defined shapes.
+
+## Cross-session messages leave through Anthropic
+
+Claude Code sessions can message each other with the `SendMessage` tool. The message is plain text
+the sender's model writes as a tool-call argument, so ficta's
+[restore-into-tools](#intentionally-not-covered) policy applies to it like any other tool call:
+
+- **Registry and environment secrets** stay placeholders under the default
+  `restore_into_tools = "detected"`, so the receiver never gets the real value.
+- **Content-derived detections** (secret-shapes or PII in files and command output the agent read)
+  are restored, so the message carries the real value.
+
+Where that message goes decides whether it matters. A session on the same machine receives it over a
+local socket; if that session also runs behind ficta, its detectors catch the value again before its
+next model request. A session on the same machine **not** behind ficta, a session on another machine
+(Remote Control), or a cloud session receives the real value, and the last two get it through
+Anthropic's servers, outside any local proxy.
+
+To keep messages on the machine, set `"isolatePeerMachines": true` in Claude Code's settings, which
+asks for approval before a message leaves. `crossSessionInbound` (`accept`, `hold`, `refuse`)
+controls what a session does with messages it receives. For the strictest posture, set
+`restore_into_tools = "none"`, which keeps every value a placeholder in every tool call.
 
 ## Remote control is out of scope
 
