@@ -66,10 +66,6 @@ else
   log "Node already installed: v${NODE_VERSION}"
 fi
 
-log "pnpm via corepack"
-corepack enable
-corepack prepare pnpm@latest-10 --activate 2>/dev/null || corepack prepare pnpm@latest --activate
-
 # --- 2. Service user --------------------------------------------------------
 if ! id "$FICTA_USER" >/dev/null 2>&1; then
   log "Creating system user ${FICTA_USER} (home ${FICTA_HOME})"
@@ -97,11 +93,13 @@ printf '%s\n' "$DEPLOY_SHA" > "$ENV_DIR/deployed-revision"
 log "Deploying revision ${DEPLOY_SHA} (recorded in ${ENV_DIR}/deployed-revision)"
 
 log "pnpm install + build (contract, engine, proxy, gateway)"
-(cd "$REPO_DIR" && sudo -u "$FICTA_USER" env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm install --frozen-lockfile)
-(cd "$REPO_DIR/packages/contract" && sudo -u "$FICTA_USER" env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm build)
-(cd "$REPO_DIR/packages/engine" && sudo -u "$FICTA_USER" env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm build)
-(cd "$REPO_DIR/packages/ficta" && sudo -u "$FICTA_USER" env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm build)
-(cd "$REPO_DIR/apps/gateway" && sudo -u "$FICTA_USER" env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm build)
+log "pnpm (exact version from packageManager)"
+npm install -g "pnpm@$(node -p "require('$REPO_DIR/package.json').packageManager.match(/^pnpm@([^+]+)/)[1]")"
+(cd "$REPO_DIR" && sudo -u "$FICTA_USER" pnpm install --frozen-lockfile)
+(cd "$REPO_DIR/packages/contract" && sudo -u "$FICTA_USER" pnpm build)
+(cd "$REPO_DIR/packages/engine" && sudo -u "$FICTA_USER" pnpm build)
+(cd "$REPO_DIR/packages/ficta" && sudo -u "$FICTA_USER" pnpm build)
+(cd "$REPO_DIR/apps/gateway" && sudo -u "$FICTA_USER" pnpm build)
 
 # --- 4. Sidecars + Postgres -------------------------------------------------
 log "Sidecars (document-converter + presidio-analyzer)"
